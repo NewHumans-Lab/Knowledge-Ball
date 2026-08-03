@@ -2,287 +2,204 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>知识球 — 协议原型</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>知识球 — 协议原型 v0.4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root{
-    --bg: #0A0E1A;
-    --bg-deep: #060911;
-    --panel: #10162A;
-    --panel-border: #232B45;
-    --brass: #C9A227;
-    --brass-dim: #8A7024;
-    --ink: #E8E4D9;
-    --ink-dim: #9AA1B8;
-    --ink-faint: #5B6280;
-
-    --c-axiom: #E8E4D9;
-    --c-definition: #7C93C9;
-    --c-theorem: #C9A227;
-    --c-hypothesis: #9B7EDE;
-    --c-prediction: #5FD1C9;
-    --c-fact: #5BA88B;
-    --c-opinion: #E8825B;
-    --c-value: #D8748A;
-
-    --st-disputed: #E0A030;
-    --st-falsified: #C85450;
-    --st-suspended: #6B7290;
+    --bg: #0A0E1A; --bg-deep: #060911; --panel: #10162A; --panel-border: #232B45;
+    --brass: #C9A227; --brass-dim: #8A7024; --ink: #E8E4D9; --ink-dim: #9AA1B8; --ink-faint: #5B6280;
+    --c-axiom: #E8E4D9; --c-definition: #7C93C9; --c-theorem: #C9A227; --c-hypothesis: #9B7EDE;
+    --c-prediction: #5FD1C9; --c-fact: #5BA88B; --c-opinion: #E8825B; --c-value: #D8748A;
+    --st-disputed: #E0A030; --st-falsified: #C85450; --st-suspended: #6B7290;
   }
-  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
-  html,body{margin:0; padding:0; height:100%; background:var(--bg); color:var(--ink); font-family:'Noto Sans SC','Inter',sans-serif; overflow:hidden;}
-  ::selection{background:var(--brass); color:#0A0E1A;}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC','Inter',sans-serif;overflow:hidden;}
+  ::selection{background:var(--brass);color:#0A0E1A;}
 
-  .app{ display:flex; flex-direction:column; height:100vh; background:
+  .app{display:flex;flex-direction:column;height:100vh;background:
     radial-gradient(ellipse 80% 60% at 30% 0%, rgba(120,110,60,0.08), transparent 60%),
     radial-gradient(ellipse 60% 50% at 90% 90%, rgba(90,100,160,0.07), transparent 60%),
-    var(--bg-deep);
-  }
+    var(--bg-deep);}
 
-  header{
-    display:flex; align-items:center; gap:14px;
-    padding:14px 18px; border-bottom:1px solid var(--panel-border);
-    background:linear-gradient(180deg, rgba(16,22,42,0.9), rgba(16,22,42,0.6));
-    flex-wrap:wrap;
-  }
-  .brand{ display:flex; align-items:baseline; gap:9px; margin-right:6px;}
-  .brand .ring{ width:20px; height:20px; border-radius:50%; border:1.5px solid var(--brass); position:relative; flex-shrink:0;}
-  .brand .ring::after{ content:''; position:absolute; inset:-4px; border:1px solid var(--brass-dim); border-radius:50%; opacity:0.5;}
-  .brand h1{ font-family:'Noto Serif SC', serif; font-weight:700; font-size:17px; letter-spacing:0.5px; margin:0; color:var(--ink);}
-  .brand span{ font-size:11px; color:var(--ink-faint); font-family:'Inter',sans-serif; letter-spacing:1px;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
+    border-bottom:1px solid var(--panel-border); background:linear-gradient(180deg, rgba(16,22,42,0.85), rgba(16,22,42,0.4));
+    position:relative; z-index:30;}
+  .brand{display:flex;align-items:baseline;gap:9px;}
+  .brand .ring{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--brass);position:relative;flex-shrink:0;}
+  .brand .ring::after{content:'';position:absolute;inset:-4px;border:1px solid var(--brass-dim);border-radius:50%;opacity:0.5;}
+  .brand h1{font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;margin:0;letter-spacing:0.5px;}
+  .brand span{font-size:10px;color:var(--ink-faint);font-family:'Inter',sans-serif;letter-spacing:1px;}
 
-  .search-wrap{ position:relative; flex:1; min-width:180px; max-width:340px;}
-  .search-wrap input{
-    width:100%; background:var(--panel); border:1px solid var(--panel-border); color:var(--ink);
-    padding:8px 12px; border-radius:6px; font-size:13px; font-family:inherit;
-  }
-  .search-wrap input:focus{ outline:none; border-color:var(--brass-dim);}
-  .search-results{
-    position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--panel);
-    border:1px solid var(--panel-border); border-radius:6px; max-height:220px; overflow-y:auto; z-index:50;
-    display:none; box-shadow:0 10px 30px rgba(0,0,0,0.5);
-  }
-  .search-results.show{ display:block;}
-  .search-item{ padding:8px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--panel-border); display:flex; justify-content:space-between; gap:8px;}
+  .header-mid{display:flex;align-items:center;gap:10px;}
+  .btn{background:var(--panel);border:1px solid var(--panel-border);color:var(--ink);padding:7px 12px;
+    border-radius:6px;font-size:12.5px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s;white-space:nowrap;}
+  .btn:hover{border-color:var(--brass-dim);background:rgba(201,162,39,0.06);}
+  .btn.primary{background:var(--brass);color:#1A1508;border-color:var(--brass);font-weight:600;}
+  .btn.primary:hover{background:#DDB431;}
+  .depth-input{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-faint);}
+  .depth-input input{width:44px;background:var(--panel);border:1px solid var(--panel-border);color:var(--ink);border-radius:4px;padding:4px 5px;font-size:11px;text-align:center;}
+
+  .avatar-btn{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3A4570,#1E2440);
+    border:1.5px solid var(--brass-dim); display:flex;align-items:center;justify-content:center;cursor:pointer;
+    font-family:'Noto Serif SC',serif;font-weight:700;font-size:14px;color:var(--brass);flex-shrink:0;}
+  .avatar-btn:hover{border-color:var(--brass);}
+
+  .main{flex:1;position:relative;overflow:hidden;}
+  #canvasHost{position:absolute;inset:0;cursor:grab;}
+  #canvasHost.dragging{cursor:grabbing;}
+  #canvasHost canvas{display:block;}
+
+  #labelsLayer{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+  .node-label{position:absolute;transform:translate(-50%,10px);font-size:10px;color:var(--ink-dim);
+    white-space:nowrap;text-shadow:0 1px 4px #000, 0 0 2px #000; pointer-events:none; max-width:150px;
+    overflow:hidden;text-overflow:ellipsis; will-change:transform,left,top,opacity;}
+
+  .legend{position:absolute;left:14px;bottom:80px;background:rgba(16,22,42,0.82);border:1px solid var(--panel-border);
+    border-radius:8px;padding:9px 11px;font-size:10.5px;backdrop-filter:blur(6px);max-width:172px; z-index:20;}
+  .legend h4{margin:0 0 5px;font-size:9px;letter-spacing:1px;color:var(--ink-faint);text-transform:uppercase;font-weight:600;}
+  .legend-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
+  .legend-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+  .legend-row span{color:var(--ink-dim);}
+  .legend-div{height:1px;background:var(--panel-border);margin:6px 0;}
+  .layer-note{font-size:9.5px; color:var(--ink-faint); line-height:1.5; margin-top:2px;}
+
+  .hint{position:absolute; right:14px; bottom:80px; font-size:10px; color:var(--ink-faint); text-align:right;
+    line-height:1.7; z-index:20;}
+
+  .ai-bar-wrap{position:absolute; left:0; right:0; bottom:18px; display:flex; justify-content:center; z-index:25; padding:0 16px;}
+  .ai-bar{width:100%; max-width:560px; background:rgba(16,22,42,0.92); border:1px solid var(--panel-border);
+    border-radius:26px; display:flex; align-items:center; gap:8px; padding:6px 8px 6px 18px; backdrop-filter:blur(10px);
+    box-shadow:0 12px 40px rgba(0,0,0,0.45);}
+  .ai-bar input{flex:1; background:none; border:none; color:var(--ink); font-size:13.5px; font-family:inherit; padding:8px 0;}
+  .ai-bar input:focus{outline:none;}
+  .ai-bar input::placeholder{color:var(--ink-faint);}
+  .ai-send{width:34px;height:34px;border-radius:50%;background:var(--brass);border:none;color:#1A1508;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:15px;}
+  .ai-send:hover{background:#DDB431;}
+  .ai-results{position:absolute; bottom:calc(100% + 8px); left:0; right:0; background:var(--panel);
+    border:1px solid var(--panel-border); border-radius:10px; max-height:200px; overflow-y:auto; display:none;
+    box-shadow:0 -10px 30px rgba(0,0,0,0.4);}
+  .ai-bar-wrap{flex-direction:column; align-items:center;}
+  .ai-bar-inner{position:relative; width:100%; max-width:560px;}
+  .ai-results.show{display:block;}
+  .search-item{padding:9px 14px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;gap:8px;}
   .search-item:last-child{border-bottom:none;}
-  .search-item:hover{ background:rgba(201,162,39,0.08);}
-  .search-item small{ color:var(--ink-faint); font-size:10px;}
+  .search-item:hover{background:rgba(201,162,39,0.08);}
+  .search-item small{color:var(--ink-faint);font-size:10px;}
 
-  .btn{
-    background:var(--panel); border:1px solid var(--panel-border); color:var(--ink);
-    padding:8px 13px; border-radius:6px; font-size:13px; cursor:pointer; font-family:inherit;
-    transition:border-color .15s, background .15s; white-space:nowrap;
-  }
-  .btn:hover{ border-color:var(--brass-dim); background:rgba(201,162,39,0.06);}
-  .btn.primary{ background:var(--brass); color:#1A1508; border-color:var(--brass); font-weight:600;}
-  .btn.primary:hover{ background:#DDB431;}
-  .btn.small{ padding:5px 9px; font-size:11px;}
-  .toggle-group{ display:flex; border:1px solid var(--panel-border); border-radius:6px; overflow:hidden;}
-  .toggle-group button{
-    background:var(--panel); border:none; color:var(--ink-dim); padding:8px 12px; font-size:12px; cursor:pointer; font-family:inherit;
-  }
-  .toggle-group button.active{ background:var(--brass); color:#1A1508; font-weight:600;}
+  .panel{position:absolute; top:0; right:0; bottom:0; width:340px; background:var(--panel); border-left:1px solid var(--panel-border);
+    display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease; z-index:40;}
+  .panel.open{transform:translateX(0);}
+  .panel-header{padding:16px 18px 12px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .panel-header h2{font-family:'Noto Serif SC',serif;font-size:15.5px;margin:0;line-height:1.4;font-weight:700;}
+  .panel-close{background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:16px;line-height:1;padding:2px;}
+  .panel-body{flex:1;overflow-y:auto;padding:14px 18px;}
+  .badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+  .badge{font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid;font-weight:600;letter-spacing:0.3px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:5px;font-weight:600;}
+  .field .val{font-size:13px;color:var(--ink);line-height:1.6;}
+  .field textarea, .field input[type=text], .field select{width:100%;background:var(--bg-deep);border:1px solid var(--panel-border);
+    color:var(--ink); padding:8px 9px; border-radius:6px; font-size:12.5px; font-family:inherit; resize:vertical;}
+  .field textarea{min-height:56px;}
+  .chip-list{display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{font-size:11px;padding:5px 9px;background:rgba(255,255,255,0.03);border:1px solid var(--panel-border);border-radius:5px;cursor:pointer;color:var(--ink-dim);transition:border-color .15s;}
+  .chip:hover{border-color:var(--brass-dim);color:var(--ink);}
+  .chip.empty{color:var(--ink-faint);cursor:default;font-style:italic;}
+  .mastery-row{display:flex;align-items:center;gap:10px;}
+  .mastery-row input[type=range]{flex:1; accent-color:var(--brass);}
+  .mastery-val{font-size:11.5px; color:var(--brass); width:38px; text-align:right;}
+  .panel-actions{padding:12px 18px 18px;border-top:1px solid var(--panel-border);display:flex;flex-direction:column;gap:8px;}
+  .panel-actions .btn{width:100%;text-align:center;}
+  .btn.danger{border-color:rgba(200,84,80,0.4);color:#E8918E;}
+  .btn.danger:hover{background:rgba(200,84,80,0.1);border-color:#C85450;}
+  .btn.confirm{border-color:rgba(91,168,139,0.4);color:#8FCBB0;}
+  .btn.confirm:hover{background:rgba(91,168,139,0.1);border-color:#5BA88B;}
+  .btn.ghost{background:transparent;}
+  .action-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .note-small{font-size:10px;color:var(--ink-faint);text-align:center;line-height:1.5;}
 
-  .depth-input{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink-faint);}
-  .depth-input input{ width:48px; background:var(--panel); border:1px solid var(--panel-border); color:var(--ink); border-radius:4px; padding:5px 6px; font-size:12px; text-align:center;}
+  .toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
+    background:var(--panel);border:1px solid var(--brass-dim);color:var(--ink);padding:10px 18px;border-radius:8px;
+    font-size:12.5px;z-index:200;transition:all .3s;pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,0.5);
+    max-width:86%;text-align:center;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
-  .main{ flex:1; display:flex; overflow:hidden; position:relative;}
-  .viewport{ flex:1; position:relative; overflow:hidden; cursor:grab;}
-  .viewport.dragging{ cursor:grabbing;}
-  .viewport.mode2d{ cursor:default;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(6,9,17,0.7);backdrop-filter:blur(3px);z-index:100;
+    display:none;align-items:center;justify-content:center;padding:20px;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;width:100%;max-width:460px;
+    max-height:85vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,0.6);}
+  .modal-header{padding:16px 20px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:center;}
+  .modal-header h3{font-family:'Noto Serif SC',serif;font-size:15.5px;margin:0;}
+  .modal-body{padding:18px 20px;overflow-y:auto;}
+  .modal-footer{padding:14px 20px;border-top:1px solid var(--panel-border);display:flex;gap:10px;justify-content:flex-end;}
+  .form-field{margin-bottom:14px;}
+  .form-field label{display:block;font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;font-weight:600;}
+  .form-field input[type=text],.form-field textarea,.form-field select{width:100%;background:var(--bg-deep);border:1px solid var(--panel-border);
+    color:var(--ink);padding:9px 10px;border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;}
+  .form-field input:focus,.form-field textarea:focus,.form-field select:focus{outline:none;border-color:var(--brass-dim);}
+  .form-field textarea{min-height:58px;}
+  .form-hint{font-size:10.5px; color:var(--brass); margin-bottom:8px;}
+  .premise-list{max-height:130px;overflow-y:auto;border:1px solid var(--panel-border);border-radius:6px;padding:6px;}
+  .premise-item{display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:12px;border-radius:4px;}
+  .premise-item:hover{background:rgba(255,255,255,0.03);}
+  .account-stat{display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--panel-border); font-size:12.5px;}
+  .account-stat:last-child{border-bottom:none;}
+  .account-stat b{color:var(--brass); font-family:'Noto Serif SC',serif; font-size:15px;}
 
-  .scene3d{ position:absolute; inset:0; perspective:1400px; display:flex; align-items:center; justify-content:center;}
-  .rings{
-    position:absolute; width:440px; height:440px; border-radius:50%; pointer-events:none;
-    transform-style:preserve-3d;
-  }
-  .ring-el{ position:absolute; inset:0; border:1px solid rgba(201,162,39,0.16); border-radius:50%;}
-  .group3d{ position:relative; width:0; height:0; transform-style:preserve-3d; will-change:transform;}
-  .node3d{
-    position:absolute; width:14px; height:14px; margin:-7px; border-radius:50%;
-    display:flex; align-items:center; justify-content:center; cursor:pointer;
-    transform-style:preserve-3d; transition:box-shadow .2s;
-  }
-  .node3d .dot{ width:100%; height:100%; border-radius:50%; box-shadow:0 0 10px currentColor;}
-  .node3d.selected .dot{ box-shadow:0 0 0 3px rgba(255,255,255,0.5), 0 0 16px currentColor;}
-  .node3d.dim{ opacity:0.28;}
-  .node3d.highlight .dot{ box-shadow:0 0 0 3px var(--brass), 0 0 16px currentColor;}
-  .node3d .label3d{
-    position:absolute; top:16px; left:50%; transform:translateX(-50%); white-space:nowrap;
-    font-size:10px; color:var(--ink-dim); pointer-events:none; text-shadow:0 1px 3px #000;
-    max-width:120px; overflow:hidden; text-overflow:ellipsis;
-  }
-
-  .scene2d{ position:absolute; inset:0;}
-  .scene2d svg{ width:100%; height:100%;}
-  .edge2d{ stroke:rgba(154,161,184,0.22); stroke-width:1;}
-  .edge2d.highlight{ stroke:var(--brass); stroke-width:1.6; opacity:0.9;}
-  .node2d-label{ font-size:9px; fill:var(--ink-faint); font-family:'Inter',sans-serif;}
-
-  .hint{
-    position:absolute; bottom:14px; left:16px; font-size:11px; color:var(--ink-faint);
-    display:flex; gap:14px; flex-wrap:wrap; max-width:60%;
-  }
-
-  .legend{
-    position:absolute; top:14px; right:14px; background:rgba(16,22,42,0.85); border:1px solid var(--panel-border);
-    border-radius:8px; padding:10px 12px; font-size:11px; backdrop-filter:blur(6px); max-width:190px;
-  }
-  .legend h4{ margin:0 0 6px; font-size:10px; letter-spacing:1px; color:var(--ink-faint); text-transform:uppercase; font-weight:600;}
-  .legend-row{ display:flex; align-items:center; gap:6px; margin-bottom:4px;}
-  .legend-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0;}
-  .legend-row span{ color:var(--ink-dim);}
-  .legend-div{ height:1px; background:var(--panel-border); margin:7px 0;}
-
-  .panel{
-    width:340px; flex-shrink:0; background:var(--panel); border-left:1px solid var(--panel-border);
-    display:flex; flex-direction:column; transform:translateX(100%); transition:transform .25s ease;
-    position:relative; z-index:10;
-  }
-  .panel.open{ transform:translateX(0);}
-  .panel-header{ padding:16px 18px 12px; border-bottom:1px solid var(--panel-border); display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
-  .panel-header h2{ font-family:'Noto Serif SC',serif; font-size:16px; margin:0; line-height:1.4; font-weight:700;}
-  .panel-close{ background:none; border:none; color:var(--ink-faint); cursor:pointer; font-size:16px; line-height:1; padding:2px;}
-  .panel-body{ flex:1; overflow-y:auto; padding:14px 18px;}
-
-  .badge-row{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;}
-  .badge{ font-size:10px; padding:3px 8px; border-radius:20px; border:1px solid; font-weight:600; letter-spacing:0.3px;}
-
-  .field{ margin-bottom:14px;}
-  .field label{ display:block; font-size:10px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:5px; font-weight:600;}
-  .field .val{ font-size:13px; color:var(--ink); line-height:1.6;}
-  .stars{ color:var(--brass); font-size:13px; letter-spacing:1px;}
-  .stars .off{ color:#3A3F55;}
-
-  .chip-list{ display:flex; flex-wrap:wrap; gap:6px;}
-  .chip{
-    font-size:11px; padding:5px 9px; background:rgba(255,255,255,0.03); border:1px solid var(--panel-border);
-    border-radius:5px; cursor:pointer; color:var(--ink-dim); transition:border-color .15s;
-  }
-  .chip:hover{ border-color:var(--brass-dim); color:var(--ink);}
-  .chip.empty{ color:var(--ink-faint); cursor:default; font-style:italic;}
-
-  .panel-actions{ padding:12px 18px 18px; border-top:1px solid var(--panel-border); display:flex; flex-direction:column; gap:8px;}
-  .panel-actions .btn{ width:100%; text-align:center;}
-  .btn.danger{ border-color:rgba(200,84,80,0.4); color:#E8918E;}
-  .btn.danger:hover{ background:rgba(200,84,80,0.1); border-color:#C85450;}
-  .btn.confirm{ border-color:rgba(91,168,139,0.4); color:#8FCBB0;}
-  .btn.confirm:hover{ background:rgba(91,168,139,0.1); border-color:#5BA88B;}
-
-  .toast{
-    position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px); opacity:0;
-    background:var(--panel); border:1px solid var(--brass-dim); color:var(--ink); padding:10px 18px;
-    border-radius:8px; font-size:12.5px; z-index:200; transition:all .3s; pointer-events:none; box-shadow:0 10px 30px rgba(0,0,0,0.5);
-    max-width:80%; text-align:center;
-  }
-  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0);}
-
-  .modal-overlay{
-    position:fixed; inset:0; background:rgba(6,9,17,0.7); backdrop-filter:blur(3px); z-index:100;
-    display:none; align-items:center; justify-content:center; padding:20px;
-  }
-  .modal-overlay.show{ display:flex;}
-  .modal{
-    background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; width:100%; max-width:480px;
-    max-height:85vh; display:flex; flex-direction:column; box-shadow:0 30px 80px rgba(0,0,0,0.6);
-  }
-  .modal-header{ padding:16px 20px; border-bottom:1px solid var(--panel-border); display:flex; justify-content:space-between; align-items:center;}
-  .modal-header h3{ font-family:'Noto Serif SC',serif; font-size:16px; margin:0;}
-  .modal-body{ padding:18px 20px; overflow-y:auto;}
-  .modal-footer{ padding:14px 20px; border-top:1px solid var(--panel-border); display:flex; gap:10px; justify-content:flex-end;}
-
-  .form-field{ margin-bottom:14px;}
-  .form-field label{ display:block; font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:6px; font-weight:600;}
-  .form-field input[type=text], .form-field textarea, .form-field select{
-    width:100%; background:var(--bg-deep); border:1px solid var(--panel-border); color:var(--ink);
-    padding:9px 10px; border-radius:6px; font-size:13px; font-family:inherit; resize:vertical;
-  }
-  .form-field input:focus, .form-field textarea:focus, .form-field select:focus{ outline:none; border-color:var(--brass-dim);}
-  .form-field textarea{ min-height:60px;}
-  .star-select{ display:flex; gap:4px;}
-  .star-select button{ background:none; border:none; font-size:18px; color:#3A3F55; cursor:pointer; padding:2px;}
-  .star-select button.on{ color:var(--brass);}
-  .premise-list{ max-height:140px; overflow-y:auto; border:1px solid var(--panel-border); border-radius:6px; padding:6px;}
-  .premise-item{ display:flex; align-items:center; gap:8px; padding:5px 6px; font-size:12px; border-radius:4px;}
-  .premise-item:hover{ background:rgba(255,255,255,0.03);}
-
-  @media (max-width: 780px){
-    .panel{ position:absolute; right:0; top:0; bottom:0; width:min(340px, 88vw);}
-    .legend{ display:none;}
-    .hint{ max-width:90%; font-size:10px;}
-    .brand span{ display:none;}
+  @media (max-width:780px){
+    .panel{width:min(340px,90vw);}
+    .legend{display:none;}
+    .hint{display:none;}
+    .brand span{display:none;}
+    .depth-input{display:none;}
   }
 </style>
 </head>
 <body>
 <div class="app">
-
   <header>
     <div class="brand">
       <div class="ring"></div>
       <h1>知识球</h1>
-      <span>PROTOCOL PROTOTYPE · v0.3</span>
+      <span>PROTOCOL PROTOTYPE · v0.4</span>
     </div>
-
-    <div class="search-wrap">
-      <input id="searchInput" type="text" placeholder="搜索知识节点，跳转定位…" autocomplete="off">
-      <div class="search-results" id="searchResults"></div>
+    <div class="header-mid">
+      <div class="depth-input" title="级联悬置的传播层级上限，留空表示不限制">
+        传播上限 <input id="depthLimit" type="number" min="1" placeholder="∞">
+      </div>
+      <button class="btn primary" id="btnAddNode">+ 新增节点</button>
+      <div class="avatar-btn" id="avatarBtn" title="个人账户">RS</div>
     </div>
-
-    <div class="toggle-group">
-      <button id="btn3d" class="active">3D 球体</button>
-      <button id="btn2d">2D 展开</button>
-    </div>
-
-    <div class="depth-input" title="级联悬置的传播层级上限，留空表示不限制">
-      传播层级上限
-      <input id="depthLimit" type="number" min="1" placeholder="∞">
-    </div>
-
-    <button class="btn primary" id="btnAddNode">+ 新增节点</button>
   </header>
 
   <div class="main">
-    <div class="viewport" id="viewport">
+    <div id="canvasHost"></div>
+    <div id="labelsLayer"></div>
 
-      <div class="scene3d" id="scene3d">
-        <div class="rings" id="rings">
-          <div class="ring-el" style="transform:rotateX(90deg);"></div>
-          <div class="ring-el" style="transform:rotateY(0deg);"></div>
-          <div class="ring-el" style="transform:rotateY(60deg);"></div>
-          <div class="ring-el" style="transform:rotateY(120deg);"></div>
-        </div>
-        <div class="group3d" id="group3d"></div>
-      </div>
+    <div class="legend">
+      <h4>球层结构</h4>
+      <div class="layer-note">内层：已验证事实/定义<br>中层：已验证公理/定理<br>外层：假说/预测/观点/悬置/争议</div>
+      <div class="legend-div"></div>
+      <h4>节点类型</h4>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-axiom)"></div><span>公理</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-definition)"></div><span>定义</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-fact)"></div><span>事实</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-theorem)"></div><span>定理</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-hypothesis)"></div><span>假说</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-prediction)"></div><span>预测</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-opinion)"></div><span>观点</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-value)"></div><span>价值判断</span></div>
+    </div>
 
-      <div class="scene2d" id="scene2d" style="display:none;">
-        <svg id="svg2d"></svg>
-      </div>
-
-      <div class="legend">
-        <h4>节点类型</h4>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-axiom)"></div><span>公理</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-definition)"></div><span>定义</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-fact)"></div><span>事实</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-theorem)"></div><span>定理</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-hypothesis)"></div><span>假说</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-prediction)"></div><span>预测</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-opinion)"></div><span>观点</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--c-value)"></div><span>价值判断</span></div>
-        <div class="legend-div"></div>
-        <h4>验证状态</h4>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--st-disputed)"></div><span>争议中(脉冲环)</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--st-suspended); opacity:0.5"></div><span>悬置(虚化)</span></div>
-        <div class="legend-row"><div class="legend-dot" style="background:var(--st-falsified)"></div><span>已证伪</span></div>
-      </div>
-
-      <div class="hint">
-        <span>🖱 拖动旋转球体</span>
-        <span>⚙ 滚轮缩放</span>
-        <span>点击节点查看详情</span>
-      </div>
+    <div class="hint">
+      拖动空白处：旋转整球<br>
+      拖动单个知识球：临时移动，松手回弹<br>
+      发光核心 = 你的掌握程度
     </div>
 
     <div class="panel" id="panel">
@@ -293,16 +210,27 @@
       <div class="panel-body" id="panelBody"></div>
       <div class="panel-actions" id="panelActions"></div>
     </div>
+
+    <div class="ai-bar-wrap">
+      <div class="ai-bar-inner">
+        <div class="ai-results" id="aiResults"></div>
+        <div class="ai-bar">
+          <input id="aiInput" type="text" placeholder="向知识球提问，或搜索知识节点…" autocomplete="off">
+          <button class="ai-send" id="aiSend">➤</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-header">
-      <h3>提交新知识节点</h3>
+      <h3 id="modalTitle">提交新知识节点</h3>
       <button class="panel-close" id="modalClose">✕</button>
     </div>
     <div class="modal-body">
+      <div class="form-hint" id="modalHint" style="display:none;"></div>
       <div class="form-field">
         <label>结论（节点标题）</label>
         <input type="text" id="fTitle" placeholder="例如：某新论文的核心结论…">
@@ -312,6 +240,7 @@
         <select id="fType">
           <option value="fact">事实 Fact</option>
           <option value="definition">定义 Definition</option>
+          <option value="axiom">公理 Axiom</option>
           <option value="theorem">定理 Theorem</option>
           <option value="hypothesis">假说 Hypothesis</option>
           <option value="prediction">预测 Prediction</option>
@@ -324,17 +253,31 @@
         <textarea id="fReasoning" placeholder="从前提节点推导出该结论的最小推理链…"></textarea>
       </div>
       <div class="form-field">
-        <label>初始可信等级（提交者自评，仍需社区验证）</label>
-        <div class="star-select" id="fStars"></div>
-      </div>
-      <div class="form-field">
         <label>前置知识点（依赖边，可多选）</label>
         <div class="premise-list" id="fPremises"></div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn" id="modalCancel">取消</button>
-      <button class="btn primary" id="modalSubmit">提交（进入"等待验证"）</button>
+      <button class="btn primary" id="modalSubmit">提交（进入"等待验证"，落入外层）</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="accountOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>个人账户</h3>
+      <button class="panel-close" id="accountClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="account-stat"><span>身份验证状态</span><b style="font-size:12px;color:#8FCBB0;">已验证 · 凭证式</b></div>
+      <div class="account-stat"><span>声誉积分</span><b id="statRep">—</b></div>
+      <div class="account-stat"><span>已点亮知识节点</span><b id="statLit">—</b></div>
+      <div class="account-stat"><span>本人贡献节点数</span><b id="statContrib">—</b></div>
+      <div class="account-stat"><span>贡献被接受率</span><b>91%</b></div>
+      <div class="account-stat"><span>预测准确率（历史）</span><b>68%</b></div>
+      <p class="note-small" style="text-align:left; margin-top:14px;">此面板为演示占位数据，实际协议中声誉应来自贡献质量、预测准确性、同行认可、长期稳定性与引用影响力的动态加权，而非固定数值。</p>
     </div>
   </div>
 </div>
@@ -343,259 +286,435 @@
 
 <script>
 let nodes = [
-  {id:'n1', title:'同一律', type:'axiom', status:'verified', trust:5, reasoning:'逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。', premises:[]},
-  {id:'n2', title:'排中律', type:'axiom', status:'verified', trust:5, reasoning:'逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。', premises:[]},
-  {id:'n3', title:'质数的定义：仅能被 1 和自身整除的大于 1 的自然数', type:'definition', status:'verified', trust:5, reasoning:'基于同一律确立的稳定定义，长期无异议。', premises:['n1']},
-  {id:'n4', title:'勾股定理：直角三角形两直角边平方和等于斜边平方', type:'theorem', status:'verified', trust:5, reasoning:'欧几里得《几何原本》给出的经典演绎证明，基于同一律与排中律。', premises:['n1','n2']},
-  {id:'n5', title:'质数数量无穷', type:'theorem', status:'verified', trust:5, reasoning:'欧几里得反证法：假设质数有限，构造新数导出矛盾。', premises:['n3']},
-  {id:'n6', title:'黎曼猜想：非平凡零点实部均为 1/2', type:'hypothesis', status:'suspended', trust:3, reasoning:'尚无完整证明或证伪，悬置状态本身是准确的表达，而非系统缺陷。', premises:['n3']},
-  {id:'n7', title:'预测：2035 年可实现通用人工智能', type:'prediction', status:'suspended', trust:2, reasoning:'不存在可验证的逻辑链条，悬置等待未来事件校验，校验结果计入提交者声誉。', premises:[]},
-  {id:'n8', title:'观点：自由市场比计划经济更有效率', type:'opinion', status:'disputed', trust:2, reasoning:'规范性/经验混合命题，无法逻辑裁定，采用加权投票+悬置并展示正反证据。', premises:[]},
-  {id:'n9', title:'价值判断：个体自由优先于集体效率', type:'value', status:'disputed', trust:1, reasoning:'纯价值判断，协议不裁定对错，仅呈现论据双方。', premises:[]},
-  {id:'n10', title:'论文声称：LK-99 材料在常压常温下具有超导性', type:'fact', status:'falsified', trust:1, reasoning:'2023 年论文声称发现常温常压超导现象，后经多个独立实验室复现失败、机制被重新解释，节点被标记为已证伪。', premises:[]},
-  {id:'n11', title:'推论：若 LK-99 超导属实，可实现无损耗输电网络', type:'theorem', status:'suspended', trust:0, reasoning:'完全依赖 n10 成立，前提证伪后本节点自动进入悬置，等待重新提交或废弃。', premises:['n10']},
-  {id:'n12', title:'推论：LK-99 应用可大幅降低数据中心能耗', type:'prediction', status:'suspended', trust:0, reasoning:'依赖 n11 的工程可行性，属于二级下游推论。', premises:['n11']},
-  {id:'n13', title:'推论：LK-99 产业化将重塑全球电网基建投资方向', type:'opinion', status:'suspended', trust:0, reasoning:'依赖 n11，属于二级下游的产业判断，兼具经验与观点成分。', premises:['n11']},
+  {id:'n1', title:'同一律', type:'axiom', status:'verified', mastery:0.9, reasoning:'逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。', premises:[]},
+  {id:'n2', title:'排中律', type:'axiom', status:'verified', mastery:0.7, reasoning:'逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。', premises:[]},
+  {id:'n3', title:'质数的定义：仅能被 1 和自身整除的大于 1 的自然数', type:'definition', status:'verified', mastery:1.0, reasoning:'基于同一律确立的稳定定义，长期无异议。', premises:['n1']},
+  {id:'n4', title:'标准大气压下纯水沸点为 100°C', type:'fact', status:'verified', mastery:0.5, reasoning:'实验反复验证的经验事实。', premises:[]},
+  {id:'n5', title:'勾股定理：直角三角形两直角边平方和等于斜边平方', type:'theorem', status:'verified', mastery:1.0, reasoning:'欧几里得《几何原本》给出的经典演绎证明，基于同一律与排中律。', premises:['n1','n2']},
+  {id:'n6', title:'质数数量无穷', type:'theorem', status:'verified', mastery:0.6, reasoning:'欧几里得反证法：假设质数有限，构造新数导出矛盾。', premises:['n3']},
+  {id:'n7', title:'黎曼猜想：非平凡零点实部均为 1/2', type:'hypothesis', status:'suspended', mastery:0.2, reasoning:'尚无完整证明或证伪，悬置状态本身是准确的表达，而非系统缺陷。', premises:['n3']},
+  {id:'n8', title:'预测：2035 年可实现通用人工智能', type:'prediction', status:'suspended', mastery:0, reasoning:'不存在可验证的逻辑链条，悬置等待未来事件校验，校验结果计入提交者声誉。', premises:[]},
+  {id:'n9', title:'观点：自由市场比计划经济更有效率', type:'opinion', status:'disputed', mastery:0.3, reasoning:'规范性/经验混合命题，无法逻辑裁定，采用加权投票+悬置并展示正反证据。', premises:[]},
+  {id:'n10', title:'价值判断：个体自由优先于集体效率', type:'value', status:'disputed', mastery:0.1, reasoning:'纯价值判断，协议不裁定对错，仅呈现论据双方。', premises:[]},
+  {id:'n11', title:'论文声称：LK-99 材料在常压常温下具有超导性', type:'fact', status:'falsified', mastery:0.4, reasoning:'2023 年论文声称发现常温常压超导现象，后经多个独立实验室复现失败、机制被重新解释，节点被标记为已证伪。', premises:[]},
+  {id:'n12', title:'推论：若 LK-99 超导属实，可实现无损耗输电网络', type:'theorem', status:'suspended', mastery:0, reasoning:'完全依赖 n11 成立，前提证伪后本节点自动进入悬置，等待重新提交或废弃。', premises:['n11']},
+  {id:'n13', title:'推论：LK-99 应用可大幅降低数据中心能耗', type:'prediction', status:'suspended', mastery:0, reasoning:'依赖 n12 的工程可行性，属于二级下游推论。', premises:['n12']},
+  {id:'n14', title:'推论：LK-99 产业化将重塑全球电网基建投资方向', type:'opinion', status:'suspended', mastery:0, reasoning:'依赖 n12，属于二级下游的产业判断，兼具经验与观点成分。', premises:['n12']},
 ];
 
 const TYPE_LABEL = {axiom:'公理',definition:'定义',fact:'事实',theorem:'定理',hypothesis:'假说',prediction:'预测',opinion:'观点',value:'价值判断'};
 const STATUS_LABEL = {verified:'已验证',pending:'等待验证',suspended:'悬置',disputed:'争议中',falsified:'已证伪'};
+const TYPE_COLOR = {axiom:0xE8E4D9,definition:0x7C93C9,fact:0x5BA88B,theorem:0xC9A227,hypothesis:0x9B7EDE,prediction:0x5FD1C9,opinion:0xE8825B,value:0xD8748A};
+const TYPE_COLOR_HEX = {axiom:'#E8E4D9',definition:'#7C93C9',fact:'#5BA88B',theorem:'#C9A227',hypothesis:'#9B7EDE',prediction:'#5FD1C9',opinion:'#E8825B',value:'#D8748A'};
+const STATUS_COLOR_HEX = {verified:'#5BA88B',pending:'#7C93C9',suspended:'#6B7290',disputed:'#E0A030',falsified:'#C85450'};
 
+const R_INNER = 100, R_MIDDLE = 175, R_OUTER = 260;
 let selectedId = null;
-let mode = '3d';
-let nextIdCounter = 14;
-
-function computeLayout(list){
-  const n = list.length;
-  const R = 200;
-  const positions = {};
-  list.forEach((node, i) => {
-    if(n === 1){ positions[node.id] = {x:0,y:0,z:R}; return; }
-    const y = 1 - (i / (n - 1)) * 2;
-    const radiusAtY = Math.sqrt(Math.max(0, 1 - y*y));
-    const theta = Math.PI * (3 - Math.sqrt(5)) * i;
-    const x = Math.cos(theta) * radiusAtY;
-    const z = Math.sin(theta) * radiusAtY;
-    positions[node.id] = {x: x*R, y: y*R, z: z*R};
-  });
-  return positions;
-}
-let layout = computeLayout(nodes);
+let nextIdCounter = 15;
+let editMode = false;
 
 function nodeById(id){ return nodes.find(n => n.id === id); }
 function dependentsOf(id){ return nodes.filter(n => n.premises.includes(id)); }
+function getLayer(node){
+  if(node.status === 'verified'){
+    if(node.type === 'definition' || node.type === 'fact') return 'inner';
+    if(node.type === 'axiom' || node.type === 'theorem') return 'middle';
+  }
+  return 'outer';
+}
+function layerRadius(layer){ return layer==='inner'?R_INNER : layer==='middle'?R_MIDDLE : R_OUTER; }
 
-const group3d = document.getElementById('group3d');
-let rotX = -15, rotY = 20, scale = 1;
+const host = document.getElementById('canvasHost');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, host.clientWidth/host.clientHeight, 1, 3000);
+camera.position.set(0,0,640);
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(host.clientWidth, host.clientHeight);
+host.appendChild(renderer.domElement);
 
-function applyTransform(){
-  group3d.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${scale})`;
-  document.getElementById('rings').style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${scale})`;
+const worldGroup = new THREE.Group();
+scene.add(worldGroup);
+
+[R_INNER,R_MIDDLE,R_OUTER].forEach(r => {
+  const geo = new THREE.SphereGeometry(r, 28, 18);
+  const mat = new THREE.MeshBasicMaterial({color:0xC9A227, wireframe:true, transparent:true, opacity:0.07});
+  worldGroup.add(new THREE.Mesh(geo, mat));
+});
+[R_INNER,R_MIDDLE,R_OUTER].forEach(r => {
+  const curve = new THREE.EllipseCurve(0,0,r,r,0,Math.PI*2,false,0);
+  const pts = curve.getPoints(64).map(p=>new THREE.Vector3(p.x,0,p.y));
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({color:0xC9A227, transparent:true, opacity:0.18});
+  worldGroup.add(new THREE.Line(geo, mat));
+});
+
+const edgesGroup = new THREE.Group(); worldGroup.add(edgesGroup);
+const nodesGroup = new THREE.Group(); worldGroup.add(nodesGroup);
+const labelsLayer = document.getElementById('labelsLayer');
+
+let nodeMeshMap = {};
+let edgeLineMap = {};
+let labelElMap = {};
+
+function disposeObj(obj){
+  obj.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); });
 }
 
-function typeColorVar(type){ return `var(--c-${type})`; }
+function buildScene(){
+  while(nodesGroup.children.length){ const c=nodesGroup.children.pop(); disposeObj(c); }
+  while(edgesGroup.children.length){ const c=edgesGroup.children.pop(); disposeObj(c); }
+  nodeMeshMap = {}; edgeLineMap = {}; labelsLayer.innerHTML=''; labelElMap = {};
 
-function render3d(){
-  group3d.innerHTML = '';
   nodes.forEach(node => {
-    const pos = layout[node.id];
-    const el = document.createElement('div');
-    el.className = 'node3d';
-    el.style.transform = `translate3d(${pos.x}px, ${pos.y}px, ${pos.z}px)`;
-    el.style.color = typeColorVar(node.type);
-    if(node.id === selectedId) el.classList.add('selected');
+    const g = new THREE.Group();
+    const shellGeo = new THREE.SphereGeometry(9, 20, 14);
+    const shellMat = new THREE.MeshBasicMaterial({color:TYPE_COLOR[node.type], transparent:true, opacity:0.55, depthWrite:false});
+    const shell = new THREE.Mesh(shellGeo, shellMat);
+    shell.userData.nodeId = node.id;
 
-    if(selectedId){
-      const sel = nodeById(selectedId);
-      const related = sel.premises.includes(node.id) || node.premises.includes(selectedId) || node.id === selectedId;
-      if(!related) el.classList.add('dim');
-      else if(node.id !== selectedId) el.classList.add('highlight');
-    }
+    const haloGeo = new THREE.SphereGeometry(6.5, 14, 10);
+    const haloMat = new THREE.MeshBasicMaterial({color:0xFFE9B0, transparent:true, opacity:0.15, depthWrite:false});
+    const halo = new THREE.Mesh(haloGeo, haloMat);
 
-    const dot = document.createElement('div');
-    dot.className = 'dot';
-    let bg = typeColorVar(node.type);
-    let opacity = 1;
-    let extraStyle = '';
-    if(node.status === 'suspended'){ opacity = 0.35; extraStyle = 'border:1.5px dashed var(--st-suspended); background:transparent;'; }
-    else if(node.status === 'falsified'){ extraStyle = `background:var(--st-falsified);`; }
-    else if(node.status === 'disputed'){ extraStyle = `background:${bg}; box-shadow:0 0 0 2px var(--st-disputed), 0 0 10px ${bg};`; }
-    else if(node.status === 'pending'){ extraStyle = `background:transparent; border:1.5px solid ${bg};`; }
-    else { extraStyle = `background:${bg};`; }
-    dot.style.cssText += extraStyle;
-    dot.style.opacity = opacity;
+    const coreGeo = new THREE.SphereGeometry(3.2, 12, 8);
+    const coreMat = new THREE.MeshBasicMaterial({color:0xFFFFFF, transparent:true, opacity:0.15});
+    const core = new THREE.Mesh(coreGeo, coreMat);
+
+    const ringGeo = new THREE.SphereGeometry(11.5, 16, 10);
+    const ringMat = new THREE.MeshBasicMaterial({color:0xE0A030, wireframe:true, transparent:true, opacity:0.55});
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.visible = false;
+
+    g.add(shell); g.add(halo); g.add(core); g.add(ring);
+    nodesGroup.add(g);
+    nodeMeshMap[node.id] = {group:g, shell, halo, core, ring};
 
     const label = document.createElement('div');
-    label.className = 'label3d';
-    label.textContent = node.title.length > 16 ? node.title.slice(0,16)+'…' : node.title;
-
-    el.appendChild(dot);
-    el.appendChild(label);
-    el.addEventListener('click', (e) => { e.stopPropagation(); selectNode(node.id); });
-    group3d.appendChild(el);
+    label.className = 'node-label';
+    labelsLayer.appendChild(label);
+    labelElMap[node.id] = label;
   });
-}
-
-function render2d(){
-  const svg = document.getElementById('svg2d');
-  const vp = document.getElementById('viewport');
-  const w = vp.clientWidth, h = vp.clientHeight;
-  const cx = w/2, cy = h/2;
-  const s = Math.min(w,h) / 480;
-  svg.innerHTML = '';
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
 
   nodes.forEach(node => {
     node.premises.forEach(pid => {
-      const p1 = layout[pid], p2 = layout[node.id];
-      if(!p1 || !p2) return;
-      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-      line.setAttribute('x1', cx + p1.x*s);
-      line.setAttribute('y1', cy + p1.y*s);
-      line.setAttribute('x2', cx + p2.x*s);
-      line.setAttribute('y2', cy + p2.y*s);
-      const isHi = selectedId && (node.id === selectedId || pid === selectedId);
-      line.setAttribute('class', 'edge2d' + (isHi ? ' highlight' : ''));
-      svg.appendChild(line);
+      if(!nodeById(pid)) return;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const mat = new THREE.LineBasicMaterial({color:0x9AA1B8, transparent:true, opacity:0.28});
+      const line = new THREE.Line(geo, mat);
+      edgesGroup.add(line);
+      edgeLineMap[pid+'|'+node.id] = line;
     });
   });
 
-  nodes.forEach(node => {
-    const pos = layout[node.id];
-    const x = cx + pos.x*s, y = cy + pos.y*s;
-    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
-    g.style.cursor = 'pointer';
-    g.addEventListener('click', () => selectNode(node.id));
+  assignLayersAndHome();
+  nodes.forEach(updateNodeAppearance);
+}
 
-    const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    circle.setAttribute('cx', x); circle.setAttribute('cy', y); circle.setAttribute('r', node.id===selectedId ? 8 : 6);
-    const colorMap = {axiom:'#E8E4D9',definition:'#7C93C9',fact:'#5BA88B',theorem:'#C9A227',hypothesis:'#9B7EDE',prediction:'#5FD1C9',opinion:'#E8825B',value:'#D8748A'};
-    const baseColor = colorMap[node.type];
-    if(node.status === 'suspended'){
-      circle.setAttribute('fill', 'none');
-      circle.setAttribute('stroke', '#6B7290');
-      circle.setAttribute('stroke-dasharray', '3,2');
-      circle.setAttribute('opacity', '0.55');
-    } else if(node.status === 'falsified'){
-      circle.setAttribute('fill', '#C85450');
-    } else if(node.status === 'pending'){
-      circle.setAttribute('fill', 'none');
-      circle.setAttribute('stroke', baseColor);
-      circle.setAttribute('stroke-width', '1.5');
-    } else {
-      circle.setAttribute('fill', baseColor);
-      if(node.status === 'disputed'){
-        circle.setAttribute('stroke', '#E0A030');
-        circle.setAttribute('stroke-width', '2');
+function assignLayersAndHome(){
+  const byLayer = {inner:[], middle:[], outer:[]};
+  nodes.forEach(n => { n.layer = getLayer(n); byLayer[n.layer].push(n); });
+
+  ['inner','middle','outer'].forEach(layer => {
+    const list = byLayer[layer];
+    const R = layerRadius(layer);
+    const n = list.length;
+    list.forEach((node,i) => {
+      let x,y,z;
+      if(n===1){ x=0;y=0;z=R; }
+      else{
+        const yy = 1 - (i/(n-1))*2;
+        const radiusAtY = Math.sqrt(Math.max(0,1-yy*yy));
+        const theta = Math.PI*(3-Math.sqrt(5))*i;
+        x = Math.cos(theta)*radiusAtY*R;
+        z = Math.sin(theta)*radiusAtY*R;
+        y = yy*R;
       }
-    }
-    if(node.id === selectedId){
-      circle.setAttribute('stroke', '#C9A227');
-      circle.setAttribute('stroke-width', '2');
-    }
-    g.appendChild(circle);
-
-    const text = document.createElementNS('http://www.w3.org/2000/svg','text');
-    text.setAttribute('x', x + 10); text.setAttribute('y', y + 3);
-    text.setAttribute('class', 'node2d-label');
-    text.textContent = node.title.length > 20 ? node.title.slice(0,20)+'…' : node.title;
-    g.appendChild(text);
-
-    svg.appendChild(g);
+      node.homePos = new THREE.Vector3(x,y,z);
+      if(!node.pos) node.pos = node.homePos.clone();
+      if(!node.vel) node.vel = new THREE.Vector3();
+    });
   });
 }
 
-function renderAll(){
-  if(mode === '3d') render3d(); else render2d();
+function updateNodeAppearance(node){
+  const m = nodeMeshMap[node.id];
+  if(!m) return;
+  const baseColor = TYPE_COLOR[node.type];
+  m.shell.material.wireframe = false;
+  m.ring.visible = false;
+
+  if(node.status === 'falsified'){
+    m.shell.material.color.setHex(0xC85450);
+    m.shell.material.opacity = 0.75;
+  } else if(node.status === 'suspended'){
+    m.shell.material.color.setHex(baseColor);
+    m.shell.material.opacity = 0.5;
+    m.shell.material.wireframe = true;
+  } else if(node.status === 'pending'){
+    m.shell.material.color.setHex(baseColor);
+    m.shell.material.opacity = 0.5;
+    m.shell.material.wireframe = true;
+  } else if(node.status === 'disputed'){
+    m.shell.material.color.setHex(baseColor);
+    m.shell.material.opacity = 0.6;
+    m.ring.visible = true;
+  } else {
+    m.shell.material.color.setHex(baseColor);
+    m.shell.material.opacity = 0.58;
+  }
+
+  const mastery = node.mastery || 0;
+  m.core.material.opacity = 0.12 + mastery*0.85;
+  m.halo.material.opacity = 0.08 + mastery*0.32;
+  m.core.scale.setScalar(0.7 + mastery*0.6);
+  m.halo.scale.setScalar(0.9 + mastery*0.5);
 }
 
-const viewport = document.getElementById('viewport');
-let dragging = false, lastX=0, lastY=0;
-viewport.addEventListener('mousedown', (e) => {
-  if(mode !== '3d') return;
-  dragging = true; lastX = e.clientX; lastY = e.clientY;
-  viewport.classList.add('dragging');
-});
-window.addEventListener('mousemove', (e) => {
-  if(!dragging) return;
-  const dx = e.clientX - lastX, dy = e.clientY - lastY;
-  rotY += dx * 0.4; rotX -= dy * 0.4;
-  lastX = e.clientX; lastY = e.clientY;
-  applyTransform();
-});
-window.addEventListener('mouseup', () => { dragging = false; viewport.classList.remove('dragging'); });
+function updateSelectionVisuals(){
+  Object.keys(nodeMeshMap).forEach(id => {
+    const m = nodeMeshMap[id];
+    let opacityMul = 1;
+    if(selectedId){
+      const sel = nodeById(selectedId);
+      const related = id===selectedId || sel.premises.includes(id) || nodeById(id).premises.includes(selectedId);
+      opacityMul = related ? 1 : 0.22;
+    }
+    m.group.scale.setScalar(id===selectedId ? 1.35 : 1.0);
+    m.group.userData.dimFactor = opacityMul;
+  });
+  Object.keys(edgeLineMap).forEach(key => {
+    const [a,b] = key.split('|');
+    const line = edgeLineMap[key];
+    const isHi = selectedId && (a===selectedId || b===selectedId);
+    line.material.opacity = isHi ? 0.85 : 0.22;
+    line.material.color.set(isHi ? 0xC9A227 : 0x9AA1B8);
+  });
+}
 
-viewport.addEventListener('touchstart', (e) => {
-  if(mode !== '3d') return;
-  dragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
-}, {passive:true});
-viewport.addEventListener('touchmove', (e) => {
-  if(!dragging) return;
-  const dx = e.touches[0].clientX - lastX, dy = e.touches[0].clientY - lastY;
-  rotY += dx * 0.4; rotX -= dy * 0.4;
-  lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
-  applyTransform();
-}, {passive:true});
-viewport.addEventListener('touchend', () => { dragging = false; });
+const clock = new THREE.Clock();
+let draggedNodeId = null;
 
-viewport.addEventListener('wheel', (e) => {
+function physicsStep(dt){
+  nodes.forEach(node => {
+    if(node.id === draggedNodeId) return;
+    const force = new THREE.Vector3();
+    force.add(node.homePos.clone().sub(node.pos).multiplyScalar(0.010));
+
+    const linked = [...node.premises, ...dependentsOf(node.id).map(d=>d.id)];
+    linked.forEach(lid => {
+      const other = nodeById(lid);
+      if(!other || !other.pos) return;
+      force.add(other.pos.clone().sub(node.pos).multiplyScalar(0.006));
+    });
+
+    nodes.forEach(other => {
+      if(other.id===node.id || other.layer!==node.layer || !other.pos) return;
+      const diff = node.pos.clone().sub(other.pos);
+      const dist = Math.max(diff.length(), 8);
+      if(dist < 70){
+        force.add(diff.normalize().multiplyScalar((70-dist)*0.0055));
+      }
+    });
+
+    node.vel.add(force).multiplyScalar(0.86);
+    node.pos.add(node.vel);
+    const R = layerRadius(node.layer);
+    node.pos.normalize().multiplyScalar(R);
+  });
+}
+
+function renderLoop(){
+  requestAnimationFrame(renderLoop);
+  const dt = clock.getDelta();
+  physicsStep(dt);
+
+  nodes.forEach(node => {
+    const m = nodeMeshMap[node.id];
+    if(!m) return;
+    m.group.position.copy(node.pos);
+    if(nodeById(node.id).status === 'disputed'){
+      const s = 1 + Math.sin(clock.elapsedTime*3)*0.06;
+      m.ring.scale.setScalar(s);
+    }
+  });
+
+  Object.keys(edgeLineMap).forEach(key => {
+    const [a,b] = key.split('|');
+    const na = nodeById(a), nb = nodeById(b);
+    if(!na || !nb) return;
+    const line = edgeLineMap[key];
+    const arr = line.geometry.attributes.position.array;
+    arr[0]=na.pos.x; arr[1]=na.pos.y; arr[2]=na.pos.z;
+    arr[3]=nb.pos.x; arr[4]=nb.pos.y; arr[5]=nb.pos.z;
+    line.geometry.attributes.position.needsUpdate = true;
+  });
+
+  updateLabels();
+  renderer.render(scene, camera);
+}
+
+function updateLabels(){
+  const w = host.clientWidth, h = host.clientHeight;
+  const v = new THREE.Vector3();
+  nodes.forEach(node => {
+    const el = labelElMap[node.id];
+    if(!el) return;
+    v.copy(node.pos).applyMatrix4(worldGroup.matrixWorld).project(camera);
+    if(v.z > 1){ el.style.opacity = 0; return; }
+    const x = (v.x*0.5+0.5)*w;
+    const y = (-(v.y*0.5)+0.5)*h;
+    el.style.left = x+'px'; el.style.top = y+'px';
+    const dimFactor = nodeMeshMap[node.id] ? (nodeMeshMap[node.id].group.userData.dimFactor ?? 1) : 1;
+    const depthFade = THREE.MathUtils.clamp(1 - (v.z+0.3), 0.35, 1);
+    el.style.opacity = String(0.85*dimFactor*depthFade);
+    el.textContent = node.title.length>18 ? node.title.slice(0,18)+'…' : node.title;
+  });
+}
+
+worldGroup.updateMatrixWorld(true);
+const raycaster = new THREE.Raycaster();
+let pointerDown=false, dragMode=null, downX=0, downY=0, lastX=0, lastY=0;
+
+function ndc(e){
+  const rect = renderer.domElement.getBoundingClientRect();
+  return new THREE.Vector2(
+    ((e.clientX-rect.left)/rect.width)*2-1,
+    -((e.clientY-rect.top)/rect.height)*2+1
+  );
+}
+
+function pickNode(e){
+  raycaster.setFromCamera(ndc(e), camera);
+  const shells = Object.values(nodeMeshMap).map(m=>m.shell);
+  const hits = raycaster.intersectObjects(shells);
+  return hits.length ? hits[0].object.userData.nodeId : null;
+}
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  pointerDown = true; downX=lastX=e.clientX; downY=lastY=e.clientY;
+  const hitId = pickNode(e);
+  if(hitId){ dragMode='node'; draggedNodeId=hitId; }
+  else { dragMode='rotate'; }
+  host.classList.add('dragging');
+  renderer.domElement.setPointerCapture(e.pointerId);
+});
+
+renderer.domElement.addEventListener('pointermove', e => {
+  if(!pointerDown) return;
+  const dx = e.clientX-lastX, dy = e.clientY-lastY;
+  lastX=e.clientX; lastY=e.clientY;
+
+  if(dragMode==='rotate'){
+    worldGroup.rotation.y += dx*0.006;
+    worldGroup.rotation.x += dy*0.006;
+  } else if(dragMode==='node' && draggedNodeId){
+    raycaster.setFromCamera(ndc(e), camera);
+    const node = nodeById(draggedNodeId);
+    const R = layerRadius(node.layer);
+    const hit = new THREE.Vector3();
+    const ok = raycaster.ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(0,0,0), R), hit);
+    if(ok){
+      worldGroup.updateMatrixWorld(true);
+      const local = worldGroup.worldToLocal(hit.clone());
+      local.normalize().multiplyScalar(R);
+      node.pos.copy(local);
+      node.vel.set(0,0,0);
+    }
+  }
+});
+
+function endPointer(e){
+  if(!pointerDown) return;
+  pointerDown=false; host.classList.remove('dragging');
+  const moved = Math.hypot(e.clientX-downX, e.clientY-downY);
+  if(moved < 6){
+    const hitId = pickNode(e);
+    if(hitId) selectNode(hitId);
+    else { selectedId=null; document.getElementById('panel').classList.remove('open'); updateSelectionVisuals(); }
+  }
+  draggedNodeId=null; dragMode=null;
+}
+renderer.domElement.addEventListener('pointerup', endPointer);
+renderer.domElement.addEventListener('pointercancel', endPointer);
+
+renderer.domElement.addEventListener('wheel', e => {
   e.preventDefault();
-  scale += (e.deltaY < 0 ? 0.08 : -0.08);
-  scale = Math.max(0.4, Math.min(2.2, scale));
-  applyTransform();
+  camera.position.z += (e.deltaY>0 ? 26 : -26);
+  camera.position.z = THREE.MathUtils.clamp(camera.position.z, 320, 1150);
 }, {passive:false});
 
-document.getElementById('btn3d').addEventListener('click', () => setMode('3d'));
-document.getElementById('btn2d').addEventListener('click', () => setMode('2d'));
-function setMode(m){
-  mode = m;
-  document.getElementById('btn3d').classList.toggle('active', m==='3d');
-  document.getElementById('btn2d').classList.toggle('active', m==='2d');
-  document.getElementById('scene3d').style.display = m==='3d' ? 'flex' : 'none';
-  document.getElementById('scene2d').style.display = m==='2d' ? 'block' : 'none';
-  viewport.classList.toggle('mode2d', m==='2d');
-  renderAll();
-}
-window.addEventListener('resize', () => { if(mode==='2d') render2d(); });
+window.addEventListener('resize', () => {
+  camera.aspect = host.clientWidth/host.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(host.clientWidth, host.clientHeight);
+});
 
 function selectNode(id){
-  selectedId = id;
-  renderAll();
+  selectedId = id; editMode = false;
+  updateSelectionVisuals();
   openPanel(id);
-}
-
-function starHtml(trust){
-  let s = '';
-  for(let i=1;i<=5;i++) s += `<span class="${i<=trust?'':'off'}">★</span>`;
-  return `<span class="stars">${s}</span>`;
 }
 
 function openPanel(id){
   const node = nodeById(id);
   const panel = document.getElementById('panel');
   panel.classList.add('open');
-  document.getElementById('panelTitle').textContent = node.title;
+  document.getElementById('panelTitle').textContent = editMode ? '编辑节点' : node.title;
 
-  const typeColor = {axiom:'#E8E4D9',definition:'#7C93C9',fact:'#5BA88B',theorem:'#C9A227',hypothesis:'#9B7EDE',prediction:'#5FD1C9',opinion:'#E8825B',value:'#D8748A'}[node.type];
-  const statusColor = {verified:'#5BA88B',pending:'#7C93C9',suspended:'#6B7290',disputed:'#E0A030',falsified:'#C85450'}[node.status];
+  const typeColor = TYPE_COLOR_HEX[node.type];
+  const statusColor = STATUS_COLOR_HEX[node.status];
+
+  if(editMode){
+    document.getElementById('panelBody').innerHTML = `
+      <div class="field"><label>结论（标题）</label><input type="text" id="editTitle" value="${node.title.replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>类型</label>
+        <select id="editType">${Object.keys(TYPE_LABEL).map(t=>`<option value="${t}" ${t===node.type?'selected':''}>${TYPE_LABEL[t]}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>最小推理过程</label><textarea id="editReasoning">${node.reasoning||''}</textarea></div>
+    `;
+    document.getElementById('panelActions').innerHTML = `
+      <button class="btn primary" id="saveEdit">保存修改</button>
+      <button class="btn ghost" id="cancelEdit">取消</button>
+    `;
+    document.getElementById('saveEdit').addEventListener('click', () => {
+      node.title = document.getElementById('editTitle').value.trim() || node.title;
+      node.type = document.getElementById('editType').value;
+      node.reasoning = document.getElementById('editReasoning').value;
+      assignLayersAndHome();
+      updateNodeAppearance(node);
+      editMode = false;
+      openPanel(id);
+      showToast('节点已更新，若类型变化会缓慢漂移至对应层。');
+    });
+    document.getElementById('cancelEdit').addEventListener('click', () => { editMode=false; openPanel(id); });
+    return;
+  }
 
   const premises = node.premises.map(pid => {
     const p = nodeById(pid);
-    return p ? `<div class="chip" data-jump="${pid}">${p.title.slice(0,22)}${p.title.length>22?'…':''}</div>` : '';
+    return p ? `<div class="chip" data-jump="${pid}">${p.title.slice(0,20)}${p.title.length>20?'…':''}</div>` : '';
   }).join('') || '<div class="chip empty">无前置（公理层或独立节点）</div>';
 
   const deps = dependentsOf(id).map(d =>
-    `<div class="chip" data-jump="${d.id}">${d.title.slice(0,22)}${d.title.length>22?'…':''}</div>`
+    `<div class="chip" data-jump="${d.id}">${d.title.slice(0,20)}${d.title.length>20?'…':''}</div>`
   ).join('') || '<div class="chip empty">暂无下游依赖节点</div>';
+
+  const layerLabel = {inner:'内层 · 基础', middle:'中层 · 高置信度', outer:'外层 · 待定/推测'}[node.layer];
 
   document.getElementById('panelBody').innerHTML = `
     <div class="badge-row">
-      <div class="badge" style="color:${typeColor}; border-color:${typeColor}66;">${TYPE_LABEL[node.type]}</div>
-      <div class="badge" style="color:${statusColor}; border-color:${statusColor}66;">${STATUS_LABEL[node.status]}</div>
+      <div class="badge" style="color:${typeColor};border-color:${typeColor}66;">${TYPE_LABEL[node.type]}</div>
+      <div class="badge" style="color:${statusColor};border-color:${statusColor}66;">${STATUS_LABEL[node.status]}</div>
+      <div class="badge" style="color:var(--brass);border-color:var(--brass-dim);">${layerLabel}</div>
     </div>
     <div class="field">
-      <label>可信等级</label>
-      <div class="val">${starHtml(node.trust)}</div>
+      <label>我的掌握程度（驱动核心发光强度）</label>
+      <div class="mastery-row">
+        <input type="range" id="masteryRange" min="0" max="100" value="${Math.round((node.mastery||0)*100)}">
+        <div class="mastery-val" id="masteryVal">${Math.round((node.mastery||0)*100)}%</div>
+      </div>
     </div>
     <div class="field">
       <label>最小推理过程</label>
@@ -611,184 +730,189 @@ function openPanel(id){
     </div>
   `;
 
-  document.querySelectorAll('[data-jump]').forEach(el => {
-    el.addEventListener('click', () => selectNode(el.getAttribute('data-jump')));
+  document.querySelectorAll('[data-jump]').forEach(el => el.addEventListener('click', () => selectNode(el.getAttribute('data-jump'))));
+
+  document.getElementById('masteryRange').addEventListener('input', e => {
+    node.mastery = e.target.value/100;
+    document.getElementById('masteryVal').textContent = e.target.value+'%';
+    updateNodeAppearance(node);
   });
 
   const actions = document.getElementById('panelActions');
-  actions.innerHTML = '';
+  let html = '<div class="action-grid">';
+  html += `<button class="btn ghost" id="btnEditNode">✎ 编辑节点</button>`;
+  html += `<button class="btn ghost" id="btnDeriveNode">↳ 推理新节点</button>`;
+  html += '</div>';
   if(node.status !== 'falsified' && node.status !== 'suspended'){
-    const btn = document.createElement('button');
-    btn.className = 'btn danger';
-    btn.textContent = '⚠ 模拟前置失效 → 级联悬置下游';
-    btn.addEventListener('click', () => invalidateNode(id));
-    actions.appendChild(btn);
+    html += `<button class="btn danger" id="btnFalsify">⚠ 否定该节点（级联悬置下游）</button>`;
   }
   if(node.status === 'suspended'){
-    const btn = document.createElement('button');
-    btn.className = 'btn confirm';
-    btn.textContent = '✓ 标记重新验证通过';
-    btn.addEventListener('click', () => resolveNode(id));
-    actions.appendChild(btn);
-    const note = document.createElement('div');
-    note.style.cssText = 'font-size:10.5px; color:var(--ink-faint); text-align:center; padding-top:2px;';
-    note.textContent = '实际协议中：全网公告悬置节点，先到先得抢验证资格，通过逻辑/证据校验后方可解除，此处为手动模拟。';
-    actions.appendChild(note);
+    html += `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>`;
+    html += `<div class="note-small">实际协议中：全网公告悬置节点，先到先得抢验证资格，需通过逻辑/证据校验方可解除，此处为手动模拟。</div>`;
   }
+  actions.innerHTML = html;
+
+  document.getElementById('btnEditNode').addEventListener('click', () => { editMode=true; openPanel(id); });
+  document.getElementById('btnDeriveNode').addEventListener('click', () => openAddModal(id));
+  const bf = document.getElementById('btnFalsify'); if(bf) bf.addEventListener('click', () => invalidateNode(id));
+  const br = document.getElementById('btnResolve'); if(br) br.addEventListener('click', () => resolveNode(id));
 }
 
 document.getElementById('panelClose').addEventListener('click', () => {
   document.getElementById('panel').classList.remove('open');
-  selectedId = null;
-  renderAll();
+  selectedId = null; editMode = false;
+  updateSelectionVisuals();
 });
 
 function invalidateNode(id){
   const node = nodeById(id);
   node.status = 'falsified';
+  updateNodeAppearance(node);
 
   const depthLimitRaw = document.getElementById('depthLimit').value;
   const depthLimit = depthLimitRaw ? parseInt(depthLimitRaw) : Infinity;
 
-  let frontier = [id];
-  let visited = new Set([id]);
-  let suspendedCount = 0;
-  let depth = 0;
-  let truncated = false;
-
-  while(frontier.length > 0 && depth < depthLimit){
+  let frontier=[id], visited=new Set([id]), suspendedCount=0, depth=0, truncated=false;
+  while(frontier.length>0 && depth<depthLimit){
     depth++;
-    let nextFrontier = [];
+    let nextFrontier=[];
     frontier.forEach(fid => {
       dependentsOf(fid).forEach(dep => {
         if(!visited.has(dep.id)){
           visited.add(dep.id);
-          if(dep.status !== 'falsified'){
-            dep.status = 'suspended';
-            suspendedCount++;
-          }
+          if(dep.status !== 'falsified'){ dep.status='suspended'; suspendedCount++; updateNodeAppearance(dep); }
           nextFrontier.push(dep.id);
         }
       });
     });
     frontier = nextFrontier;
   }
-  if(frontier.length > 0 && depth >= depthLimit) truncated = true;
+  if(frontier.length>0 && depth>=depthLimit) truncated = true;
 
-  renderAll();
+  assignLayersAndHome();
   openPanel(id);
-  showToast(`已标记「${node.title.slice(0,14)}…」为已证伪，级联悬置 ${suspendedCount} 个下游节点${truncated ? '（已达传播层级上限，更下游节点暂未处理）' : ''}。`);
+  showToast(`已标记「${node.title.slice(0,14)}…」为已证伪，级联悬置 ${suspendedCount} 个下游节点${truncated?'（已达传播层级上限）':''}，相关节点将缓慢漂移至外层。`);
 }
 
 function resolveNode(id){
   const node = nodeById(id);
   node.status = 'verified';
-  renderAll();
+  updateNodeAppearance(node);
+  assignLayersAndHome();
   openPanel(id);
-  showToast(`「${node.title.slice(0,14)}…」已标记为重新验证通过。注意：其下游节点仍各自处于悬置态，需逐一独立重新验证，不会自动连带恢复。`);
+  showToast(`「${node.title.slice(0,14)}…」已标记为重新验证通过，若类型符合准入条件将缓慢回归内/中层。下游节点需各自独立重新验证。`);
 }
 
 function showToast(msg){
   const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
+  t.textContent = msg; t.classList.add('show');
   clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => t.classList.remove('show'), 4200);
+  showToast._timer = setTimeout(()=>t.classList.remove('show'), 4400);
 }
 
-const searchInput = document.getElementById('searchInput');
-const searchResults = document.getElementById('searchResults');
-searchInput.addEventListener('input', () => {
-  const q = searchInput.value.trim().toLowerCase();
-  if(!q){ searchResults.classList.remove('show'); return; }
-  const matches = nodes.filter(n => n.title.toLowerCase().includes(q));
-  if(matches.length === 0){
-    searchResults.innerHTML = '<div class="search-item" style="color:var(--ink-faint)">无匹配节点</div>';
-  } else {
-    searchResults.innerHTML = matches.slice(0,8).map(n =>
-      `<div class="search-item" data-id="${n.id}"><span>${n.title.slice(0,30)}${n.title.length>30?'…':''}</span><small>${TYPE_LABEL[n.type]}</small></div>`
-    ).join('');
-  }
-  searchResults.classList.add('show');
-});
-searchResults.addEventListener('click', (e) => {
-  const item = e.target.closest('.search-item');
-  if(!item || !item.dataset.id) return;
-  jumpTo(item.dataset.id);
-  searchResults.classList.remove('show');
-  searchInput.value = '';
-});
-document.addEventListener('click', (e) => {
-  if(!e.target.closest('.search-wrap')) searchResults.classList.remove('show');
-});
-
-function jumpTo(id){
-  const pos = layout[id];
-  if(mode === '3d'){
-    const r = Math.sqrt(pos.x*pos.x + pos.y*pos.y + pos.z*pos.z);
-    rotY = Math.atan2(pos.x, pos.z) * (180/Math.PI);
-    rotX = Math.asin(-pos.y / r) * (180/Math.PI);
-    applyTransform();
-  }
-  selectNode(id);
-}
-
-let formStars = 3;
 const modalOverlay = document.getElementById('modalOverlay');
-document.getElementById('btnAddNode').addEventListener('click', openModal);
-document.getElementById('modalClose').addEventListener('click', closeModal);
-document.getElementById('modalCancel').addEventListener('click', closeModal);
-modalOverlay.addEventListener('click', (e) => { if(e.target === modalOverlay) closeModal(); });
-
-function openModal(){
-  document.getElementById('fTitle').value = '';
-  document.getElementById('fReasoning').value = '';
-  document.getElementById('fType').value = 'fact';
-  formStars = 3;
-  renderStarSelect();
-  renderPremiseList();
-  modalOverlay.classList.add('show');
-}
-function closeModal(){ modalOverlay.classList.remove('show'); }
-
-function renderStarSelect(){
-  const wrap = document.getElementById('fStars');
-  wrap.innerHTML = '';
-  for(let i=1;i<=5;i++){
-    const b = document.createElement('button');
-    b.textContent = '★';
-    b.className = i<=formStars ? 'on' : '';
-    b.addEventListener('click', () => { formStars = i; renderStarSelect(); });
-    wrap.appendChild(b);
-  }
-}
+let prefillPremise = null;
 
 function renderPremiseList(){
   const wrap = document.getElementById('fPremises');
   wrap.innerHTML = nodes.map(n => `
     <label class="premise-item">
-      <input type="checkbox" value="${n.id}"> ${n.title.slice(0,34)}${n.title.length>34?'…':''}
-    </label>
-  `).join('');
+      <input type="checkbox" value="${n.id}" ${prefillPremise===n.id?'checked':''}> ${n.title.slice(0,32)}${n.title.length>32?'…':''}
+    </label>`).join('');
 }
+
+document.getElementById('btnAddNode').addEventListener('click', () => openAddModal(null));
+function openAddModal(fromNodeId){
+  prefillPremise = fromNodeId;
+  document.getElementById('fTitle').value='';
+  document.getElementById('fReasoning').value = '';
+  document.getElementById('fType').value = 'fact';
+  const hint = document.getElementById('modalHint');
+  if(fromNodeId){
+    const src = nodeById(fromNodeId);
+    document.getElementById('modalTitle').textContent = '推理新节点';
+    hint.style.display='block';
+    hint.textContent = `将默认以「${src.title.slice(0,20)}${src.title.length>20?'…':''}」作为前置知识点`;
+  } else {
+    document.getElementById('modalTitle').textContent = '提交新知识节点';
+    hint.style.display='none';
+  }
+  renderPremiseList();
+  modalOverlay.classList.add('show');
+}
+document.getElementById('modalClose').addEventListener('click', ()=>modalOverlay.classList.remove('show'));
+document.getElementById('modalCancel').addEventListener('click', ()=>modalOverlay.classList.remove('show'));
+modalOverlay.addEventListener('click', e => { if(e.target===modalOverlay) modalOverlay.classList.remove('show'); });
 
 document.getElementById('modalSubmit').addEventListener('click', () => {
   const title = document.getElementById('fTitle').value.trim();
   if(!title){ showToast('请填写节点结论标题。'); return; }
   const type = document.getElementById('fType').value;
   const reasoning = document.getElementById('fReasoning').value.trim();
-  const premises = Array.from(document.querySelectorAll('#fPremises input:checked')).map(el => el.value);
-
-  const id = 'n' + (nextIdCounter++);
-  nodes.push({id, title, type, status:'pending', trust:formStars, reasoning, premises});
-  layout = computeLayout(nodes);
-  renderAll();
-  closeModal();
-  showToast(`节点已提交，状态为「等待验证」，具备全局唯一 ID：${id}。`);
+  const premises = Array.from(document.querySelectorAll('#fPremises input:checked')).map(el=>el.value);
+  const id = 'n'+(nextIdCounter++);
+  nodes.push({id, title, type, status:'pending', mastery:0, reasoning, premises});
+  buildScene();
+  modalOverlay.classList.remove('show');
+  showToast(`节点已提交，全局唯一 ID：${id}，状态「等待验证」，落入外层等待验证通过后才可能进入内/中层。`);
 });
 
-applyTransform();
-renderAll();
+const aiInput = document.getElementById('aiInput');
+const aiResults = document.getElementById('aiResults');
+const aiSend = document.getElementById('aiSend');
+
+function runSearch(){
+  const q = aiInput.value.trim().toLowerCase();
+  if(!q){ aiResults.classList.remove('show'); return; }
+  const matches = nodes.filter(n => n.title.toLowerCase().includes(q) || (n.reasoning||'').toLowerCase().includes(q));
+  if(matches.length===0){
+    aiResults.innerHTML = '<div class="search-item" style="color:var(--ink-faint)">未找到匹配的知识节点</div>';
+  } else {
+    aiResults.innerHTML = matches.slice(0,8).map(n =>
+      `<div class="search-item" data-id="${n.id}"><span>${n.title.slice(0,32)}${n.title.length>32?'…':''}</span><small>${TYPE_LABEL[n.type]} · ${STATUS_LABEL[n.status]}</small></div>`
+    ).join('');
+  }
+  aiResults.classList.add('show');
+}
+aiInput.addEventListener('input', runSearch);
+aiInput.addEventListener('keydown', e => { if(e.key==='Enter') jumpToFirstMatch(); });
+aiSend.addEventListener('click', jumpToFirstMatch);
+function jumpToFirstMatch(){
+  const q = aiInput.value.trim().toLowerCase();
+  if(!q) return;
+  const match = nodes.find(n => n.title.toLowerCase().includes(q) || (n.reasoning||'').toLowerCase().includes(q));
+  if(match) jumpTo(match.id);
+  aiResults.classList.remove('show');
+}
+aiResults.addEventListener('click', e => {
+  const item = e.target.closest('.search-item');
+  if(!item || !item.dataset.id) return;
+  jumpTo(item.dataset.id);
+  aiResults.classList.remove('show'); aiInput.value='';
+});
+document.addEventListener('click', e => { if(!e.target.closest('.ai-bar-inner')) aiResults.classList.remove('show'); });
+
+function jumpTo(id){
+  const node = nodeById(id);
+  const dir = node.pos.clone().normalize();
+  const target = new THREE.Vector3(0,0,1);
+  const quat = new THREE.Quaternion().setFromUnitVectors(dir, target);
+  worldGroup.quaternion.copy(quat);
+  selectNode(id);
+}
+
+const accountOverlay = document.getElementById('accountOverlay');
+document.getElementById('avatarBtn').addEventListener('click', () => {
+  document.getElementById('statRep').textContent = '132';
+  document.getElementById('statLit').textContent = nodes.filter(n=>(n.mastery||0)>0).length;
+  document.getElementById('statContrib').textContent = nodes.filter(n=>n.status==='pending').length + ' (待验证中)';
+  accountOverlay.classList.add('show');
+});
+document.getElementById('accountClose').addEventListener('click', ()=>accountOverlay.classList.remove('show'));
+accountOverlay.addEventListener('click', e => { if(e.target===accountOverlay) accountOverlay.classList.remove('show'); });
+
+buildScene();
+renderLoop();
 </script>
 </body>
 </html>
