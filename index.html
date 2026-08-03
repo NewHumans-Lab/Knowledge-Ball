@@ -3,30 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>知识球 — 协议原型 v0.4</title>
+<title>知识球 — 协议原型 v0.5</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root{
-    --bg: #0A0E1A; --bg-deep: #060911; --panel: #10162A; --panel-border: #232B45;
-    --brass: #C9A227; --brass-dim: #8A7024; --ink: #E8E4D9; --ink-dim: #9AA1B8; --ink-faint: #5B6280;
-    --c-axiom: #E8E4D9; --c-definition: #7C93C9; --c-theorem: #C9A227; --c-hypothesis: #9B7EDE;
-    --c-prediction: #5FD1C9; --c-fact: #5BA88B; --c-opinion: #E8825B; --c-value: #D8748A;
-    --st-disputed: #E0A030; --st-falsified: #C85450; --st-suspended: #6B7290;
+    --app-height: 100vh;
+    --bg:#0A0E1A; --bg-deep:#060911; --panel:#10162A; --panel-border:#232B45;
+    --brass:#C9A227; --brass-dim:#8A7024; --ink:#E8E4D9; --ink-dim:#9AA1B8; --ink-faint:#5B6280;
+    --c-axiom:#E8E4D9; --c-definition:#7C93C9; --c-theorem:#C9A227; --c-hypothesis:#9B7EDE;
+    --c-prediction:#5FD1C9; --c-fact:#5BA88B; --c-opinion:#E8825B; --c-value:#D8748A;
+    --st-disputed:#E0A030; --st-falsified:#C85450; --st-suspended:#6B7290;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC','Inter',sans-serif;overflow:hidden;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC','Inter',sans-serif;overflow:hidden;overscroll-behavior:none;}
   ::selection{background:var(--brass);color:#0A0E1A;}
 
-  .app{display:flex;flex-direction:column;height:100vh;background:
+  .app{display:flex;flex-direction:column;height:var(--app-height);width:100vw;background:
     radial-gradient(ellipse 80% 60% at 30% 0%, rgba(120,110,60,0.08), transparent 60%),
     radial-gradient(ellipse 60% 50% at 90% 90%, rgba(90,100,160,0.07), transparent 60%),
-    var(--bg-deep);}
+    var(--bg-deep); position:relative; overflow:hidden;}
 
   header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
-    border-bottom:1px solid var(--panel-border); background:linear-gradient(180deg, rgba(16,22,42,0.85), rgba(16,22,42,0.4));
-    position:relative; z-index:30;}
+    border-bottom:1px solid var(--panel-border); background:linear-gradient(180deg, rgba(16,22,42,0.85), rgba(16,22,42,0.35));
+    position:relative; z-index:50; flex-shrink:0;}
   .brand{display:flex;align-items:baseline;gap:9px;}
   .brand .ring{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--brass);position:relative;flex-shrink:0;}
   .brand .ring::after{content:'';position:absolute;inset:-4px;border:1px solid var(--brass-dim);border-radius:50%;opacity:0.5;}
@@ -41,39 +42,38 @@
   .btn.primary:hover{background:#DDB431;}
   .depth-input{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-faint);}
   .depth-input input{width:44px;background:var(--panel);border:1px solid var(--panel-border);color:var(--ink);border-radius:4px;padding:4px 5px;font-size:11px;text-align:center;}
-
   .avatar-btn{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3A4570,#1E2440);
     border:1.5px solid var(--brass-dim); display:flex;align-items:center;justify-content:center;cursor:pointer;
     font-family:'Noto Serif SC',serif;font-weight:700;font-size:14px;color:var(--brass);flex-shrink:0;}
   .avatar-btn:hover{border-color:var(--brass);}
 
-  .main{flex:1;position:relative;overflow:hidden;}
-  #canvasHost{position:absolute;inset:0;cursor:grab;}
+  .main{flex:1; position:relative; min-height:0;}
+  #canvasHost{position:absolute; inset:0; z-index:1; cursor:grab; touch-action:none;}
   #canvasHost.dragging{cursor:grabbing;}
-  #canvasHost canvas{display:block;}
+  #canvasHost canvas{display:block; width:100%; height:100%;}
 
-  #labelsLayer{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+  #labelsLayer{position:absolute; inset:0; z-index:5; pointer-events:none; overflow:hidden;}
   .node-label{position:absolute;transform:translate(-50%,10px);font-size:10px;color:var(--ink-dim);
     white-space:nowrap;text-shadow:0 1px 4px #000, 0 0 2px #000; pointer-events:none; max-width:150px;
-    overflow:hidden;text-overflow:ellipsis; will-change:transform,left,top,opacity;}
+    overflow:hidden;text-overflow:ellipsis;}
 
-  .legend{position:absolute;left:14px;bottom:80px;background:rgba(16,22,42,0.82);border:1px solid var(--panel-border);
-    border-radius:8px;padding:9px 11px;font-size:10.5px;backdrop-filter:blur(6px);max-width:172px; z-index:20;}
+  .legend{position:absolute; left:14px; bottom:88px; background:rgba(16,22,42,0.82); border:1px solid var(--panel-border);
+    border-radius:8px; padding:9px 11px; font-size:10.5px; backdrop-filter:blur(6px); max-width:168px; z-index:20;}
   .legend h4{margin:0 0 5px;font-size:9px;letter-spacing:1px;color:var(--ink-faint);text-transform:uppercase;font-weight:600;}
   .legend-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
   .legend-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
   .legend-row span{color:var(--ink-dim);}
   .legend-div{height:1px;background:var(--panel-border);margin:6px 0;}
-  .layer-note{font-size:9.5px; color:var(--ink-faint); line-height:1.5; margin-top:2px;}
+  .layer-note{font-size:9.5px; color:var(--ink-faint); line-height:1.5;}
 
-  .hint{position:absolute; right:14px; bottom:80px; font-size:10px; color:var(--ink-faint); text-align:right;
-    line-height:1.7; z-index:20;}
+  .hint{position:absolute; right:14px; bottom:88px; font-size:10px; color:var(--ink-faint); text-align:right; line-height:1.7; z-index:20;}
 
-  .ai-bar-wrap{position:absolute; left:0; right:0; bottom:18px; display:flex; justify-content:center; z-index:25; padding:0 16px;}
-  .ai-bar{width:100%; max-width:560px; background:rgba(16,22,42,0.92); border:1px solid var(--panel-border);
+  .ai-bar-wrap{position:absolute; left:0; right:0; bottom:16px; display:flex; justify-content:center; z-index:40; padding:0 14px; pointer-events:none;}
+  .ai-bar-inner{position:relative; width:100%; max-width:560px; pointer-events:auto;}
+  .ai-bar{width:100%; background:rgba(16,22,42,0.94); border:1px solid var(--panel-border);
     border-radius:26px; display:flex; align-items:center; gap:8px; padding:6px 8px 6px 18px; backdrop-filter:blur(10px);
-    box-shadow:0 12px 40px rgba(0,0,0,0.45);}
-  .ai-bar input{flex:1; background:none; border:none; color:var(--ink); font-size:13.5px; font-family:inherit; padding:8px 0;}
+    box-shadow:0 12px 40px rgba(0,0,0,0.5);}
+  .ai-bar input{flex:1; background:none; border:none; color:var(--ink); font-size:13.5px; font-family:inherit; padding:9px 0; min-width:0;}
   .ai-bar input:focus{outline:none;}
   .ai-bar input::placeholder{color:var(--ink-faint);}
   .ai-send{width:34px;height:34px;border-radius:50%;background:var(--brass);border:none;color:#1A1508;
@@ -81,9 +81,7 @@
   .ai-send:hover{background:#DDB431;}
   .ai-results{position:absolute; bottom:calc(100% + 8px); left:0; right:0; background:var(--panel);
     border:1px solid var(--panel-border); border-radius:10px; max-height:200px; overflow-y:auto; display:none;
-    box-shadow:0 -10px 30px rgba(0,0,0,0.4);}
-  .ai-bar-wrap{flex-direction:column; align-items:center;}
-  .ai-bar-inner{position:relative; width:100%; max-width:560px;}
+    box-shadow:0 -10px 30px rgba(0,0,0,0.45);}
   .ai-results.show{display:block;}
   .search-item{padding:9px 14px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;gap:8px;}
   .search-item:last-child{border-bottom:none;}
@@ -91,7 +89,7 @@
   .search-item small{color:var(--ink-faint);font-size:10px;}
 
   .panel{position:absolute; top:0; right:0; bottom:0; width:340px; background:var(--panel); border-left:1px solid var(--panel-border);
-    display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease; z-index:40;}
+    display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease; z-index:45;}
   .panel.open{transform:translateX(0);}
   .panel-header{padding:16px 18px 12px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
   .panel-header h2{font-family:'Noto Serif SC',serif;font-size:15.5px;margin:0;line-height:1.4;font-weight:700;}
@@ -122,7 +120,7 @@
   .action-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
   .note-small{font-size:10px;color:var(--ink-faint);text-align:center;line-height:1.5;}
 
-  .toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
+  .toast{position:fixed;bottom:82px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
     background:var(--panel);border:1px solid var(--brass-dim);color:var(--ink);padding:10px 18px;border-radius:8px;
     font-size:12.5px;z-index:200;transition:all .3s;pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,0.5);
     max-width:86%;text-align:center;}
@@ -161,12 +159,12 @@
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="app">
   <header>
     <div class="brand">
       <div class="ring"></div>
       <h1>知识球</h1>
-      <span>PROTOCOL PROTOTYPE · v0.4</span>
+      <span>PROTOCOL PROTOTYPE · v0.5</span>
     </div>
     <div class="header-mid">
       <div class="depth-input" title="级联悬置的传播层级上限，留空表示不限制">
@@ -182,8 +180,8 @@
     <div id="labelsLayer"></div>
 
     <div class="legend">
-      <h4>球层结构</h4>
-      <div class="layer-note">内层：已验证事实/定义<br>中层：已验证公理/定理<br>外层：假说/预测/观点/悬置/争议</div>
+      <h4>层级（内部坐标，无可见边界）</h4>
+      <div class="layer-note">内层空间：已验证事实/定义<br>中层空间：已验证公理/定理<br>外层空间：假说/预测/观点/悬置/争议</div>
       <div class="legend-div"></div>
       <h4>节点类型</h4>
       <div class="legend-row"><div class="legend-dot" style="background:var(--c-axiom)"></div><span>公理</span></div>
@@ -197,9 +195,10 @@
     </div>
 
     <div class="hint">
-      拖动空白处：旋转整球<br>
-      拖动单个知识球：临时移动，松手回弹<br>
-      发光核心 = 你的掌握程度
+      拖空白：旋转整球<br>
+      拖单个球：临时移动，松手回弹<br>
+      滚轮/双指捏合：缩放<br>
+      发光核心 = 掌握程度
     </div>
 
     <div class="panel" id="panel">
@@ -259,7 +258,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn" id="modalCancel">取消</button>
-      <button class="btn primary" id="modalSubmit">提交（进入"等待验证"，落入外层）</button>
+      <button class="btn primary" id="modalSubmit">提交（进入"等待验证"，落入外层空间）</button>
     </div>
   </div>
 </div>
@@ -285,6 +284,13 @@
 <div class="toast" id="toast"></div>
 
 <script>
+function setAppHeight(){
+  document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+}
+setAppHeight();
+window.addEventListener('resize', setAppHeight);
+window.addEventListener('orientationchange', setAppHeight);
+
 let nodes = [
   {id:'n1', title:'同一律', type:'axiom', status:'verified', mastery:0.9, reasoning:'逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。', premises:[]},
   {id:'n2', title:'排中律', type:'axiom', status:'verified', mastery:0.7, reasoning:'逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。', premises:[]},
@@ -308,7 +314,9 @@ const TYPE_COLOR = {axiom:0xE8E4D9,definition:0x7C93C9,fact:0x5BA88B,theorem:0xC
 const TYPE_COLOR_HEX = {axiom:'#E8E4D9',definition:'#7C93C9',fact:'#5BA88B',theorem:'#C9A227',hypothesis:'#9B7EDE',prediction:'#5FD1C9',opinion:'#E8825B',value:'#D8748A'};
 const STATUS_COLOR_HEX = {verified:'#5BA88B',pending:'#7C93C9',suspended:'#6B7290',disputed:'#E0A030',falsified:'#C85450'};
 
-const R_INNER = 100, R_MIDDLE = 175, R_OUTER = 260;
+const LAYER_BANDS = { inner:{rMin:0,   rMax:95},  middle:{rMin:95,  rMax:170}, outer:{rMin:170, rMax:260} };
+const LAYER_LABEL = {inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测'};
+
 let selectedId = null;
 let nextIdCounter = 15;
 let editMode = false;
@@ -322,12 +330,12 @@ function getLayer(node){
   }
   return 'outer';
 }
-function layerRadius(layer){ return layer==='inner'?R_INNER : layer==='middle'?R_MIDDLE : R_OUTER; }
 
 const host = document.getElementById('canvasHost');
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(50, host.clientWidth/host.clientHeight, 1, 3000);
-camera.position.set(0,0,640);
+const REF_CAMERA_Z = 640;
+const camera = new THREE.PerspectiveCamera(50, host.clientWidth/host.clientHeight, 1, 4000);
+camera.position.set(0,0,REF_CAMERA_Z);
 const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(host.clientWidth, host.clientHeight);
@@ -335,20 +343,6 @@ host.appendChild(renderer.domElement);
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
-
-[R_INNER,R_MIDDLE,R_OUTER].forEach(r => {
-  const geo = new THREE.SphereGeometry(r, 28, 18);
-  const mat = new THREE.MeshBasicMaterial({color:0xC9A227, wireframe:true, transparent:true, opacity:0.07});
-  worldGroup.add(new THREE.Mesh(geo, mat));
-});
-[R_INNER,R_MIDDLE,R_OUTER].forEach(r => {
-  const curve = new THREE.EllipseCurve(0,0,r,r,0,Math.PI*2,false,0);
-  const pts = curve.getPoints(64).map(p=>new THREE.Vector3(p.x,0,p.y));
-  const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineBasicMaterial({color:0xC9A227, transparent:true, opacity:0.18});
-  worldGroup.add(new THREE.Line(geo, mat));
-});
-
 const edgesGroup = new THREE.Group(); worldGroup.add(edgesGroup);
 const nodesGroup = new THREE.Group(); worldGroup.add(nodesGroup);
 const labelsLayer = document.getElementById('labelsLayer');
@@ -357,38 +351,31 @@ let nodeMeshMap = {};
 let edgeLineMap = {};
 let labelElMap = {};
 
-function disposeObj(obj){
-  obj.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); });
-}
+function disposeObj(obj){ obj.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); }); }
 
 function buildScene(){
-  while(nodesGroup.children.length){ const c=nodesGroup.children.pop(); disposeObj(c); }
-  while(edgesGroup.children.length){ const c=edgesGroup.children.pop(); disposeObj(c); }
-  nodeMeshMap = {}; edgeLineMap = {}; labelsLayer.innerHTML=''; labelElMap = {};
+  while(nodesGroup.children.length){ disposeObj(nodesGroup.children.pop()); }
+  while(edgesGroup.children.length){ disposeObj(edgesGroup.children.pop()); }
+  nodeMeshMap = {}; edgeLineMap = {}; labelsLayer.innerHTML = ''; labelElMap = {};
 
   nodes.forEach(node => {
     const g = new THREE.Group();
-    const shellGeo = new THREE.SphereGeometry(9, 20, 14);
-    const shellMat = new THREE.MeshBasicMaterial({color:TYPE_COLOR[node.type], transparent:true, opacity:0.55, depthWrite:false});
-    const shell = new THREE.Mesh(shellGeo, shellMat);
+    const shell = new THREE.Mesh(
+      new THREE.SphereGeometry(9, 20, 14),
+      new THREE.MeshBasicMaterial({color:TYPE_COLOR[node.type], transparent:true, opacity:0.6, depthWrite:false})
+    );
     shell.userData.nodeId = node.id;
-
-    const haloGeo = new THREE.SphereGeometry(6.5, 14, 10);
-    const haloMat = new THREE.MeshBasicMaterial({color:0xFFE9B0, transparent:true, opacity:0.15, depthWrite:false});
-    const halo = new THREE.Mesh(haloGeo, haloMat);
-
-    const coreGeo = new THREE.SphereGeometry(3.2, 12, 8);
-    const coreMat = new THREE.MeshBasicMaterial({color:0xFFFFFF, transparent:true, opacity:0.15});
-    const core = new THREE.Mesh(coreGeo, coreMat);
-
-    const ringGeo = new THREE.SphereGeometry(11.5, 16, 10);
-    const ringMat = new THREE.MeshBasicMaterial({color:0xE0A030, wireframe:true, transparent:true, opacity:0.55});
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.visible = false;
-
-    g.add(shell); g.add(halo); g.add(core); g.add(ring);
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(6.5, 14, 10),
+      new THREE.MeshBasicMaterial({color:0xFFE9B0, transparent:true, opacity:0.15, depthWrite:false})
+    );
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(3.2, 12, 8),
+      new THREE.MeshBasicMaterial({color:0xFFFFFF, transparent:true, opacity:0.15})
+    );
+    g.add(shell); g.add(halo); g.add(core);
     nodesGroup.add(g);
-    nodeMeshMap[node.id] = {group:g, shell, halo, core, ring};
+    nodeMeshMap[node.id] = {group:g, shell, halo, core};
 
     const label = document.createElement('div');
     label.className = 'node-label';
@@ -412,26 +399,25 @@ function buildScene(){
   nodes.forEach(updateNodeAppearance);
 }
 
+function sampleVolumePoint(i, n, rMin, rMax){
+  const yy = n<=1 ? 0 : 1 - (i/(n-1))*2;
+  const radiusAtY = Math.sqrt(Math.max(0,1-yy*yy));
+  const theta = Math.PI*(3-Math.sqrt(5))*i;
+  const dirX = Math.cos(theta)*radiusAtY, dirZ = Math.sin(theta)*radiusAtY, dirY = yy;
+  const frac = (i*0.6180339887 + 0.15) % 1;
+  const r3 = rMin*rMin*rMin + frac*(rMax*rMax*rMax - rMin*rMin*rMin);
+  const r = Math.cbrt(r3);
+  return new THREE.Vector3(dirX*r, dirY*r, dirZ*r);
+}
+
 function assignLayersAndHome(){
   const byLayer = {inner:[], middle:[], outer:[]};
   nodes.forEach(n => { n.layer = getLayer(n); byLayer[n.layer].push(n); });
-
   ['inner','middle','outer'].forEach(layer => {
     const list = byLayer[layer];
-    const R = layerRadius(layer);
-    const n = list.length;
+    const band = LAYER_BANDS[layer];
     list.forEach((node,i) => {
-      let x,y,z;
-      if(n===1){ x=0;y=0;z=R; }
-      else{
-        const yy = 1 - (i/(n-1))*2;
-        const radiusAtY = Math.sqrt(Math.max(0,1-yy*yy));
-        const theta = Math.PI*(3-Math.sqrt(5))*i;
-        x = Math.cos(theta)*radiusAtY*R;
-        z = Math.sin(theta)*radiusAtY*R;
-        y = yy*R;
-      }
-      node.homePos = new THREE.Vector3(x,y,z);
+      node.homePos = sampleVolumePoint(i, list.length, band.rMin, band.rMax);
       if(!node.pos) node.pos = node.homePos.clone();
       if(!node.vel) node.vel = new THREE.Vector3();
     });
@@ -442,47 +428,31 @@ function updateNodeAppearance(node){
   const m = nodeMeshMap[node.id];
   if(!m) return;
   const baseColor = TYPE_COLOR[node.type];
-  m.shell.material.wireframe = false;
-  m.ring.visible = false;
-
-  if(node.status === 'falsified'){
-    m.shell.material.color.setHex(0xC85450);
-    m.shell.material.opacity = 0.75;
-  } else if(node.status === 'suspended'){
-    m.shell.material.color.setHex(baseColor);
-    m.shell.material.opacity = 0.5;
-    m.shell.material.wireframe = true;
-  } else if(node.status === 'pending'){
-    m.shell.material.color.setHex(baseColor);
-    m.shell.material.opacity = 0.5;
-    m.shell.material.wireframe = true;
-  } else if(node.status === 'disputed'){
-    m.shell.material.color.setHex(baseColor);
-    m.shell.material.opacity = 0.6;
-    m.ring.visible = true;
-  } else {
-    m.shell.material.color.setHex(baseColor);
-    m.shell.material.opacity = 0.58;
-  }
+  let opacity;
+  if(node.status === 'falsified'){ m.shell.material.color.setHex(0xC85450); opacity = 0.82; }
+  else if(node.status === 'suspended'){ m.shell.material.color.setHex(baseColor); opacity = 0.14; }
+  else if(node.status === 'pending'){ m.shell.material.color.setHex(baseColor); opacity = 0.32; }
+  else if(node.status === 'disputed'){ m.shell.material.color.setHex(baseColor); opacity = 0.6; }
+  else { m.shell.material.color.setHex(baseColor); opacity = 0.6; }
+  m.shell.material.opacity = opacity;
+  m.shell.userData.baseOpacity = opacity;
+  m.shell.userData.pulsing = (node.status === 'disputed');
 
   const mastery = node.mastery || 0;
-  m.core.material.opacity = 0.12 + mastery*0.85;
-  m.halo.material.opacity = 0.08 + mastery*0.32;
-  m.core.scale.setScalar(0.7 + mastery*0.6);
-  m.halo.scale.setScalar(0.9 + mastery*0.5);
+  m.core.material.opacity = 0.1 + mastery*0.85;
+  m.halo.material.opacity = 0.06 + mastery*0.3;
 }
 
 function updateSelectionVisuals(){
   Object.keys(nodeMeshMap).forEach(id => {
     const m = nodeMeshMap[id];
-    let opacityMul = 1;
+    let related = true;
     if(selectedId){
       const sel = nodeById(selectedId);
-      const related = id===selectedId || sel.premises.includes(id) || nodeById(id).premises.includes(selectedId);
-      opacityMul = related ? 1 : 0.22;
+      related = id===selectedId || sel.premises.includes(id) || nodeById(id).premises.includes(selectedId);
     }
-    m.group.scale.setScalar(id===selectedId ? 1.35 : 1.0);
-    m.group.userData.dimFactor = opacityMul;
+    m.group.userData.dimFactor = selectedId ? (related?1:0.2) : 1;
+    m.group.userData.selBoost = (id===selectedId) ? 1.35 : 1.0;
   });
   Object.keys(edgeLineMap).forEach(key => {
     const [a,b] = key.split('|');
@@ -496,14 +466,13 @@ function updateSelectionVisuals(){
 const clock = new THREE.Clock();
 let draggedNodeId = null;
 
-function physicsStep(dt){
+function physicsStep(){
   nodes.forEach(node => {
     if(node.id === draggedNodeId) return;
     const force = new THREE.Vector3();
     force.add(node.homePos.clone().sub(node.pos).multiplyScalar(0.010));
 
-    const linked = [...node.premises, ...dependentsOf(node.id).map(d=>d.id)];
-    linked.forEach(lid => {
+    [...node.premises, ...dependentsOf(node.id).map(d=>d.id)].forEach(lid => {
       const other = nodeById(lid);
       if(!other || !other.pos) return;
       force.add(other.pos.clone().sub(node.pos).multiplyScalar(0.006));
@@ -513,30 +482,33 @@ function physicsStep(dt){
       if(other.id===node.id || other.layer!==node.layer || !other.pos) return;
       const diff = node.pos.clone().sub(other.pos);
       const dist = Math.max(diff.length(), 8);
-      if(dist < 70){
-        force.add(diff.normalize().multiplyScalar((70-dist)*0.0055));
-      }
+      if(dist < 65) force.add(diff.normalize().multiplyScalar((65-dist)*0.0055));
     });
 
     node.vel.add(force).multiplyScalar(0.86);
     node.pos.add(node.vel);
-    const R = layerRadius(node.layer);
-    node.pos.normalize().multiplyScalar(R);
+
+    const band = LAYER_BANDS[node.layer];
+    const r = node.pos.length();
+    if(r > band.rMax) node.pos.setLength(band.rMax);
+    else if(r < band.rMin && r > 0.0001) node.pos.setLength(band.rMin);
+    else if(r <= 0.0001 && band.rMin > 0) node.pos.set(band.rMin, 0, 0);
   });
 }
 
 function renderLoop(){
   requestAnimationFrame(renderLoop);
-  const dt = clock.getDelta();
-  physicsStep(dt);
+  physicsStep();
 
+  const sizeScale = camera.position.z / REF_CAMERA_Z;
   nodes.forEach(node => {
     const m = nodeMeshMap[node.id];
     if(!m) return;
     m.group.position.copy(node.pos);
-    if(nodeById(node.id).status === 'disputed'){
-      const s = 1 + Math.sin(clock.elapsedTime*3)*0.06;
-      m.ring.scale.setScalar(s);
+    const boost = m.group.userData.selBoost || 1;
+    m.group.scale.setScalar(sizeScale * boost);
+    if(m.shell.userData.pulsing){
+      m.shell.material.opacity = THREE.MathUtils.clamp(m.shell.userData.baseOpacity + Math.sin(clock.elapsedTime*2.4)*0.18, 0.1, 0.85);
     }
   });
 
@@ -563,10 +535,10 @@ function updateLabels(){
     if(!el) return;
     v.copy(node.pos).applyMatrix4(worldGroup.matrixWorld).project(camera);
     if(v.z > 1){ el.style.opacity = 0; return; }
-    const x = (v.x*0.5+0.5)*w;
-    const y = (-(v.y*0.5)+0.5)*h;
-    el.style.left = x+'px'; el.style.top = y+'px';
-    const dimFactor = nodeMeshMap[node.id] ? (nodeMeshMap[node.id].group.userData.dimFactor ?? 1) : 1;
+    el.style.left = ((v.x*0.5+0.5)*w)+'px';
+    el.style.top = ((-(v.y*0.5)+0.5)*h)+'px';
+    const m = nodeMeshMap[node.id];
+    const dimFactor = m ? (m.group.userData.dimFactor ?? 1) : 1;
     const depthFade = THREE.MathUtils.clamp(1 - (v.z+0.3), 0.35, 1);
     el.style.opacity = String(0.85*dimFactor*depthFade);
     el.textContent = node.title.length>18 ? node.title.slice(0,18)+'…' : node.title;
@@ -575,74 +547,109 @@ function updateLabels(){
 
 worldGroup.updateMatrixWorld(true);
 const raycaster = new THREE.Raycaster();
-let pointerDown=false, dragMode=null, downX=0, downY=0, lastX=0, lastY=0;
+let pointers = new Map();
+let mode = null;
+let downX=0, downY=0, lastX=0, lastY=0;
+let pinchStartDist=0, pinchStartCamZ=REF_CAMERA_Z;
 
-function ndc(e){
+function ndcFromXY(x,y){
   const rect = renderer.domElement.getBoundingClientRect();
-  return new THREE.Vector2(
-    ((e.clientX-rect.left)/rect.width)*2-1,
-    -((e.clientY-rect.top)/rect.height)*2+1
-  );
+  return new THREE.Vector2(((x-rect.left)/rect.width)*2-1, -((y-rect.top)/rect.height)*2+1);
 }
-
-function pickNode(e){
-  raycaster.setFromCamera(ndc(e), camera);
+function pickNodeAt(x,y){
+  raycaster.setFromCamera(ndcFromXY(x,y), camera);
   const shells = Object.values(nodeMeshMap).map(m=>m.shell);
   const hits = raycaster.intersectObjects(shells);
   return hits.length ? hits[0].object.userData.nodeId : null;
 }
 
+function clampCamZ(z){ return THREE.MathUtils.clamp(z, 260, 1250); }
+
 renderer.domElement.addEventListener('pointerdown', e => {
-  pointerDown = true; downX=lastX=e.clientX; downY=lastY=e.clientY;
-  const hitId = pickNode(e);
-  if(hitId){ dragMode='node'; draggedNodeId=hitId; }
-  else { dragMode='rotate'; }
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  try{ renderer.domElement.setPointerCapture(e.pointerId); }catch(err){}
   host.classList.add('dragging');
-  renderer.domElement.setPointerCapture(e.pointerId);
+
+  if(pointers.size === 1){
+    downX=lastX=e.clientX; downY=lastY=e.clientY;
+    const hitId = pickNodeAt(e.clientX, e.clientY);
+    if(hitId){ mode='node'; draggedNodeId=hitId; } else { mode='rotate'; }
+  } else if(pointers.size === 2){
+    mode = 'pinch'; draggedNodeId = null;
+    const pts = [...pointers.values()];
+    pinchStartDist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+    pinchStartCamZ = camera.position.z;
+  }
 });
 
 renderer.domElement.addEventListener('pointermove', e => {
-  if(!pointerDown) return;
-  const dx = e.clientX-lastX, dy = e.clientY-lastY;
-  lastX=e.clientX; lastY=e.clientY;
+  if(!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
 
-  if(dragMode==='rotate'){
-    worldGroup.rotation.y += dx*0.006;
-    worldGroup.rotation.x += dy*0.006;
-  } else if(dragMode==='node' && draggedNodeId){
-    raycaster.setFromCamera(ndc(e), camera);
-    const node = nodeById(draggedNodeId);
-    const R = layerRadius(node.layer);
-    const hit = new THREE.Vector3();
-    const ok = raycaster.ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(0,0,0), R), hit);
-    if(ok){
-      worldGroup.updateMatrixWorld(true);
-      const local = worldGroup.worldToLocal(hit.clone());
-      local.normalize().multiplyScalar(R);
-      node.pos.copy(local);
-      node.vel.set(0,0,0);
+  if(mode === 'pinch' && pointers.size >= 2){
+    const pts = [...pointers.values()];
+    const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+    const ratio = dist / (pinchStartDist || 1);
+    camera.position.z = clampCamZ(pinchStartCamZ / ratio);
+    return;
+  }
+
+  if(pointers.size === 1){
+    const dx = e.clientX-lastX, dy = e.clientY-lastY;
+    lastX=e.clientX; lastY=e.clientY;
+    if(mode === 'rotate'){
+      worldGroup.rotation.y += dx*0.006;
+      worldGroup.rotation.x += dy*0.006;
+    } else if(mode === 'node' && draggedNodeId){
+      raycaster.setFromCamera(ndcFromXY(e.clientX, e.clientY), camera);
+      const node = nodeById(draggedNodeId);
+      const band = LAYER_BANDS[node.layer];
+      const dragR = (band.rMin+band.rMax)/2;
+      const hit = new THREE.Vector3();
+      const ok = raycaster.ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(0,0,0), dragR), hit);
+      if(ok){
+        worldGroup.updateMatrixWorld(true);
+        const local = worldGroup.worldToLocal(hit.clone());
+        const r = THREE.MathUtils.clamp(local.length(), band.rMin, band.rMax);
+        local.setLength(r);
+        node.pos.copy(local);
+        node.vel.set(0,0,0);
+      }
     }
   }
 });
 
 function endPointer(e){
-  if(!pointerDown) return;
-  pointerDown=false; host.classList.remove('dragging');
-  const moved = Math.hypot(e.clientX-downX, e.clientY-downY);
-  if(moved < 6){
-    const hitId = pickNode(e);
-    if(hitId) selectNode(hitId);
-    else { selectedId=null; document.getElementById('panel').classList.remove('open'); updateSelectionVisuals(); }
+  const wasSingle = pointers.size === 1;
+  const singlePos = wasSingle ? pointers.get(e.pointerId) : null;
+  pointers.delete(e.pointerId);
+
+  if(pointers.size === 1){
+    const remaining = [...pointers.values()][0];
+    lastX = downX = remaining.x; lastY = downY = remaining.y;
+    mode = 'rotate'; draggedNodeId = null;
+    return;
   }
-  draggedNodeId=null; dragMode=null;
+
+  if(pointers.size === 0){
+    host.classList.remove('dragging');
+    if(mode !== 'pinch' && singlePos){
+      const moved = Math.hypot(e.clientX-downX, e.clientY-downY);
+      if(moved < 6){
+        const hitId = pickNodeAt(e.clientX, e.clientY);
+        if(hitId) selectNode(hitId);
+        else { selectedId=null; document.getElementById('panel').classList.remove('open'); updateSelectionVisuals(); }
+      }
+    }
+    mode = null; draggedNodeId = null;
+  }
 }
 renderer.domElement.addEventListener('pointerup', endPointer);
 renderer.domElement.addEventListener('pointercancel', endPointer);
 
 renderer.domElement.addEventListener('wheel', e => {
   e.preventDefault();
-  camera.position.z += (e.deltaY>0 ? 26 : -26);
-  camera.position.z = THREE.MathUtils.clamp(camera.position.z, 320, 1150);
+  camera.position.z = clampCamZ(camera.position.z + (e.deltaY>0 ? 26 : -26));
 }, {passive:false});
 
 window.addEventListener('resize', () => {
@@ -662,9 +669,6 @@ function openPanel(id){
   const panel = document.getElementById('panel');
   panel.classList.add('open');
   document.getElementById('panelTitle').textContent = editMode ? '编辑节点' : node.title;
-
-  const typeColor = TYPE_COLOR_HEX[node.type];
-  const statusColor = STATUS_COLOR_HEX[node.status];
 
   if(editMode){
     document.getElementById('panelBody').innerHTML = `
@@ -686,28 +690,27 @@ function openPanel(id){
       updateNodeAppearance(node);
       editMode = false;
       openPanel(id);
-      showToast('节点已更新，若类型变化会缓慢漂移至对应层。');
+      showToast('节点已更新，若类型变化会缓慢漂移至对应层空间。');
     });
     document.getElementById('cancelEdit').addEventListener('click', () => { editMode=false; openPanel(id); });
     return;
   }
 
+  const typeColor = TYPE_COLOR_HEX[node.type];
+  const statusColor = STATUS_COLOR_HEX[node.status];
   const premises = node.premises.map(pid => {
     const p = nodeById(pid);
     return p ? `<div class="chip" data-jump="${pid}">${p.title.slice(0,20)}${p.title.length>20?'…':''}</div>` : '';
   }).join('') || '<div class="chip empty">无前置（公理层或独立节点）</div>';
-
   const deps = dependentsOf(id).map(d =>
     `<div class="chip" data-jump="${d.id}">${d.title.slice(0,20)}${d.title.length>20?'…':''}</div>`
   ).join('') || '<div class="chip empty">暂无下游依赖节点</div>';
-
-  const layerLabel = {inner:'内层 · 基础', middle:'中层 · 高置信度', outer:'外层 · 待定/推测'}[node.layer];
 
   document.getElementById('panelBody').innerHTML = `
     <div class="badge-row">
       <div class="badge" style="color:${typeColor};border-color:${typeColor}66;">${TYPE_LABEL[node.type]}</div>
       <div class="badge" style="color:${statusColor};border-color:${statusColor}66;">${STATUS_LABEL[node.status]}</div>
-      <div class="badge" style="color:var(--brass);border-color:var(--brass-dim);">${layerLabel}</div>
+      <div class="badge" style="color:var(--brass);border-color:var(--brass-dim);">${LAYER_LABEL[node.layer]}</div>
     </div>
     <div class="field">
       <label>我的掌握程度（驱动核心发光强度）</label>
@@ -716,22 +719,12 @@ function openPanel(id){
         <div class="mastery-val" id="masteryVal">${Math.round((node.mastery||0)*100)}%</div>
       </div>
     </div>
-    <div class="field">
-      <label>最小推理过程</label>
-      <div class="val">${node.reasoning || '（未填写）'}</div>
-    </div>
-    <div class="field">
-      <label>前置知识点（依赖边）</label>
-      <div class="chip-list">${premises}</div>
-    </div>
-    <div class="field">
-      <label>下游依赖节点</label>
-      <div class="chip-list">${deps}</div>
-    </div>
+    <div class="field"><label>最小推理过程</label><div class="val">${node.reasoning || '（未填写）'}</div></div>
+    <div class="field"><label>前置知识点（依赖边）</label><div class="chip-list">${premises}</div></div>
+    <div class="field"><label>下游依赖节点</label><div class="chip-list">${deps}</div></div>
   `;
 
   document.querySelectorAll('[data-jump]').forEach(el => el.addEventListener('click', () => selectNode(el.getAttribute('data-jump'))));
-
   document.getElementById('masteryRange').addEventListener('input', e => {
     node.mastery = e.target.value/100;
     document.getElementById('masteryVal').textContent = e.target.value+'%';
@@ -754,8 +747,8 @@ function openPanel(id){
 
   document.getElementById('btnEditNode').addEventListener('click', () => { editMode=true; openPanel(id); });
   document.getElementById('btnDeriveNode').addEventListener('click', () => openAddModal(id));
-  const bf = document.getElementById('btnFalsify'); if(bf) bf.addEventListener('click', () => invalidateNode(id));
-  const br = document.getElementById('btnResolve'); if(br) br.addEventListener('click', () => resolveNode(id));
+  const bf=document.getElementById('btnFalsify'); if(bf) bf.addEventListener('click', () => invalidateNode(id));
+  const br=document.getElementById('btnResolve'); if(br) br.addEventListener('click', () => resolveNode(id));
 }
 
 document.getElementById('panelClose').addEventListener('click', () => {
@@ -791,7 +784,7 @@ function invalidateNode(id){
 
   assignLayersAndHome();
   openPanel(id);
-  showToast(`已标记「${node.title.slice(0,14)}…」为已证伪，级联悬置 ${suspendedCount} 个下游节点${truncated?'（已达传播层级上限）':''}，相关节点将缓慢漂移至外层。`);
+  showToast(`已标记「${node.title.slice(0,14)}…」为已证伪，级联悬置 ${suspendedCount} 个下游节点${truncated?'（已达传播层级上限）':''}，相关节点将缓慢漂移至外层空间。`);
 }
 
 function resolveNode(id){
@@ -800,7 +793,7 @@ function resolveNode(id){
   updateNodeAppearance(node);
   assignLayersAndHome();
   openPanel(id);
-  showToast(`「${node.title.slice(0,14)}…」已标记为重新验证通过，若类型符合准入条件将缓慢回归内/中层。下游节点需各自独立重新验证。`);
+  showToast(`「${node.title.slice(0,14)}…」已标记为重新验证通过，若类型符合准入条件将缓慢回归内/中层空间。下游节点需各自独立重新验证。`);
 }
 
 function showToast(msg){
@@ -814,19 +807,17 @@ const modalOverlay = document.getElementById('modalOverlay');
 let prefillPremise = null;
 
 function renderPremiseList(){
-  const wrap = document.getElementById('fPremises');
-  wrap.innerHTML = nodes.map(n => `
+  document.getElementById('fPremises').innerHTML = nodes.map(n => `
     <label class="premise-item">
       <input type="checkbox" value="${n.id}" ${prefillPremise===n.id?'checked':''}> ${n.title.slice(0,32)}${n.title.length>32?'…':''}
     </label>`).join('');
 }
-
 document.getElementById('btnAddNode').addEventListener('click', () => openAddModal(null));
 function openAddModal(fromNodeId){
   prefillPremise = fromNodeId;
   document.getElementById('fTitle').value='';
-  document.getElementById('fReasoning').value = '';
-  document.getElementById('fType').value = 'fact';
+  document.getElementById('fReasoning').value='';
+  document.getElementById('fType').value='fact';
   const hint = document.getElementById('modalHint');
   if(fromNodeId){
     const src = nodeById(fromNodeId);
@@ -854,7 +845,7 @@ document.getElementById('modalSubmit').addEventListener('click', () => {
   nodes.push({id, title, type, status:'pending', mastery:0, reasoning, premises});
   buildScene();
   modalOverlay.classList.remove('show');
-  showToast(`节点已提交，全局唯一 ID：${id}，状态「等待验证」，落入外层等待验证通过后才可能进入内/中层。`);
+  showToast(`节点已提交，全局唯一 ID：${id}，状态「等待验证」，落入外层空间。`);
 });
 
 const aiInput = document.getElementById('aiInput');
@@ -865,16 +856,13 @@ function runSearch(){
   const q = aiInput.value.trim().toLowerCase();
   if(!q){ aiResults.classList.remove('show'); return; }
   const matches = nodes.filter(n => n.title.toLowerCase().includes(q) || (n.reasoning||'').toLowerCase().includes(q));
-  if(matches.length===0){
-    aiResults.innerHTML = '<div class="search-item" style="color:var(--ink-faint)">未找到匹配的知识节点</div>';
-  } else {
-    aiResults.innerHTML = matches.slice(0,8).map(n =>
-      `<div class="search-item" data-id="${n.id}"><span>${n.title.slice(0,32)}${n.title.length>32?'…':''}</span><small>${TYPE_LABEL[n.type]} · ${STATUS_LABEL[n.status]}</small></div>`
-    ).join('');
-  }
+  aiResults.innerHTML = matches.length===0
+    ? '<div class="search-item" style="color:var(--ink-faint)">未找到匹配的知识节点</div>'
+    : matches.slice(0,8).map(n => `<div class="search-item" data-id="${n.id}"><span>${n.title.slice(0,32)}${n.title.length>32?'…':''}</span><small>${TYPE_LABEL[n.type]} · ${STATUS_LABEL[n.status]}</small></div>`).join('');
   aiResults.classList.add('show');
 }
 aiInput.addEventListener('input', runSearch);
+aiInput.addEventListener('focus', runSearch);
 aiInput.addEventListener('keydown', e => { if(e.key==='Enter') jumpToFirstMatch(); });
 aiSend.addEventListener('click', jumpToFirstMatch);
 function jumpToFirstMatch(){
@@ -895,8 +883,7 @@ document.addEventListener('click', e => { if(!e.target.closest('.ai-bar-inner'))
 function jumpTo(id){
   const node = nodeById(id);
   const dir = node.pos.clone().normalize();
-  const target = new THREE.Vector3(0,0,1);
-  const quat = new THREE.Quaternion().setFromUnitVectors(dir, target);
+  const quat = new THREE.Quaternion().setFromUnitVectors(dir.lengthSq()>0?dir:new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,1));
   worldGroup.quaternion.copy(quat);
   selectNode(id);
 }
