@@ -3,28 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>知识球 — 协议原型 v0.6</title>
+<title>协议原型 v0.7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <style>
   :root{
     --app-height: 100vh;
-    --bg:#0A0E1A; --bg-deep:#060911; --panel:#10162A; --panel-border:#232B45;
+    --bg:#0A0E1A; --bg-deep:#080C16; --panel:#10162A; --panel-border:#232B45;
     --brass:#C9A227; --brass-dim:#8A7024; --ink:#E8E4D9; --ink-dim:#9AA1B8; --ink-faint:#5B6280;
     --c-axiom:#E8E4D9; --c-definition:#7C93C9; --c-theorem:#C9A227; --c-hypothesis:#9B7EDE;
     --c-prediction:#5FD1C9; --c-fact:#5BA88B; --c-opinion:#E8825B; --c-value:#D8748A;
     --st-disputed:#E0A030; --st-falsified:#C85450; --st-suspended:#6B7290;
-    --label-size:10px; --label-color:#9AA1B8; --label-font:'Noto Sans SC','Inter',sans-serif;
+    --label-size:11px; --label-color:#B8BFD4; --label-font:'Noto Sans SC','Inter',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC','Inter',sans-serif;overflow:hidden;overscroll-behavior:none;}
   ::selection{background:var(--brass);color:#0A0E1A;}
 
-  .app{display:flex;flex-direction:column;height:var(--app-height);width:100vw;background:
-    radial-gradient(ellipse 80% 60% at 30% 0%, rgba(120,110,60,0.08), transparent 60%),
-    radial-gradient(ellipse 60% 50% at 90% 90%, rgba(90,100,160,0.07), transparent 60%),
-    var(--bg-deep); position:relative; overflow:hidden;}
+  .app{display:flex;flex-direction:column;height:var(--app-height);width:100vw;background:var(--bg-deep); position:relative; overflow:hidden;}
 
   header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
     border-bottom:1px solid var(--panel-border); background:linear-gradient(180deg, rgba(16,22,42,0.85), rgba(16,22,42,0.35));
@@ -34,16 +31,16 @@
     border:1.5px solid var(--brass-dim); display:flex;align-items:center;justify-content:center;cursor:pointer;
     font-family:'Noto Serif SC',serif;font-weight:700;font-size:13px;color:var(--brass);flex-shrink:0;}
   .avatar-btn:hover{border-color:var(--brass);}
-  .brand h1{font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;margin:0;letter-spacing:0.5px;}
-  .brand span{font-size:10px;color:var(--ink-faint);font-family:'Inter',sans-serif;letter-spacing:1px;margin-left:6px;}
+  .brand span{font-size:10px;color:var(--ink-faint);font-family:'Inter',sans-serif;letter-spacing:1px;}
 
-  .header-mid{display:flex;align-items:center;gap:10px;}
+  .header-mid{display:flex;align-items:center;gap:8px;}
   .btn{background:var(--panel);border:1px solid var(--panel-border);color:var(--ink);padding:7px 12px;
     border-radius:6px;font-size:12.5px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s;white-space:nowrap;}
   .btn:hover{border-color:var(--brass-dim);background:rgba(201,162,39,0.06);}
   .btn.primary{background:var(--brass);color:#1A1508;border-color:var(--brass);font-weight:600;}
   .btn.primary:hover{background:#DDB431;}
   .btn.ghost{background:transparent;}
+  .btn.active{border-color:var(--brass); color:var(--brass); background:rgba(201,162,39,0.1);}
   .btn:disabled{opacity:0.4; cursor:not-allowed;}
 
   .main{flex:1; position:relative; min-height:0;}
@@ -53,12 +50,12 @@
 
   #labelsLayer{position:absolute; inset:0; z-index:5; pointer-events:none; overflow:hidden;}
   .node-label{position:absolute;transform:translate(-50%,10px);font-size:var(--label-size);color:var(--label-color);
-    font-family:var(--label-font);
-    white-space:nowrap;text-shadow:0 1px 4px #000, 0 0 2px #000; pointer-events:none; max-width:150px;
+    font-family:var(--label-font); background:rgba(6,9,17,0.55); padding:1px 6px; border-radius:8px;
+    white-space:nowrap; pointer-events:none; max-width:150px;
     overflow:hidden;text-overflow:ellipsis;}
   .twin-label{position:absolute;transform:translate(-50%,-50%);font-size:calc(var(--label-size) + 2px);
     color:var(--brass); font-family:var(--label-font); font-weight:700; white-space:nowrap;
-    text-shadow:0 1px 5px #000, 0 0 3px #000; pointer-events:none;}
+    background:rgba(6,9,17,0.6); padding:2px 8px; border-radius:8px; pointer-events:none;}
 
   .legend{position:absolute; left:14px; bottom:88px; background:rgba(16,22,42,0.82); border:1px solid var(--panel-border);
     border-radius:8px; padding:9px 11px; font-size:10.5px; backdrop-filter:blur(6px); max-width:172px; z-index:20;}
@@ -160,7 +157,7 @@
   .settings-row input[type=range]{flex:1; accent-color:var(--brass);}
   .settings-row input[type=color]{width:40px;height:30px;border:none;background:none;padding:0;border-radius:6px;cursor:pointer;}
   .settings-row select, .settings-row input[type=number]{background:var(--bg-deep);border:1px solid var(--panel-border);color:var(--ink);border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;}
-  .settings-val{font-size:11px; color:var(--brass); width:34px; text-align:right; flex-shrink:0;}
+  .settings-val{font-size:11px; color:var(--brass); width:44px; text-align:right; flex-shrink:0;}
 
   @media (max-width:780px){
     .panel{width:min(340px,90vw);}
@@ -175,10 +172,10 @@
   <header>
     <div class="brand">
       <div class="avatar-btn" id="avatarBtn" title="个人账户">RS</div>
-      <h1>知识球</h1>
-      <span>PROTOCOL PROTOTYPE · v0.6</span>
+      <span>PROTOCOL PROTOTYPE · v0.7</span>
     </div>
     <div class="header-mid">
+      <button class="btn" id="btnPersonal" title="隐藏/恢复未接触的知识节点">个人</button>
       <button class="btn" id="btnSettings">⚙ 设置</button>
     </div>
   </header>
@@ -191,8 +188,8 @@
       <h4>层级（内部坐标，无可见边界）</h4>
       <div class="layer-note">内层空间：已验证事实/定义<br>中层空间：已验证公理/定理<br>外层空间：假说/预测/观点/悬置/争议</div>
       <div class="legend-div"></div>
-      <h4>掌握程度（亮点）</h4>
-      <div class="layer-note">● 发光点＝完全掌握<br>· 暗点＝接触过<br>（无点）＝未接触</div>
+      <h4>掌握程度</h4>
+      <div class="layer-note">强光＝完全掌握（辉光溢出球体）<br>荧光＝接触过（柔和光晕）<br>无光点＝未接触</div>
       <div class="legend-div"></div>
       <h4>节点类型</h4>
       <div class="legend-row"><div class="legend-dot" style="background:var(--c-axiom)"></div><span>公理</span></div>
@@ -209,7 +206,7 @@
       拖空白：旋转整球<br>
       单击空白：退一层视角<br>
       双击空白：进一层视角<br>
-      滚轮/双指捏合：连续缩放（无极限）
+      滚轮/双指捏合：连续缩放
     </div>
 
     <div class="panel" id="panel">
@@ -226,7 +223,7 @@
         <div class="ai-results" id="aiResults"></div>
         <div class="ai-bar">
           <button class="ai-add" id="aiAddBtn" title="新增知识节点">+</button>
-          <input id="aiInput" type="text" placeholder="向知识球提问，或搜索知识节点…" autocomplete="off">
+          <input id="aiInput" type="text" placeholder="输入问题，或搜索知识节点…" autocomplete="off">
           <button class="ai-send" id="aiSend">➤</button>
         </div>
       </div>
@@ -303,15 +300,21 @@
       <button class="panel-close" id="settingsClose">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-hint" style="margin-bottom:16px;">知识节点文字标签</div>
+      <div class="form-hint" style="margin-bottom:16px;">知识节点球体</div>
+      <div class="settings-row">
+        <label>球体半径 (mm)</label>
+        <input type="range" id="setNodeRadius" min="0.1" max="30" step="0.1" value="9">
+        <div class="settings-val" id="setNodeRadiusVal">9.0mm</div>
+      </div>
+      <div class="form-hint" style="margin:18px 0 16px;">知识节点文字标签</div>
       <div class="settings-row">
         <label>字号</label>
-        <input type="range" id="setLabelSize" min="8" max="18" value="10">
-        <div class="settings-val" id="setLabelSizeVal">10px</div>
+        <input type="range" id="setLabelSize" min="8" max="18" value="11">
+        <div class="settings-val" id="setLabelSizeVal">11px</div>
       </div>
       <div class="settings-row">
         <label>颜色</label>
-        <input type="color" id="setLabelColor" value="#9AA1B8">
+        <input type="color" id="setLabelColor" value="#B8BFD4">
         <div style="flex:1"></div>
       </div>
       <div class="settings-row">
@@ -349,13 +352,6 @@ setAppHeight();
 window.addEventListener('resize', setAppHeight);
 window.addEventListener('orientationchange', setAppHeight);
 
-// ============================================================
-// 数据模型
-// status: verified | pending | suspended | disputed | falsified
-// type: axiom | definition | fact | theorem | hypothesis | prediction | opinion | value
-// mastery: 'none' | 'touched' | 'mastered' —— 由 AI 依据历史聊天判定（此原型为手动模拟）
-// twinGroup: 可选，标记"同一结论不同证明路径"的孪生组；sharedTitle: 该组共享的结论文本
-// ============================================================
 let nodes = [
   {id:'n1', title:'同一律', type:'axiom', status:'verified', mastery:'mastered', reasoning:'逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。', premises:[]},
   {id:'n2', title:'排中律', type:'axiom', status:'verified', mastery:'touched', reasoning:'逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。', premises:[]},
@@ -376,19 +372,21 @@ let nodes = [
 
 const TYPE_LABEL = {axiom:'公理',definition:'定义',fact:'事实',theorem:'定理',hypothesis:'假说',prediction:'预测',opinion:'观点',value:'价值判断'};
 const STATUS_LABEL = {verified:'已验证',pending:'等待验证',suspended:'悬置',disputed:'争议中',falsified:'已证伪'};
-const MASTERY_LABEL = {none:'未接触（无亮点）', touched:'接触过（暗点）', mastered:'完全掌握（发光点）'};
+const MASTERY_LABEL = {none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）'};
 const TYPE_COLOR = {axiom:0xE8E4D9,definition:0x7C93C9,fact:0x5BA88B,theorem:0xC9A227,hypothesis:0x9B7EDE,prediction:0x5FD1C9,opinion:0xE8825B,value:0xD8748A};
 const TYPE_COLOR_HEX = {axiom:'#E8E4D9',definition:'#7C93C9',fact:'#5BA88B',theorem:'#C9A227',hypothesis:'#9B7EDE',prediction:'#5FD1C9',opinion:'#E8825B',value:'#D8748A'};
 const STATUS_COLOR_HEX = {verified:'#5BA88B',pending:'#7C93C9',suspended:'#6B7290',disputed:'#E0A030',falsified:'#C85450'};
 
 const LAYER_BANDS = { inner:{rMin:0,   rMax:95},  middle:{rMin:95,  rMax:170}, outer:{rMin:170, rMax:260} };
 const LAYER_LABEL = {inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测'};
-const TWIN_REST_LEN = 14; // 孪生节点固定环形间距 ≈ 当层典型间距(约70) 的 1/5，取近似常数简化
+const TWIN_REST_LEN = 14;
 
 let selectedId = null;
 let nextIdCounter = 16;
 let editMode = false;
 let labelBrightness = 1;
+let nodeRadiusMM = 9;
+let hideUntouched = false;
 
 function nodeById(id){ return nodes.find(n => n.id === id); }
 function dependentsOf(id){ return nodes.filter(n => n.premises.includes(id)); }
@@ -411,12 +409,33 @@ function getLayer(node){
 const host = document.getElementById('canvasHost');
 const scene = new THREE.Scene();
 const REF_CAMERA_Z = 640;
-const camera = new THREE.PerspectiveCamera(50, host.clientWidth/host.clientHeight, 0.5, 6000);
+const camera = new THREE.PerspectiveCamera(50, host.clientWidth/host.clientHeight, 0.5, 8000);
 camera.position.set(0,0,REF_CAMERA_Z);
 const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(host.clientWidth, host.clientHeight);
 host.appendChild(renderer.domElement);
+
+// 星空背景：不随知识球旋转，独立挂在 scene 上，制造"宇宙的空"而非纯黑填充
+function buildStarfield(){
+  const starCount = 900;
+  const positions = new Float32Array(starCount*3);
+  for(let i=0;i<starCount;i++){
+    const r = 1200 + Math.random()*2600;
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos(2*Math.random()-1);
+    positions[i*3] = r*Math.sin(phi)*Math.cos(theta);
+    positions[i*3+1] = r*Math.sin(phi)*Math.sin(theta);
+    positions[i*3+2] = r*Math.cos(phi);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+  const mat = new THREE.PointsMaterial({color:0xAEB8D6, size:2.6, sizeAttenuation:true, transparent:true, opacity:0.55});
+  const stars = new THREE.Points(geo, mat);
+  scene.add(stars);
+  return stars;
+}
+const starfield = buildStarfield();
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
@@ -424,25 +443,27 @@ const edgesGroup = new THREE.Group(); worldGroup.add(edgesGroup);
 const nodesGroup = new THREE.Group(); worldGroup.add(nodesGroup);
 const labelsLayer = document.getElementById('labelsLayer');
 
-// 掌握程度"亮点"贴图（点，不是球）
-function createDotTexture(glow){
-  const size=64, cvs=document.createElement('canvas'); cvs.width=size; cvs.height=size;
+// 两种光点贴图：强光（完全掌握）与荧光（接触过），视觉上明显不同
+function createGlowTexture(strong){
+  const size=128, cvs=document.createElement('canvas'); cvs.width=size; cvs.height=size;
   const ctx=cvs.getContext('2d'); const cx=size/2, cy=size/2;
-  if(glow){
-    const grad=ctx.createRadialGradient(cx,cy,0,cx,cy,size/2);
+  const grad=ctx.createRadialGradient(cx,cy,0,cx,cy,size/2);
+  if(strong){
     grad.addColorStop(0,'rgba(255,255,255,1)');
-    grad.addColorStop(0.25,'rgba(255,240,200,0.9)');
-    grad.addColorStop(0.6,'rgba(255,220,140,0.35)');
-    grad.addColorStop(1,'rgba(255,220,140,0)');
-    ctx.fillStyle=grad; ctx.fillRect(0,0,size,size);
+    grad.addColorStop(0.18,'rgba(255,245,215,1)');
+    grad.addColorStop(0.45,'rgba(255,225,150,0.55)');
+    grad.addColorStop(1,'rgba(255,215,120,0)');
   } else {
-    ctx.beginPath(); ctx.arc(cx,cy,size*0.15,0,Math.PI*2);
-    ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.fill();
+    grad.addColorStop(0,'rgba(235,245,255,0.85)');
+    grad.addColorStop(0.3,'rgba(200,220,255,0.4)');
+    grad.addColorStop(0.6,'rgba(180,210,255,0.15)');
+    grad.addColorStop(1,'rgba(180,210,255,0)');
   }
+  ctx.fillStyle=grad; ctx.fillRect(0,0,size,size);
   return new THREE.CanvasTexture(cvs);
 }
-const dotTexPlain = createDotTexture(false);
-const dotTexGlow = createDotTexture(true);
+const dotTexStrong = createGlowTexture(true);
+const dotTexFluor = createGlowTexture(false);
 
 let nodeMeshMap = {};
 let edgeLineMap = {};
@@ -458,14 +479,16 @@ function buildScene(){
 
   nodes.forEach(node => {
     const g = new THREE.Group();
+    // 统一单位球几何（半径1），真实半径全部通过 shell.scale 控制 → 保证所有节点球体积一致，且可统一调节
     const shell = new THREE.Mesh(
-      new THREE.SphereGeometry(9, 20, 14),
+      new THREE.SphereGeometry(1, 20, 14),
       new THREE.MeshBasicMaterial({color:TYPE_COLOR[node.type], transparent:true, opacity:0.6, depthWrite:false})
     );
+    shell.scale.setScalar(nodeRadiusMM);
     shell.userData.nodeId = node.id;
 
-    const dot = new THREE.Sprite(new THREE.SpriteMaterial({map:dotTexPlain, transparent:true, depthWrite:false}));
-    dot.scale.set(3,3,3);
+    const dot = new THREE.Sprite(new THREE.SpriteMaterial({map:dotTexFluor, transparent:true, depthWrite:false}));
+    dot.scale.set(1,1,1);
 
     g.add(shell); g.add(dot);
     nodesGroup.add(g);
@@ -477,7 +500,6 @@ function buildScene(){
     labelElMap[node.id] = label;
   });
 
-  // 普通依赖边
   nodes.forEach(node => {
     node.premises.forEach(pid => {
       if(!nodeById(pid)) return;
@@ -490,7 +512,6 @@ function buildScene(){
     });
   });
 
-  // 孪生环边（金色，独立于普通依赖边）
   const seenGroups = new Set();
   nodes.forEach(node => {
     if(!node.twinGroup || seenGroups.has(node.twinGroup)) return;
@@ -516,6 +537,7 @@ function buildScene(){
 
   assignLayersAndHome();
   nodes.forEach(updateNodeAppearance);
+  applyHideUntouched();
 }
 
 function sampleVolumePoint(i, n, rMin, rMax){
@@ -554,24 +576,42 @@ function updateNodeAppearance(node){
   m.shell.material.opacity = opacity;
   m.shell.userData.baseOpacity = opacity;
   m.shell.userData.pulsing = (node.status === 'disputed');
+  m.shell.scale.setScalar(nodeRadiusMM);
 
-  // 掌握程度：三态亮点
+  // 三态光点：强光（完全掌握，辉光溢出球体表面）／荧光（接触过，柔和光晕）／无光点（未接触）
   if(node.mastery === 'mastered'){
     m.dot.visible = true;
-    m.dot.material.map = dotTexGlow;
+    m.dot.material.map = dotTexStrong;
     m.dot.material.blending = THREE.AdditiveBlending;
     m.dot.material.opacity = 1;
-    m.dot.scale.set(6.5,6.5,6.5);
+    m.dot.scale.setScalar(nodeRadiusMM*2.3); // 明显溢出球体表面
   } else if(node.mastery === 'touched'){
     m.dot.visible = true;
-    m.dot.material.map = dotTexPlain;
-    m.dot.material.blending = THREE.NormalBlending;
-    m.dot.material.opacity = 0.85;
-    m.dot.scale.set(3,3,3);
+    m.dot.material.map = dotTexFluor;
+    m.dot.material.blending = THREE.AdditiveBlending;
+    m.dot.material.opacity = 0.6;
+    m.dot.scale.setScalar(nodeRadiusMM*1.5); // 柔和，略小于强光
   } else {
     m.dot.visible = false;
   }
   m.dot.material.needsUpdate = true;
+}
+
+function applyHideUntouched(){
+  nodes.forEach(n => {
+    const m = nodeMeshMap[n.id];
+    if(!m) return;
+    const shouldHide = hideUntouched && n.mastery==='none';
+    m.group.visible = !shouldHide;
+    if(labelElMap[n.id]) labelElMap[n.id].style.display = shouldHide ? 'none' : '';
+  });
+  Object.keys(edgeLineMap).forEach(key => {
+    const parts = key.split('|'); const isTwin = parts[0]==='twin';
+    const a = isTwin?parts[1]:parts[0], b = isTwin?parts[2]:parts[1];
+    const na = nodeById(a), nb = nodeById(b);
+    const shouldHide = hideUntouched && ((na&&na.mastery==='none')||(nb&&nb.mastery==='none'));
+    edgeLineMap[key].visible = !shouldHide;
+  });
 }
 
 function updateSelectionVisuals(){
@@ -580,7 +620,7 @@ function updateSelectionVisuals(){
     let related = true;
     if(selectedId){
       const sel = nodeById(selectedId);
-      related = id===selectedId || sel.premises.includes(id) || nodeById(id).premises.includes(selectedId) || sel.twinGroup && nodeById(id).twinGroup===sel.twinGroup;
+      related = id===selectedId || sel.premises.includes(id) || nodeById(id).premises.includes(selectedId) || (sel.twinGroup && nodeById(id).twinGroup===sel.twinGroup);
     }
     m.group.userData.dimFactor = selectedId ? (related?1:0.2) : 1;
     m.group.userData.selBoost = (id===selectedId) ? 1.35 : 1.0;
@@ -591,12 +631,8 @@ function updateSelectionVisuals(){
     const a = isTwin?parts[1]:parts[0], b = isTwin?parts[2]:parts[1];
     const line = edgeLineMap[key];
     const isHi = selectedId && (a===selectedId || b===selectedId);
-    if(isTwin){
-      line.material.opacity = isHi ? 0.95 : 0.6;
-    } else {
-      line.material.opacity = isHi ? 0.85 : 0.22;
-      line.material.color.set(isHi ? 0xC9A227 : 0x9AA1B8);
-    }
+    if(isTwin){ line.material.opacity = isHi ? 0.95 : 0.6; }
+    else { line.material.opacity = isHi ? 0.85 : 0.22; line.material.color.set(isHi ? 0xC9A227 : 0x9AA1B8); }
   });
 }
 
@@ -618,7 +654,6 @@ function physicsStep(){
       force.add(other.pos.clone().sub(node.pos).multiplyScalar(0.006));
     });
 
-    // 同层斥力（孪生对之间跳过，孪生用专属弹簧管理间距）
     nodes.forEach(other => {
       if(other.id===node.id || other.layer!==node.layer || !other.pos) return;
       if(node.twinGroup && other.twinGroup===node.twinGroup) return;
@@ -627,7 +662,6 @@ function physicsStep(){
       if(dist < 65) force.add(diff.normalize().multiplyScalar((65-dist)*0.0055));
     });
 
-    // 孪生环：固定目标间距的弹簧
     if(node.twinGroup){
       nodes.forEach(other => {
         if(other.id===node.id || other.twinGroup!==node.twinGroup || !other.pos) return;
@@ -648,9 +682,6 @@ function physicsStep(){
   });
 }
 
-// ============================================================
-// 视角步进（单击退一层／双击进一层，与连续缩放各自独立）
-// ============================================================
 const VIEW_ORDER = ['outer','middle','inner'];
 const VIEW_PRESET_Z = {outer:640, middle:420, inner:230};
 let currentViewIdx = 0;
@@ -660,12 +691,10 @@ function walkView(dir){
   targetCamZ = VIEW_PRESET_Z[VIEW_ORDER[currentViewIdx]];
 }
 
-// ============================================================
-// 渲染循环
-// ============================================================
 function renderLoop(){
   requestAnimationFrame(renderLoop);
   physicsStep();
+  starfield.rotation.y += 0.00006;
 
   if(targetCamZ !== null){
     camera.position.z += (targetCamZ - camera.position.z)*0.12;
@@ -706,19 +735,19 @@ function updateLabels(){
   const v = new THREE.Vector3();
   nodes.forEach(node => {
     const el = labelElMap[node.id];
-    if(!el) return;
+    if(!el || el.style.display==='none') return;
     v.copy(node.pos).applyMatrix4(worldGroup.matrixWorld).project(camera);
     if(v.z > 1){ el.style.opacity = 0; return; }
     el.style.left = ((v.x*0.5+0.5)*w)+'px';
     el.style.top = ((-(v.y*0.5)+0.5)*h)+'px';
     const m = nodeMeshMap[node.id];
     const dimFactor = m ? (m.group.userData.dimFactor ?? 1) : 1;
-    const depthFade = THREE.MathUtils.clamp(1 - (v.z+0.3), 0.35, 1);
-    el.style.opacity = String(0.85*dimFactor*depthFade*labelBrightness);
+    // 远处标签不再过度衰减：下限从 0.35 提高到 0.62，近处保持满亮度
+    const depthFade = THREE.MathUtils.clamp(1 - (v.z+0.3)*0.55, 0.62, 1);
+    el.style.opacity = String(dimFactor*depthFade*labelBrightness);
     el.textContent = node.title.length>18 ? node.title.slice(0,18)+'…' : node.title;
   });
 
-  // 孪生环共享结论标签，定位在成员几何中心
   Object.keys(twinLabelElMap).forEach(groupId => {
     const members = nodes.filter(n => n.twinGroup === groupId);
     if(!members.length) return;
@@ -734,9 +763,6 @@ function updateLabels(){
   });
 }
 
-// ============================================================
-// 交互
-// ============================================================
 worldGroup.updateMatrixWorld(true);
 const raycaster = new THREE.Raycaster();
 let pointers = new Map();
@@ -751,11 +777,11 @@ function ndcFromXY(x,y){
 }
 function pickNodeAt(x,y){
   raycaster.setFromCamera(ndcFromXY(x,y), camera);
-  const shells = Object.values(nodeMeshMap).map(m=>m.shell);
+  const shells = Object.values(nodeMeshMap).filter(m=>m.group.visible).map(m=>m.shell);
   const hits = raycaster.intersectObjects(shells);
   return hits.length ? hits[0].object.userData.nodeId : null;
 }
-function clampCamZ(z){ return THREE.MathUtils.clamp(z, 4, 1400); } // 下限极小 → 放大近似无极限
+function clampCamZ(z){ return THREE.MathUtils.clamp(z, 4, 1400); }
 
 renderer.domElement.addEventListener('pointerdown', e => {
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
@@ -816,12 +842,12 @@ function handleBackgroundTap(){
   const now = performance.now();
   if(now - lastBgTapTime < 320){
     clearTimeout(bgTapTimer); bgTapTimer = null;
-    walkView(1); // 双击 → 进一层
+    walkView(1);
     lastBgTapTime = 0;
   } else {
     lastBgTapTime = now;
     bgTapTimer = setTimeout(() => {
-      walkView(-1); // 单击（延时确认非双击）→ 退一层
+      walkView(-1);
       selectedId = null;
       document.getElementById('panel').classList.remove('open');
       updateSelectionVisuals();
@@ -868,9 +894,6 @@ window.addEventListener('resize', () => {
   renderer.setSize(host.clientWidth, host.clientHeight);
 });
 
-// ============================================================
-// 详情面板
-// ============================================================
 function selectNode(id){
   selectedId = id; editMode = false;
   updateSelectionVisuals();
@@ -951,6 +974,7 @@ function openPanel(id){
   document.querySelectorAll('[data-mastery]').forEach(el => el.addEventListener('click', () => {
     node.mastery = el.getAttribute('data-mastery');
     updateNodeAppearance(node);
+    applyHideUntouched();
     openPanel(id);
   }));
 
@@ -980,9 +1004,6 @@ document.getElementById('panelClose').addEventListener('click', () => {
   updateSelectionVisuals();
 });
 
-// ============================================================
-// 级联悬置
-// ============================================================
 function invalidateNode(id){
   const node = nodeById(id);
   node.status = 'falsified';
@@ -1029,9 +1050,6 @@ function showToast(msg){
   showToast._timer = setTimeout(()=>t.classList.remove('show'), 4400);
 }
 
-// ============================================================
-// 新增 / 推理 节点
-// ============================================================
 const modalOverlay = document.getElementById('modalOverlay');
 let prefillPremise = null;
 
@@ -1083,9 +1101,6 @@ document.getElementById('modalSubmit').addEventListener('click', () => {
   showToast(`节点已提交，全局唯一 ID：${id}，状态「等待验证」，落入外层空间。`);
 });
 
-// ============================================================
-// AI 搜索栏
-// ============================================================
 const aiInput = document.getElementById('aiInput');
 const aiResults = document.getElementById('aiResults');
 const aiSend = document.getElementById('aiSend');
@@ -1127,9 +1142,6 @@ function jumpTo(id){
   selectNode(id);
 }
 
-// ============================================================
-// 个人账户
-// ============================================================
 const accountOverlay = document.getElementById('accountOverlay');
 document.getElementById('avatarBtn').addEventListener('click', () => {
   document.getElementById('statRep').textContent = '132';
@@ -1140,14 +1152,23 @@ document.getElementById('avatarBtn').addEventListener('click', () => {
 document.getElementById('accountClose').addEventListener('click', ()=>accountOverlay.classList.remove('show'));
 accountOverlay.addEventListener('click', e => { if(e.target===accountOverlay) accountOverlay.classList.remove('show'); });
 
-// ============================================================
-// 设置
-// ============================================================
+document.getElementById('btnPersonal').addEventListener('click', () => {
+  hideUntouched = !hideUntouched;
+  document.getElementById('btnPersonal').classList.toggle('active', hideUntouched);
+  applyHideUntouched();
+  showToast(hideUntouched ? '已隐藏未接触的知识节点及相关连线' : '已恢复显示全部节点');
+});
+
 const settingsOverlay = document.getElementById('settingsOverlay');
 document.getElementById('btnSettings').addEventListener('click', () => settingsOverlay.classList.add('show'));
 document.getElementById('settingsClose').addEventListener('click', () => settingsOverlay.classList.remove('show'));
 settingsOverlay.addEventListener('click', e => { if(e.target===settingsOverlay) settingsOverlay.classList.remove('show'); });
 
+document.getElementById('setNodeRadius').addEventListener('input', e => {
+  nodeRadiusMM = parseFloat(e.target.value);
+  document.getElementById('setNodeRadiusVal').textContent = nodeRadiusMM.toFixed(1)+'mm';
+  nodes.forEach(updateNodeAppearance);
+});
 document.getElementById('setLabelSize').addEventListener('input', e => {
   document.documentElement.style.setProperty('--label-size', e.target.value+'px');
   document.getElementById('setLabelSizeVal').textContent = e.target.value+'px';
@@ -1163,9 +1184,6 @@ document.getElementById('setLabelBrightness').addEventListener('input', e => {
   document.getElementById('setLabelBrightnessVal').textContent = e.target.value+'%';
 });
 
-// ============================================================
-// 初始化
-// ============================================================
 buildScene();
 renderLoop();
 </script>
