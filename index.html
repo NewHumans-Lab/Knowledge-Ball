@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>知识球 — 协议原型 v0.5</title>
+<title>知识球 — 协议原型 v0.6</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -15,6 +15,7 @@
     --c-axiom:#E8E4D9; --c-definition:#7C93C9; --c-theorem:#C9A227; --c-hypothesis:#9B7EDE;
     --c-prediction:#5FD1C9; --c-fact:#5BA88B; --c-opinion:#E8825B; --c-value:#D8748A;
     --st-disputed:#E0A030; --st-falsified:#C85450; --st-suspended:#6B7290;
+    --label-size:10px; --label-color:#9AA1B8; --label-font:'Noto Sans SC','Inter',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC','Inter',sans-serif;overflow:hidden;overscroll-behavior:none;}
@@ -28,11 +29,13 @@
   header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
     border-bottom:1px solid var(--panel-border); background:linear-gradient(180deg, rgba(16,22,42,0.85), rgba(16,22,42,0.35));
     position:relative; z-index:50; flex-shrink:0;}
-  .brand{display:flex;align-items:baseline;gap:9px;}
-  .brand .ring{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--brass);position:relative;flex-shrink:0;}
-  .brand .ring::after{content:'';position:absolute;inset:-4px;border:1px solid var(--brass-dim);border-radius:50%;opacity:0.5;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .avatar-btn{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#3A4570,#1E2440);
+    border:1.5px solid var(--brass-dim); display:flex;align-items:center;justify-content:center;cursor:pointer;
+    font-family:'Noto Serif SC',serif;font-weight:700;font-size:13px;color:var(--brass);flex-shrink:0;}
+  .avatar-btn:hover{border-color:var(--brass);}
   .brand h1{font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;margin:0;letter-spacing:0.5px;}
-  .brand span{font-size:10px;color:var(--ink-faint);font-family:'Inter',sans-serif;letter-spacing:1px;}
+  .brand span{font-size:10px;color:var(--ink-faint);font-family:'Inter',sans-serif;letter-spacing:1px;margin-left:6px;}
 
   .header-mid{display:flex;align-items:center;gap:10px;}
   .btn{background:var(--panel);border:1px solid var(--panel-border);color:var(--ink);padding:7px 12px;
@@ -40,12 +43,8 @@
   .btn:hover{border-color:var(--brass-dim);background:rgba(201,162,39,0.06);}
   .btn.primary{background:var(--brass);color:#1A1508;border-color:var(--brass);font-weight:600;}
   .btn.primary:hover{background:#DDB431;}
-  .depth-input{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-faint);}
-  .depth-input input{width:44px;background:var(--panel);border:1px solid var(--panel-border);color:var(--ink);border-radius:4px;padding:4px 5px;font-size:11px;text-align:center;}
-  .avatar-btn{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#3A4570,#1E2440);
-    border:1.5px solid var(--brass-dim); display:flex;align-items:center;justify-content:center;cursor:pointer;
-    font-family:'Noto Serif SC',serif;font-weight:700;font-size:14px;color:var(--brass);flex-shrink:0;}
-  .avatar-btn:hover{border-color:var(--brass);}
+  .btn.ghost{background:transparent;}
+  .btn:disabled{opacity:0.4; cursor:not-allowed;}
 
   .main{flex:1; position:relative; min-height:0;}
   #canvasHost{position:absolute; inset:0; z-index:1; cursor:grab; touch-action:none;}
@@ -53,12 +52,16 @@
   #canvasHost canvas{display:block; width:100%; height:100%;}
 
   #labelsLayer{position:absolute; inset:0; z-index:5; pointer-events:none; overflow:hidden;}
-  .node-label{position:absolute;transform:translate(-50%,10px);font-size:10px;color:var(--ink-dim);
+  .node-label{position:absolute;transform:translate(-50%,10px);font-size:var(--label-size);color:var(--label-color);
+    font-family:var(--label-font);
     white-space:nowrap;text-shadow:0 1px 4px #000, 0 0 2px #000; pointer-events:none; max-width:150px;
     overflow:hidden;text-overflow:ellipsis;}
+  .twin-label{position:absolute;transform:translate(-50%,-50%);font-size:calc(var(--label-size) + 2px);
+    color:var(--brass); font-family:var(--label-font); font-weight:700; white-space:nowrap;
+    text-shadow:0 1px 5px #000, 0 0 3px #000; pointer-events:none;}
 
   .legend{position:absolute; left:14px; bottom:88px; background:rgba(16,22,42,0.82); border:1px solid var(--panel-border);
-    border-radius:8px; padding:9px 11px; font-size:10.5px; backdrop-filter:blur(6px); max-width:168px; z-index:20;}
+    border-radius:8px; padding:9px 11px; font-size:10.5px; backdrop-filter:blur(6px); max-width:172px; z-index:20;}
   .legend h4{margin:0 0 5px;font-size:9px;letter-spacing:1px;color:var(--ink-faint);text-transform:uppercase;font-weight:600;}
   .legend-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
   .legend-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
@@ -71,9 +74,12 @@
   .ai-bar-wrap{position:absolute; left:0; right:0; bottom:16px; display:flex; justify-content:center; z-index:40; padding:0 14px; pointer-events:none;}
   .ai-bar-inner{position:relative; width:100%; max-width:560px; pointer-events:auto;}
   .ai-bar{width:100%; background:rgba(16,22,42,0.94); border:1px solid var(--panel-border);
-    border-radius:26px; display:flex; align-items:center; gap:8px; padding:6px 8px 6px 18px; backdrop-filter:blur(10px);
+    border-radius:26px; display:flex; align-items:center; gap:6px; padding:6px 8px; backdrop-filter:blur(10px);
     box-shadow:0 12px 40px rgba(0,0,0,0.5);}
-  .ai-bar input{flex:1; background:none; border:none; color:var(--ink); font-size:13.5px; font-family:inherit; padding:9px 0; min-width:0;}
+  .ai-add{width:32px;height:32px;border-radius:50%;background:transparent;border:1px solid var(--panel-border);color:var(--brass);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:17px;line-height:1;}
+  .ai-add:hover{border-color:var(--brass-dim); background:rgba(201,162,39,0.08);}
+  .ai-bar input{flex:1; background:none; border:none; color:var(--ink); font-size:13.5px; font-family:inherit; padding:9px 4px; min-width:0;}
   .ai-bar input:focus{outline:none;}
   .ai-bar input::placeholder{color:var(--ink-faint);}
   .ai-send{width:34px;height:34px;border-radius:50%;background:var(--brass);border:none;color:#1A1508;
@@ -107,16 +113,15 @@
   .chip{font-size:11px;padding:5px 9px;background:rgba(255,255,255,0.03);border:1px solid var(--panel-border);border-radius:5px;cursor:pointer;color:var(--ink-dim);transition:border-color .15s;}
   .chip:hover{border-color:var(--brass-dim);color:var(--ink);}
   .chip.empty{color:var(--ink-faint);cursor:default;font-style:italic;}
-  .mastery-row{display:flex;align-items:center;gap:10px;}
-  .mastery-row input[type=range]{flex:1; accent-color:var(--brass);}
-  .mastery-val{font-size:11.5px; color:var(--brass); width:38px; text-align:right;}
+  .mastery-display{font-size:13px; padding:8px 10px; background:var(--bg-deep); border:1px solid var(--panel-border); border-radius:6px; margin-bottom:8px;}
+  .mastery-demo-controls{display:flex; gap:6px;}
+  .mastery-demo-controls .chip.active{border-color:var(--brass); color:var(--brass);}
   .panel-actions{padding:12px 18px 18px;border-top:1px solid var(--panel-border);display:flex;flex-direction:column;gap:8px;}
   .panel-actions .btn{width:100%;text-align:center;}
   .btn.danger{border-color:rgba(200,84,80,0.4);color:#E8918E;}
   .btn.danger:hover{background:rgba(200,84,80,0.1);border-color:#C85450;}
   .btn.confirm{border-color:rgba(91,168,139,0.4);color:#8FCBB0;}
   .btn.confirm:hover{background:rgba(91,168,139,0.1);border-color:#5BA88B;}
-  .btn.ghost{background:transparent;}
   .action-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
   .note-small{font-size:10px;color:var(--ink-faint);text-align:center;line-height:1.5;}
 
@@ -145,16 +150,23 @@
   .premise-list{max-height:130px;overflow-y:auto;border:1px solid var(--panel-border);border-radius:6px;padding:6px;}
   .premise-item{display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:12px;border-radius:4px;}
   .premise-item:hover{background:rgba(255,255,255,0.03);}
+  .checkbox-field label{display:flex; align-items:flex-start; gap:8px; font-size:12px; color:var(--ink-dim); text-transform:none; letter-spacing:0; font-weight:400; cursor:pointer;}
+  .checkbox-field input{margin-top:2px; flex-shrink:0;}
   .account-stat{display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--panel-border); font-size:12.5px;}
   .account-stat:last-child{border-bottom:none;}
   .account-stat b{color:var(--brass); font-family:'Noto Serif SC',serif; font-size:15px;}
+  .settings-row{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px;}
+  .settings-row label{font-size:12px; color:var(--ink-dim); flex-shrink:0;}
+  .settings-row input[type=range]{flex:1; accent-color:var(--brass);}
+  .settings-row input[type=color]{width:40px;height:30px;border:none;background:none;padding:0;border-radius:6px;cursor:pointer;}
+  .settings-row select, .settings-row input[type=number]{background:var(--bg-deep);border:1px solid var(--panel-border);color:var(--ink);border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;}
+  .settings-val{font-size:11px; color:var(--brass); width:34px; text-align:right; flex-shrink:0;}
 
   @media (max-width:780px){
     .panel{width:min(340px,90vw);}
     .legend{display:none;}
     .hint{display:none;}
     .brand span{display:none;}
-    .depth-input{display:none;}
   }
 </style>
 </head>
@@ -162,16 +174,12 @@
 <div class="app" id="app">
   <header>
     <div class="brand">
-      <div class="ring"></div>
+      <div class="avatar-btn" id="avatarBtn" title="个人账户">RS</div>
       <h1>知识球</h1>
-      <span>PROTOCOL PROTOTYPE · v0.5</span>
+      <span>PROTOCOL PROTOTYPE · v0.6</span>
     </div>
     <div class="header-mid">
-      <div class="depth-input" title="级联悬置的传播层级上限，留空表示不限制">
-        传播上限 <input id="depthLimit" type="number" min="1" placeholder="∞">
-      </div>
-      <button class="btn primary" id="btnAddNode">+ 新增节点</button>
-      <div class="avatar-btn" id="avatarBtn" title="个人账户">RS</div>
+      <button class="btn" id="btnSettings">⚙ 设置</button>
     </div>
   </header>
 
@@ -182,6 +190,9 @@
     <div class="legend">
       <h4>层级（内部坐标，无可见边界）</h4>
       <div class="layer-note">内层空间：已验证事实/定义<br>中层空间：已验证公理/定理<br>外层空间：假说/预测/观点/悬置/争议</div>
+      <div class="legend-div"></div>
+      <h4>掌握程度（亮点）</h4>
+      <div class="layer-note">● 发光点＝完全掌握<br>· 暗点＝接触过<br>（无点）＝未接触</div>
       <div class="legend-div"></div>
       <h4>节点类型</h4>
       <div class="legend-row"><div class="legend-dot" style="background:var(--c-axiom)"></div><span>公理</span></div>
@@ -196,9 +207,9 @@
 
     <div class="hint">
       拖空白：旋转整球<br>
-      拖单个球：临时移动，松手回弹<br>
-      滚轮/双指捏合：缩放<br>
-      发光核心 = 掌握程度
+      单击空白：退一层视角<br>
+      双击空白：进一层视角<br>
+      滚轮/双指捏合：连续缩放（无极限）
     </div>
 
     <div class="panel" id="panel">
@@ -214,6 +225,7 @@
       <div class="ai-bar-inner">
         <div class="ai-results" id="aiResults"></div>
         <div class="ai-bar">
+          <button class="ai-add" id="aiAddBtn" title="新增知识节点">+</button>
           <input id="aiInput" type="text" placeholder="向知识球提问，或搜索知识节点…" autocomplete="off">
           <button class="ai-send" id="aiSend">➤</button>
         </div>
@@ -231,8 +243,8 @@
     <div class="modal-body">
       <div class="form-hint" id="modalHint" style="display:none;"></div>
       <div class="form-field">
-        <label>结论（节点标题）</label>
-        <input type="text" id="fTitle" placeholder="例如：某新论文的核心结论…">
+        <label>结论（标题尽量简短概括，详细内容写在下方推理过程）</label>
+        <input type="text" id="fTitle" placeholder="例如：反证法证明…">
       </div>
       <div class="form-field">
         <label>节点类型</label>
@@ -248,17 +260,20 @@
         </select>
       </div>
       <div class="form-field">
-        <label>最小推理过程</label>
+        <label>最小推理过程（完整内容写这里）</label>
         <textarea id="fReasoning" placeholder="从前提节点推导出该结论的最小推理链…"></textarea>
       </div>
       <div class="form-field">
         <label>前置知识点（依赖边，可多选）</label>
         <div class="premise-list" id="fPremises"></div>
       </div>
+      <div class="form-field checkbox-field">
+        <label><input type="checkbox" id="fLogicConfirm"> 我确认该结论及推理不违反逻辑三大基本定律（同一律 / 矛盾律 / 排中律）</label>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn" id="modalCancel">取消</button>
-      <button class="btn primary" id="modalSubmit">提交（进入"等待验证"，落入外层空间）</button>
+      <button class="btn primary" id="modalSubmit" disabled>提交（进入"等待验证"，落入外层空间）</button>
     </div>
   </div>
 </div>
@@ -281,48 +296,107 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="settingsOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>设置</h3>
+      <button class="panel-close" id="settingsClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-hint" style="margin-bottom:16px;">知识节点文字标签</div>
+      <div class="settings-row">
+        <label>字号</label>
+        <input type="range" id="setLabelSize" min="8" max="18" value="10">
+        <div class="settings-val" id="setLabelSizeVal">10px</div>
+      </div>
+      <div class="settings-row">
+        <label>颜色</label>
+        <input type="color" id="setLabelColor" value="#9AA1B8">
+        <div style="flex:1"></div>
+      </div>
+      <div class="settings-row">
+        <label>字体</label>
+        <select id="setLabelFont">
+          <option value="'Noto Sans SC','Inter',sans-serif">默认无衬线</option>
+          <option value="'Noto Serif SC',serif">衬线（宋体风格）</option>
+          <option value="'Inter',monospace">等宽</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label>亮度</label>
+        <input type="range" id="setLabelBrightness" min="10" max="100" value="100">
+        <div class="settings-val" id="setLabelBrightnessVal">100%</div>
+      </div>
+      <div class="form-hint" style="margin:18px 0 16px;">视角与协议参数</div>
+      <div class="settings-row">
+        <label>单次点击移动层数</label>
+        <input type="number" id="setViewStep" value="1" min="1" max="1" disabled title="预留，暂未启用">
+      </div>
+      <div class="settings-row">
+        <label>级联悬置传播层级上限</label>
+        <input type="number" id="depthLimit" min="1" placeholder="∞" style="width:70px;">
+      </div>
+      <p class="note-small" style="text-align:left;">更多设置项（通知偏好、隐私范围、连接的第三方身份凭证等）预留，后续版本补充。</p>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-function setAppHeight(){
-  document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
-}
+function setAppHeight(){ document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px'); }
 setAppHeight();
 window.addEventListener('resize', setAppHeight);
 window.addEventListener('orientationchange', setAppHeight);
 
+// ============================================================
+// 数据模型
+// status: verified | pending | suspended | disputed | falsified
+// type: axiom | definition | fact | theorem | hypothesis | prediction | opinion | value
+// mastery: 'none' | 'touched' | 'mastered' —— 由 AI 依据历史聊天判定（此原型为手动模拟）
+// twinGroup: 可选，标记"同一结论不同证明路径"的孪生组；sharedTitle: 该组共享的结论文本
+// ============================================================
 let nodes = [
-  {id:'n1', title:'同一律', type:'axiom', status:'verified', mastery:0.9, reasoning:'逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。', premises:[]},
-  {id:'n2', title:'排中律', type:'axiom', status:'verified', mastery:0.7, reasoning:'逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。', premises:[]},
-  {id:'n3', title:'质数的定义：仅能被 1 和自身整除的大于 1 的自然数', type:'definition', status:'verified', mastery:1.0, reasoning:'基于同一律确立的稳定定义，长期无异议。', premises:['n1']},
-  {id:'n4', title:'标准大气压下纯水沸点为 100°C', type:'fact', status:'verified', mastery:0.5, reasoning:'实验反复验证的经验事实。', premises:[]},
-  {id:'n5', title:'勾股定理：直角三角形两直角边平方和等于斜边平方', type:'theorem', status:'verified', mastery:1.0, reasoning:'欧几里得《几何原本》给出的经典演绎证明，基于同一律与排中律。', premises:['n1','n2']},
-  {id:'n6', title:'质数数量无穷', type:'theorem', status:'verified', mastery:0.6, reasoning:'欧几里得反证法：假设质数有限，构造新数导出矛盾。', premises:['n3']},
-  {id:'n7', title:'黎曼猜想：非平凡零点实部均为 1/2', type:'hypothesis', status:'suspended', mastery:0.2, reasoning:'尚无完整证明或证伪，悬置状态本身是准确的表达，而非系统缺陷。', premises:['n3']},
-  {id:'n8', title:'预测：2035 年可实现通用人工智能', type:'prediction', status:'suspended', mastery:0, reasoning:'不存在可验证的逻辑链条，悬置等待未来事件校验，校验结果计入提交者声誉。', premises:[]},
-  {id:'n9', title:'观点：自由市场比计划经济更有效率', type:'opinion', status:'disputed', mastery:0.3, reasoning:'规范性/经验混合命题，无法逻辑裁定，采用加权投票+悬置并展示正反证据。', premises:[]},
-  {id:'n10', title:'价值判断：个体自由优先于集体效率', type:'value', status:'disputed', mastery:0.1, reasoning:'纯价值判断，协议不裁定对错，仅呈现论据双方。', premises:[]},
-  {id:'n11', title:'论文声称：LK-99 材料在常压常温下具有超导性', type:'fact', status:'falsified', mastery:0.4, reasoning:'2023 年论文声称发现常温常压超导现象，后经多个独立实验室复现失败、机制被重新解释，节点被标记为已证伪。', premises:[]},
-  {id:'n12', title:'推论：若 LK-99 超导属实，可实现无损耗输电网络', type:'theorem', status:'suspended', mastery:0, reasoning:'完全依赖 n11 成立，前提证伪后本节点自动进入悬置，等待重新提交或废弃。', premises:['n11']},
-  {id:'n13', title:'推论：LK-99 应用可大幅降低数据中心能耗', type:'prediction', status:'suspended', mastery:0, reasoning:'依赖 n12 的工程可行性，属于二级下游推论。', premises:['n12']},
-  {id:'n14', title:'推论：LK-99 产业化将重塑全球电网基建投资方向', type:'opinion', status:'suspended', mastery:0, reasoning:'依赖 n12，属于二级下游的产业判断，兼具经验与观点成分。', premises:['n12']},
+  {id:'n1', title:'同一律', type:'axiom', status:'verified', mastery:'mastered', reasoning:'逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。', premises:[]},
+  {id:'n2', title:'排中律', type:'axiom', status:'verified', mastery:'touched', reasoning:'逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。', premises:[]},
+  {id:'n3', title:'质数的定义', type:'definition', status:'verified', mastery:'mastered', reasoning:'仅能被 1 和自身整除的大于 1 的自然数。基于同一律确立的稳定定义，长期无异议。', premises:['n1']},
+  {id:'n4', title:'水的沸点', type:'fact', status:'verified', mastery:'touched', reasoning:'标准大气压下纯水沸点为 100°C，实验反复验证的经验事实。', premises:[]},
+  {id:'n5', title:'勾股定理', type:'theorem', status:'verified', mastery:'mastered', reasoning:'直角三角形两直角边平方和等于斜边平方。欧几里得《几何原本》给出的经典演绎证明，基于同一律与排中律。', premises:['n1','n2']},
+  {id:'n6', title:'反证法证明', type:'theorem', status:'verified', mastery:'mastered', reasoning:'假设质数有限，构造新数导出矛盾，证明质数数量无穷。', premises:['n3'], twinGroup:'twinPrime', sharedTitle:'质数数量无穷'},
+  {id:'n15', title:'欧拉乘积证法', type:'theorem', status:'verified', mastery:'touched', reasoning:'通过欧拉乘积公式 ∏(1-p⁻¹)⁻¹ 的发散性证明质数无穷，与反证法殊途同归，是同一结论的独立证明路径。', premises:['n3'], twinGroup:'twinPrime', sharedTitle:'质数数量无穷'},
+  {id:'n7', title:'黎曼猜想', type:'hypothesis', status:'suspended', mastery:'touched', reasoning:'非平凡零点实部均为 1/2。尚无完整证明或证伪，悬置状态本身是准确的表达，而非系统缺陷。', premises:['n3']},
+  {id:'n8', title:'AGI 时间预测', type:'prediction', status:'suspended', mastery:'none', reasoning:'预测 2035 年可实现通用人工智能。不存在可验证的逻辑链条，悬置等待未来事件校验，校验结果计入提交者声誉。', premises:[]},
+  {id:'n9', title:'自由市场效率观点', type:'opinion', status:'disputed', mastery:'touched', reasoning:'自由市场比计划经济更有效率。规范性/经验混合命题，无法逻辑裁定，采用加权投票+悬置并展示正反证据。', premises:[]},
+  {id:'n10', title:'个体自由优先', type:'value', status:'disputed', mastery:'none', reasoning:'个体自由优先于集体效率。纯价值判断，协议不裁定对错，仅呈现论据双方。', premises:[]},
+  {id:'n11', title:'LK-99 超导声称', type:'fact', status:'falsified', mastery:'touched', reasoning:'论文声称 LK-99 材料在常压常温下具有超导性。2023 年论文声称发现常温常压超导现象，后经多个独立实验室复现失败、机制被重新解释，节点被标记为已证伪。', premises:[]},
+  {id:'n12', title:'无损耗输电推论', type:'theorem', status:'suspended', mastery:'none', reasoning:'若 LK-99 超导属实，可实现无损耗输电网络。完全依赖 n11 成立，前提证伪后本节点自动进入悬置。', premises:['n11']},
+  {id:'n13', title:'数据中心节能推论', type:'prediction', status:'suspended', mastery:'none', reasoning:'LK-99 应用可大幅降低数据中心能耗。依赖 n12 的工程可行性，属于二级下游推论。', premises:['n12']},
+  {id:'n14', title:'电网投资推论', type:'opinion', status:'suspended', mastery:'none', reasoning:'LK-99 产业化将重塑全球电网基建投资方向。依赖 n12，属于二级下游的产业判断。', premises:['n12']},
 ];
 
 const TYPE_LABEL = {axiom:'公理',definition:'定义',fact:'事实',theorem:'定理',hypothesis:'假说',prediction:'预测',opinion:'观点',value:'价值判断'};
 const STATUS_LABEL = {verified:'已验证',pending:'等待验证',suspended:'悬置',disputed:'争议中',falsified:'已证伪'};
+const MASTERY_LABEL = {none:'未接触（无亮点）', touched:'接触过（暗点）', mastered:'完全掌握（发光点）'};
 const TYPE_COLOR = {axiom:0xE8E4D9,definition:0x7C93C9,fact:0x5BA88B,theorem:0xC9A227,hypothesis:0x9B7EDE,prediction:0x5FD1C9,opinion:0xE8825B,value:0xD8748A};
 const TYPE_COLOR_HEX = {axiom:'#E8E4D9',definition:'#7C93C9',fact:'#5BA88B',theorem:'#C9A227',hypothesis:'#9B7EDE',prediction:'#5FD1C9',opinion:'#E8825B',value:'#D8748A'};
 const STATUS_COLOR_HEX = {verified:'#5BA88B',pending:'#7C93C9',suspended:'#6B7290',disputed:'#E0A030',falsified:'#C85450'};
 
 const LAYER_BANDS = { inner:{rMin:0,   rMax:95},  middle:{rMin:95,  rMax:170}, outer:{rMin:170, rMax:260} };
 const LAYER_LABEL = {inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测'};
+const TWIN_REST_LEN = 14; // 孪生节点固定环形间距 ≈ 当层典型间距(约70) 的 1/5，取近似常数简化
 
 let selectedId = null;
-let nextIdCounter = 15;
+let nextIdCounter = 16;
 let editMode = false;
+let labelBrightness = 1;
 
 function nodeById(id){ return nodes.find(n => n.id === id); }
 function dependentsOf(id){ return nodes.filter(n => n.premises.includes(id)); }
+function twinsOf(id){
+  const n = nodeById(id);
+  if(!n || !n.twinGroup) return [];
+  return nodes.filter(x => x.twinGroup === n.twinGroup && x.id !== id);
+}
 function getLayer(node){
   if(node.status === 'verified'){
     if(node.type === 'definition' || node.type === 'fact') return 'inner';
@@ -331,10 +405,13 @@ function getLayer(node){
   return 'outer';
 }
 
+// ============================================================
+// Three.js 场景
+// ============================================================
 const host = document.getElementById('canvasHost');
 const scene = new THREE.Scene();
 const REF_CAMERA_Z = 640;
-const camera = new THREE.PerspectiveCamera(50, host.clientWidth/host.clientHeight, 1, 4000);
+const camera = new THREE.PerspectiveCamera(50, host.clientWidth/host.clientHeight, 0.5, 6000);
 camera.position.set(0,0,REF_CAMERA_Z);
 const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
@@ -347,16 +424,37 @@ const edgesGroup = new THREE.Group(); worldGroup.add(edgesGroup);
 const nodesGroup = new THREE.Group(); worldGroup.add(nodesGroup);
 const labelsLayer = document.getElementById('labelsLayer');
 
+// 掌握程度"亮点"贴图（点，不是球）
+function createDotTexture(glow){
+  const size=64, cvs=document.createElement('canvas'); cvs.width=size; cvs.height=size;
+  const ctx=cvs.getContext('2d'); const cx=size/2, cy=size/2;
+  if(glow){
+    const grad=ctx.createRadialGradient(cx,cy,0,cx,cy,size/2);
+    grad.addColorStop(0,'rgba(255,255,255,1)');
+    grad.addColorStop(0.25,'rgba(255,240,200,0.9)');
+    grad.addColorStop(0.6,'rgba(255,220,140,0.35)');
+    grad.addColorStop(1,'rgba(255,220,140,0)');
+    ctx.fillStyle=grad; ctx.fillRect(0,0,size,size);
+  } else {
+    ctx.beginPath(); ctx.arc(cx,cy,size*0.15,0,Math.PI*2);
+    ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.fill();
+  }
+  return new THREE.CanvasTexture(cvs);
+}
+const dotTexPlain = createDotTexture(false);
+const dotTexGlow = createDotTexture(true);
+
 let nodeMeshMap = {};
 let edgeLineMap = {};
 let labelElMap = {};
+let twinLabelElMap = {};
 
 function disposeObj(obj){ obj.traverse(o=>{ if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); }); }
 
 function buildScene(){
   while(nodesGroup.children.length){ disposeObj(nodesGroup.children.pop()); }
   while(edgesGroup.children.length){ disposeObj(edgesGroup.children.pop()); }
-  nodeMeshMap = {}; edgeLineMap = {}; labelsLayer.innerHTML = ''; labelElMap = {};
+  nodeMeshMap = {}; edgeLineMap = {}; labelsLayer.innerHTML = ''; labelElMap = {}; twinLabelElMap = {};
 
   nodes.forEach(node => {
     const g = new THREE.Group();
@@ -365,17 +463,13 @@ function buildScene(){
       new THREE.MeshBasicMaterial({color:TYPE_COLOR[node.type], transparent:true, opacity:0.6, depthWrite:false})
     );
     shell.userData.nodeId = node.id;
-    const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(6.5, 14, 10),
-      new THREE.MeshBasicMaterial({color:0xFFE9B0, transparent:true, opacity:0.15, depthWrite:false})
-    );
-    const core = new THREE.Mesh(
-      new THREE.SphereGeometry(3.2, 12, 8),
-      new THREE.MeshBasicMaterial({color:0xFFFFFF, transparent:true, opacity:0.15})
-    );
-    g.add(shell); g.add(halo); g.add(core);
+
+    const dot = new THREE.Sprite(new THREE.SpriteMaterial({map:dotTexPlain, transparent:true, depthWrite:false}));
+    dot.scale.set(3,3,3);
+
+    g.add(shell); g.add(dot);
     nodesGroup.add(g);
-    nodeMeshMap[node.id] = {group:g, shell, halo, core};
+    nodeMeshMap[node.id] = {group:g, shell, dot};
 
     const label = document.createElement('div');
     label.className = 'node-label';
@@ -383,6 +477,7 @@ function buildScene(){
     labelElMap[node.id] = label;
   });
 
+  // 普通依赖边
   nodes.forEach(node => {
     node.premises.forEach(pid => {
       if(!nodeById(pid)) return;
@@ -393,6 +488,30 @@ function buildScene(){
       edgesGroup.add(line);
       edgeLineMap[pid+'|'+node.id] = line;
     });
+  });
+
+  // 孪生环边（金色，独立于普通依赖边）
+  const seenGroups = new Set();
+  nodes.forEach(node => {
+    if(!node.twinGroup || seenGroups.has(node.twinGroup)) return;
+    seenGroups.add(node.twinGroup);
+    const members = nodes.filter(n => n.twinGroup === node.twinGroup);
+    const m = members.length;
+    const edgeCount = m<2 ? 0 : (m===2 ? 1 : m);
+    for(let i=0;i<edgeCount;i++){
+      const a = members[i], b = members[(i+1)%m];
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const mat = new THREE.LineBasicMaterial({color:0xC9A227, transparent:true, opacity:0.75});
+      const line = new THREE.Line(geo, mat);
+      edgesGroup.add(line);
+      edgeLineMap['twin|'+a.id+'|'+b.id] = line;
+    }
+    const tl = document.createElement('div');
+    tl.className = 'twin-label';
+    tl.textContent = node.sharedTitle || '';
+    labelsLayer.appendChild(tl);
+    twinLabelElMap[node.twinGroup] = tl;
   });
 
   assignLayersAndHome();
@@ -406,8 +525,7 @@ function sampleVolumePoint(i, n, rMin, rMax){
   const dirX = Math.cos(theta)*radiusAtY, dirZ = Math.sin(theta)*radiusAtY, dirY = yy;
   const frac = (i*0.6180339887 + 0.15) % 1;
   const r3 = rMin*rMin*rMin + frac*(rMax*rMax*rMax - rMin*rMin*rMin);
-  const r = Math.cbrt(r3);
-  return new THREE.Vector3(dirX*r, dirY*r, dirZ*r);
+  return new THREE.Vector3(dirX*Math.cbrt(r3), dirY*Math.cbrt(r3), dirZ*Math.cbrt(r3));
 }
 
 function assignLayersAndHome(){
@@ -432,15 +550,28 @@ function updateNodeAppearance(node){
   if(node.status === 'falsified'){ m.shell.material.color.setHex(0xC85450); opacity = 0.82; }
   else if(node.status === 'suspended'){ m.shell.material.color.setHex(baseColor); opacity = 0.14; }
   else if(node.status === 'pending'){ m.shell.material.color.setHex(baseColor); opacity = 0.32; }
-  else if(node.status === 'disputed'){ m.shell.material.color.setHex(baseColor); opacity = 0.6; }
   else { m.shell.material.color.setHex(baseColor); opacity = 0.6; }
   m.shell.material.opacity = opacity;
   m.shell.userData.baseOpacity = opacity;
   m.shell.userData.pulsing = (node.status === 'disputed');
 
-  const mastery = node.mastery || 0;
-  m.core.material.opacity = 0.1 + mastery*0.85;
-  m.halo.material.opacity = 0.06 + mastery*0.3;
+  // 掌握程度：三态亮点
+  if(node.mastery === 'mastered'){
+    m.dot.visible = true;
+    m.dot.material.map = dotTexGlow;
+    m.dot.material.blending = THREE.AdditiveBlending;
+    m.dot.material.opacity = 1;
+    m.dot.scale.set(6.5,6.5,6.5);
+  } else if(node.mastery === 'touched'){
+    m.dot.visible = true;
+    m.dot.material.map = dotTexPlain;
+    m.dot.material.blending = THREE.NormalBlending;
+    m.dot.material.opacity = 0.85;
+    m.dot.scale.set(3,3,3);
+  } else {
+    m.dot.visible = false;
+  }
+  m.dot.material.needsUpdate = true;
 }
 
 function updateSelectionVisuals(){
@@ -449,20 +580,29 @@ function updateSelectionVisuals(){
     let related = true;
     if(selectedId){
       const sel = nodeById(selectedId);
-      related = id===selectedId || sel.premises.includes(id) || nodeById(id).premises.includes(selectedId);
+      related = id===selectedId || sel.premises.includes(id) || nodeById(id).premises.includes(selectedId) || sel.twinGroup && nodeById(id).twinGroup===sel.twinGroup;
     }
     m.group.userData.dimFactor = selectedId ? (related?1:0.2) : 1;
     m.group.userData.selBoost = (id===selectedId) ? 1.35 : 1.0;
   });
   Object.keys(edgeLineMap).forEach(key => {
-    const [a,b] = key.split('|');
+    const parts = key.split('|');
+    const isTwin = parts[0]==='twin';
+    const a = isTwin?parts[1]:parts[0], b = isTwin?parts[2]:parts[1];
     const line = edgeLineMap[key];
     const isHi = selectedId && (a===selectedId || b===selectedId);
-    line.material.opacity = isHi ? 0.85 : 0.22;
-    line.material.color.set(isHi ? 0xC9A227 : 0x9AA1B8);
+    if(isTwin){
+      line.material.opacity = isHi ? 0.95 : 0.6;
+    } else {
+      line.material.opacity = isHi ? 0.85 : 0.22;
+      line.material.color.set(isHi ? 0xC9A227 : 0x9AA1B8);
+    }
   });
 }
 
+// ============================================================
+// 物理
+// ============================================================
 const clock = new THREE.Clock();
 let draggedNodeId = null;
 
@@ -478,12 +618,24 @@ function physicsStep(){
       force.add(other.pos.clone().sub(node.pos).multiplyScalar(0.006));
     });
 
+    // 同层斥力（孪生对之间跳过，孪生用专属弹簧管理间距）
     nodes.forEach(other => {
       if(other.id===node.id || other.layer!==node.layer || !other.pos) return;
+      if(node.twinGroup && other.twinGroup===node.twinGroup) return;
       const diff = node.pos.clone().sub(other.pos);
       const dist = Math.max(diff.length(), 8);
       if(dist < 65) force.add(diff.normalize().multiplyScalar((65-dist)*0.0055));
     });
+
+    // 孪生环：固定目标间距的弹簧
+    if(node.twinGroup){
+      nodes.forEach(other => {
+        if(other.id===node.id || other.twinGroup!==node.twinGroup || !other.pos) return;
+        const diff = other.pos.clone().sub(node.pos);
+        const dist = Math.max(diff.length(), 0.001);
+        force.add(diff.normalize().multiplyScalar((dist-TWIN_REST_LEN)*0.02));
+      });
+    }
 
     node.vel.add(force).multiplyScalar(0.86);
     node.pos.add(node.vel);
@@ -496,9 +648,29 @@ function physicsStep(){
   });
 }
 
+// ============================================================
+// 视角步进（单击退一层／双击进一层，与连续缩放各自独立）
+// ============================================================
+const VIEW_ORDER = ['outer','middle','inner'];
+const VIEW_PRESET_Z = {outer:640, middle:420, inner:230};
+let currentViewIdx = 0;
+let targetCamZ = null;
+function walkView(dir){
+  currentViewIdx = THREE.MathUtils.clamp(currentViewIdx + dir, 0, VIEW_ORDER.length-1);
+  targetCamZ = VIEW_PRESET_Z[VIEW_ORDER[currentViewIdx]];
+}
+
+// ============================================================
+// 渲染循环
+// ============================================================
 function renderLoop(){
   requestAnimationFrame(renderLoop);
   physicsStep();
+
+  if(targetCamZ !== null){
+    camera.position.z += (targetCamZ - camera.position.z)*0.12;
+    if(Math.abs(targetCamZ - camera.position.z) < 0.8){ camera.position.z = targetCamZ; targetCamZ = null; }
+  }
 
   const sizeScale = camera.position.z / REF_CAMERA_Z;
   nodes.forEach(node => {
@@ -513,7 +685,9 @@ function renderLoop(){
   });
 
   Object.keys(edgeLineMap).forEach(key => {
-    const [a,b] = key.split('|');
+    const parts = key.split('|');
+    const isTwin = parts[0]==='twin';
+    const a = isTwin?parts[1]:parts[0], b = isTwin?parts[2]:parts[1];
     const na = nodeById(a), nb = nodeById(b);
     if(!na || !nb) return;
     const line = edgeLineMap[key];
@@ -540,17 +714,36 @@ function updateLabels(){
     const m = nodeMeshMap[node.id];
     const dimFactor = m ? (m.group.userData.dimFactor ?? 1) : 1;
     const depthFade = THREE.MathUtils.clamp(1 - (v.z+0.3), 0.35, 1);
-    el.style.opacity = String(0.85*dimFactor*depthFade);
+    el.style.opacity = String(0.85*dimFactor*depthFade*labelBrightness);
     el.textContent = node.title.length>18 ? node.title.slice(0,18)+'…' : node.title;
+  });
+
+  // 孪生环共享结论标签，定位在成员几何中心
+  Object.keys(twinLabelElMap).forEach(groupId => {
+    const members = nodes.filter(n => n.twinGroup === groupId);
+    if(!members.length) return;
+    const centroid = new THREE.Vector3();
+    members.forEach(m => centroid.add(m.pos));
+    centroid.multiplyScalar(1/members.length);
+    v.copy(centroid).applyMatrix4(worldGroup.matrixWorld).project(camera);
+    const el = twinLabelElMap[groupId];
+    if(v.z > 1){ el.style.opacity = 0; return; }
+    el.style.left = ((v.x*0.5+0.5)*w)+'px';
+    el.style.top = ((-(v.y*0.5)+0.5)*h)+'px';
+    el.style.opacity = String(0.9*labelBrightness);
   });
 }
 
+// ============================================================
+// 交互
+// ============================================================
 worldGroup.updateMatrixWorld(true);
 const raycaster = new THREE.Raycaster();
 let pointers = new Map();
 let mode = null;
 let downX=0, downY=0, lastX=0, lastY=0;
 let pinchStartDist=0, pinchStartCamZ=REF_CAMERA_Z;
+let lastBgTapTime = 0, bgTapTimer = null;
 
 function ndcFromXY(x,y){
   const rect = renderer.domElement.getBoundingClientRect();
@@ -562,8 +755,7 @@ function pickNodeAt(x,y){
   const hits = raycaster.intersectObjects(shells);
   return hits.length ? hits[0].object.userData.nodeId : null;
 }
-
-function clampCamZ(z){ return THREE.MathUtils.clamp(z, 260, 1250); }
+function clampCamZ(z){ return THREE.MathUtils.clamp(z, 4, 1400); } // 下限极小 → 放大近似无极限
 
 renderer.domElement.addEventListener('pointerdown', e => {
   pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
@@ -575,7 +767,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
     const hitId = pickNodeAt(e.clientX, e.clientY);
     if(hitId){ mode='node'; draggedNodeId=hitId; } else { mode='rotate'; }
   } else if(pointers.size === 2){
-    mode = 'pinch'; draggedNodeId = null;
+    mode = 'pinch'; draggedNodeId = null; targetCamZ = null;
     const pts = [...pointers.values()];
     pinchStartDist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
     pinchStartCamZ = camera.position.z;
@@ -590,6 +782,7 @@ renderer.domElement.addEventListener('pointermove', e => {
     const pts = [...pointers.values()];
     const dist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
     const ratio = dist / (pinchStartDist || 1);
+    targetCamZ = null;
     camera.position.z = clampCamZ(pinchStartCamZ / ratio);
     return;
   }
@@ -619,9 +812,26 @@ renderer.domElement.addEventListener('pointermove', e => {
   }
 });
 
+function handleBackgroundTap(){
+  const now = performance.now();
+  if(now - lastBgTapTime < 320){
+    clearTimeout(bgTapTimer); bgTapTimer = null;
+    walkView(1); // 双击 → 进一层
+    lastBgTapTime = 0;
+  } else {
+    lastBgTapTime = now;
+    bgTapTimer = setTimeout(() => {
+      walkView(-1); // 单击（延时确认非双击）→ 退一层
+      selectedId = null;
+      document.getElementById('panel').classList.remove('open');
+      updateSelectionVisuals();
+      bgTapTimer = null;
+    }, 320);
+  }
+}
+
 function endPointer(e){
-  const wasSingle = pointers.size === 1;
-  const singlePos = wasSingle ? pointers.get(e.pointerId) : null;
+  const singlePos = pointers.size===1 ? pointers.get(e.pointerId) : null;
   pointers.delete(e.pointerId);
 
   if(pointers.size === 1){
@@ -630,7 +840,6 @@ function endPointer(e){
     mode = 'rotate'; draggedNodeId = null;
     return;
   }
-
   if(pointers.size === 0){
     host.classList.remove('dragging');
     if(mode !== 'pinch' && singlePos){
@@ -638,7 +847,7 @@ function endPointer(e){
       if(moved < 6){
         const hitId = pickNodeAt(e.clientX, e.clientY);
         if(hitId) selectNode(hitId);
-        else { selectedId=null; document.getElementById('panel').classList.remove('open'); updateSelectionVisuals(); }
+        else handleBackgroundTap();
       }
     }
     mode = null; draggedNodeId = null;
@@ -649,6 +858,7 @@ renderer.domElement.addEventListener('pointercancel', endPointer);
 
 renderer.domElement.addEventListener('wheel', e => {
   e.preventDefault();
+  targetCamZ = null;
   camera.position.z = clampCamZ(camera.position.z + (e.deltaY>0 ? 26 : -26));
 }, {passive:false});
 
@@ -658,6 +868,9 @@ window.addEventListener('resize', () => {
   renderer.setSize(host.clientWidth, host.clientHeight);
 });
 
+// ============================================================
+// 详情面板
+// ============================================================
 function selectNode(id){
   selectedId = id; editMode = false;
   updateSelectionVisuals();
@@ -705,6 +918,12 @@ function openPanel(id){
   const deps = dependentsOf(id).map(d =>
     `<div class="chip" data-jump="${d.id}">${d.title.slice(0,20)}${d.title.length>20?'…':''}</div>`
   ).join('') || '<div class="chip empty">暂无下游依赖节点</div>';
+  const twins = twinsOf(id);
+  const twinHtml = twins.length ? `
+    <div class="field">
+      <label>孪生证明（同一结论："${node.sharedTitle||''}"）</label>
+      <div class="chip-list">${twins.map(t=>`<div class="chip" data-jump="${t.id}">${t.title}</div>`).join('')}</div>
+    </div>` : '';
 
   document.getElementById('panelBody').innerHTML = `
     <div class="badge-row">
@@ -713,23 +932,27 @@ function openPanel(id){
       <div class="badge" style="color:var(--brass);border-color:var(--brass-dim);">${LAYER_LABEL[node.layer]}</div>
     </div>
     <div class="field">
-      <label>我的掌握程度（驱动核心发光强度）</label>
-      <div class="mastery-row">
-        <input type="range" id="masteryRange" min="0" max="100" value="${Math.round((node.mastery||0)*100)}">
-        <div class="mastery-val" id="masteryVal">${Math.round((node.mastery||0)*100)}%</div>
+      <label>AI 判断掌握程度（模拟，实际应基于历史聊天自动识别）</label>
+      <div class="mastery-display" id="masteryDisplay">${MASTERY_LABEL[node.mastery]}</div>
+      <div class="mastery-demo-controls">
+        <div class="chip ${node.mastery==='none'?'active':''}" data-mastery="none">未接触</div>
+        <div class="chip ${node.mastery==='touched'?'active':''}" data-mastery="touched">接触过</div>
+        <div class="chip ${node.mastery==='mastered'?'active':''}" data-mastery="mastered">完全掌握</div>
       </div>
+      <div class="note-small" style="text-align:left;margin-top:6px;">演示环境无法接入真实聊天记录，此处按钮为手动模拟 AI 判断结果。</div>
     </div>
     <div class="field"><label>最小推理过程</label><div class="val">${node.reasoning || '（未填写）'}</div></div>
     <div class="field"><label>前置知识点（依赖边）</label><div class="chip-list">${premises}</div></div>
     <div class="field"><label>下游依赖节点</label><div class="chip-list">${deps}</div></div>
+    ${twinHtml}
   `;
 
   document.querySelectorAll('[data-jump]').forEach(el => el.addEventListener('click', () => selectNode(el.getAttribute('data-jump'))));
-  document.getElementById('masteryRange').addEventListener('input', e => {
-    node.mastery = e.target.value/100;
-    document.getElementById('masteryVal').textContent = e.target.value+'%';
+  document.querySelectorAll('[data-mastery]').forEach(el => el.addEventListener('click', () => {
+    node.mastery = el.getAttribute('data-mastery');
     updateNodeAppearance(node);
-  });
+    openPanel(id);
+  }));
 
   const actions = document.getElementById('panelActions');
   let html = '<div class="action-grid">';
@@ -757,6 +980,9 @@ document.getElementById('panelClose').addEventListener('click', () => {
   updateSelectionVisuals();
 });
 
+// ============================================================
+// 级联悬置
+// ============================================================
 function invalidateNode(id){
   const node = nodeById(id);
   node.status = 'falsified';
@@ -784,7 +1010,7 @@ function invalidateNode(id){
 
   assignLayersAndHome();
   openPanel(id);
-  showToast(`已标记「${node.title.slice(0,14)}…」为已证伪，级联悬置 ${suspendedCount} 个下游节点${truncated?'（已达传播层级上限）':''}，相关节点将缓慢漂移至外层空间。`);
+  showToast(`已标记「${node.title.slice(0,14)}…」为已证伪，级联悬置 ${suspendedCount} 个下游节点${truncated?'（已达传播层级上限）':''}。`);
 }
 
 function resolveNode(id){
@@ -793,7 +1019,7 @@ function resolveNode(id){
   updateNodeAppearance(node);
   assignLayersAndHome();
   openPanel(id);
-  showToast(`「${node.title.slice(0,14)}…」已标记为重新验证通过，若类型符合准入条件将缓慢回归内/中层空间。下游节点需各自独立重新验证。`);
+  showToast(`「${node.title.slice(0,14)}…」已标记为重新验证通过，若类型符合准入条件将缓慢回归内/中层空间。`);
 }
 
 function showToast(msg){
@@ -803,6 +1029,9 @@ function showToast(msg){
   showToast._timer = setTimeout(()=>t.classList.remove('show'), 4400);
 }
 
+// ============================================================
+// 新增 / 推理 节点
+// ============================================================
 const modalOverlay = document.getElementById('modalOverlay');
 let prefillPremise = null;
 
@@ -812,18 +1041,20 @@ function renderPremiseList(){
       <input type="checkbox" value="${n.id}" ${prefillPremise===n.id?'checked':''}> ${n.title.slice(0,32)}${n.title.length>32?'…':''}
     </label>`).join('');
 }
-document.getElementById('btnAddNode').addEventListener('click', () => openAddModal(null));
+document.getElementById('aiAddBtn').addEventListener('click', () => openAddModal(null));
 function openAddModal(fromNodeId){
   prefillPremise = fromNodeId;
   document.getElementById('fTitle').value='';
   document.getElementById('fReasoning').value='';
   document.getElementById('fType').value='fact';
+  document.getElementById('fLogicConfirm').checked = false;
+  document.getElementById('modalSubmit').disabled = true;
   const hint = document.getElementById('modalHint');
   if(fromNodeId){
     const src = nodeById(fromNodeId);
     document.getElementById('modalTitle').textContent = '推理新节点';
     hint.style.display='block';
-    hint.textContent = `将默认以「${src.title.slice(0,20)}${src.title.length>20?'…':''}」作为前置知识点`;
+    hint.textContent = `将默认以「${src.title}」作为前置知识点`;
   } else {
     document.getElementById('modalTitle').textContent = '提交新知识节点';
     hint.style.display='none';
@@ -831,6 +1062,9 @@ function openAddModal(fromNodeId){
   renderPremiseList();
   modalOverlay.classList.add('show');
 }
+document.getElementById('fLogicConfirm').addEventListener('change', e => {
+  document.getElementById('modalSubmit').disabled = !e.target.checked;
+});
 document.getElementById('modalClose').addEventListener('click', ()=>modalOverlay.classList.remove('show'));
 document.getElementById('modalCancel').addEventListener('click', ()=>modalOverlay.classList.remove('show'));
 modalOverlay.addEventListener('click', e => { if(e.target===modalOverlay) modalOverlay.classList.remove('show'); });
@@ -838,16 +1072,20 @@ modalOverlay.addEventListener('click', e => { if(e.target===modalOverlay) modalO
 document.getElementById('modalSubmit').addEventListener('click', () => {
   const title = document.getElementById('fTitle').value.trim();
   if(!title){ showToast('请填写节点结论标题。'); return; }
+  if(!document.getElementById('fLogicConfirm').checked){ showToast('请先确认符合逻辑三大基本定律。'); return; }
   const type = document.getElementById('fType').value;
   const reasoning = document.getElementById('fReasoning').value.trim();
   const premises = Array.from(document.querySelectorAll('#fPremises input:checked')).map(el=>el.value);
   const id = 'n'+(nextIdCounter++);
-  nodes.push({id, title, type, status:'pending', mastery:0, reasoning, premises});
+  nodes.push({id, title, type, status:'pending', mastery:'none', reasoning, premises});
   buildScene();
   modalOverlay.classList.remove('show');
   showToast(`节点已提交，全局唯一 ID：${id}，状态「等待验证」，落入外层空间。`);
 });
 
+// ============================================================
+// AI 搜索栏
+// ============================================================
 const aiInput = document.getElementById('aiInput');
 const aiResults = document.getElementById('aiResults');
 const aiSend = document.getElementById('aiSend');
@@ -858,7 +1096,7 @@ function runSearch(){
   const matches = nodes.filter(n => n.title.toLowerCase().includes(q) || (n.reasoning||'').toLowerCase().includes(q));
   aiResults.innerHTML = matches.length===0
     ? '<div class="search-item" style="color:var(--ink-faint)">未找到匹配的知识节点</div>'
-    : matches.slice(0,8).map(n => `<div class="search-item" data-id="${n.id}"><span>${n.title.slice(0,32)}${n.title.length>32?'…':''}</span><small>${TYPE_LABEL[n.type]} · ${STATUS_LABEL[n.status]}</small></div>`).join('');
+    : matches.slice(0,8).map(n => `<div class="search-item" data-id="${n.id}"><span>${n.title}</span><small>${TYPE_LABEL[n.type]} · ${STATUS_LABEL[n.status]}</small></div>`).join('');
   aiResults.classList.add('show');
 }
 aiInput.addEventListener('input', runSearch);
@@ -883,21 +1121,51 @@ document.addEventListener('click', e => { if(!e.target.closest('.ai-bar-inner'))
 function jumpTo(id){
   const node = nodeById(id);
   const dir = node.pos.clone().normalize();
-  const quat = new THREE.Quaternion().setFromUnitVectors(dir.lengthSq()>0?dir:new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,1));
+  const safeDir = dir.lengthSq()>0 ? dir : new THREE.Vector3(0,0,1);
+  const quat = new THREE.Quaternion().setFromUnitVectors(safeDir, new THREE.Vector3(0,0,1));
   worldGroup.quaternion.copy(quat);
   selectNode(id);
 }
 
+// ============================================================
+// 个人账户
+// ============================================================
 const accountOverlay = document.getElementById('accountOverlay');
 document.getElementById('avatarBtn').addEventListener('click', () => {
   document.getElementById('statRep').textContent = '132';
-  document.getElementById('statLit').textContent = nodes.filter(n=>(n.mastery||0)>0).length;
+  document.getElementById('statLit').textContent = nodes.filter(n=>n.mastery!=='none').length;
   document.getElementById('statContrib').textContent = nodes.filter(n=>n.status==='pending').length + ' (待验证中)';
   accountOverlay.classList.add('show');
 });
 document.getElementById('accountClose').addEventListener('click', ()=>accountOverlay.classList.remove('show'));
 accountOverlay.addEventListener('click', e => { if(e.target===accountOverlay) accountOverlay.classList.remove('show'); });
 
+// ============================================================
+// 设置
+// ============================================================
+const settingsOverlay = document.getElementById('settingsOverlay');
+document.getElementById('btnSettings').addEventListener('click', () => settingsOverlay.classList.add('show'));
+document.getElementById('settingsClose').addEventListener('click', () => settingsOverlay.classList.remove('show'));
+settingsOverlay.addEventListener('click', e => { if(e.target===settingsOverlay) settingsOverlay.classList.remove('show'); });
+
+document.getElementById('setLabelSize').addEventListener('input', e => {
+  document.documentElement.style.setProperty('--label-size', e.target.value+'px');
+  document.getElementById('setLabelSizeVal').textContent = e.target.value+'px';
+});
+document.getElementById('setLabelColor').addEventListener('input', e => {
+  document.documentElement.style.setProperty('--label-color', e.target.value);
+});
+document.getElementById('setLabelFont').addEventListener('change', e => {
+  document.documentElement.style.setProperty('--label-font', e.target.value);
+});
+document.getElementById('setLabelBrightness').addEventListener('input', e => {
+  labelBrightness = e.target.value/100;
+  document.getElementById('setLabelBrightnessVal').textContent = e.target.value+'%';
+});
+
+// ============================================================
+// 初始化
+// ============================================================
 buildScene();
 renderLoop();
 </script>
