@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>协议原型 v0.7</title>
+<title>协议原型 v0.7.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -172,7 +172,7 @@
   <header>
     <div class="brand">
       <div class="avatar-btn" id="avatarBtn" title="个人账户">RS</div>
-      <span>PROTOCOL PROTOTYPE · v0.7</span>
+      <span>PROTOCOL PROTOTYPE · v0.7.1</span>
     </div>
     <div class="header-mid">
       <button class="btn" id="btnPersonal" title="隐藏/恢复未接触的知识节点">个人</button>
@@ -403,9 +403,6 @@ function getLayer(node){
   return 'outer';
 }
 
-// ============================================================
-// Three.js 场景
-// ============================================================
 const host = document.getElementById('canvasHost');
 const scene = new THREE.Scene();
 const REF_CAMERA_Z = 640;
@@ -416,7 +413,6 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(host.clientWidth, host.clientHeight);
 host.appendChild(renderer.domElement);
 
-// 星空背景：不随知识球旋转，独立挂在 scene 上，制造"宇宙的空"而非纯黑填充
 function buildStarfield(){
   const starCount = 900;
   const positions = new Float32Array(starCount*3);
@@ -443,7 +439,6 @@ const edgesGroup = new THREE.Group(); worldGroup.add(edgesGroup);
 const nodesGroup = new THREE.Group(); worldGroup.add(nodesGroup);
 const labelsLayer = document.getElementById('labelsLayer');
 
-// 两种光点贴图：强光（完全掌握）与荧光（接触过），视觉上明显不同
 function createGlowTexture(strong){
   const size=128, cvs=document.createElement('canvas'); cvs.width=size; cvs.height=size;
   const ctx=cvs.getContext('2d'); const cx=size/2, cy=size/2;
@@ -479,7 +474,6 @@ function buildScene(){
 
   nodes.forEach(node => {
     const g = new THREE.Group();
-    // 统一单位球几何（半径1），真实半径全部通过 shell.scale 控制 → 保证所有节点球体积一致，且可统一调节
     const shell = new THREE.Mesh(
       new THREE.SphereGeometry(1, 20, 14),
       new THREE.MeshBasicMaterial({color:TYPE_COLOR[node.type], transparent:true, opacity:0.6, depthWrite:false})
@@ -578,19 +572,18 @@ function updateNodeAppearance(node){
   m.shell.userData.pulsing = (node.status === 'disputed');
   m.shell.scale.setScalar(nodeRadiusMM);
 
-  // 三态光点：强光（完全掌握，辉光溢出球体表面）／荧光（接触过，柔和光晕）／无光点（未接触）
   if(node.mastery === 'mastered'){
     m.dot.visible = true;
     m.dot.material.map = dotTexStrong;
     m.dot.material.blending = THREE.AdditiveBlending;
     m.dot.material.opacity = 1;
-    m.dot.scale.setScalar(nodeRadiusMM*2.3); // 明显溢出球体表面
+    m.dot.scale.setScalar(nodeRadiusMM*2.3);
   } else if(node.mastery === 'touched'){
     m.dot.visible = true;
     m.dot.material.map = dotTexFluor;
     m.dot.material.blending = THREE.AdditiveBlending;
     m.dot.material.opacity = 0.6;
-    m.dot.scale.setScalar(nodeRadiusMM*1.5); // 柔和，略小于强光
+    m.dot.scale.setScalar(nodeRadiusMM*1.5);
   } else {
     m.dot.visible = false;
   }
@@ -636,9 +629,6 @@ function updateSelectionVisuals(){
   });
 }
 
-// ============================================================
-// 物理
-// ============================================================
 const clock = new THREE.Clock();
 let draggedNodeId = null;
 
@@ -742,7 +732,6 @@ function updateLabels(){
     el.style.top = ((-(v.y*0.5)+0.5)*h)+'px';
     const m = nodeMeshMap[node.id];
     const dimFactor = m ? (m.group.userData.dimFactor ?? 1) : 1;
-    // 远处标签不再过度衰减：下限从 0.35 提高到 0.62，近处保持满亮度
     const depthFade = THREE.MathUtils.clamp(1 - (v.z+0.3)*0.55, 0.62, 1);
     el.style.opacity = String(dimFactor*depthFade*labelBrightness);
     el.textContent = node.title.length>18 ? node.title.slice(0,18)+'…' : node.title;
@@ -767,6 +756,7 @@ worldGroup.updateMatrixWorld(true);
 const raycaster = new THREE.Raycaster();
 let pointers = new Map();
 let mode = null;
+let pinchOccurred = false;
 let downX=0, downY=0, lastX=0, lastY=0;
 let pinchStartDist=0, pinchStartCamZ=REF_CAMERA_Z;
 let lastBgTapTime = 0, bgTapTimer = null;
@@ -794,6 +784,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
     if(hitId){ mode='node'; draggedNodeId=hitId; } else { mode='rotate'; }
   } else if(pointers.size === 2){
     mode = 'pinch'; draggedNodeId = null; targetCamZ = null;
+    pinchOccurred = true; // 记住这整套多指手势里发生过捏合，收尾时不能再当成单击处理
     const pts = [...pointers.values()];
     pinchStartDist = Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
     pinchStartCamZ = camera.position.z;
@@ -864,11 +855,12 @@ function endPointer(e){
     const remaining = [...pointers.values()][0];
     lastX = downX = remaining.x; lastY = downY = remaining.y;
     mode = 'rotate'; draggedNodeId = null;
-    return;
+    return; // 注意：这里不清 pinchOccurred，捏合记忆要保留到本轮手势彻底结束
   }
   if(pointers.size === 0){
     host.classList.remove('dragging');
-    if(mode !== 'pinch' && singlePos){
+    // 修复点：只要这轮手势出现过捏合（pinchOccurred），收尾时绝不触发单击/双击视角切换或选中节点
+    if(!pinchOccurred && singlePos){
       const moved = Math.hypot(e.clientX-downX, e.clientY-downY);
       if(moved < 6){
         const hitId = pickNodeAt(e.clientX, e.clientY);
@@ -877,6 +869,7 @@ function endPointer(e){
       }
     }
     mode = null; draggedNodeId = null;
+    pinchOccurred = false; // 手势彻底结束，重置，供下一次全新手势使用
   }
 }
 renderer.domElement.addEventListener('pointerup', endPointer);
