@@ -122,4 +122,4 @@ const starfield = buildStarfield();
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
-const edgesGr
+const edgesGr = new THREE.Group();
