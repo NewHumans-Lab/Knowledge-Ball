@@ -64,7 +64,7 @@ export class GraphProjection implements Projection<GraphState> {
       case 'NodeResolved': {
         const p = event.payload;
         const n = this.state.nodesById[p.nodeId];
-        if (n) n.status = 'verified';
+        if (n && n.status !== 'falsified') n.status = 'verified';
         break;
       }
       case 'NodeDisputed': {
