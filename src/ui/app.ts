@@ -1,4 +1,3 @@
-// @ts-nocheck
 //
 // This file is the original single-file artifact's <script> content, ported
 // into a real ES module. The Three.js scene, physics, panels, modals,
