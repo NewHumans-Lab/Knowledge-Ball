@@ -1,4 +1,3 @@
-src/ui/panels/PanelController.ts
 import {
   MASTERY_LABEL,
   STATUS_COLOR_HEX,
