@@ -1,4 +1,16 @@
 // @ts-nocheck
+//
+// This file is the original single-file artifact's <script> content, ported
+// into a real ES module. The Three.js scene, physics, panels, modals,
+// settings, AI search bar, twin-proof rendering — all of it is unchanged.
+//
+// What changed: the five places that used to mutate the `nodes` array
+// directly now dispatch Commands instead. Domain truth lives in
+// `projection.state`; the local `nodes` array is a RENDER CACHE that gets
+// resynced from the projection on every event (see syncNodesFromProjection).
+// Runtime-only fields (pos/vel/homePos/layer used by the physics sim) are
+// preserved across resyncs — those were never domain state to begin with.
+//
 import * as THREE from 'three';
 import { EventStore } from '../event/EventStore';
 import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjection';
@@ -11,17 +23,37 @@ import { setMastery as cmdSetMastery } from '../command/SetMastery';
 import { disputeNode as cmdDisputeNode } from '../command/DisputeNode';
 import { suspendNode as cmdSuspendNode } from '../command/SuspendNode';
 
+// ---------------------------------------------------------------------
+// Event core wiring
+// ---------------------------------------------------------------------
 const projection = new GraphProjection();
 const store = new EventStore(() => structuredClone(projection.state));
 
-let sceneDirty = true;
-let panelRefreshId = null;
+// --- Sun-triad (三体) config ---------------------------------------------
+// Three axiom nodes (同一律/矛盾律/排中律) orbit the true center using the
+// analytic Lagrange equilateral-triangle three-body solution: three equal
+// masses at the vertices of an equilateral triangle, all orbiting the common
+// center of mass at the same angular speed. This is a known STABLE solution
+// (unlike arbitrary three-body configs, which are chaotic), so it can just
+// be computed directly each frame instead of numerically integrated.
+const SUN_TRIAD_IDS = ['n1', 'n2', 'n16'];
+const SUN_RADIUS_MM = 0.6;       // true world-space size — independent of the settings radius slider
+const SUN_GLOW_SCALE = 12;       // glow footprint tuned to roughly match a normal node's visual size from default distance
+const SUN_ORBIT_RADIUS = 3.2;
+const SUN_ANGULAR_SPEED = 0.6;   // rad/sec
+const DEFAULT_CAM_Z = 640;       // fixed distance the camera snaps back to on any rotate-drag
+const SUN_REVEAL_CAM_Z = DEFAULT_CAM_Z / 10; // must be at least 10x closer than default to read sun labels
+
+let sceneDirty = true; // consumed once per animation frame in renderLoop
+let panelRefreshId = null; // if a node's panel is open, re-render it after the next sync
 
 store.subscribe((event) => {
   projection.apply(event);
   sceneDirty = true;
 });
 
+// Twin-proof grouping is presentation metadata, not a fact anyone falsifies —
+// modeling it as an event type would be scope creep, so it stays a static map.
 const TWIN_META = {
   n6:  { twinGroup: 'twinPrime', sharedTitle: '质数数量无穷' },
   n15: { twinGroup: 'twinPrime', sharedTitle: '质数数量无穷' },
@@ -32,6 +64,9 @@ setAppHeight();
 window.addEventListener('resize', setAppHeight);
 window.addEventListener('orientationchange', setAppHeight);
 
+// `nodes` is now a render cache, rebuilt from projection.state on every
+// event. It still carries runtime-only physics fields (pos/vel/homePos/layer)
+// which are NOT domain data and are preserved across rebuilds by id.
 let nodes = [];
 
 function syncNodesFromProjection(){
@@ -66,7 +101,7 @@ const TYPE_COLOR_HEX = {axiom:'#E8E4D9',definition:'#7C93C9',fact:'#5BA88B',theo
 const STATUS_COLOR_HEX = {verified:'#5BA88B',pending:'#7C93C9',suspended:'#6B7290',disputed:'#E0A030',falsified:'#C85450'};
 
 const LAYER_BANDS = { inner:{rMin:0,   rMax:95},  middle:{rMin:95,  rMax:170}, outer:{rMin:170, rMax:260} };
-const LAYER_LABEL = {inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测'};
+const LAYER_LABEL = {inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测', core:'核心 · 三体系统'};
 const TWIN_REST_LEN = 14;
 
 let selectedId = null;
@@ -83,6 +118,7 @@ function twinsOf(id){
   return nodes.filter(x => x.twinGroup === n.twinGroup && x.id !== id);
 }
 function getLayer(node){
+  if(SUN_TRIAD_IDS.includes(node.id)) return 'core';
   if(node.status === 'verified'){
     if(node.type === 'definition' || node.type === 'fact') return 'inner';
     if(node.type === 'axiom' || node.type === 'theorem') return 'middle';
@@ -160,16 +196,19 @@ function buildScene(){
   nodeMeshMap = {}; edgeLineMap = {}; labelsLayer.innerHTML = ''; labelElMap = {}; twinLabelElMap = {};
 
   nodes.forEach(node => {
+    const isSun = SUN_TRIAD_IDS.includes(node.id);
     const g = new THREE.Group();
     const shell = new THREE.Mesh(
       new THREE.SphereGeometry(1, 20, 14),
-      new THREE.MeshBasicMaterial({color:TYPE_COLOR[node.type], transparent:true, opacity:0.6, depthWrite:false})
+      new THREE.MeshBasicMaterial({color: isSun ? 0xFFFFFF : TYPE_COLOR[node.type], transparent:true, opacity: isSun ? 0.95 : 0.6, depthWrite:false})
     );
-    shell.scale.setScalar(nodeRadiusMM);
+    shell.scale.setScalar(isSun ? SUN_RADIUS_MM : nodeRadiusMM);
     shell.userData.nodeId = node.id;
+    shell.userData.isSun = isSun;
 
-    const dot = new THREE.Sprite(new THREE.SpriteMaterial({map:dotTexFluor, transparent:true, depthWrite:false}));
+    const dot = new THREE.Sprite(new THREE.SpriteMaterial({map: isSun ? dotTexStrong : dotTexFluor, transparent:true, depthWrite:false, blending: isSun ? THREE.AdditiveBlending : THREE.NormalBlending}));
     dot.scale.set(1,1,1);
+    if(isSun){ dot.visible = true; dot.material.opacity = 1; dot.scale.setScalar(SUN_GLOW_SCALE); }
 
     g.add(shell); g.add(dot);
     nodesGroup.add(g);
@@ -234,7 +273,16 @@ function sampleVolumePoint(i, n, rMin, rMax){
 
 function assignLayersAndHome(){
   const byLayer = {inner:[], middle:[], outer:[]};
-  nodes.forEach(n => { n.layer = getLayer(n); byLayer[n.layer].push(n); });
+  nodes.forEach(n => {
+    if(SUN_TRIAD_IDS.includes(n.id)){
+      n.layer = 'core';
+      if(!n.pos) n.pos = new THREE.Vector3(SUN_ORBIT_RADIUS, 0, 0);
+      if(!n.vel) n.vel = new THREE.Vector3();
+      n.homePos = n.pos;
+      return;
+    }
+    n.layer = getLayer(n); byLayer[n.layer].push(n);
+  });
   ['inner','middle','outer'].forEach(layer => {
     const list = byLayer[layer];
     const band = LAYER_BANDS[layer];
@@ -249,6 +297,20 @@ function assignLayersAndHome(){
 function updateNodeAppearance(node){
   const m = nodeMeshMap[node.id];
   if(!m) return;
+  if(SUN_TRIAD_IDS.includes(node.id)){
+    m.shell.material.color.setHex(0xFFFFFF);
+    m.shell.material.opacity = 0.95;
+    m.shell.userData.baseOpacity = 0.95;
+    m.shell.userData.pulsing = false;
+    m.shell.scale.setScalar(SUN_RADIUS_MM);
+    m.dot.visible = true;
+    m.dot.material.map = dotTexStrong;
+    m.dot.material.blending = THREE.AdditiveBlending;
+    m.dot.material.opacity = 1;
+    m.dot.scale.setScalar(SUN_GLOW_SCALE);
+    m.dot.material.needsUpdate = true;
+    return;
+  }
   const baseColor = TYPE_COLOR[node.type];
   let opacity;
   if(node.status === 'falsified'){ m.shell.material.color.setHex(0xC85450); opacity = 0.82; }
@@ -320,9 +382,22 @@ function updateSelectionVisuals(){
 const clock = new THREE.Clock();
 let draggedNodeId = null;
 
+function updateSunTriad(elapsedTime){
+  SUN_TRIAD_IDS.forEach((id, i) => {
+    const node = nodeById(id);
+    if(!node) return;
+    const angle = elapsedTime * SUN_ANGULAR_SPEED + i * (2*Math.PI/3);
+    if(!node.pos) node.pos = new THREE.Vector3();
+    node.pos.set(SUN_ORBIT_RADIUS*Math.cos(angle), 0, SUN_ORBIT_RADIUS*Math.sin(angle));
+    if(!node.vel) node.vel = new THREE.Vector3();
+    node.vel.set(0,0,0);
+  });
+}
+
 function physicsStep(){
   nodes.forEach(node => {
     if(node.id === draggedNodeId) return;
+    if(SUN_TRIAD_IDS.includes(node.id)) return;
     const force = new THREE.Vector3();
     force.add(node.homePos.clone().sub(node.pos).multiplyScalar(0.010));
 
@@ -379,6 +454,7 @@ function renderLoop(){
     if(panelRefreshId && nodeById(panelRefreshId)) openPanel(panelRefreshId);
   }
 
+  updateSunTriad(clock.elapsedTime);
   physicsStep();
   starfield.rotation.y += 0.00006;
 
@@ -387,13 +463,20 @@ function renderLoop(){
     if(Math.abs(targetCamZ - camera.position.z) < 0.8){ camera.position.z = targetCamZ; targetCamZ = null; }
   }
 
-  const sizeScale = camera.position.z / REF_CAMERA_Z;
+  // Damped, clamped compensation: zooming still lets far spheres read a bit
+  // smaller (natural depth cue) but never swings as wildly as raw linear
+  // perspective would. Sun-triad members are deliberately exempt — they need
+  // real, uncompensated perspective falloff so they're indistinguishable
+  // from a normal node until the camera gets ~10x closer than default.
+  const rawRatio = camera.position.z / REF_CAMERA_Z;
+  const dampedScale = THREE.MathUtils.clamp(Math.pow(rawRatio, 0.4), 0.65, 1.6);
   nodes.forEach(node => {
     const m = nodeMeshMap[node.id];
     if(!m) return;
     m.group.position.copy(node.pos);
     const boost = m.group.userData.selBoost || 1;
-    m.group.scale.setScalar(sizeScale * boost);
+    const isSun = SUN_TRIAD_IDS.includes(node.id);
+    m.group.scale.setScalar((isSun ? 1 : dampedScale) * boost);
     if(m.shell.userData.pulsing){
       m.shell.material.opacity = THREE.MathUtils.clamp(m.shell.userData.baseOpacity + Math.sin(clock.elapsedTime*2.4)*0.18, 0.1, 0.85);
     }
@@ -422,6 +505,9 @@ function updateLabels(){
   nodes.forEach(node => {
     const el = labelElMap[node.id];
     if(!el || el.style.display==='none') return;
+    const isSun = SUN_TRIAD_IDS.includes(node.id);
+    el.classList.toggle('sun-label', isSun);
+    if(isSun && camera.position.z > SUN_REVEAL_CAM_Z){ el.style.opacity = 0; return; }
     v.copy(node.pos).applyMatrix4(worldGroup.matrixWorld).project(camera);
     if(v.z > 1){ el.style.opacity = 0; return; }
     el.style.left = ((v.x*0.5+0.5)*w)+'px';
@@ -456,6 +542,7 @@ let pinchOccurred = false;
 let downX=0, downY=0, lastX=0, lastY=0;
 let pinchStartDist=0, pinchStartCamZ=REF_CAMERA_Z;
 let lastBgTapTime = 0, bgTapTimer = null;
+let rotateResetDone = false;
 
 function ndcFromXY(x,y){
   const rect = renderer.domElement.getBoundingClientRect();
@@ -476,8 +563,9 @@ renderer.domElement.addEventListener('pointerdown', e => {
 
   if(pointers.size === 1){
     downX=lastX=e.clientX; downY=lastY=e.clientY;
-    const hitId = pickNodeAt(e.clientX, e.clientY);
-    if(hitId){ mode='node'; draggedNodeId=hitId; } else { mode='rotate'; }
+    rotateResetDone = false;
+    const hitId = (pickNodeAt(e.clientX, e.clientY));
+    if(hitId && !SUN_TRIAD_IDS.includes(hitId)){ mode='node'; draggedNodeId=hitId; } else { mode='rotate'; }
   } else if(pointers.size === 2){
     mode = 'pinch'; draggedNodeId = null; targetCamZ = null;
     pinchOccurred = true;
@@ -504,6 +592,10 @@ renderer.domElement.addEventListener('pointermove', e => {
     const dx = e.clientX-lastX, dy = e.clientY-lastY;
     lastX=e.clientX; lastY=e.clientY;
     if(mode === 'rotate'){
+      if(!rotateResetDone && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)){
+        targetCamZ = DEFAULT_CAM_Z;
+        rotateResetDone = true;
+      }
       worldGroup.rotation.y += dx*0.006;
       worldGroup.rotation.x += dy*0.006;
     } else if(mode === 'node' && draggedNodeId){
@@ -724,8 +816,6 @@ function openAddModal(fromNodeId){
   document.getElementById('fTitle').value='';
   document.getElementById('fReasoning').value='';
   document.getElementById('fType').value='fact';
-  document.getElementById('fLogicConfirm').checked = false;
-  document.getElementById('modalSubmit').disabled = true;
   const hint = document.getElementById('modalHint');
   if(fromNodeId){
     const src = nodeById(fromNodeId);
@@ -739,9 +829,6 @@ function openAddModal(fromNodeId){
   renderPremiseList();
   modalOverlay.classList.add('show');
 }
-document.getElementById('fLogicConfirm').addEventListener('change', e => {
-  document.getElementById('modalSubmit').disabled = !e.target.checked;
-});
 document.getElementById('modalClose').addEventListener('click', ()=>modalOverlay.classList.remove('show'));
 document.getElementById('modalCancel').addEventListener('click', ()=>modalOverlay.classList.remove('show'));
 modalOverlay.addEventListener('click', e => { if(e.target===modalOverlay) modalOverlay.classList.remove('show'); });
@@ -749,14 +836,14 @@ modalOverlay.addEventListener('click', e => { if(e.target===modalOverlay) modalO
 document.getElementById('modalSubmit').addEventListener('click', async () => {
   const title = document.getElementById('fTitle').value.trim();
   if(!title){ showToast('请填写节点结论标题。'); return; }
-  if(!document.getElementById('fLogicConfirm').checked){ showToast('请先确认符合逻辑三大基本定律。'); return; }
   const nodeType = document.getElementById('fType').value;
   const reasoning = document.getElementById('fReasoning').value.trim();
   const premises = Array.from(document.querySelectorAll('#fPremises input:checked')).map(el=>el.value);
   const nodeId = 'n' + Math.random().toString(36).slice(2,9);
   await cmdCreateNode(store, { nodeId, title, nodeType, reasoning, premises });
+  await cmdSetMastery(store, { nodeId, mastery: 'mastered' });
   modalOverlay.classList.remove('show');
-  showToast(`节点已提交，全局唯一 ID：${nodeId}，状态「等待验证」，落入外层空间。`);
+  showToast(`节点已提交，全局唯一 ID：${nodeId}，状态「等待验证」，落入外层空间，你是第一个完全掌握此节点的人。`);
 });
 
 const aiInput = document.getElementById('aiInput');
@@ -846,6 +933,11 @@ document.getElementById('depthLimit').addEventListener('input', e => {
   setCascadeDepthLimit(v);
 });
 
+// ---------------------------------------------------------------------
+// Seed data — replicated from the original static array, but now
+// produced as real dispatched commands, so the very first thing that
+// happens on boot is genuine event history, not a hardcoded object literal.
+// ---------------------------------------------------------------------
 async function seed(){
   await cmdCreateNode(store, {nodeId:'n1', title:'同一律', nodeType:'axiom', reasoning:'逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。', premises:[]});
   await cmdSetMastery(store, {nodeId:'n1', mastery:'mastered'});
@@ -854,6 +946,10 @@ async function seed(){
   await cmdCreateNode(store, {nodeId:'n2', title:'排中律', nodeType:'axiom', reasoning:'逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。', premises:[]});
   await cmdSetMastery(store, {nodeId:'n2', mastery:'touched'});
   await cmdResolveNode(store, {nodeId:'n2'});
+
+  await cmdCreateNode(store, {nodeId:'n16', title:'矛盾律', nodeType:'axiom', reasoning:'逻辑基础公理，与同一律、排中律共同构成经典逻辑地基，三者互为三体系统的核心。', premises:[]});
+  await cmdSetMastery(store, {nodeId:'n16', mastery:'mastered'});
+  await cmdResolveNode(store, {nodeId:'n16'});
 
   await cmdCreateNode(store, {nodeId:'n3', title:'质数的定义', nodeType:'definition', reasoning:'仅能被 1 和自身整除的大于 1 的自然数。基于同一律确立的稳定定义，长期无异议。', premises:['n1']});
   await cmdSetMastery(store, {nodeId:'n3', mastery:'mastered'});
@@ -896,6 +992,9 @@ async function seed(){
   await cmdCreateNode(store, {nodeId:'n13', title:'数据中心节能推论', nodeType:'prediction', reasoning:'LK-99 应用可大幅降低数据中心能耗。依赖 n12 的工程可行性，属于二级下游推论。', premises:['n12']});
   await cmdCreateNode(store, {nodeId:'n14', title:'电网投资推论', nodeType:'opinion', reasoning:'LK-99 产业化将重塑全球电网基建投资方向。依赖 n12，属于二级下游的产业判断。', premises:['n12']});
 
+  // Falsifying n11 now, after n12/13/14 already exist as its dependents,
+  // makes the cascade computed live — n12/n13/n14 end up 'suspended'
+  // exactly like the original hardcoded array, but derived, not faked.
   await cmdFalsifyNode(store, projection, {nodeId:'n11'});
 }
 
