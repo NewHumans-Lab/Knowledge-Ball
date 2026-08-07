@@ -66,7 +66,7 @@ export interface PanelControllerElements {
   modalHint: HTMLElement;
   modalClose: HTMLElement;
   modalCancel: HTMLElement;
-  modalSubmit: HTMLElement;
+  modalSubmit: HTMLButtonElement;
 
   fTitle: HTMLInputElement;
   fType: HTMLSelectElement;
@@ -138,7 +138,7 @@ export class PanelController {
   private readonly modalHint: HTMLElement;
   private readonly modalClose: HTMLElement;
   private readonly modalCancel: HTMLElement;
-  private readonly modalSubmit: HTMLElement;
+  private readonly modalSubmit: HTMLButtonElement;
 
   private readonly fTitle: HTMLInputElement;
   private readonly fType: HTMLSelectElement;

@@ -303,7 +303,7 @@ panel = new PanelController({
   modalHint: must<HTMLElement>('modalHint'),
   modalClose: must<HTMLElement>('modalClose'),
   modalCancel: must<HTMLElement>('modalCancel'),
-  modalSubmit: must<HTMLElement>('modalSubmit'),
+  modalSubmit: must<HTMLButtonElement>('modalSubmit'),
 
   fTitle: must<HTMLInputElement>('fTitle'),
   fType: must<HTMLSelectElement>('fType'),
