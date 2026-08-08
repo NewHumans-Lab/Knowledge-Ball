@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "npm run test:persistence",
+    "test": "npm run test:persistence && npm run test:scene",
     "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json --noEmit && npx esbuild src/persistence/PersistenceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/persistence-regression.mjs && node .test-dist/persistence-regression.mjs",
+    "test:scene": "npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/scene-regression.mjs && node .test-dist/scene-regression.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {
