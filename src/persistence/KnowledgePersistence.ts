@@ -1,4 +1,4 @@
-export type KnowledgeEvent = Record<string, unknown>;
+export type KnowledgeEvent = object;
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -19,38 +19,29 @@ interface PersistedEnvelope<TEvent> {
 
 function browserStorage(): StorageLike | null {
   try {
-    if (typeof window === 'undefined') return null;
-    return window.localStorage;
+    return typeof window === 'undefined' ? null : window.localStorage;
   } catch {
     return null;
   }
 }
 
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, child]) => [key, canonicalize(child)])
-    );
-  }
-  return value;
-}
-
 function fingerprint(event: KnowledgeEvent): string {
-  const id = typeof event.id === 'string' ? event.id : typeof event.eventId === 'string' ? event.eventId : null;
-  return id ?? JSON.stringify(canonicalize(event));
+  const record = event as Record<string, unknown>;
+  if (typeof record.id === 'string') return record.id;
+  if (typeof record.eventId === 'string') return record.eventId;
+  return JSON.stringify(event);
 }
 
 export function dedupeEvents<TEvent extends KnowledgeEvent>(events: TEvent[]): TEvent[] {
   const seen = new Set<string>();
-  return events.filter(event => {
+  const result: TEvent[] = [];
+  for (const event of events) {
     const key = fingerprint(event);
-    if (seen.has(key)) return false;
+    if (seen.has(key)) continue;
     seen.add(key);
-    return true;
-  });
+    result.push(event);
+  }
+  return result;
 }
 
 export class KnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent> {
@@ -86,7 +77,7 @@ export class KnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent
     try {
       this.storage.setItem(this.storageKey, JSON.stringify(envelope));
     } catch {
-      // LocalStorage may be unavailable or full; the in-memory event store remains usable.
+      return;
     }
   }
 
@@ -95,7 +86,7 @@ export class KnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent
     try {
       this.storage.removeItem(this.storageKey);
     } catch {
-      // Ignore unavailable storage.
+      return;
     }
   }
 }
