@@ -32,6 +32,7 @@ import {
   type EditNodePayload,
   type PanelNodeSummary,
 } from './panels/PanelController';
+import { setupMobileShell } from '../mobile/MobileShell';
 
 const projection = new GraphProjection();
 const store = new EventStore(() => structuredClone(projection.state));
@@ -428,6 +429,8 @@ void seedDemoData()
 window.addEventListener('resize', () => {
   scene.resize();
 });
+
+void setupMobileShell();
 
 (window as unknown as { __debug?: unknown }).__debug = {
   store,

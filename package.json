@@ -6,18 +6,28 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "npm run test:persistence && npm run test:scene && npm run test:core-sun",
+    "test": "npm run test:persistence && npm run test:scene && npm run test:core-sun && npm run test:mobile",
     "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json --noEmit && npx esbuild src/persistence/PersistenceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/persistence-regression.mjs && node .test-dist/persistence-regression.mjs",
     "test:scene": "npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/scene-regression.mjs && node .test-dist/scene-regression.mjs",
     "test:core-sun": "npx esbuild src/ui/scene/CoreSunVisualRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/core-sun-regression.mjs && node .test-dist/core-sun-regression.mjs",
+    "test:mobile": "npx esbuild src/mobile/MobileShellRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/mobile-shell-regression.mjs && node .test-dist/mobile-shell-regression.mjs",
+    "android:build": "CAPACITOR_BUILD=true npm run build",
+    "android:sync": "npm run android:build && cap sync android",
+    "android:open": "npm run android:sync && cap open android",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.8",
     "@types/three": "^0.185.4",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.8",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/core": "^7.6.8",
+    "@capacitor/network": "^7.0.4",
+    "@capacitor/status-bar": "^7.0.6",
     "three": "^0.160.0"
   }
 }
