@@ -2,6 +2,8 @@
 
 Knowledge-Ball is a shared knowledge graph. User-created nodes are persisted by the bundled HTTP service and loaded by every browser when the app starts.
 
+The normative v1 model for nodes, premise relationships, knowledge states, versioning, and validation is documented in [知识协议：数据模型与验证规则](docs/knowledge-protocol.md).
+
 ## Run locally
 
 ```bash
