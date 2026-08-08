@@ -46,3 +46,43 @@ cd android && ./gradlew test assembleDebug
 ```
 
 `android:sync` 会使用相对资源路径生成 `dist` 并同步插件/资源。发布时在 Android Studio 中配置正式签名并生成 AAB；密钥不得提交到仓库。
+
+## 5. Android SDK 配置与故障排除
+
+`SDK location not found` 不是项目编译错误，而是 Gradle 找不到本机 Android SDK。本工程需要 JDK 21、Android SDK Platform 35，以及 Build Tools 34.0.0/35.0.0（应用及 Capacitor 依赖可能分别选择其中一个版本）。
+
+### 推荐方式：Android Studio
+
+1. 安装 Android Studio，在 SDK Manager 中安装 **Android SDK Platform 35**、**Android SDK Build-Tools 34.0.0/35.0.0** 和 **Android SDK Platform-Tools**。
+2. 在 Android Studio 中打开本仓库的 `android/` 目录。IDE 通常会生成仅供本机使用的 `android/local.properties`。
+3. 若没有自动生成，创建该文件并写入 SDK 的绝对路径：
+
+```properties
+# Linux 示例
+sdk.dir=/home/your-name/Android/Sdk
+# macOS 通常为 /Users/your-name/Library/Android/sdk
+# Windows 属性文件需转义反斜杠，例如 C\:\\Users\\your-name\\AppData\\Local\\Android\\Sdk
+```
+
+`local.properties` 已被忽略，不能提交，因为不同开发机的 SDK 路径不同。
+
+### 纯命令行/容器方式
+
+安装 Google Android Command-line Tools 后，执行：
+
+```bash
+export ANDROID_HOME="$HOME/Android/Sdk"
+export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+yes | sdkmanager --licenses
+sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
+npm ci
+npm run android:sync
+cd android
+./gradlew test assembleDebug
+```
+
+也可以不设置环境变量，而是在 `android/local.properties` 中设置 `sdk.dir`。两者至少配置一种。首次原生构建前必须运行 `npm run android:sync`，否则被 Git 忽略的 Capacitor 插件生成目录尚不存在，Gradle 会报告缺少 `capacitor-cordova-android-plugins/cordova.variables.gradle`。
+
+### CI 方式
+
+仓库的 `validate.yml` 会安装 JDK、Android SDK 35 与 Build Tools，随后执行 Web 测试、Capacitor 同步、Android 单元测试和 Debug APK 构建。因此开发机暂时没有 SDK 时，可以推送分支并以 Android CI job 作为可复现的原生构建验收；正式签名包仍应由受控的发布流程生成。
