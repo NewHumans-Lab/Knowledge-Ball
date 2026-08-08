@@ -24,11 +24,13 @@ export const SUN_RADIUS_MM = 0.6;
 export const SUN_GLOW_SCALE = 12;
 export const SUN_ORBIT_RADIUS = 3.2;
 export const SUN_ANGULAR_SPEED = 0.6;
-export const CORE_SUN_RADIUS = SUN_ORBIT_RADIUS + SUN_RADIUS_MM + 0.9;
-export const CORE_SUN_GLOW_SCALE = 2.8;
-export const CORE_SUN_LIGHT_INTENSITY = 18;
-export const CORE_SUN_LIGHT_DISTANCE = LAYER_BANDS.outer.rMax * 1.6;
-export const CORE_AMBIENT_LIGHT_INTENSITY = 0.28;
+// The enclosing visual Sun is deliberately 2x the default ordinary-node radius (9 -> 18).
+// Its corona is much larger than the physical sphere so the central radiation remains visible at whole-graph scale.
+export const CORE_SUN_RADIUS = 18;
+export const CORE_SUN_GLOW_SCALE = 6;
+export const CORE_SUN_LIGHT_INTENSITY = 24;
+export const CORE_SUN_LIGHT_DISTANCE = LAYER_BANDS.outer.rMax * 1.8;
+export const CORE_AMBIENT_LIGHT_INTENSITY = 0.24;
 /** Legacy compatibility only. Camera distance no longer drives zoom. */
 export const SUN_REVEAL_CAM_Z = DEFAULT_CAM_Z / CORE_LABEL_REVEAL_ZOOM;
 export function isKnowledgeDomain(value: string): value is KnowledgeDomain { return ['logic','mathematics','physics','biology','chemistry','computer-science','economics','history','philosophy','general'].includes(value); }
