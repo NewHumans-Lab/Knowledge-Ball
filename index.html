@@ -17,6 +17,9 @@
     --label-size:11px; --label-color:#B8BFD4; --label-font:'Noto Sans SC','Inter',sans-serif;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  .native-app body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
+  .network-banner{position:fixed;top:calc(env(safe-area-inset-top) + 4px);left:50%;transform:translateX(-50%);z-index:300;background:#C9A227;color:#1A1508;padding:5px 12px;border-radius:16px;font-size:11px;font-weight:700;white-space:nowrap;}
+  .network-banner[hidden]{display:none;}
   html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC','Inter',sans-serif;overflow:hidden;overscroll-behavior:none;}
   ::selection{background:var(--brass);color:#0A0E1A;}
   .app{display:flex;flex-direction:column;height:var(--app-height);width:100vw;background:var(--bg-deep); position:relative; overflow:hidden;}
@@ -150,6 +153,9 @@
     .legend{display:none;}
     .hint{display:none;}
     .brand span{display:none;}
+    header{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));}
+    .ai-bar-wrap{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));}
+    .btn,.avatar-btn,.ai-add,.ai-send,.panel-close{min-height:44px;min-width:44px;}
   }
 </style>
 </head>

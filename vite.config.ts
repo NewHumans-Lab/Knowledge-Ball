@@ -2,7 +2,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   root: '.',
-  base: '/Knowledge-Ball/',
+  // GitHub Pages uses a sub-path; the native WebView loads dist/index.html.
+  base: process.env.CAPACITOR_BUILD === 'true' ? './' : '/Knowledge-Ball/',
   build: {
     outDir: 'dist',
     target: 'es2020'
