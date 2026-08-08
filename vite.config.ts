@@ -9,5 +9,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'es2020'
+  },
+  server: {
+    proxy: {
+      '/api/knowledge': 'http://127.0.0.1:8787'
+    }
   }
 });
