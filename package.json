@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "npm run test:persistence",
+    "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node .test-dist/persistence/PersistenceRegression.test.js",
     "preview": "vite preview"
   },
   "devDependencies": {
