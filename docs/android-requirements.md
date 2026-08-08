@@ -49,6 +49,8 @@ cd android && ./gradlew test assembleDebug
 
 网页设置面板提供同源 APK 下载地址 `./downloads/knowledge-ball-android-v0.1.0.apk`。安装包随网页静态产物一起部署，不依赖 Google Play、GitHub Releases 或其他需要跳转的下载服务；用户打开网页后即可直接下载。`CAPACITOR_BUILD=true` 时会禁用 Vite 的 `public` 目录复制，避免把 APK 再嵌套进 Android 应用自身。
 
+Android 原生应用中不会显示“下载”按钮，而会显示“检查更新”和“分享当前版本”。检查更新每次都以 `no-store` 请求 `downloads/latest.json`，比较语义版本后打开最新 APK；Android 安全机制仍会要求用户确认安装。分享会下载当前版本 APK 到应用缓存，再把实际 APK 文件交给系统分享面板，用户可选择社交媒体、邮件、蓝牙或其他已安装应用。
+
 ## 5. Android SDK 配置与故障排除
 
 `SDK location not found` 不是项目编译错误，而是 Gradle 找不到本机 Android SDK。本工程需要 JDK 21、Android SDK Platform 35，以及 Build Tools 34.0.0/35.0.0（应用及 Capacitor 依赖可能分别选择其中一个版本）。

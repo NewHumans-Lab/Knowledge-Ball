@@ -1,7 +1,20 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Network } from '@capacitor/network';
+import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
+
+export const CURRENT_APP_VERSION = '0.1.0';
+export const DOWNLOAD_ROOT = 'https://rushow111.github.io/Knowledge-Ball/downloads';
+export const CURRENT_APK_URL = `${DOWNLOAD_ROOT}/knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
+export const UPDATE_MANIFEST_URL = `${DOWNLOAD_ROOT}/latest.json`;
+
+interface UpdateManifest {
+  version: string;
+  android: { url: string };
+}
 
 export type BackAction = 'close-overlay' | 'close-panel' | 'exit';
 
@@ -9,6 +22,77 @@ export function chooseBackAction(overlayOpen: boolean, panelOpen: boolean): Back
   if (overlayOpen) return 'close-overlay';
   if (panelOpen) return 'close-panel';
   return 'exit';
+}
+
+export function isNewerVersion(candidate: string, current: string): boolean {
+  const normalize = (version: string) => version.split('.').map(part => Number.parseInt(part, 10) || 0);
+  const next = normalize(candidate);
+  const installed = normalize(current);
+  for (let index = 0; index < Math.max(next.length, installed.length); index += 1) {
+    if ((next[index] ?? 0) !== (installed[index] ?? 0)) return (next[index] ?? 0) > (installed[index] ?? 0);
+  }
+  return false;
+}
+
+function setActionStatus(message: string): void {
+  const status = document.getElementById('androidActionStatus');
+  if (status) status.textContent = message;
+}
+
+async function loadUpdateManifest(): Promise<UpdateManifest> {
+  const response = await fetch(`${UPDATE_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Update manifest request failed (${response.status})`);
+  const manifest = await response.json() as UpdateManifest;
+  if (!manifest.version || !manifest.android?.url?.startsWith('https://')) throw new Error('Invalid update manifest');
+  return manifest;
+}
+
+async function checkForUpdate(): Promise<void> {
+  setActionStatus('正在检查最新版…');
+  try {
+    const manifest = await loadUpdateManifest();
+    if (!isNewerVersion(manifest.version, CURRENT_APP_VERSION)) {
+      setActionStatus(`当前已是最新版 v${CURRENT_APP_VERSION}`);
+      return;
+    }
+    setActionStatus(`发现 v${manifest.version}，正在打开安装页面…`);
+    await Browser.open({ url: manifest.android.url });
+  } catch (error) {
+    console.error('Unable to check for Android updates', error);
+    setActionStatus('检查更新失败，请确认网络后重试。');
+  }
+}
+
+async function shareCurrentApk(): Promise<void> {
+  setActionStatus('正在准备当前版本安装包…');
+  try {
+    const response = await fetch(CURRENT_APK_URL, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`APK download failed (${response.status})`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    const fileName = `knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
+    await Filesystem.writeFile({ path: fileName, directory: Directory.Cache, data: btoa(binary) });
+    const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
+    await Share.share({
+      title: `知识球 Android v${CURRENT_APP_VERSION}`,
+      text: `知识球 Android 当前版本 v${CURRENT_APP_VERSION}`,
+      files: [uri],
+      dialogTitle: '分享知识球安装包',
+    });
+    setActionStatus('安装包已交给系统分享面板。');
+  } catch (error) {
+    console.error('Unable to share the current Android APK', error);
+    setActionStatus('准备分享失败，请确认网络和存储空间后重试。');
+  }
+}
+
+function setupVersionActions(): void {
+  document.getElementById('androidUpdate')?.addEventListener('click', () => void checkForUpdate());
+  document.getElementById('androidShare')?.addEventListener('click', () => void shareCurrentApk());
 }
 
 function closeTopLayer(): BackAction {
@@ -37,6 +121,7 @@ function showNetworkState(connected: boolean): void {
 export async function setupMobileShell(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   document.documentElement.classList.add('native-app');
+  setupVersionActions();
   await StatusBar.setStyle({ style: Style.Dark });
   await StatusBar.setBackgroundColor({ color: '#080c16' });
   showNetworkState((await Network.getStatus()).connected);
