@@ -321,7 +321,7 @@ export class PanelController {
       ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnFalsify">⚠ 否定该节点（级联悬置下游）</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
       ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
-      <div class="note-small">节点由共享知识服务保存，其他用户刷新后即可查看。</div>
+      <div class="note-small">节点会先保存在当前设备；共享服务可用时同步给其他用户。</div>
     `;
 
     this.bindPanelRuntimeEvents(id);
@@ -474,7 +474,7 @@ this.showToast('请填写节点结论标题。');
       try {
         await this.onCreateNode({ title, type, reasoning, premises });
         this.closeCreateModal();
-        this.showToast(`节点已提交并同步：${title}`);
+        this.showToast(`节点已保存：${title}`);
       } catch (error) {
         console.error('[Knowledge-Ball] node submission failed:', error);
         this.showToast('提交失败：无法连接共享知识服务，请稍后重试。');
