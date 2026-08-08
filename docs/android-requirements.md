@@ -47,6 +47,8 @@ cd android && ./gradlew test assembleDebug
 
 `android:sync` 会使用相对资源路径生成 `dist` 并同步插件/资源。发布时在 Android Studio 中配置正式签名并生成 AAB；密钥不得提交到仓库。
 
+网页设置面板提供同源 APK 下载地址 `./downloads/knowledge-ball-android-v0.1.0.apk`。安装包随网页静态产物一起部署，不依赖 Google Play、GitHub Releases 或其他需要跳转的下载服务；用户打开网页后即可直接下载。`CAPACITOR_BUILD=true` 时会禁用 Vite 的 `public` 目录复制，避免把 APK 再嵌套进 Android 应用自身。
+
 ## 5. Android SDK 配置与故障排除
 
 `SDK location not found` 不是项目编译错误，而是 Gradle 找不到本机 Android SDK。本工程需要 JDK 21、Android SDK Platform 35，以及 Build Tools 34.0.0/35.0.0（应用及 Capacitor 依赖可能分别选择其中一个版本）。

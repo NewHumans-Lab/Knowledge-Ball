@@ -148,6 +148,10 @@
   .settings-row input[type=color]{width:40px;height:30px;border:none;background:none;padding:0;border-radius:6px;cursor:pointer;}
   .settings-row select, .settings-row input[type=number]{background:var(--bg-deep);border:1px solid var(--panel-border);color:var(--ink);border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;}
   .settings-val{font-size:11px; color:var(--brass); width:44px; text-align:right; flex-shrink:0;}
+  .app-download{padding:14px;border:1px solid var(--panel-border);border-radius:8px;background:rgba(255,255,255,0.025);}
+  .app-download-title{font-size:13px;color:var(--ink);font-weight:600;margin-bottom:6px;}
+  .app-download-meta{font-size:11px;color:var(--ink-faint);line-height:1.65;margin-bottom:12px;}
+  .app-download .btn{display:flex;width:100%;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box;}
   @media (max-width:780px){
     .panel{width:min(340px,90vw);}
     .legend{display:none;}
@@ -322,6 +326,12 @@
       <div class="settings-row">
         <label>级联悬置传播层级上限</label>
         <input type="number" id="depthLimit" min="1" placeholder="∞" style="width:70px;">
+      </div>
+      <div class="form-hint" style="margin:18px 0 12px;">移动应用</div>
+      <div class="app-download">
+        <div class="app-download-title">知识球 Android 应用</div>
+        <div class="app-download-meta">版本 0.1.0 · Android 7.0 及以上<br>安装时请允许浏览器安装来自此来源的应用。</div>
+        <a class="btn primary" id="androidDownload" href="./downloads/knowledge-ball-android-v0.1.0.apk" download="knowledge-ball-android-v0.1.0.apk" type="application/vnd.android.package-archive">下载 Android 安装包（APK）</a>
       </div>
       <p class="note-small" style="text-align:left;">更多设置项（通知偏好、隐私范围、连接的第三方身份凭证等）预留，后续版本补充。</p>
     </div>

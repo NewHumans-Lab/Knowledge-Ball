@@ -29,6 +29,7 @@ export class GitHubKnowledgeGateway implements KnowledgeRepository {
       throw new Error(`Knowledge gateway request failed: ${response.status} ${response.statusText}${text ? ` — ${text}` : ''}`);
     }
 
+    if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }
 

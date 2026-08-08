@@ -9,6 +9,8 @@ import { resolveNode as cmdResolveNode } from '../command/ResolveNode';
 import { setMastery as cmdSetMastery } from '../command/SetMastery';
 import { disputeNode as cmdDisputeNode } from '../command/DisputeNode';
 import { suspendNode as cmdSuspendNode } from '../command/SuspendNode';
+import { GitHubKnowledgeGateway } from '../storage/GitHubKnowledgeGateway';
+import { buildKnowledgeNodeRecord, type KnowledgeNodeRecord } from '../storage/KnowledgeNode';
 
 import {
   TWIN_META,
@@ -36,6 +38,10 @@ import { setupMobileShell } from '../mobile/MobileShell';
 
 const projection = new GraphProjection();
 const store = new EventStore(() => structuredClone(projection.state));
+const knowledgeRepository = new GitHubKnowledgeGateway({
+  endpoint: '/api/knowledge',
+  namespace: 'public',
+});
 
 let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
@@ -58,7 +64,7 @@ function qOpt<T extends Element>(selector: string): T | undefined {
 }
 
 function generateNodeId(): string {
-  return `n${Math.random().toString(36).slice(2, 9)}`;
+  return `n-${crypto.randomUUID()}`;
 }
 
 function syncNodesFromProjection(): void {
@@ -146,6 +152,12 @@ function openNode(id: string): void {
 
 async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
   const nodeId = generateNodeId();
+  await knowledgeRepository.saveNode(buildKnowledgeNodeRecord(nodeId, {
+    title: payload.title,
+    type: payload.type,
+    reasoning: payload.reasoning,
+    premises: payload.premises,
+  }));
   await cmdCreateNode(store, {
     nodeId,
     title: payload.title,
@@ -156,6 +168,21 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
   currentPanelId = nodeId;
   panel.openNodePanel(nodeId);
   scene.markDirty();
+}
+
+async function importKnowledgeNode(node: KnowledgeNodeRecord): Promise<void> {
+  if (projection.state.nodesById[node.id]) return;
+  await seedNode(node.id, node.title, node.type, node.reasoning, node.premises);
+  if (node.mastery !== 'none') await cmdSetMastery(store, { nodeId: node.id, mastery: node.mastery });
+  if (node.status === 'verified') await cmdResolveNode(store, { nodeId: node.id });
+  if (node.status === 'suspended') await cmdSuspendNode(store, { nodeId: node.id });
+  if (node.status === 'disputed') await cmdDisputeNode(store, { nodeId: node.id });
+  if (node.status === 'falsified') await cmdFalsifyNode(store, projection, { nodeId: node.id });
+}
+
+async function loadSharedKnowledge(): Promise<void> {
+  const nodes = await knowledgeRepository.listNodes();
+  for (const node of nodes) await importKnowledgeNode(node);
 }
 
 async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<void> {
@@ -415,7 +442,12 @@ sendButton?.addEventListener('click', () => {
 
 interaction.setHideUntouched(false);
 
-void seedDemoData()
+void loadSharedKnowledge()
+  .catch(err => {
+    console.error('[Knowledge-Ball] shared knowledge load failed:', err);
+    panel.showToast('共享知识服务暂不可用，当前显示演示数据。');
+  })
+  .then(() => seedDemoData())
   .then(() => {
     syncNodesFromProjection();
     scene.markDirty();
