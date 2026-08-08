@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "npm run test:persistence",
-    "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json && node --experimental-specifier-resolution=node .test-dist/persistence/PersistenceRegression.test.js",
+    "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json --noEmit && npx esbuild src/persistence/PersistenceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/persistence-regression.mjs && node .test-dist/persistence-regression.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {
