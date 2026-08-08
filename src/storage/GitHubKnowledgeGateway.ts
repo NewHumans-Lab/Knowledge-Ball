@@ -6,6 +6,17 @@ export interface GitHubKnowledgeGatewayOptions {
   namespace?: string;
 }
 
+export class KnowledgeGatewayError extends Error {
+  constructor(
+    readonly status: number,
+    readonly statusText: string,
+    readonly responseBody: string,
+  ) {
+    super(`Knowledge gateway request failed: ${status} ${statusText}${responseBody ? ` — ${responseBody}` : ''}`);
+    this.name = 'KnowledgeGatewayError';
+  }
+}
+
 export class GitHubKnowledgeGateway implements KnowledgeRepository {
   private endpoint: string;
   private namespace: string;
@@ -26,7 +37,7 @@ export class GitHubKnowledgeGateway implements KnowledgeRepository {
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(`Knowledge gateway request failed: ${response.status} ${response.statusText}${text ? ` — ${text}` : ''}`);
+      throw new KnowledgeGatewayError(response.status, response.statusText, text);
     }
 
     if (response.status === 204) return undefined as T;
@@ -61,8 +72,9 @@ export class GitHubKnowledgeGateway implements KnowledgeRepository {
   async getNode(id: string): Promise<KnowledgeNodeRecord | null> {
     try {
       return await this.request<KnowledgeNodeRecord>(`/nodes/${encodeURIComponent(id)}?namespace=${encodeURIComponent(this.namespace)}`);
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof KnowledgeGatewayError && error.status === 404) return null;
+      throw error;
     }
   }
 
