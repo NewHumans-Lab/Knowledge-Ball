@@ -11,6 +11,7 @@ import { disputeNode as cmdDisputeNode } from '../command/DisputeNode';
 import { suspendNode as cmdSuspendNode } from '../command/SuspendNode';
 import { GitHubKnowledgeGateway } from '../storage/GitHubKnowledgeGateway';
 import { buildKnowledgeNodeRecord, type KnowledgeNodeRecord } from '../storage/KnowledgeNode';
+import { supportsSharedKnowledgeApi } from '../storage/HostingEnvironment';
 
 import {
   TWIN_META,
@@ -38,10 +39,10 @@ import { setupMobileShell } from '../mobile/MobileShell';
 
 const projection = new GraphProjection();
 const store = new EventStore(() => structuredClone(projection.state));
-const knowledgeRepository = new GitHubKnowledgeGateway({
-  endpoint: '/api/knowledge',
-  namespace: 'public',
-});
+const knowledgeRepository = supportsSharedKnowledgeApi(window.location.hostname)
+  ? new GitHubKnowledgeGateway({ endpoint: '/api/knowledge', namespace: 'public' })
+  : null;
+const sharedRecords = new Map<string, KnowledgeNodeRecord>();
 
 let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
@@ -152,12 +153,14 @@ function openNode(id: string): void {
 
 async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
   const nodeId = generateNodeId();
-  await knowledgeRepository.saveNode(buildKnowledgeNodeRecord(nodeId, {
+  const record = buildKnowledgeNodeRecord(nodeId, {
     title: payload.title,
     type: payload.type,
     reasoning: payload.reasoning,
     premises: payload.premises,
-  }));
+  });
+  if (knowledgeRepository) await knowledgeRepository.saveNode(record);
+  sharedRecords.set(nodeId, record);
   await cmdCreateNode(store, {
     nodeId,
     title: payload.title,
@@ -171,6 +174,7 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
 }
 
 async function importKnowledgeNode(node: KnowledgeNodeRecord): Promise<void> {
+  sharedRecords.set(node.id, node);
   if (projection.state.nodesById[node.id]) return;
   await seedNode(node.id, node.title, node.type, node.reasoning, node.premises);
   if (node.mastery !== 'none') await cmdSetMastery(store, { nodeId: node.id, mastery: node.mastery });
@@ -181,8 +185,34 @@ async function importKnowledgeNode(node: KnowledgeNodeRecord): Promise<void> {
 }
 
 async function loadSharedKnowledge(): Promise<void> {
+  if (!knowledgeRepository) return;
   const nodes = await knowledgeRepository.listNodes();
   for (const node of nodes) await importKnowledgeNode(node);
+}
+
+async function persistProjectedNode(id: string): Promise<void> {
+  if (!knowledgeRepository) return;
+  const node = projection.state.nodesById[id];
+  if (!node) return;
+  const previous = sharedRecords.get(id);
+  const now = new Date().toISOString();
+  const record: KnowledgeNodeRecord = {
+    id: node.id,
+    title: node.title,
+    type: node.type,
+    status: node.status,
+    mastery: node.mastery,
+    reasoning: node.reasoning,
+    premises: [...node.premises],
+    tags: previous?.tags ?? [],
+    domain: previous?.domain ?? 'general',
+    version: (previous?.version ?? 0) + 1,
+    createdAt: previous?.createdAt ?? now,
+    updatedAt: now,
+    author: previous?.author,
+  };
+  await knowledgeRepository.saveNode(record);
+  sharedRecords.set(id, record);
 }
 
 async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<void> {
@@ -192,22 +222,28 @@ async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<
     nodeType: payload.type,
     reasoning: payload.reasoning,
   });
+  await persistProjectedNode(id);
 }
 
 async function falsifyKnowledgeNode(id: string): Promise<void> {
-  await cmdFalsifyNode(store, projection, { nodeId: id });
+  const events = await cmdFalsifyNode(store, projection, { nodeId: id });
+  const affectedIds = new Set(events.map(event => event.payload.nodeId));
+  await Promise.all([...affectedIds].map(persistProjectedNode));
 }
 
 async function resolveKnowledgeNode(id: string): Promise<void> {
   await cmdResolveNode(store, { nodeId: id });
+  await persistProjectedNode(id);
 }
 
 async function disputeKnowledgeNode(id: string): Promise<void> {
   await cmdDisputeNode(store, { nodeId: id });
+  await persistProjectedNode(id);
 }
 
 async function setKnowledgeMastery(id: string, mastery: 'none' | 'touched' | 'mastered'): Promise<void> {
   await cmdSetMastery(store, { nodeId: id, mastery });
+  await persistProjectedNode(id);
 }
 
 async function seedNode(

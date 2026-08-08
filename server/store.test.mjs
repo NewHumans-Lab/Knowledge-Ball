@@ -20,3 +20,24 @@ test('a node saved by one client is visible to another', async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('a failed write does not permanently poison later writes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'knowledge-ball-'));
+  try {
+    class RecoveringStore extends KnowledgeStore {
+      failures = 1;
+
+      async write(data) {
+        if (this.failures-- > 0) throw new Error('temporary disk failure');
+        return super.write(data);
+      }
+    }
+
+    const store = new RecoveringStore(join(dir, 'knowledge.json'));
+    await assert.rejects(() => store.save('public', { id: 'first' }), /temporary disk failure/);
+    await store.save('public', { id: 'second' });
+    assert.deepEqual(await store.list('public'), [{ id: 'second' }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -7,6 +7,18 @@ const port = Number(process.env.PORT ?? 8787);
 const root = resolve('dist');
 const store = new KnowledgeStore(resolve(process.env.KNOWLEDGE_DATA_FILE ?? 'data/knowledge.json'));
 const types = new Set(['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value']);
+const statuses = new Set(['pending', 'verified', 'suspended', 'disputed', 'falsified']);
+const masteryLevels = new Set(['none', 'touched', 'mastered']);
+const domains = new Set(['logic', 'mathematics', 'physics', 'biology', 'chemistry', 'computer-science', 'economics', 'history', 'philosophy', 'general']);
+const unsafeKeys = new Set(['__proto__', 'prototype', 'constructor']);
+
+function validKey(value, maxLength) {
+  return typeof value === 'string' && value.length > 0 && value.length <= maxLength && !unsafeKeys.has(value);
+}
+
+function validNamespace(value) {
+  return validKey(value, 50) && /^[\w-]+$/.test(value);
+}
 
 function send(res, status, body) {
   const text = body === undefined ? '' : JSON.stringify(body);
@@ -24,17 +36,20 @@ async function readJson(req) {
 }
 
 function validNode(node) {
-  return node && typeof node.id === 'string' && node.id.length <= 100 &&
+  return node && validKey(node.id, 100) &&
     typeof node.title === 'string' && Boolean(node.title.trim()) && node.title.length <= 200 &&
     typeof node.reasoning === 'string' && node.reasoning.length <= 10_000 && types.has(node.type) &&
-    Array.isArray(node.premises) && node.premises.every(value => typeof value === 'string');
+    statuses.has(node.status) && masteryLevels.has(node.mastery) && domains.has(node.domain) &&
+    Number.isInteger(node.version) && node.version >= 1 &&
+    Array.isArray(node.tags) && node.tags.length <= 100 && node.tags.every(value => typeof value === 'string' && value.length <= 100) &&
+    Array.isArray(node.premises) && node.premises.length <= 100 && node.premises.every(value => validKey(value, 100));
 }
 
 async function handleApi(req, res, url) {
   if (url.pathname === '/api/knowledge/drafts' && req.method === 'POST') {
     const body = await readJson(req);
     const namespace = body.namespace || 'default';
-    if (!/^[\w-]{1,50}$/.test(namespace) || !body.draft || typeof body.draft.title !== 'string') {
+    if (!validNamespace(namespace) || !body.draft || typeof body.draft.title !== 'string') {
       send(res, 400, { error: 'Invalid draft' });
       return true;
     }
@@ -43,14 +58,24 @@ async function handleApi(req, res, url) {
     return true;
   }
   const prefix = '/api/knowledge/nodes';
-  if (!url.pathname.startsWith(prefix)) return false;
+  if (url.pathname !== prefix && !url.pathname.startsWith(`${prefix}/`)) return false;
   const queryNamespace = url.searchParams.get('namespace') || 'default';
-  if (!/^[\w-]{1,50}$/.test(queryNamespace)) {
+  if (!validNamespace(queryNamespace)) {
     send(res, 400, { error: 'Invalid namespace' });
     return true;
   }
   const encodedId = url.pathname.slice(prefix.length).replace(/^\//, '');
-  const id = encodedId ? decodeURIComponent(encodedId) : '';
+  let id = '';
+  try {
+    id = encodedId ? decodeURIComponent(encodedId) : '';
+  } catch {
+    send(res, 400, { error: 'Invalid node id' });
+    return true;
+  }
+  if (id && !validKey(id, 100)) {
+    send(res, 400, { error: 'Invalid node id' });
+    return true;
+  }
   if (req.method === 'GET' && !id) {
     const domain = url.searchParams.get('domain');
     const nodes = await store.list(queryNamespace);
@@ -65,7 +90,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && !id) {
     const body = await readJson(req);
     const namespace = body.namespace || queryNamespace;
-    if (!/^[\w-]{1,50}$/.test(namespace) || !validNode(body.node)) {
+    if (!validNamespace(namespace) || !validNode(body.node)) {
       send(res, 400, { error: 'Invalid node' });
       return true;
     }

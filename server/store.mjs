@@ -22,23 +22,21 @@ export class KnowledgeStore {
   }
 
   async save(namespace, node) {
-    this.writeQueue = this.writeQueue.then(async () => {
+    return this.enqueue(async () => {
       const data = await this.read();
       const space = data.namespaces[namespace] ??= { nodes: {}, drafts: [] };
       space.nodes[node.id] = node;
       await this.write(data);
     });
-    return this.writeQueue;
   }
 
   async saveDraft(namespace, draft) {
-    this.writeQueue = this.writeQueue.then(async () => {
+    return this.enqueue(async () => {
       const data = await this.read();
       const space = data.namespaces[namespace] ??= { nodes: {}, drafts: [] };
       (space.drafts ??= []).push(draft);
       await this.write(data);
     });
-    return this.writeQueue;
   }
 
   async get(namespace, id) {
@@ -47,12 +45,17 @@ export class KnowledgeStore {
   }
 
   async delete(namespace, id) {
-    this.writeQueue = this.writeQueue.then(async () => {
+    return this.enqueue(async () => {
       const data = await this.read();
       if (data.namespaces[namespace]?.nodes) delete data.namespaces[namespace].nodes[id];
       await this.write(data);
     });
-    return this.writeQueue;
+  }
+
+  enqueue(operation) {
+    const pending = this.writeQueue.catch(() => undefined).then(operation);
+    this.writeQueue = pending;
+    return pending;
   }
 
   async write(data) {

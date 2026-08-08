@@ -145,7 +145,9 @@ export class InteractionController {
       this.unbinders.push(() => this.personalButton?.removeEventListener('click', onPersonalClick));
     }
 
-    if (this.hideUntouchedButton) {
+    // The header's "personal" control currently serves both roles. Avoid
+    // attaching the same toggle twice when both options reference that button.
+    if (this.hideUntouchedButton && this.hideUntouchedButton !== this.personalButton) {
       const onHideToggle = () => this.setHideUntouched(!this.hideUntouched);
       this.hideUntouchedButton.addEventListener('click', onHideToggle);
       this.unbinders.push(() => this.hideUntouchedButton?.removeEventListener('click', onHideToggle));
