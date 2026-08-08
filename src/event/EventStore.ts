@@ -1,17 +1,11 @@
 import type { DomainEvent } from './Event';
+import { KnowledgePersistence } from '../persistence/KnowledgePersistence';
 
-export interface Snapshot<TState> {
-  upToSeq: number;
-  schemaVersion: number;
-  state: TState;
-  takenAt: number;
-}
-
-export interface StoreListener {
-  (event: DomainEvent): void;
-}
-
+export interface Snapshot<TState> { upToSeq: number; schemaVersion: number; state: TState; takenAt: number; }
+export interface StoreListener { (event: DomainEvent): void; }
+export interface EventPersistence { loadLocal(): DomainEvent[]; saveLocal(events: DomainEvent[]): void; }
 const SNAPSHOT_EVERY_N_EVENTS = 5000;
+const DEFAULT_STORAGE_KEY = 'knowledge-ball.events.v1';
 
 export class EventStore<TState> {
   private events: DomainEvent[] = [];
@@ -19,27 +13,42 @@ export class EventStore<TState> {
   private listeners: StoreListener[] = [];
   private snapshot: Snapshot<TState> | null = null;
   private nextSeq = 1;
+  private readonly persistence: EventPersistence;
 
-  constructor(private makeSnapshotState: () => TState) {}
+  constructor(private makeSnapshotState: () => TState, persistence?: EventPersistence) {
+    this.persistence = persistence ?? new KnowledgePersistence<DomainEvent>({ storageKey: DEFAULT_STORAGE_KEY });
+    this.restore(this.persistence.loadLocal());
+  }
+
+  hydrateLocal(): DomainEvent[] { this.restore(this.persistence.loadLocal()); return this.allEvents(); }
+
+  restore(events: DomainEvent[]): void {
+    this.events = [];
+    this.idIndex.clear();
+    this.snapshot = null;
+    this.nextSeq = 1;
+    for (const event of events) {
+      if (this.idIndex.has(event.id)) continue;
+      const stamped = { ...event, seq: this.nextSeq++ } as DomainEvent;
+      this.events.push(stamped);
+      this.idIndex.add(stamped.id);
+    }
+  }
 
   append(event: DomainEvent): boolean {
-    if (this.idIndex.has(event.id)) {
-      console.warn(`[EventStore] duplicate event id ${event.id} (${event.type}) — ignored`);
-      return false;
-    }
+    if (this.idIndex.has(event.id)) return false;
     const stamped: DomainEvent = { ...event, seq: this.nextSeq++ };
     this.events.push(stamped);
     this.idIndex.add(event.id);
-    this.listeners.forEach(l => l(stamped));
-
-    if (this.events.length % SNAPSHOT_EVERY_N_EVENTS === 0) {
-      this.takeSnapshot();
-    }
+    this.listeners.forEach(listener => listener(stamped));
+    this.persistence.saveLocal(this.events);
+    if (this.events.length % SNAPSHOT_EVERY_N_EVENTS === 0) this.takeSnapshot();
     return true;
   }
 
-  subscribe(listener: StoreListener): () => void {
+  subscribe(listener: StoreListener, replayExisting = true): () => void {
     this.listeners.push(listener);
+    if (replayExisting) this.events.forEach(listener);
     return () => { this.listeners = this.listeners.filter(l => l !== listener); };
   }
 
@@ -47,25 +56,10 @@ export class EventStore<TState> {
     const from = this.snapshot?.upToSeq ?? 0;
     return this.events.filter(e => (e.seq ?? 0) > from);
   }
-
-  allEvents(): DomainEvent[] {
-    return this.events.slice();
-  }
-
-  latestSnapshot(): Snapshot<TState> | null {
-    return this.snapshot;
-  }
-
+  allEvents(): DomainEvent[] { return this.events.slice(); }
+  latestSnapshot(): Snapshot<TState> | null { return this.snapshot; }
   takeSnapshot(): void {
-    this.snapshot = {
-      upToSeq: this.nextSeq - 1,
-      schemaVersion: 1,
-      state: this.makeSnapshotState(),
-      takenAt: Date.now(),
-    };
+    this.snapshot = { upToSeq: this.nextSeq - 1, schemaVersion: 1, state: this.makeSnapshotState(), takenAt: Date.now() };
   }
-
-  size(): number {
-    return this.events.length;
-  }
+  size(): number { return this.events.length; }
 }

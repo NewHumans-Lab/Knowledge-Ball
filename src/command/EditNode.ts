@@ -8,12 +8,10 @@ export interface EditNodePayload {
   title?: string;
   nodeType?: NodeType;
   reasoning?: string;
+  premises?: string[];
 }
 
-export async function editNode(
-  store: EventStore<GraphState>,
-  payload: EditNodePayload
-): Promise<NodeEditedEvent> {
+export async function editNode(store: EventStore<GraphState>, payload: EditNodePayload): Promise<NodeEditedEvent> {
   const id = await fingerprint('NodeEdited', payload);
   const event: NodeEditedEvent = {
     id,

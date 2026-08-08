@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".test-dist",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "isolatedModules": false
+  },
+  "include": [
+    "src/event/**/*.ts",
+    "src/command/**/*.ts",
+    "src/graph/**/*.ts",
+    "src/projection/**/*.ts",
+    "src/state/**/*.ts",
+    "src/persistence/**/*.ts"
+  ]
+}
