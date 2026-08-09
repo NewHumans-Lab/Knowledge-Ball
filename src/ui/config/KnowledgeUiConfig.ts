@@ -8,9 +8,10 @@ export const TWIN_META = { n6: { twinGroup: 'twinPrime', sharedTitle: '质数数
 export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', definition:'定义', fact:'事实', theorem:'定理', hypothesis:'假说', prediction:'预测', opinion:'观点', value:'价值判断', reasoning:'推理过程', 'logic-symbol':'逻辑符号' };
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
-export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xE8E4D9, definition:0x7C93C9, fact:0x5BA88B, theorem:0xC9A227, hypothesis:0x9B7EDE, prediction:0x5FD1C9, opinion:0xE8825B, value:0xD8748A, reasoning:0x4DB6E5, 'logic-symbol':0xA6E3A1 };
-export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#E8E4D9', definition:'#7C93C9', fact:'#5BA88B', theorem:'#C9A227', hypothesis:'#9B7EDE', prediction:'#5FD1C9', opinion:'#E8825B', value:'#D8748A', reasoning:'#4DB6E5', 'logic-symbol':'#A6E3A1' };
-export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#5BA88B', pending:'#7C93C9', suspended:'#6B7290', disputed:'#E0A030', falsified:'#C85450' };
+// Relational-field palette: colour communicates epistemic role; status controls intensity.
+export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xB9C8C2, definition:0x9EB8AE, fact:0xB8E3D2, theorem:0xC7AC68, hypothesis:0x9384B5, prediction:0xB8E3D2, opinion:0x9384B5, value:0xC7AC68, reasoning:0x9384B5, 'logic-symbol':0x9EB8AE };
+export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#B9C8C2', definition:'#9EB8AE', fact:'#B8E3D2', theorem:'#C7AC68', hypothesis:'#9384B5', prediction:'#B8E3D2', opinion:'#9384B5', value:'#C7AC68', reasoning:'#9384B5', 'logic-symbol':'#9EB8AE' };
+export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#B8E3D2', pending:'#9384B5', suspended:'#667D78', disputed:'#D28170', falsified:'#D28170' };
 export const LAYER_BANDS = { inner:{rMin:0,rMax:95}, middle:{rMin:95,rMax:170}, outer:{rMin:170,rMax:260}, core:{rMin:0,rMax:16} } as const;
 export const LAYER_LABEL = { inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测', core:'核心 · 三体系统' } as const;
 export const TWIN_REST_LEN = 14;

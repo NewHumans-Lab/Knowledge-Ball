@@ -27,6 +27,7 @@ export interface PanelNodeSummary {
 
 export interface CreateNodePayload {
   title: string;
+  canonicalTitle?: string;
   type: KnowledgeNodeType;
   description: string;
   reasoning?: string;
@@ -106,6 +107,7 @@ export interface PanelControllerElements {
   modalSubmit: HTMLButtonElement;
 
   fTitle: HTMLInputElement;
+  fCanonical: HTMLInputElement;
   fType: HTMLSelectElement;
   fDescription: HTMLTextAreaElement;
   fReasoning: HTMLTextAreaElement;
@@ -185,6 +187,7 @@ export class PanelController {
   private readonly modalSubmit: HTMLButtonElement;
 
   private readonly fTitle: HTMLInputElement;
+  private readonly fCanonical: HTMLInputElement;
   private readonly fType: HTMLSelectElement;
   private readonly fDescription: HTMLTextAreaElement;
   private readonly fReasoning: HTMLTextAreaElement;
@@ -250,6 +253,7 @@ export class PanelController {
     this.modalSubmit = options.modalSubmit;
 
     this.fTitle = options.fTitle;
+    this.fCanonical = options.fCanonical;
     this.fType = options.fType;
     this.fDescription = options.fDescription;
     this.fReasoning = options.fReasoning;
@@ -357,11 +361,18 @@ export class PanelController {
       <div class="field">
         <label>掌握程度</label>
         <div class="mastery-display" id="masteryDisplay">${MASTERY_LABEL[node.mastery]}</div>
+        <div class="mastery-private">PRIVATE STATE · 仅你可见，不影响公共知识有效性</div>
         <div class="mastery-demo-controls">
           <div class="chip ${node.mastery === 'none' ? 'active' : ''}" data-mastery="none">未接触</div>
           <div class="chip ${node.mastery === 'touched' ? 'active' : ''}" data-mastery="touched">接触过</div>
           <div class="chip ${node.mastery === 'mastered' ? 'active' : ''}" data-mastery="mastered">完全掌握</div>
         </div>
+      </div>
+
+      <div class="field-reasoning-band" aria-label="当前推理链">
+        <div class="reasoning-stage">PREMISES<b>${node.premises.length || '—'}</b></div><span class="reasoning-arrow">→</span>
+        <div class="reasoning-stage">REASONING<b>${node.type === 'reasoning' ? '当前节点' : (logicRule ? '已连接' : '—')}</b></div><span class="reasoning-arrow">→</span>
+        <div class="reasoning-stage">CONCLUSION<b>${node.type === 'reasoning' ? depsHtml === '' ? '—' : '下游' : '当前节点'}</b></div>
       </div>
 
       <div class="field">
@@ -386,14 +397,14 @@ export class PanelController {
 
     this.panelActions.innerHTML = `
       <div class="action-grid">
-        <button class="btn ghost" id="btnEditNode">✎ 编辑节点</button>
-        <button class="btn ghost" id="btnDeriveNode">↳ 推理新节点</button>
+        <button class="btn ghost" id="btnEditNode">Edit · 编辑</button>
+        <button class="btn ghost" id="btnDeriveNode">Add · 新增</button>
       </div>
       <div class="action-grid">
-        ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">⑂ 分解推理</button>' : ''}
-        ${this.canMerge(node) ? '<button class="btn ghost" id="btnMerge">⇉ 合并同义知识</button>' : ''}
+        ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">Decompose · 分解</button>' : ''}
+        ${this.canMerge(node) ? '<button class="btn ghost" id="btnMerge">Merge · 合并</button>' : ''}
       </div>
-      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">⚠ 用反例否定该节点</button>` : ''}
+      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Negate · 以 Counterexample 否定</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
       ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
       <div class="note-small">节点会先保存在当前设备；共享服务可用时同步给其他用户。</div>
@@ -418,6 +429,7 @@ export class PanelController {
       this.modalHint.textContent = src ? `将默认以「${src.title}」作为前置知识点` : '将默认以所选节点作为前置知识点';
     }
     this.fTitle.value = '';
+    this.fCanonical.value = '';
     this.fType.value = prefillPremiseId ? 'theorem' : 'fact';
     this.fDescription.value = '';
     this.fReasoning.value = '';
@@ -531,6 +543,7 @@ export class PanelController {
 
     this.modalSubmit.addEventListener('click', async () => {
       const title = this.fTitle.value.trim();
+      const canonicalTitle = this.fCanonical.value.trim();
       const description = this.fDescription.value.trim();
       const reasoning = this.fReasoning.value.trim();
       const type = this.fType.value as KnowledgeNodeType;
@@ -541,6 +554,17 @@ export class PanelController {
 
       if (!title) {
         this.showToast('请填写节点标题。');
+        return;
+      }
+      const containsNonEnglish = /[^\x00-\x7F]/.test(title);
+      if (containsNonEnglish && !canonicalTitle) {
+        this.showToast('非英文 Original 必须填写 Canonical English 后才能提交。');
+        this.fCanonical.focus();
+        return;
+      }
+      if (canonicalTitle && /[^\x00-\x7F]/.test(canonicalTitle)) {
+        this.showToast('Canonical English 必须使用英文字符。');
+        this.fCanonical.focus();
         return;
       }
       if (!description) {
@@ -564,6 +588,7 @@ export class PanelController {
       try {
         await this.onCreateNode({
           title,
+          canonicalTitle: canonicalTitle || undefined,
           type,
           description,
           reasoning: derived ? reasoning : undefined,
@@ -757,6 +782,7 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
 
     this.panelTitle.textContent = `否定：${node.title}`;
     this.panelBody.innerHTML = `
+      <div class="counterexample-callout"><b>COUNTEREXAMPLE → TARGET</b><br>反例将沿真实依赖关系抵达目标命题；目标与下游路径会减弱，而不会被爆炸式删除。</div>
       <div class="field">
         <label>反例知识节点（至少一个）</label>
         <div class="premise-list">
@@ -811,6 +837,8 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
     const conclusions = this.getNodes().filter(node => node.type !== 'reasoning' && node.premises.includes(id));
     this.panelTitle.textContent = `分解：${reasoning.title}`;
     this.panelBody.innerHTML = `
+      <div class="field-reasoning-band"><div class="reasoning-stage">前提<b>已连接</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">中间推理<b>未完成</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">结论<b>等待连接</b></div></div>
+      <div class="operation-progress" aria-label="分解进度"><span style="width:33%"></span></div>
       <div class="field">
         <label>原结论</label>
         <select id="decomposeConclusion">
@@ -885,6 +913,7 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
     const candidates = this.getNodes().filter(candidate => candidate.id !== node.id && candidate.type === 'definition');
     this.panelTitle.textContent = `合并定义：${node.title}`;
     this.panelBody.innerHTML = `
+      <div class="difference-card"><b>DIFFERENCE REVIEW</b><br>选择待合并定义，逐项比较 Original 表述、语义标识与统一定义；差异确认前不会重连关系。</div>
       <div class="field"><label>同一定义的其他语言描述</label><div class="premise-list">
         ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
       </div></div>
@@ -931,6 +960,7 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
     });
     this.panelTitle.textContent = `合并理论：${node.title}`;
     this.panelBody.innerHTML = `
+      <div class="difference-card"><b>REASONING CHAIN DIFF</b><br>仅共同前提和逻辑规则一致的链可进入比较。请核对推理文本与结论差异。</div>
       <div class="field"><label>具有相同前提、推理过程和逻辑符号的结论</label><div class="premise-list">
         ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
       </div></div>

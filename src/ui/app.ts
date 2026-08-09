@@ -522,6 +522,7 @@ panel = new PanelController({
   modalSubmit: must<HTMLButtonElement>('modalSubmit'),
 
   fTitle: must<HTMLInputElement>('fTitle'),
+  fCanonical: must<HTMLInputElement>('fCanonical'),
   fType: must<HTMLSelectElement>('fType'),
   fDescription: must<HTMLTextAreaElement>('fDescription'),
   fReasoning: must<HTMLTextAreaElement>('fReasoning'),
