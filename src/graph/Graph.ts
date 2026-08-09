@@ -3,12 +3,15 @@ import type { GraphEdge } from './Edge';
 
 export function edgesFrom(nodes: GraphNode[]): GraphEdge[] {
   const edges: GraphEdge[] = [];
-  nodes.forEach(n => n.premises.forEach(p => edges.push({ from: p, to: n.id })));
+  nodes.forEach(n => {
+    n.premises.forEach(p => edges.push({ from: p, to: n.id }));
+    if (n.logicRuleId) edges.push({ from: n.logicRuleId, to: n.id });
+  });
   return edges;
 }
 
 export function dependentsOf(nodeId: string, nodes: GraphNode[]): GraphNode[] {
-  return nodes.filter(n => n.premises.includes(nodeId));
+  return nodes.filter(n => n.premises.includes(nodeId) || n.logicRuleId === nodeId);
 }
 
 export function cascadeReachable(

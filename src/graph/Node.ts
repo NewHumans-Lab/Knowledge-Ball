@@ -8,4 +8,10 @@ export interface GraphNode {
   mastery: Mastery;
   reasoning: string;
   premises: string[];
+  hidden?: boolean;
+  aliases?: string[];
+  supersededBy?: string;
+  logicRuleId?: string;
+  negatedBy?: string[];
+  semanticKey?: string;
 }

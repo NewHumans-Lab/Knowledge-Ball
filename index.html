@@ -18,6 +18,7 @@
     --c-axiom:#E8E4D9; --c-definition:#7C93C9; --c-theorem:#C9A227; --c-hypothesis:#9B7EDE;
     --c-prediction:#5FD1C9; --c-fact:#5BA88B; --c-opinion:#E8825B; --c-value:#D8748A;
     --c-reasoning:#4DB6E5;
+    --c-logic-symbol:#A6E3A1;
     --st-disputed:#E0A030; --st-falsified:#C85450; --st-suspended:#6B7290;
     --label-size:11px; --label-color:#B8BFD4; --label-font:'Noto Sans SC','Inter',sans-serif;
   }
@@ -207,6 +208,7 @@
       <div class="legend-row"><div class="legend-dot" style="background:var(--c-opinion)"></div><span>观点</span></div>
       <div class="legend-row"><div class="legend-dot" style="background:var(--c-value)"></div><span>价值判断</span></div>
       <div class="legend-row"><div class="legend-dot" style="background:var(--c-reasoning)"></div><span>推理过程</span></div>
+      <div class="legend-row"><div class="legend-dot" style="background:var(--c-logic-symbol)"></div><span>逻辑符号</span></div>
     </div>
     <div class="hint">
       拖空白：旋转整球<br>
@@ -257,23 +259,30 @@
           <option value="prediction">预测 Prediction</option>
           <option value="opinion">观点 Opinion</option>
           <option value="value">价值判断 Value</option>
+          <option value="logic-symbol">逻辑符号 Logic symbol</option>
         </select>
       </div>
       <div class="form-field">
-        <label>最小推理过程（完整内容写这里）</label>
-        <textarea id="fReasoning" placeholder="从前提节点推导出该结论的最小推理链…"></textarea>
+        <label>知识描述</label>
+        <textarea id="fDescription" placeholder="定义、事实或结论本身的完整描述…"></textarea>
       </div>
-      <div class="form-field">
+      <div class="form-field" id="fReasoningField">
+        <label>推理过程</label>
+        <textarea id="fReasoning" placeholder="逐步说明如何从所选前提推出该结论…"></textarea>
+      </div>
+      <div class="form-field" id="fPremisesField">
         <label>前置知识点（依赖边，可多选）</label>
         <div class="premise-list" id="fPremises"></div>
       </div>
-      <div class="form-field checkbox-field">
-        <label><input type="checkbox" id="fLogicConfirm"> 我确认该结论及推理不违反逻辑三大基本定律（同一律 / 矛盾律 / 排中律）</label>
+      <div class="form-field" id="fLogicRuleField">
+        <label>逻辑符号（推理分类）</label>
+        <select id="fLogicRule"></select>
+        <div class="form-hint">先在知识球中增加逻辑符号节点，之后才能在理论推理中选择。</div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn" id="modalCancel">取消</button>
-      <button class="btn primary" id="modalSubmit" disabled>提交（进入"等待验证"，落入外层空间）</button>
+      <button class="btn primary" id="modalSubmit">验证并提交</button>
     </div>
   </div>
 </div>

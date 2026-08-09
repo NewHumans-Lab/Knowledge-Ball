@@ -1,48 +1,34 @@
-import { fingerprint } from '../event/Command';
-import { CURRENT_SCHEMA_VERSION, type DomainEvent } from '../event/Event';
+import type { DomainEvent } from '../event/Event';
 import type { EventStore } from '../event/EventStore';
 import type { GraphState } from '../state/GraphState';
 import type { GraphProjection } from '../projection/GraphProjection';
+import { executeKnowledgeEdit } from './KnowledgeEdit';
+import type { NewProtocolNode } from '../protocol/KnowledgeEditingProtocol';
 
+/**
+ * Compatibility name for callers that previously used evidence-free falsification.
+ * It now delegates to the canonical negate command and cannot be called without
+ * explicit counterexamples.
+ */
 export interface FalsifyNodePayload {
   nodeId: string;
+  counterexampleIds: string[];
+  correctedReasoning?: NewProtocolNode;
 }
 
 export async function falsifyNode(
   store: EventStore<GraphState>,
   projection: GraphProjection,
-  payload: FalsifyNodePayload
+  payload: FalsifyNodePayload,
 ): Promise<DomainEvent[]> {
-  const now = Date.now();
-  const falsifiedId = await fingerprint('NodeFalsified', payload, now);
-  const falsifiedEvent: DomainEvent = {
-    id: falsifiedId,
-    type: 'NodeFalsified',
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-    timestamp: now,
-    payload,
-  };
-  store.append(falsifiedEvent);
-
-  const { ids, truncated } = projection.reachableForCascade(payload.nodeId);
-  if (truncated) {
-    console.warn(`[falsifyNode] cascade truncated by depth limit for ${payload.nodeId}`);
-  }
-
-  const cascadeEvents: DomainEvent[] = [];
-  for (const depId of ids) {
-    const suspendPayload = { nodeId: depId, causeNodeId: payload.nodeId };
-    const id = await fingerprint('NodeSuspended', suspendPayload, now);
-    const event: DomainEvent = {
-      id,
-      type: 'NodeSuspended',
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      timestamp: now,
-      payload: suspendPayload,
-    };
-    store.append(event);
-    cascadeEvents.push(event);
-  }
-
-  return [falsifiedEvent, ...cascadeEvents];
+  const target = projection.state.nodesById[payload.nodeId];
+  if (!target) throw new Error(`否定目标不存在: ${payload.nodeId}`);
+  const event = await executeKnowledgeEdit(store, projection, {
+    kind: 'negate',
+    target: target.type === 'reasoning' ? 'reasoning' : 'conclusion',
+    targetId: payload.nodeId,
+    counterexampleIds: payload.counterexampleIds,
+    correctedReasoning: payload.correctedReasoning,
+  });
+  return [event];
 }

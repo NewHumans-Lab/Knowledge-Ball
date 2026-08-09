@@ -1,5 +1,6 @@
 import type { DomainEvent } from './Event';
 import { KnowledgePersistence } from '../persistence/KnowledgePersistence';
+import { DomainEventValidationError, validateDomainEventEnvelope } from './EventValidation';
 
 export interface Snapshot<TState> { upToSeq: number; schemaVersion: number; state: TState; takenAt: number; }
 export interface StoreListener { (event: DomainEvent): void; }
@@ -15,7 +16,11 @@ export class EventStore<TState> {
   private nextSeq = 1;
   private readonly persistence: EventPersistence;
 
-  constructor(private makeSnapshotState: () => TState, persistence?: EventPersistence) {
+  constructor(
+    private makeSnapshotState: () => TState,
+    persistence?: EventPersistence,
+    private validateEvent?: (event: DomainEvent) => string[],
+  ) {
     this.persistence = persistence ?? new KnowledgePersistence<DomainEvent>({ storageKey: DEFAULT_STORAGE_KEY });
     this.restore(this.persistence.loadLocal());
   }
@@ -29,6 +34,7 @@ export class EventStore<TState> {
     this.nextSeq = 1;
     for (const event of events) {
       if (this.idIndex.has(event.id)) continue;
+      if (validateDomainEventEnvelope(event).length) continue;
       const stamped = { ...event, seq: this.nextSeq++ } as DomainEvent;
       this.events.push(stamped);
       this.idIndex.add(stamped.id);
@@ -37,6 +43,11 @@ export class EventStore<TState> {
 
   append(event: DomainEvent): boolean {
     if (this.idIndex.has(event.id)) return false;
+    const validationErrors = [
+      ...validateDomainEventEnvelope(event),
+      ...(this.validateEvent?.(event) ?? []),
+    ];
+    if (validationErrors.length) throw new DomainEventValidationError([...new Set(validationErrors)]);
     const stamped: DomainEvent = { ...event, seq: this.nextSeq++ };
     this.events.push(stamped);
     this.idIndex.add(event.id);

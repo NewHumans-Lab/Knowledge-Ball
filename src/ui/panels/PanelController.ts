@@ -20,16 +20,50 @@ export interface PanelNodeSummary {
   twinGroup?: string;
   sharedTitle?: string;
   domain?: string;
+  logicRuleId?: string;
+  aliases?: string[];
+  semanticKey?: string;
 }
 
 export interface CreateNodePayload {
   title: string;
   type: KnowledgeNodeType;
-  reasoning: string;
+  description: string;
+  reasoning?: string;
   premises: string[];
+  logicRuleId?: string;
   tags?: string[];
   domain?: string;
   author?: string;
+}
+
+export interface NegateNodePayload {
+  counterexampleIds: string[];
+  correctedReasoning?: {
+    title: string;
+    reasoning: string;
+    logicRuleId: string;
+  };
+}
+
+export interface DecomposeNodePayload {
+  conclusionId: string;
+  reasoningSteps: Array<{ title: string; reasoning: string; logicRuleId: string }>;
+  intermediateConclusions: Array<{ title: string; type: KnowledgeNodeType; description: string }>;
+}
+
+export interface MergeDefinitionPayload {
+  sourceNodeIds: string[];
+  semanticKey: string;
+  mergedDefinition: { title: string; description: string };
+}
+
+export interface MergeTheoryPayload {
+  sourceConclusionIds: string[];
+  reasoningSemanticKey: string;
+  semanticKey: string;
+  mergedReasoning: { title: string; reasoning: string; logicRuleId: string };
+  mergedConclusion: { title: string; type: KnowledgeNodeType; description: string };
 }
 
 export interface EditNodePayload {
@@ -44,7 +78,10 @@ export interface PanelControllerCallbacks {
 
   onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
   onEditNode: (id: string, payload: EditNodePayload) => Promise<void> | void;
-  onFalsifyNode: (id: string) => Promise<void> | void;
+  onNegateNode: (id: string, payload: NegateNodePayload) => Promise<void> | void;
+  onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
+  onMergeDefinitions: (payload: MergeDefinitionPayload) => Promise<void> | void;
+  onMergeTheories: (payload: MergeTheoryPayload) => Promise<void> | void;
   onResolveNode: (id: string) => Promise<void> | void;
   onDisputeNode: (id: string) => Promise<void> | void;
   onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
@@ -70,9 +107,13 @@ export interface PanelControllerElements {
 
   fTitle: HTMLInputElement;
   fType: HTMLSelectElement;
+  fDescription: HTMLTextAreaElement;
   fReasoning: HTMLTextAreaElement;
+  fReasoningField: HTMLElement;
   fPremises: HTMLElement;
-  fLogicConfirm: HTMLInputElement;
+  fPremisesField: HTMLElement;
+  fLogicRule: HTMLSelectElement;
+  fLogicRuleField: HTMLElement;
 
   accountOverlay?: HTMLElement;
   accountClose?: HTMLElement;
@@ -119,7 +160,10 @@ export class PanelController {
 
   private readonly onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
   private readonly onEditNode: (id: string, payload: EditNodePayload) => Promise<void> | void;
-  private readonly onFalsifyNode: (id: string) => Promise<void> | void;
+  private readonly onNegateNode: (id: string, payload: NegateNodePayload) => Promise<void> | void;
+  private readonly onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
+  private readonly onMergeDefinitions: (payload: MergeDefinitionPayload) => Promise<void> | void;
+  private readonly onMergeTheories: (payload: MergeTheoryPayload) => Promise<void> | void;
   private readonly onResolveNode: (id: string) => Promise<void> | void;
   private readonly onDisputeNode: (id: string) => Promise<void> | void;
   private readonly onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
@@ -142,9 +186,13 @@ export class PanelController {
 
   private readonly fTitle: HTMLInputElement;
   private readonly fType: HTMLSelectElement;
+  private readonly fDescription: HTMLTextAreaElement;
   private readonly fReasoning: HTMLTextAreaElement;
+  private readonly fReasoningField: HTMLElement;
   private readonly fPremises: HTMLElement;
-  private readonly fLogicConfirm: HTMLInputElement;
+  private readonly fPremisesField: HTMLElement;
+  private readonly fLogicRule: HTMLSelectElement;
+  private readonly fLogicRuleField: HTMLElement;
 
   private readonly accountOverlay?: HTMLElement;
   private readonly accountClose?: HTMLElement;
@@ -177,7 +225,10 @@ export class PanelController {
 
     this.onCreateNode = options.onCreateNode;
     this.onEditNode = options.onEditNode;
-    this.onFalsifyNode = options.onFalsifyNode;
+    this.onNegateNode = options.onNegateNode;
+    this.onDecomposeNode = options.onDecomposeNode;
+    this.onMergeDefinitions = options.onMergeDefinitions;
+    this.onMergeTheories = options.onMergeTheories;
     this.onResolveNode = options.onResolveNode;
     this.onDisputeNode = options.onDisputeNode;
     this.onSetMastery = options.onSetMastery;
@@ -200,9 +251,13 @@ export class PanelController {
 
     this.fTitle = options.fTitle;
     this.fType = options.fType;
+    this.fDescription = options.fDescription;
     this.fReasoning = options.fReasoning;
+    this.fReasoningField = options.fReasoningField;
     this.fPremises = options.fPremises;
-    this.fLogicConfirm = options.fLogicConfirm;
+    this.fPremisesField = options.fPremisesField;
+    this.fLogicRule = options.fLogicRule;
+    this.fLogicRuleField = options.fLogicRuleField;
 
     this.accountOverlay = options.accountOverlay;
     this.accountClose = options.accountClose;
@@ -259,7 +314,7 @@ export class PanelController {
     }).join('') || '<div class="chip empty">无前置（公理层或独立节点）</div>';
 
     const depsHtml = this.getNodes()
-      .filter(n => n.premises.includes(id))
+      .filter(n => n.premises.includes(id) || n.logicRuleId === id)
       .map(n => `<div class="chip" data-jump="${escapeHtml(n.id)}">${escapeHtml(shortText(n.title, 20))}</div>`)
       .join('') || '<div class="chip empty">暂无下游依赖节点</div>';
 
@@ -273,6 +328,20 @@ export class PanelController {
           <label>孪生证明</label>
           <div class="chip-list">
             ${twinNodes.map(t => `<div class="chip" data-jump="${escapeHtml(t.id)}">${escapeHtml(shortText(t.title, 18))}</div>`).join('')}
+          </div>
+        </div>
+      `
+      : '';
+
+    const logicRule = node.logicRuleId ? this.getNodeById(node.logicRuleId) : null;
+    const logicRuleHtml = node.type === 'reasoning'
+      ? `
+        <div class="field">
+          <label>逻辑符号 / 推理分类</label>
+          <div class="chip-list">
+            ${logicRule
+              ? `<div class="chip" data-jump="${escapeHtml(logicRule.id)}">${escapeHtml(logicRule.title)}</div>`
+              : '<div class="chip empty">旧数据：尚未分类</div>'}
           </div>
         </div>
       `
@@ -296,9 +365,11 @@ export class PanelController {
       </div>
 
       <div class="field">
-        <label>最小推理过程</label>
+        <label>${node.type === 'reasoning' ? '推理过程' : '知识描述'}</label>
         <div class="val">${escapeHtml(node.reasoning || '（未填写）')}</div>
       </div>
+
+      ${logicRuleHtml}
 
       <div class="field">
         <label>前置知识点</label>
@@ -318,7 +389,11 @@ export class PanelController {
         <button class="btn ghost" id="btnEditNode">✎ 编辑节点</button>
         <button class="btn ghost" id="btnDeriveNode">↳ 推理新节点</button>
       </div>
-      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnFalsify">⚠ 否定该节点（级联悬置下游）</button>` : ''}
+      <div class="action-grid">
+        ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">⑂ 分解推理</button>' : ''}
+        ${this.canMerge(node) ? '<button class="btn ghost" id="btnMerge">⇉ 合并同义知识</button>' : ''}
+      </div>
+      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">⚠ 用反例否定该节点</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
       ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
       <div class="note-small">节点会先保存在当前设备；共享服务可用时同步给其他用户。</div>
@@ -344,10 +419,12 @@ export class PanelController {
     }
     this.fTitle.value = '';
     this.fType.value = 'fact';
+    this.fDescription.value = '';
     this.fReasoning.value = '';
-    this.fLogicConfirm.checked = false;
-    this.modalSubmit.disabled = true;
+    this.modalSubmit.disabled = false;
     this.renderPremiseList();
+    this.renderLogicRuleList();
+    this.updateCreateMode();
     this.modalOverlay.classList.add('show');
   }
 
@@ -450,34 +527,54 @@ export class PanelController {
       });
     }
 
-    this.fLogicConfirm.addEventListener('change', () => {
-      this.modalSubmit.disabled = !this.fLogicConfirm.checked;
-    });
+    this.fType.addEventListener('change', () => this.updateCreateMode());
 
     this.modalSubmit.addEventListener('click', async () => {
       const title = this.fTitle.value.trim();
+      const description = this.fDescription.value.trim();
       const reasoning = this.fReasoning.value.trim();
       const type = this.fType.value as KnowledgeNodeType;
       const premises = Array.from(this.fPremises.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))
         .map(el => el.value);
+      const logicRuleId = this.fLogicRule.value;
+      const derived = this.isDerivedType(type);
 
       if (!title) {
-this.showToast('请填写节点结论标题。');
+        this.showToast('请填写节点标题。');
         return;
       }
-      if (!this.fLogicConfirm.checked) {
-        this.showToast('请先确认符合逻辑三大基本定律。');
+      if (!description) {
+        this.showToast('请填写知识描述。');
+        return;
+      }
+      if (derived && premises.length === 0) {
+        this.showToast('理论必须选择至少一个已有知识前提。');
+        return;
+      }
+      if (derived && !reasoning) {
+        this.showToast('理论必须填写完整推理过程。');
+        return;
+      }
+      if (derived && !logicRuleId) {
+        this.showToast('理论必须选择一个已有逻辑符号；如列表为空，请先增加逻辑符号节点。');
         return;
       }
 
       this.modalSubmit.disabled = true;
       try {
-        await this.onCreateNode({ title, type, reasoning, premises });
+        await this.onCreateNode({
+          title,
+          type,
+          description,
+          reasoning: derived ? reasoning : undefined,
+          premises: derived ? premises : [],
+          logicRuleId: derived ? logicRuleId : undefined,
+        });
         this.closeCreateModal();
         this.showToast(`节点已保存：${title}`);
       } catch (error) {
         console.error('[Knowledge-Ball] node submission failed:', error);
-        this.showToast('提交失败：无法连接共享知识服务，请稍后重试。');
+        this.showToast(error instanceof Error ? `提交失败：${error.message}` : '提交失败');
         this.modalSubmit.disabled = false;
       }
     });
@@ -489,7 +586,9 @@ this.showToast('请填写节点结论标题。');
   private bindPanelRuntimeEvents(id: string): void {
     const editBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
     const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
-    const falsifyBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnFalsify');
+    const negateBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
+    const decomposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDecompose');
+    const mergeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnMerge');
     const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
     const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
 
@@ -504,13 +603,13 @@ this.showToast('请填写节点结论标题。');
           <input type="text" id="editTitle" value="${escapeHtml(node.title)}">
         </div>
         <div class="field">
-          <label>类型</label>
-          <select id="editType">
-            ${Object.keys(TYPE_LABEL).map(t => `<option value="${escapeHtml(t)}" ${t === node.type ? 'selected' : ''}>${TYPE_LABEL[t as KnowledgeNodeType]}</option>`).join('')}
+          <label>类型（结构类型不可直接变更）</label>
+          <select id="editType" disabled>
+            <option value="${escapeHtml(node.type)}" selected>${TYPE_LABEL[node.type]}</option>
           </select>
         </div>
         <div class="field">
-          <label>最小推理过程</label>
+          <label>${node.type === 'reasoning' ? '推理过程' : '知识描述'}</label>
           <textarea id="editReasoning">${escapeHtml(node.reasoning || '')}</textarea>
         </div>
       `;
@@ -524,10 +623,14 @@ this.showToast('请填写节点结论标题。');
         const title = (this.panelBody.querySelector<HTMLInputElement>('#editTitle')?.value ?? '').trim() || node.title;
         const type = (this.panelBody.querySelector<HTMLSelectElement>('#editType')?.value ?? node.type) as KnowledgeNodeType;
         const reasoning = (this.panelBody.querySelector<HTMLTextAreaElement>('#editReasoning')?.value ?? '').trim();
-        await this.onEditNode(id, { title, type, reasoning });
-        this.editMode = false;
-        this.showToast('节点已更新');
-        this.openNodePanel(id);
+        try {
+          await this.onEditNode(id, { title, type, reasoning });
+          this.editMode = false;
+          this.showToast('节点已更新');
+          this.openNodePanel(id);
+        } catch (error) {
+          this.showOperationError(error);
+        }
       });
 
       this.panelActions.querySelector<HTMLButtonElement>('#cancelEdit')?.addEventListener('click', () => {
@@ -537,10 +640,9 @@ this.showToast('请填写节点结论标题。');
     });
 
     deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
-    falsifyBtn?.addEventListener('click', async () => {
-      await this.onFalsifyNode(id);
-      this.showToast('节点已证伪');
-    });
+    negateBtn?.addEventListener('click', () => this.openNegateForm(id));
+    decomposeBtn?.addEventListener('click', () => this.openDecomposeForm(id));
+    mergeBtn?.addEventListener('click', () => this.openMergeForm(id));
     resolveBtn?.addEventListener('click', async () => {
       await this.onResolveNode(id);
       this.showToast('节点已重新验证通过');
@@ -570,8 +672,318 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
     });
   }
 
+  private isDerivedType(type: KnowledgeNodeType): boolean {
+    return !['axiom', 'definition', 'fact', 'logic-symbol', 'reasoning'].includes(type);
+  }
+
+  private updateCreateMode(): void {
+    const derived = this.isDerivedType(this.fType.value as KnowledgeNodeType);
+    this.fReasoningField.hidden = !derived;
+    this.fPremisesField.hidden = !derived;
+    this.fLogicRuleField.hidden = !derived;
+  }
+
+  private renderLogicRuleList(): void {
+    const rules = this.getNodes().filter(node => node.type === 'logic-symbol' && node.status !== 'falsified');
+    this.fLogicRule.innerHTML = [
+      '<option value="">请选择逻辑符号</option>',
+      ...rules.map(rule => `<option value="${escapeHtml(rule.id)}">${escapeHtml(rule.title)}</option>`),
+    ].join('');
+  }
+
+  private logicRuleOptions(selectedId?: string): string {
+    const rules = this.getNodes().filter(node => node.type === 'logic-symbol' && node.status !== 'falsified');
+    return [
+      '<option value="">请选择逻辑符号</option>',
+      ...rules.map(rule => `<option value="${escapeHtml(rule.id)}" ${rule.id === selectedId ? 'selected' : ''}>${escapeHtml(rule.title)}</option>`),
+    ].join('');
+  }
+
+  private reasoningParent(node: PanelNodeSummary): PanelNodeSummary | null {
+    const parents = node.premises
+      .map(id => this.getNodeById(id))
+      .filter((candidate): candidate is PanelNodeSummary => candidate?.type === 'reasoning');
+    return parents.length === 1 ? parents[0] : null;
+  }
+
+  private samePremises(left: PanelNodeSummary, right: PanelNodeSummary): boolean {
+    return [...new Set(left.premises)].sort().join('\0') === [...new Set(right.premises)].sort().join('\0');
+  }
+
+  private canMerge(node: PanelNodeSummary): boolean {
+    if (node.type === 'definition') {
+      return this.getNodes().some(candidate => candidate.id !== node.id && candidate.type === 'definition');
+    }
+    if (!this.isDerivedType(node.type)) return false;
+    const reasoning = this.reasoningParent(node);
+    if (!reasoning) return false;
+    return this.getNodes().some(candidate => {
+      if (candidate.id === node.id || candidate.type !== node.type) return false;
+      const otherReasoning = this.reasoningParent(candidate);
+      return Boolean(
+        otherReasoning &&
+        otherReasoning.id !== reasoning.id &&
+        otherReasoning.logicRuleId === reasoning.logicRuleId &&
+        this.samePremises(otherReasoning, reasoning)
+      );
+    });
+  }
+
+  private showOperationError(error: unknown): void {
+    console.error('[Knowledge-Ball] knowledge edit failed:', error);
+    this.showToast(error instanceof Error ? `操作失败：${error.message}` : '操作失败');
+  }
+
+  private openNegateForm(id: string): void {
+    const node = this.getNodeById(id);
+    if (!node) return;
+    const candidates = this.getNodes().filter(candidate => candidate.id !== id && candidate.type !== 'reasoning');
+    const correction = node.type === 'reasoning'
+      ? `
+        <div class="field">
+          <label>正确推理过程标题</label>
+          <input type="text" id="negateCorrectedTitle" placeholder="必须提供替换推理">
+        </div>
+        <div class="field">
+          <label>正确推理过程</label>
+          <textarea id="negateCorrectedReasoning" placeholder="完整写出修正后的推理步骤"></textarea>
+        </div>
+        <div class="field">
+          <label>正确推理使用的逻辑符号</label>
+          <select id="negateCorrectedLogic">${this.logicRuleOptions(node.logicRuleId)}</select>
+        </div>
+      `
+      : '';
+
+    this.panelTitle.textContent = `否定：${node.title}`;
+    this.panelBody.innerHTML = `
+      <div class="field">
+        <label>反例知识节点（至少一个）</label>
+        <div class="premise-list">
+          ${candidates.map(candidate => `
+            <label class="premise-item">
+              <input type="checkbox" data-counterexample value="${escapeHtml(candidate.id)}">
+              ${escapeHtml(shortText(candidate.title, 34))}
+            </label>
+          `).join('') || '<div class="chip empty">没有可用反例，请先增加反例知识节点</div>'}
+        </div>
+      </div>
+      ${correction}
+      <p class="note-small" style="text-align:left;">提交后目标不会删除，只会进入已证伪并默认隐藏；其反例以后被否定时，目标才会重新进入等待验证。</p>
+    `;
+    this.panelActions.innerHTML = `
+      <button class="btn danger" id="submitNegate">验证反例并否定</button>
+      <button class="btn ghost" id="cancelOperation">取消</button>
+    `;
+
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(id));
+    this.panelActions.querySelector<HTMLButtonElement>('#submitNegate')?.addEventListener('click', async () => {
+      const counterexampleIds = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-counterexample]:checked'))
+        .map(input => input.value);
+      if (counterexampleIds.length === 0) {
+        this.showToast('否定必须选择至少一个反例知识节点。');
+        return;
+      }
+      const correctedReasoning = node.type === 'reasoning'
+        ? {
+            title: safeText(this.panelBody.querySelector<HTMLInputElement>('#negateCorrectedTitle')?.value),
+            reasoning: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#negateCorrectedReasoning')?.value),
+            logicRuleId: safeText(this.panelBody.querySelector<HTMLSelectElement>('#negateCorrectedLogic')?.value),
+          }
+        : undefined;
+      if (correctedReasoning && (!correctedReasoning.title || !correctedReasoning.reasoning || !correctedReasoning.logicRuleId)) {
+        this.showToast('否定错误推理时，必须完整填写正确推理及其逻辑符号。');
+        return;
+      }
+      try {
+        await this.onNegateNode(id, { counterexampleIds, correctedReasoning });
+        this.showToast('否定事件已提交；原节点保留并默认隐藏');
+        this.closeNodePanel();
+      } catch (error) {
+        this.showOperationError(error);
+      }
+    });
+  }
+
+  private openDecomposeForm(id: string): void {
+    const reasoning = this.getNodeById(id);
+    if (!reasoning || reasoning.type !== 'reasoning') return;
+    const conclusions = this.getNodes().filter(node => node.type !== 'reasoning' && node.premises.includes(id));
+    this.panelTitle.textContent = `分解：${reasoning.title}`;
+    this.panelBody.innerHTML = `
+      <div class="field">
+        <label>原结论</label>
+        <select id="decomposeConclusion">
+          ${conclusions.map(node => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.title)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>步骤一标题</label><input type="text" id="stepOneTitle"></div>
+      <div class="field"><label>步骤一推理过程</label><textarea id="stepOneReasoning"></textarea></div>
+      <div class="field"><label>步骤一逻辑符号</label><select id="stepOneLogic">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
+      <div class="field"><label>中间结论标题</label><input type="text" id="middleTitle"></div>
+      <div class="field"><label>中间结论描述</label><textarea id="middleDescription"></textarea></div>
+      <div class="field">
+        <label>中间结论类型</label>
+        <select id="middleType">
+          <option value="theorem">定理</option><option value="hypothesis">假说</option>
+          <option value="prediction">预测</option><option value="opinion">观点</option><option value="value">价值判断</option>
+        </select>
+      </div>
+      <div class="field"><label>步骤二标题</label><input type="text" id="stepTwoTitle"></div>
+      <div class="field"><label>步骤二推理过程</label><textarea id="stepTwoReasoning"></textarea></div>
+      <div class="field"><label>步骤二逻辑符号</label><select id="stepTwoLogic">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
+      <p class="note-small" style="text-align:left;">只有完整形成“原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论”后，系统才写入一个原子分解事件。</p>
+    `;
+    this.panelActions.innerHTML = `
+      <button class="btn primary" id="submitDecompose">验证完整链并分解</button>
+      <button class="btn ghost" id="cancelOperation">取消</button>
+    `;
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(id));
+    this.panelActions.querySelector<HTMLButtonElement>('#submitDecompose')?.addEventListener('click', async () => {
+      const value = <T extends HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector: string) =>
+        safeText(this.panelBody.querySelector<T>(selector)?.value);
+      const payload: DecomposeNodePayload = {
+        conclusionId: value<HTMLSelectElement>('#decomposeConclusion'),
+        reasoningSteps: [
+          { title: value<HTMLInputElement>('#stepOneTitle'), reasoning: value<HTMLTextAreaElement>('#stepOneReasoning'), logicRuleId: value<HTMLSelectElement>('#stepOneLogic') },
+          { title: value<HTMLInputElement>('#stepTwoTitle'), reasoning: value<HTMLTextAreaElement>('#stepTwoReasoning'), logicRuleId: value<HTMLSelectElement>('#stepTwoLogic') },
+        ],
+        intermediateConclusions: [{
+          title: value<HTMLInputElement>('#middleTitle'),
+          type: value<HTMLSelectElement>('#middleType') as KnowledgeNodeType,
+          description: value<HTMLTextAreaElement>('#middleDescription'),
+        }],
+      };
+      const complete = payload.conclusionId &&
+        payload.reasoningSteps.every(step => step.title && step.reasoning && step.logicRuleId) &&
+        payload.intermediateConclusions.every(item => item.title && item.description);
+      if (!complete) {
+        this.showToast('分解链不完整：两个推理步骤、中间结论和逻辑符号都必须填写。');
+        return;
+      }
+      try {
+        await this.onDecomposeNode(id, payload);
+        this.showToast('完整分解事件已提交；旧推理保留并默认隐藏');
+        this.closeNodePanel();
+      } catch (error) {
+        this.showOperationError(error);
+      }
+    });
+  }
+
+  private openMergeForm(id: string): void {
+    const node = this.getNodeById(id);
+    if (!node) return;
+    if (node.type === 'definition') {
+      this.openDefinitionMergeForm(node);
+      return;
+    }
+    this.openTheoryMergeForm(node);
+  }
+
+  private openDefinitionMergeForm(node: PanelNodeSummary): void {
+    const candidates = this.getNodes().filter(candidate => candidate.id !== node.id && candidate.type === 'definition');
+    this.panelTitle.textContent = `合并定义：${node.title}`;
+    this.panelBody.innerHTML = `
+      <div class="field"><label>同一定义的其他语言描述</label><div class="premise-list">
+        ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
+      </div></div>
+      <div class="field"><label>语义等价标识</label><input type="text" id="mergeSemanticKey" placeholder="例如 definition:prime-number"></div>
+      <div class="field"><label>统一定义标题</label><input type="text" id="mergeDefinitionTitle"></div>
+      <div class="field"><label>统一定义描述</label><textarea id="mergeDefinitionDescription"></textarea></div>
+      <p class="note-small" style="text-align:left;">来源定义必须文字不同但语义相同；原定义保留为别名并默认隐藏。</p>
+    `;
+    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">验证并合并定义</button><button class="btn ghost" id="cancelOperation">取消</button>`;
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));
+    this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
+      const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
+      const payload: MergeDefinitionPayload = {
+        sourceNodeIds: [node.id, ...selected],
+        semanticKey: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeSemanticKey')?.value),
+        mergedDefinition: {
+          title: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeDefinitionTitle')?.value),
+          description: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#mergeDefinitionDescription')?.value),
+        },
+      };
+      if (selected.length === 0 || !payload.semanticKey || !payload.mergedDefinition.title || !payload.mergedDefinition.description) {
+        this.showToast('请选择另一个定义，并填写语义标识与新的统一描述。');
+        return;
+      }
+      try {
+        await this.onMergeDefinitions(payload);
+        this.showToast('定义合并事件已提交；来源定义保留并默认隐藏');
+        this.closeNodePanel();
+      } catch (error) {
+        this.showOperationError(error);
+      }
+    });
+  }
+
+  private openTheoryMergeForm(node: PanelNodeSummary): void {
+    const reasoning = this.reasoningParent(node);
+    if (!reasoning) return;
+    const candidates = this.getNodes().filter(candidate => {
+      if (candidate.id === node.id || candidate.type !== node.type) return false;
+      const other = this.reasoningParent(candidate);
+      return Boolean(other && other.id !== reasoning.id &&
+        other.logicRuleId === reasoning.logicRuleId &&
+        this.samePremises(other, reasoning));
+    });
+    this.panelTitle.textContent = `合并理论：${node.title}`;
+    this.panelBody.innerHTML = `
+      <div class="field"><label>具有相同前提、推理过程和逻辑符号的结论</label><div class="premise-list">
+        ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
+      </div></div>
+      <div class="field"><label>推理过程语义等价标识（先验证）</label><input type="text" id="mergeReasoningSemanticKey"></div>
+      <div class="field"><label>结论语义等价标识</label><input type="text" id="mergeSemanticKey"></div>
+      <div class="field"><label>统一推理标题</label><input type="text" id="mergeReasoningTitle"></div>
+      <div class="field"><label>统一推理过程</label><textarea id="mergeReasoningText"></textarea></div>
+      <div class="field"><label>统一推理逻辑符号</label><select id="mergeLogicRule">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
+      <div class="field"><label>统一结论标题</label><input type="text" id="mergeConclusionTitle"></div>
+      <div class="field"><label>统一结论描述</label><textarea id="mergeConclusionDescription"></textarea></div>
+      <div class="field"><label>统一结论类型（保持来源类型）</label><select id="mergeConclusionType" disabled>
+        <option value="${escapeHtml(node.type)}">${TYPE_LABEL[node.type]}</option>
+      </select></div>
+      <p class="note-small" style="text-align:left;">系统先验证并建立统一推理过程，再建立依赖它的统一结论；两步作为一个事件同时提交。</p>
+    `;
+    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">验证推理后合并结论</button><button class="btn ghost" id="cancelOperation">取消</button>`;
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));
+    this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
+      const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
+      const payload: MergeTheoryPayload = {
+        sourceConclusionIds: [node.id, ...selected],
+        reasoningSemanticKey: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeReasoningSemanticKey')?.value),
+        semanticKey: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeSemanticKey')?.value),
+        mergedReasoning: {
+          title: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeReasoningTitle')?.value),
+          reasoning: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#mergeReasoningText')?.value),
+          logicRuleId: safeText(this.panelBody.querySelector<HTMLSelectElement>('#mergeLogicRule')?.value),
+        },
+        mergedConclusion: {
+          title: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeConclusionTitle')?.value),
+          type: (this.panelBody.querySelector<HTMLSelectElement>('#mergeConclusionType')?.value ?? node.type) as KnowledgeNodeType,
+          description: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#mergeConclusionDescription')?.value),
+        },
+      };
+      const complete = selected.length > 0 && payload.reasoningSemanticKey && payload.semanticKey &&
+        payload.mergedReasoning.title && payload.mergedReasoning.reasoning && payload.mergedReasoning.logicRuleId &&
+        payload.mergedConclusion.title && payload.mergedConclusion.description;
+      if (!complete) {
+        this.showToast('请选择另一条同推理链，并完整填写统一推理和统一结论。');
+        return;
+      }
+      try {
+        await this.onMergeTheories(payload);
+        this.showToast('理论合并事件已提交；来源链保留并默认隐藏');
+        this.closeNodePanel();
+      } catch (error) {
+        this.showOperationError(error);
+      }
+    });
+  }
+
   private renderPremiseList(): void {
-    const nodes = this.getNodes();
+    const nodes = this.getNodes().filter(node => node.type !== 'reasoning' && node.type !== 'logic-symbol');
     this.fPremises.innerHTML = nodes.map(n => {
       const checked = this.prefillPremise === n.id ? 'checked' : '';
       return `

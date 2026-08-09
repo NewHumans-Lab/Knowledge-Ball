@@ -93,11 +93,14 @@ export class GraphProjection {
           depth: current.depth + 1,
         });
       });
+      if (node.logicRuleId) {
+        queue.push({ id: node.logicRuleId, depth: current.depth + 1 });
+      }
 
       // 被当前节点依赖的节点
       this.getNodes()
         .filter(n =>
-          n.premises.includes(current.id)
+          n.premises.includes(current.id) || n.logicRuleId === current.id
         )
         .forEach(n => {
           queue.push({
@@ -145,6 +148,13 @@ export class GraphProjection {
           type: 'dependency',
         });
       });
+      if (node.logicRuleId && ids.has(node.logicRuleId)) {
+        edges.push({
+          from: node.logicRuleId,
+          to: node.id,
+          type: 'dependency',
+        });
+      }
     });
 
 

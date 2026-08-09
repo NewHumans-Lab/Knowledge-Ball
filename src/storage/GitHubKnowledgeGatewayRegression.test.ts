@@ -32,6 +32,28 @@ async function run(): Promise<void> {
     /network disconnected/,
     'network failures must remain visible to the caller',
   );
+
+  let requestBody = '';
+  globalThis.fetch = async (_input, init) => {
+    requestBody = String(init?.body ?? '');
+    return new Response(null, { status: 204 });
+  };
+  const record = {
+    id: 'batch-node',
+    title: 'Batch node',
+    type: 'fact' as const,
+    status: 'pending' as const,
+    mastery: 'none' as const,
+    reasoning: 'Batch description',
+    premises: [],
+    tags: [],
+    domain: 'general' as const,
+    version: 1,
+    createdAt: '2026-08-09T00:00:00.000Z',
+    updatedAt: '2026-08-09T00:00:00.000Z',
+  };
+  await gateway.saveNodes([record]);
+  assert.deepEqual(JSON.parse(requestBody).nodes, [record], 'related nodes must use one atomic batch request');
 }
 
 run()

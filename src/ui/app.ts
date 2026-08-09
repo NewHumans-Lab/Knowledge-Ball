@@ -1,16 +1,24 @@
 import { EventStore } from '../event/EventStore';
+import { validateDomainEventAgainstState } from '../event/EventValidation';
 import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjection';
 import { nodeList } from '../state/GraphState';
 
 import { createNode as cmdCreateNode } from '../command/CreateNode';
 import { editNode as cmdEditNode } from '../command/EditNode';
-import { falsifyNode as cmdFalsifyNode } from '../command/FalsifyNode';
 import { resolveNode as cmdResolveNode } from '../command/ResolveNode';
 import { setMastery as cmdSetMastery } from '../command/SetMastery';
 import { disputeNode as cmdDisputeNode } from '../command/DisputeNode';
 import { suspendNode as cmdSuspendNode } from '../command/SuspendNode';
+import { executeKnowledgeEdit } from '../command/KnowledgeEdit';
+import {
+  canonicalKnowledgeText,
+  type AddEdit,
+  type DecomposeEdit,
+  type MergeEdit,
+  type NegateEdit,
+} from '../protocol/KnowledgeEditingProtocol';
 import { GitHubKnowledgeGateway } from '../storage/GitHubKnowledgeGateway';
-import { buildKnowledgeNodeRecord, type KnowledgeNodeRecord } from '../storage/KnowledgeNode';
+import type { KnowledgeNodeRecord } from '../storage/KnowledgeNode';
 import { supportsSharedKnowledgeApi } from '../storage/HostingEnvironment';
 
 import {
@@ -32,13 +40,22 @@ import {
 import {
   PanelController,
   type CreateNodePayload,
+  type DecomposeNodePayload,
   type EditNodePayload,
+  type MergeDefinitionPayload,
+  type MergeTheoryPayload,
+  type NegateNodePayload,
   type PanelNodeSummary,
 } from './panels/PanelController';
 import { setupMobileShell } from '../mobile/MobileShell';
+import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 
 const projection = new GraphProjection();
-const store = new EventStore(() => structuredClone(projection.state));
+const store = new EventStore(
+  () => structuredClone(projection.state),
+  undefined,
+  event => validateDomainEventAgainstState(event, projection.state),
+);
 const knowledgeRepository = supportsSharedKnowledgeApi(window.location.hostname)
   ? new GitHubKnowledgeGateway({ endpoint: '/api/knowledge', namespace: 'public' })
   : null;
@@ -76,7 +93,7 @@ function syncNodesFromProjection(): void {
     prevById[n.id] = n;
   });
 
-  renderNodes = domainNodes.map(dn => {
+  renderNodes = domainNodes.filter(dn => !dn.hidden).map(dn => {
     const prev = prevById[dn.id];
     const meta = (TWIN_META as Record<string, { twinGroup: string; sharedTitle: string }>)[dn.id] ?? {};
 
@@ -88,6 +105,9 @@ function syncNodesFromProjection(): void {
       mastery: dn.mastery,
       reasoning: dn.reasoning,
       premises: dn.premises,
+      logicRuleId: dn.logicRuleId,
+      aliases: dn.aliases,
+      semanticKey: dn.semanticKey,
       ...meta,
       pos: prev?.pos,
       vel: prev?.vel,
@@ -115,6 +135,9 @@ function getPanelNodeById(id: string): PanelNodeSummary | null {
     premises: n.premises,
     twinGroup: n.twinGroup,
     sharedTitle: n.sharedTitle,
+    logicRuleId: n.logicRuleId,
+    aliases: n.aliases,
+    semanticKey: n.semanticKey,
   };
 }
 
@@ -129,6 +152,9 @@ function getPanelNodes(): PanelNodeSummary[] {
     premises: n.premises,
     twinGroup: n.twinGroup,
     sharedTitle: n.sharedTitle,
+    logicRuleId: n.logicRuleId,
+    aliases: n.aliases,
+    semanticKey: n.semanticKey,
   }));
 }
 
@@ -152,36 +178,57 @@ function openNode(id: string): void {
 }
 
 async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
-  const nodeId = generateNodeId();
-  const record = buildKnowledgeNodeRecord(nodeId, {
-    title: payload.title,
-    type: payload.type,
-    reasoning: payload.reasoning,
-    premises: payload.premises,
-  });
-  if (knowledgeRepository) await knowledgeRepository.saveNode(record);
-  sharedRecords.set(nodeId, record);
-  await cmdCreateNode(store, {
-    nodeId,
-    title: payload.title,
-    nodeType: payload.type,
-    reasoning: payload.reasoning,
-    premises: payload.premises,
-  });
-  currentPanelId = nodeId;
-  panel.openNodePanel(nodeId);
+  const conclusionId = generateNodeId();
+  const atomic = ['axiom', 'definition', 'fact', 'logic-symbol'].includes(payload.type);
+  const edit: AddEdit = atomic
+    ? {
+        kind: 'add',
+        mode: 'atomic',
+        node: {
+          id: conclusionId,
+          title: payload.title,
+          type: payload.type,
+          reasoning: payload.description,
+        },
+      }
+    : {
+        kind: 'add',
+        mode: 'theory',
+        requiredPremiseIds: payload.premises,
+        reasoning: {
+          id: generateNodeId(),
+          title: `推理：${payload.title} · ${conclusionId.slice(-6)}`,
+          type: 'reasoning',
+          reasoning: payload.reasoning ?? '',
+          logicRuleId: payload.logicRuleId,
+        },
+        conclusion: {
+          id: conclusionId,
+          title: payload.title,
+          type: payload.type,
+          reasoning: payload.description,
+        },
+      };
+  await applyAndPersistKnowledgeEdit(edit);
+  currentPanelId = conclusionId;
+  panel.openNodePanel(conclusionId);
   scene.markDirty();
 }
 
 async function importKnowledgeNode(node: KnowledgeNodeRecord): Promise<void> {
   sharedRecords.set(node.id, node);
   if (projection.state.nodesById[node.id]) return;
-  await seedNode(node.id, node.title, node.type, node.reasoning, node.premises);
-  if (node.mastery !== 'none') await cmdSetMastery(store, { nodeId: node.id, mastery: node.mastery });
-  if (node.status === 'verified') await cmdResolveNode(store, { nodeId: node.id });
-  if (node.status === 'suspended') await cmdSuspendNode(store, { nodeId: node.id });
-  if (node.status === 'disputed') await cmdDisputeNode(store, { nodeId: node.id });
-  if (node.status === 'falsified') await cmdFalsifyNode(store, projection, { nodeId: node.id });
+  await seedNode(node.id, node.title, node.type, node.reasoning, node.premises, {
+    initialStatus: node.status,
+    initialMastery: node.mastery,
+    source: 'import',
+    hidden: node.hidden,
+    aliases: node.aliases,
+    supersededBy: node.supersededBy,
+    logicRuleId: node.logicRuleId,
+    negatedBy: node.negatedBy,
+    semanticKey: node.semanticKey,
+  });
 }
 
 async function loadSharedKnowledge(): Promise<void> {
@@ -190,32 +237,86 @@ async function loadSharedKnowledge(): Promise<void> {
   for (const node of nodes) await importKnowledgeNode(node);
 }
 
-async function persistProjectedNode(id: string): Promise<void> {
+function projectionSignatures(): Map<string, string> {
+  return new Map(nodeList(projection.state).map(node => [node.id, JSON.stringify(node)]));
+}
+
+async function persistProjectedNodes(ids: Iterable<string>): Promise<void> {
   if (!knowledgeRepository) return;
-  const node = projection.state.nodesById[id];
-  if (!node) return;
-  const previous = sharedRecords.get(id);
-  const now = new Date().toISOString();
-  const record: KnowledgeNodeRecord = {
-    id: node.id,
-    title: node.title,
-    type: node.type,
-    status: node.status,
-    mastery: node.mastery,
-    reasoning: node.reasoning,
-    premises: [...node.premises],
-    tags: previous?.tags ?? [],
-    domain: previous?.domain ?? 'general',
-    version: (previous?.version ?? 0) + 1,
-    createdAt: previous?.createdAt ?? now,
-    updatedAt: now,
-    author: previous?.author,
-  };
-  await knowledgeRepository.saveNode(record);
-  sharedRecords.set(id, record);
+  const idsToPersist = new Set(ids);
+  const queue = [...idsToPersist];
+  while (queue.length) {
+    const id = queue.shift()!;
+    const node = projection.state.nodesById[id];
+    if (!node) continue;
+    const references = [
+      ...node.premises,
+      ...(node.logicRuleId ? [node.logicRuleId] : []),
+      ...(node.supersededBy ? [node.supersededBy] : []),
+      ...(node.negatedBy ?? []),
+    ];
+    for (const referenceId of references) {
+      if (sharedRecords.has(referenceId) || idsToPersist.has(referenceId)) continue;
+      idsToPersist.add(referenceId);
+      queue.push(referenceId);
+    }
+  }
+  const records: KnowledgeNodeRecord[] = [];
+  for (const id of idsToPersist) {
+    const node = projection.state.nodesById[id];
+    if (!node) continue;
+    const previous = sharedRecords.get(id);
+    const now = new Date().toISOString();
+    records.push({
+      id: node.id,
+      title: node.title,
+      type: node.type,
+      status: node.status,
+      mastery: node.mastery,
+      reasoning: node.reasoning,
+      premises: [...node.premises],
+      tags: previous?.tags ?? [],
+      domain: previous?.domain ?? 'general',
+      version: (previous?.version ?? 0) + 1,
+      createdAt: previous?.createdAt ?? now,
+      updatedAt: now,
+      author: previous?.author,
+      hidden: node.hidden ?? false,
+      aliases: node.aliases ? [...node.aliases] : undefined,
+      supersededBy: node.supersededBy,
+      logicRuleId: node.logicRuleId,
+      negatedBy: node.negatedBy ? [...node.negatedBy] : undefined,
+      semanticKey: node.semanticKey,
+    });
+  }
+  if (records.length === 0) return;
+  await knowledgeRepository.saveNodes(records);
+  for (const record of records) sharedRecords.set(record.id, record);
+}
+
+async function persistProjectedNode(id: string): Promise<void> {
+  await persistProjectedNodes([id]);
+}
+
+async function applyAndPersistKnowledgeEdit(edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit): Promise<void> {
+  const before = projectionSignatures();
+  await executeKnowledgeEdit(store, projection, edit);
+  const changed = nodeList(projection.state)
+    .filter(node => before.get(node.id) !== JSON.stringify(node))
+    .map(node => node.id);
+  await persistProjectedNodes(changed);
 }
 
 async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<void> {
+  const current = projection.state.nodesById[id];
+  if (!current) throw new Error('编辑目标不存在');
+  if (payload.type !== current.type) throw new Error('结构类型不能直接更改；请通过增加、分解或合并建立新结构');
+  const title = canonicalKnowledgeText(payload.title);
+  const description = canonicalKnowledgeText(payload.reasoning);
+  const duplicateTitle = nodeList(projection.state).find(node => node.id !== id && canonicalKnowledgeText(node.title) === title);
+  const duplicateDescription = nodeList(projection.state).find(node => node.id !== id && canonicalKnowledgeText(node.reasoning) === description);
+  if (duplicateTitle) throw new Error(`节点标题已被“${duplicateTitle.title}”占用，包括隐藏历史节点`);
+  if (duplicateDescription) throw new Error(`节点描述已被“${duplicateDescription.title}”占用，包括隐藏历史节点`);
   await cmdEditNode(store, {
     nodeId: id,
     title: payload.title,
@@ -225,10 +326,109 @@ async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<
   await persistProjectedNode(id);
 }
 
-async function falsifyKnowledgeNode(id: string): Promise<void> {
-  const events = await cmdFalsifyNode(store, projection, { nodeId: id });
-  const affectedIds = new Set(events.map(event => event.payload.nodeId));
-  await Promise.all([...affectedIds].map(persistProjectedNode));
+async function negateKnowledgeNode(id: string, payload: NegateNodePayload): Promise<void> {
+  const target = projection.state.nodesById[id];
+  if (!target) throw new Error('否定目标不存在');
+  const edit: NegateEdit = {
+    kind: 'negate',
+    target: target.type === 'reasoning' ? 'reasoning' : 'conclusion',
+    targetId: id,
+    counterexampleIds: payload.counterexampleIds,
+    correctedReasoning: payload.correctedReasoning
+      ? {
+          id: generateNodeId(),
+          title: payload.correctedReasoning.title,
+          type: 'reasoning',
+          reasoning: payload.correctedReasoning.reasoning,
+          logicRuleId: payload.correctedReasoning.logicRuleId,
+        }
+      : undefined,
+  };
+  await applyAndPersistKnowledgeEdit(edit);
+  currentPanelId = null;
+}
+
+async function decomposeKnowledgeNode(id: string, payload: DecomposeNodePayload): Promise<void> {
+  const reasoning = projection.state.nodesById[id];
+  if (!reasoning || reasoning.type !== 'reasoning') throw new Error('分解目标必须是推理过程');
+  const edit: DecomposeEdit = {
+    kind: 'decompose',
+    chain: {
+      premiseIds: [...reasoning.premises],
+      reasoningId: id,
+      conclusionId: payload.conclusionId,
+    },
+    reasoningSteps: payload.reasoningSteps.map(step => ({
+      id: generateNodeId(),
+      title: step.title,
+      type: 'reasoning',
+      reasoning: step.reasoning,
+      logicRuleId: step.logicRuleId,
+    })),
+    intermediateConclusions: payload.intermediateConclusions.map(item => ({
+      id: generateNodeId(),
+      title: item.title,
+      type: item.type,
+      reasoning: item.description,
+    })),
+  };
+  await applyAndPersistKnowledgeEdit(edit);
+  currentPanelId = null;
+}
+
+async function mergeDefinitions(payload: MergeDefinitionPayload): Promise<void> {
+  const edit: MergeEdit = {
+    kind: 'merge',
+    mode: 'definition',
+    sourceNodeIds: payload.sourceNodeIds,
+    semanticKey: payload.semanticKey,
+    mergedDefinition: {
+      id: generateNodeId(),
+      title: payload.mergedDefinition.title,
+      type: 'definition',
+      reasoning: payload.mergedDefinition.description,
+    },
+  };
+  await applyAndPersistKnowledgeEdit(edit);
+  currentPanelId = null;
+}
+
+async function mergeTheories(payload: MergeTheoryPayload): Promise<void> {
+  const chains = payload.sourceConclusionIds.map(conclusionId => {
+    const conclusion = projection.state.nodesById[conclusionId];
+    const reasoningParents = conclusion?.premises
+      .map(id => projection.state.nodesById[id])
+      .filter(node => node?.type === 'reasoning') ?? [];
+    if (!conclusion || reasoningParents.length !== 1) throw new Error(`结论缺少唯一推理过程: ${conclusionId}`);
+    const reasoning = reasoningParents[0]!;
+    return {
+      premiseIds: [...reasoning.premises],
+      reasoningId: reasoning.id,
+      conclusionId,
+    };
+  });
+  const edit: MergeEdit = {
+    kind: 'merge',
+    mode: 'theory',
+    chains,
+    reasoningSemanticKey: payload.reasoningSemanticKey,
+    semanticKey: payload.semanticKey,
+    mergedReasoning: {
+      id: generateNodeId(),
+      title: payload.mergedReasoning.title,
+      type: 'reasoning',
+      reasoning: payload.mergedReasoning.reasoning,
+      logicRuleId: payload.mergedReasoning.logicRuleId,
+    },
+    mergedConclusion: {
+      id: generateNodeId(),
+      title: payload.mergedConclusion.title,
+      type: payload.mergedConclusion.type,
+      reasoning: payload.mergedConclusion.description,
+    },
+  };
+  await applyAndPersistKnowledgeEdit(edit);
+  currentPanelId = null;
 }
 
 async function resolveKnowledgeNode(id: string): Promise<void> {
@@ -251,7 +451,12 @@ async function seedNode(
   title: string,
   nodeType: KnowledgeNodeType,
   reasoning: string,
-  premises: string[] = []
+  premises: string[] = [],
+  metadata: Pick<KnowledgeNodeRecord, 'hidden' | 'aliases' | 'supersededBy' | 'logicRuleId' | 'negatedBy' | 'semanticKey'> & {
+    initialStatus?: KnowledgeNodeRecord['status'];
+    initialMastery?: KnowledgeNodeRecord['mastery'];
+    source?: 'import';
+  } = {},
 ): Promise<void> {
   await cmdCreateNode(store, {
     nodeId,
@@ -259,68 +464,13 @@ async function seedNode(
     nodeType,
     reasoning,
     premises,
+    ...metadata,
   });
 }
 
 async function seedDemoData(): Promise<void> {
-  if (nodeList(projection.state).length > 0) return;
-
-  await seedNode('n1', '同一律', 'axiom', '逻辑基础公理，长期稳定、无法继续向下证明，经准入规则纳入公理层。');
-  await cmdSetMastery(store, { nodeId: 'n1', mastery: 'mastered' });
-  await cmdResolveNode(store, { nodeId: 'n1' });
-
-  await seedNode('n2', '排中律', 'axiom', '逻辑基础公理，与同一律、矛盾律共同构成经典逻辑地基。');
-  await cmdSetMastery(store, { nodeId: 'n2', mastery: 'touched' });
-  await cmdResolveNode(store, { nodeId: 'n2' });
-
-  await seedNode('n16', '矛盾律', 'axiom', '同一命题不能同时为真又为假，经典逻辑的第三基础公理。');
-  await cmdSetMastery(store, { nodeId: 'n16', mastery: 'mastered' });
-  await cmdResolveNode(store, { nodeId: 'n16' });
-
-  await seedNode('n3', '质数的定义', 'definition', '仅能被 1 和自身整除的大于 1 的自然数。基于同一律确立的稳定定义，长期无异议。', ['n1']);
-  await cmdSetMastery(store, { nodeId: 'n3', mastery: 'mastered' });
-  await cmdResolveNode(store, { nodeId: 'n3' });
-
-  await seedNode('n4', '水的沸点', 'fact', '标准大气压下纯水沸点为 100°C，实验反复验证的经验事实。');
-  await cmdSetMastery(store, { nodeId: 'n4', mastery: 'touched' });
-  await cmdResolveNode(store, { nodeId: 'n4' });
-
-  await seedNode('n5', '勾股定理', 'theorem', '直角三角形两直角边平方和等于斜边平方。欧几里得《几何原本》给出的经典演绎证明，基于同一律与排中律。', ['n1', 'n2']);
-  await cmdSetMastery(store, { nodeId: 'n5', mastery: 'mastered' });
-  await cmdResolveNode(store, { nodeId: 'n5' });
-
-  await seedNode('n6', '反证法证明', 'theorem', '假设质数有限，构造新数导出矛盾，证明质数数量无穷。', ['n3']);
-  await cmdSetMastery(store, { nodeId: 'n6', mastery: 'mastered' });
-  await cmdResolveNode(store, { nodeId: 'n6' });
-
-  await seedNode('n15', '欧拉乘积证法', 'theorem', '通过欧拉乘积公式 ∏(1-p⁻¹)⁻¹ 的发散性证明质数无穷，与反证法殊途同归，是同一结论的独立证明路径。', ['n3']);
-  await cmdSetMastery(store, { nodeId: 'n15', mastery: 'touched' });
-  await cmdResolveNode(store, { nodeId: 'n15' });
-
-  await seedNode('n7', '黎曼猜想', 'hypothesis', '非平凡零点实部均为 1/2。尚无完整证明或证伪，悬置状态本身是准确的表达，而非系统缺陷。', ['n3']);
-  await cmdSetMastery(store, { nodeId: 'n7', mastery: 'touched' });
-  await cmdSuspendNode(store, { nodeId: 'n7' });
-
-  await seedNode('n8', 'AGI 时间预测', 'prediction', '预测 2035 年可实现通用人工智能。不存在可验证的逻辑链条，悬置等待未来事件校验，校验结果计入提交者声誉。');
-  await cmdSuspendNode(store, { nodeId: 'n8' });
-
-  await seedNode('n9', '自由市场效率观点', 'opinion', '自由市场比计划经济更有效率。规范性/经验混合命题，无法逻辑裁定，采用加权投票+悬置并展示正反证据。');
-  await cmdSetMastery(store, { nodeId: 'n9', mastery: 'touched' });
-  await cmdDisputeNode(store, { nodeId: 'n9' });
-
-  await seedNode('n10', '个体自由优先', 'value', '个体自由优先于集体效率。纯价值判断，协议不裁定对错，仅呈现论据双方。');
-  await cmdDisputeNode(store, { nodeId: 'n10' });
-
-  await seedNode('n11', 'LK-99 超导声称', 'fact', '论文声称 LK-99 材料在常压常温下具有超导性。2023 年论文声称发现常温常压超导现象，后经多个独立实验室复现失败、机制被重新解释，节点被标记为已证伪。');
-  await cmdSetMastery(store, { nodeId: 'n11', mastery: 'touched' });
-
-  await seedNode('n12', '无损耗输电推论', 'theorem', '若 LK-99 超导属实，可实现无损耗输电网络。完全依赖 n11 成立，前提证伪后本节点自动进入悬置。', ['n11']);
-  await seedNode('n13', '数据中心节能推论', 'prediction', 'LK-99 应用可大幅降低数据中心能耗。依赖 n12 的工程可行性，属于二级下游推论。', ['n12']);
-  await seedNode('n14', '电网投资推论', 'opinion', 'LK-99 产业化将重塑全球电网基建投资方向。依赖 n12，属于二级下游的产业判断。', ['n12']);
-
-  await cmdFalsifyNode(store, projection, { nodeId: 'n11' });
+  await seedDemoKnowledge(store, projection);
 }
-
 const host = must<HTMLElement>('canvasHost');
 const labelsLayer = must<HTMLElement>('labelsLayer');
 
@@ -350,7 +500,10 @@ panel = new PanelController({
 
   onCreateNode: createKnowledgeNode,
   onEditNode: editKnowledgeNode,
-  onFalsifyNode: falsifyKnowledgeNode,
+  onNegateNode: negateKnowledgeNode,
+  onDecomposeNode: decomposeKnowledgeNode,
+  onMergeDefinitions: mergeDefinitions,
+  onMergeTheories: mergeTheories,
   onResolveNode: resolveKnowledgeNode,
   onDisputeNode: disputeKnowledgeNode,
   onSetMastery: setKnowledgeMastery,
@@ -371,9 +524,13 @@ panel = new PanelController({
 
   fTitle: must<HTMLInputElement>('fTitle'),
   fType: must<HTMLSelectElement>('fType'),
+  fDescription: must<HTMLTextAreaElement>('fDescription'),
   fReasoning: must<HTMLTextAreaElement>('fReasoning'),
+  fReasoningField: must<HTMLElement>('fReasoningField'),
   fPremises: must<HTMLElement>('fPremises'),
-  fLogicConfirm: must<HTMLInputElement>('fLogicConfirm'),
+  fPremisesField: must<HTMLElement>('fPremisesField'),
+  fLogicRule: must<HTMLSelectElement>('fLogicRule'),
+  fLogicRuleField: must<HTMLElement>('fLogicRuleField'),
 
   accountOverlay: opt<HTMLElement>('accountOverlay'),
   accountClose: opt<HTMLElement>('accountClose'),

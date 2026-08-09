@@ -2,24 +2,11 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { KnowledgeStore } from './store.mjs';
+import { validKey, validNamespace, validateNodeBatch } from './validation.mjs';
 
 const port = Number(process.env.PORT ?? 8787);
 const root = resolve('dist');
 const store = new KnowledgeStore(resolve(process.env.KNOWLEDGE_DATA_FILE ?? 'data/knowledge.json'));
-const types = new Set(['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value', 'reasoning']);
-const statuses = new Set(['pending', 'verified', 'suspended', 'disputed', 'falsified']);
-const masteryLevels = new Set(['none', 'touched', 'mastered']);
-const domains = new Set(['logic', 'mathematics', 'physics', 'biology', 'chemistry', 'computer-science', 'economics', 'history', 'philosophy', 'general']);
-const unsafeKeys = new Set(['__proto__', 'prototype', 'constructor']);
-
-function validKey(value, maxLength) {
-  return typeof value === 'string' && value.length > 0 && value.length <= maxLength && !unsafeKeys.has(value);
-}
-
-function validNamespace(value) {
-  return validKey(value, 50) && /^[\w-]+$/.test(value);
-}
-
 function send(res, status, body) {
   const text = body === undefined ? '' : JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -43,16 +30,6 @@ async function readJson(req) {
     error.statusCode = 400;
     throw error;
   }
-}
-
-function validNode(node) {
-  return node && validKey(node.id, 100) &&
-    typeof node.title === 'string' && Boolean(node.title.trim()) && node.title.length <= 200 &&
-    typeof node.reasoning === 'string' && node.reasoning.length <= 10_000 && types.has(node.type) &&
-    statuses.has(node.status) && masteryLevels.has(node.mastery) && domains.has(node.domain) &&
-    Number.isInteger(node.version) && node.version >= 1 &&
-    Array.isArray(node.tags) && node.tags.length <= 100 && node.tags.every(value => typeof value === 'string' && value.length <= 100) &&
-    Array.isArray(node.premises) && node.premises.length <= 100 && node.premises.every(value => validKey(value, 100));
 }
 
 async function handleApi(req, res, url) {
@@ -100,11 +77,14 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && !id) {
     const body = await readJson(req);
     const namespace = body.namespace || queryNamespace;
-    if (!validNamespace(namespace) || !validNode(body.node)) {
-      send(res, 400, { error: 'Invalid node' });
+    const incomingNodes = Array.isArray(body.nodes) ? body.nodes : body.node ? [body.node] : [];
+    const existingNodes = validNamespace(namespace) ? await store.list(namespace) : [];
+    const validationError = validNamespace(namespace) ? validateNodeBatch(existingNodes, incomingNodes) : 'Invalid namespace';
+    if (validationError) {
+      send(res, 400, { error: validationError });
       return true;
     }
-    await store.save(namespace, body.node);
+    await store.saveBatch(namespace, incomingNodes);
     send(res, 204);
     return true;
   }

@@ -9,6 +9,15 @@ export interface CreateNodePayload {
   nodeType: NodeType;
   reasoning: string;
   premises: string[];
+  initialStatus?: import('../event/Event').NodeStatus;
+  initialMastery?: import('../event/Event').Mastery;
+  source?: 'import';
+  hidden?: boolean;
+  aliases?: string[];
+  supersededBy?: string;
+  logicRuleId?: string;
+  negatedBy?: string[];
+  semanticKey?: string;
 }
 
 export async function createNode(
