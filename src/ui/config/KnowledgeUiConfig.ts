@@ -35,8 +35,8 @@ export const CORE_SUN_LIGHT_INTENSITY = 24;
 // distance=0 is required by Three.js for pure inverse-square attenuation without an artificial cutoff.
 export const CORE_SUN_LIGHT_DISTANCE = 0;
 export const CORE_SUN_LIGHT_DECAY = 2;
-// Shadow reach is independent from PointLight.distance so physical attenuation can remain unbounded.
-export const CORE_SUN_SHADOW_FAR = LAYER_BANDS.outer.rMax * 1.8;
+// Shadow reach is independent from PointLight.distance and covers the outer layer at maximum graph zoom.
+export const CORE_SUN_SHADOW_FAR = LAYER_BANDS.outer.rMax * MAX_GRAPH_ZOOM * 1.1;
 // No uniform ambient contribution: apparent solar illumination is determined by distance and occlusion.
 export const CORE_AMBIENT_LIGHT_INTENSITY = 0;
 /** Legacy compatibility only. Camera distance no longer drives zoom. */
