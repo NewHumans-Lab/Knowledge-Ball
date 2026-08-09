@@ -266,3 +266,25 @@ const duplicateHiddenDescription = validateKnowledgeEdit(mergedDefinitions, {
 assert(duplicateHiddenDescription.some(error => error.includes('描述')));
 
 console.log('Knowledge editing protocol regression tests passed');
+
+// Reasoning processes and logic classifiers are not ordinary knowledge premises.
+const invalidPremises = validateKnowledgeEdit(base, {
+  kind: 'add', mode: 'theory', requiredPremiseIds: ['r1', 'logic-mp'],
+  reasoning: { id: 'bad-r', title: 'Bad reasoning', type: 'reasoning', reasoning: 'Bad inference text', logicRuleId: 'logic-mp' },
+  conclusion: { id: 'bad-c', title: 'Bad conclusion', type: 'theorem', reasoning: 'Bad conclusion text' },
+});
+assert(invalidPremises.some(error => error.includes('普通知识结论')));
+
+// A unified conclusion replaces source conclusions in every active downstream chain.
+const downstreamNodes = [
+  ...theoryNodes,
+  node('r-downstream', 'reasoning', ['c1'], 'Downstream inference', { logicRuleId: 'logic-mp' }),
+  node('c-downstream', 'theorem', ['r-downstream'], 'Downstream conclusion'),
+];
+const downstreamMerged = apply(downstreamNodes, {
+  kind: 'merge', mode: 'theory', chains: [chain, { premiseIds: ['p2', 'p1'], reasoningId: 'r2', conclusionId: 'c2' }],
+  reasoningSemanticKey: 'inference:downstream', semanticKey: 'theorem:downstream',
+  mergedReasoning: { id: 'r-unified', title: 'Unified inference downstream', type: 'reasoning', reasoning: 'Canonical downstream source inference', logicRuleId: 'logic-mp' },
+  mergedConclusion: { id: 'c-unified', title: 'Unified conclusion downstream', type: 'theorem', reasoning: 'Canonical downstream result' },
+});
+assert.deepEqual(downstreamMerged.find(item => item.id === 'r-downstream')?.premises, ['c-unified']);

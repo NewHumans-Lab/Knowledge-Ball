@@ -1,0 +1,12 @@
+import { strict as assert } from 'node:assert';
+import { migrateKnowledgeV1 } from './KnowledgeMigration';
+const old = [{ id:'n', title:'N', type:'fact' as const, reasoning:'D', status:'suspended' as const, mastery:'mastered' as const, hidden:true, supersededBy:'n2', version:3, createdAt:'2026-01-01T00:00:00Z', updatedAt:'2026-01-02T00:00:00Z' }];
+const first = migrateKnowledgeV1(old);
+const second = migrateKnowledgeV1(old);
+assert.deepEqual(first, second, 'migration must be idempotently deterministic');
+assert.equal(first.schemaVersion, 2);
+assert.equal(first.publicNodes[0].availability, 'suspended');
+assert.equal(first.publicNodes[0].lifecycle, 'superseded');
+assert(!Object.prototype.hasOwnProperty.call(first.publicNodes[0], 'mastery'));
+assert.equal(first.personalStates[0].mastery, 'mastered');
+console.log('Knowledge migration regression tests passed');

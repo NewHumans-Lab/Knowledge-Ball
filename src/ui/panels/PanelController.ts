@@ -418,7 +418,7 @@ export class PanelController {
       this.modalHint.textContent = src ? `将默认以「${src.title}」作为前置知识点` : '将默认以所选节点作为前置知识点';
     }
     this.fTitle.value = '';
-    this.fType.value = 'fact';
+    this.fType.value = prefillPremiseId ? 'theorem' : 'fact';
     this.fDescription.value = '';
     this.fReasoning.value = '';
     this.modalSubmit.disabled = false;

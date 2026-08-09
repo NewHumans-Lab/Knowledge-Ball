@@ -2,6 +2,25 @@
 
 本文档是当前代码执行的规范，不是界面说明。文中的“必须”“不得”同时约束浏览器命令、事件回放、远程批量写入和测试。
 
+> 规范模型位置：`src/domain/KnowledgeModel.ts`。序列化结构版本为 2；旧 `schemaVersion: 1` 数据必须显式迁移，不能静默改变含义。
+
+### 架构边界
+
+- 公共节点只包含认识状态、可用性和生命周期；不得包含 `mastery`、个人笔记或任意 `hidden` 真相。
+- `PersonalKnowledgeState` 使用独立个人事件及 `knowledge-ball.personal-events.v1` key；公共服务端收到 `mastery` 必须返回 `PERSONAL_STATE_IN_PUBLIC_PAYLOAD`。
+- UI 只通过 `selectKnowledgeDisplay` 组合公共节点和当前用户个人掌握度。`falsified`、`superseded` 默认不显示，`suspended` 仍显示。
+- 公共状态三个轴分别为 `pending|verified|disputed|falsified`、`active|suspended`、`current|superseded`。
+
+| 关系 | 方向 | 关键约束 |
+| --- | --- | --- |
+| `premise` | 普通知识结论 → reasoning | 来源不能是 reasoning 或 logic-symbol |
+| `conclusion` | reasoning → 理论结论 | 新 reasoning 与唯一结论必须在同一原子批次创建 |
+| `logic-rule` | logic-symbol → reasoning | 每个 reasoning 恰好一个当前可用规则 |
+| `counterexample` | 知识结论 → 被否定节点 | 不自指、不重复，来源当前可用 |
+| `supersedes` | 历史节点 → 当前节点 | 历史保留，不硬删除，不参与普通依赖传播 |
+
+结构依赖和循环检测覆盖 `premise`、`conclusion`、`logic-rule`。服务端读取、revision 检查、验证和写入位于同一个串行事务；失败不写节点且不增加 revision。稳定错误码统一由 `PROTOCOL_ERROR_CODES` 定义，UI 可以映射中文消息，但领域判断不得依赖中文字符串。
+
 ## 1. 唯一领域模型
 
 系统把知识结论、推理过程和逻辑符号都建模为节点。公共知识状态与个人掌握状态正交：
@@ -11,16 +30,14 @@
 | `id` | 永久 ID；创建后不变 |
 | `title` | 节点名称 |
 | `type` | 知识类型 |
-| `reasoning` | 普通知识节点的描述；推理节点的推理过程 |
-| `premises` | 直接上游节点 ID |
-| `status` | 公共知识状态 |
-| `mastery` | 当前用户的个人掌握状态 |
-| `logicRuleId` | 推理节点使用的逻辑符号节点 |
-| `hidden` | 是否默认不参与可视化；不表示删除 |
-| `supersededBy` | 替代当前节点的新节点 |
+| `description` | 普通知识节点的描述；推理节点的推理过程 |
+| `epistemicStatus` | 公共认识状态 |
+| `availability` | 公共可用性；上游失效时为 suspended |
+| `lifecycle` | current 或 superseded；决定是否为当前版本 |
 | `aliases` | 合并后保留的原名称 |
-| `negatedBy` | 否定当前节点的反例节点 |
 | `semanticKey` | 合并时声明的语义身份 |
+
+`premises`、`logicRuleId`、`negatedBy`、`supersededBy` 是旧序列化结构；schema v2 由规范 `KnowledgeRelation` 生成关系。`mastery` 仅存在于独立的 `PersonalKnowledgeState`，不属于本表的公共节点。
 
 节点类型为：
 

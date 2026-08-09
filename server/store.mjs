@@ -26,11 +26,32 @@ export class KnowledgeStore {
   }
 
   async saveBatch(namespace, nodes) {
+    return this.transact(namespace, async space => {
+      for (const node of nodes) space.nodes[node.id] = node;
+    });
+  }
+
+  async transact(namespace, operation) {
     return this.enqueue(async () => {
       const data = await this.read();
       const space = data.namespaces[namespace] ??= { nodes: {}, drafts: [] };
-      for (const node of nodes) space.nodes[node.id] = node;
+      const result = await operation(space);
       await this.write(data);
+      return result;
+    });
+  }
+
+  async validateAndSaveBatch(namespace, nodes, expectedRevision, validate) {
+    return this.transact(namespace, space => {
+      const revision = space.revision ?? 0;
+      if (expectedRevision !== undefined && expectedRevision !== revision) {
+        return { error: { code: 'REVISION_CONFLICT', path: 'expectedRevision', details: { expectedRevision, actualRevision: revision } }, revision };
+      }
+      const error = validate(Object.values(space.nodes ?? {}), nodes);
+      if (error) return { error, revision };
+      for (const node of nodes) space.nodes[node.id] = node;
+      space.revision = revision + 1;
+      return { error: null, revision: space.revision };
     });
   }
 

@@ -49,23 +49,19 @@ export class GitHubKnowledgeGateway implements KnowledgeRepository {
   }
 
   async saveNodes(nodes: KnowledgeNodeRecord[]): Promise<void> {
+    const publicNodes = nodes.map(({ mastery: _personalMastery, ...node }) => node);
     await this.request<void>('/nodes', {
       method: 'POST',
       body: JSON.stringify({
         namespace: this.namespace,
-        nodes,
+        nodes: publicNodes,
       }),
     });
   }
 
   async saveDraft(draft: KnowledgeNodeDraft): Promise<void> {
-    await this.request<void>('/drafts', {
-      method: 'POST',
-      body: JSON.stringify({
-        namespace: this.namespace,
-        draft,
-      }),
-    });
+    void draft;
+    throw new Error('Drafts are personal local state and cannot be uploaded to the public knowledge gateway');
   }
 
   async listNodes(domain?: string): Promise<KnowledgeNodeRecord[]> {

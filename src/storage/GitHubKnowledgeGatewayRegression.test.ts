@@ -53,7 +53,8 @@ async function run(): Promise<void> {
     updatedAt: '2026-08-09T00:00:00.000Z',
   };
   await gateway.saveNodes([record]);
-  assert.deepEqual(JSON.parse(requestBody).nodes, [record], 'related nodes must use one atomic batch request');
+  const { mastery: _personalMastery, ...publicRecord } = record;
+  assert.deepEqual(JSON.parse(requestBody).nodes, [publicRecord], 'related public nodes must use one atomic batch request without personal mastery');
 }
 
 run()

@@ -1,9 +1,7 @@
-export type NodeType =
-  | 'axiom' | 'definition' | 'fact' | 'theorem'
-  | 'hypothesis' | 'prediction' | 'opinion' | 'value' | 'reasoning' | 'logic-symbol';
+import type { Mastery, NodeType } from '../domain/KnowledgeModel';
+export type { Mastery, NodeType } from '../domain/KnowledgeModel';
 
 export type NodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
-export type Mastery = 'none' | 'touched' | 'mastered';
 
 interface EventEnvelope<TType extends string, TPayload> {
   id: string;

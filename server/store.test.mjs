@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { KnowledgeStore } from './store.mjs';
+import { validateNodeBatch } from './validation.mjs';
 
 test('a node saved by one client is visible to another', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'knowledge-ball-'));
@@ -16,6 +17,23 @@ test('a node saved by one client is visible to another', async () => {
     assert.deepEqual(await reader.list('public'), [node]);
     assert.deepEqual(await reader.get('public', node.id), node);
     assert.deepEqual(JSON.parse(await readFile(file, 'utf8')).namespaces.public.nodes[node.id], node);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('concurrent validated writes cannot both pass against the same old snapshot', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'knowledge-ball-race-'));
+  try {
+    const store = new KnowledgeStore(join(dir, 'knowledge.json'));
+    const make = id => ({ id, title: 'Same title', type: 'fact', reasoning: `${id} text`, premises: [], status: 'pending', tags: [], domain: 'general', version: 1 });
+    const [first, second] = await Promise.all([
+      store.validateAndSaveBatch('public', [make('a')], 0, validateNodeBatch),
+      store.validateAndSaveBatch('public', [make('b')], 0, validateNodeBatch),
+    ]);
+    assert.equal([first, second].filter(result => !result.error).length, 1);
+    assert.equal([first, second].find(result => result.error)?.error.code, 'REVISION_CONFLICT');
+    assert.equal((await store.list('public')).length, 1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
