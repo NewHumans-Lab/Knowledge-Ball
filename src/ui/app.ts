@@ -23,6 +23,7 @@ import { supportsSharedKnowledgeApi } from '../storage/HostingEnvironment';
 
 import {
   TWIN_META,
+  type KnowledgeMastery,
   type KnowledgeNodeType,
 } from './config/KnowledgeUiConfig';
 
@@ -220,7 +221,7 @@ async function importKnowledgeNode(node: KnowledgeNodeRecord): Promise<void> {
   if (projection.state.nodesById[node.id]) return;
   await seedNode(node.id, node.title, node.type, node.reasoning, node.premises, {
     initialStatus: node.status,
-    initialMastery: node.mastery,
+    initialMastery: 'none',
     source: 'import',
     hidden: node.hidden,
     aliases: node.aliases,
@@ -272,7 +273,6 @@ async function persistProjectedNodes(ids: Iterable<string>): Promise<void> {
       title: node.title,
       type: node.type,
       status: node.status,
-      mastery: node.mastery,
       reasoning: node.reasoning,
       premises: [...node.premises],
       tags: previous?.tags ?? [],
@@ -443,7 +443,6 @@ async function disputeKnowledgeNode(id: string): Promise<void> {
 
 async function setKnowledgeMastery(id: string, mastery: 'none' | 'touched' | 'mastered'): Promise<void> {
   await cmdSetMastery(store, { nodeId: id, mastery });
-  await persistProjectedNode(id);
 }
 
 async function seedNode(
@@ -454,7 +453,7 @@ async function seedNode(
   premises: string[] = [],
   metadata: Pick<KnowledgeNodeRecord, 'hidden' | 'aliases' | 'supersededBy' | 'logicRuleId' | 'negatedBy' | 'semanticKey'> & {
     initialStatus?: KnowledgeNodeRecord['status'];
-    initialMastery?: KnowledgeNodeRecord['mastery'];
+    initialMastery?: KnowledgeMastery;
     source?: 'import';
   } = {},
 ): Promise<void> {
