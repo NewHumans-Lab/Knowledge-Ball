@@ -1,17 +1,8 @@
-export type KnowledgeNodeType =
-  | 'axiom'
-  | 'definition'
-  | 'fact'
-  | 'theorem'
-  | 'hypothesis'
-  | 'prediction'
-  | 'opinion'
-  | 'value'
-  | 'reasoning'
-  | 'logic-symbol';
+import type { Mastery, NodeType } from '../domain/KnowledgeModel';
+export type KnowledgeNodeType = NodeType;
 
 export type KnowledgeNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
-export type KnowledgeMastery = 'none' | 'touched' | 'mastered';
+export type KnowledgeMastery = Mastery;
 
 export type KnowledgeDomain =
   | 'logic'

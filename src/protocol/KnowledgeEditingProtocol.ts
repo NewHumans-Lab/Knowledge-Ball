@@ -198,7 +198,7 @@ function validateCounterexamples(nodes: ProtocolNode[], edit: NegateEdit): strin
     if (!counterexample) errors.push(`反例节点不存在: ${id}`);
     else if (id === edit.targetId) errors.push('知识节点不能作为自身的反例');
     else if (!active(counterexample)) errors.push(`反例节点当前不可用: ${id}`);
-    else if (counterexample.type === 'reasoning') errors.push(`反例必须是知识结论而不是推理过程: ${id}`);
+    else if (counterexample.type === 'reasoning' || counterexample.type === 'logic-symbol') errors.push(`反例必须是普通知识结论: ${id}`);
   }
   return errors;
 }
@@ -254,6 +254,7 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
         const premise = byId.get(id);
         if (!premise) errors.push(`所需前提不存在: ${id}`);
         else if (!active(premise)) errors.push(`所需前提当前不可用: ${id}`);
+        else if (premise.type === 'reasoning' || premise.type === 'logic-symbol') errors.push(`所需前提必须是普通知识结论: ${id}`);
       }
       if (edit.reasoning.type !== 'reasoning') errors.push('新增推理过程必须是 reasoning 类型');
       if (ATOMIC_TYPES.has(edit.conclusion.type) || edit.conclusion.type === 'reasoning') {
@@ -472,6 +473,10 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
       source.status = 'suspended';
       source.hidden = true;
     }
+    for (const node of next) {
+      if (node.hidden || node.supersededBy) continue;
+      node.premises = node.premises.map(id => edit.sourceNodeIds.includes(id) ? merged.id : id);
+    }
   }
 
   if (edit.kind === 'merge' && edit.mode === 'theory') {
@@ -494,6 +499,11 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
       conclusion.status = 'suspended';
       reasoning.hidden = true;
       conclusion.hidden = true;
+    }
+    const sourceConclusionIds = new Set(edit.chains.map(chain => chain.conclusionId));
+    for (const node of next) {
+      if (node.hidden || node.supersededBy) continue;
+      node.premises = node.premises.map(id => sourceConclusionIds.has(id) ? mergedConclusion.id : id);
     }
   }
 

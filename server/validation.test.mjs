@@ -3,96 +3,46 @@ import assert from 'node:assert/strict';
 import { validateNodeBatch } from './validation.mjs';
 
 function node(id, title, type, reasoning, premises = [], extra = {}) {
-  return {
-    id,
-    title,
-    type,
-    reasoning,
-    premises,
-    status: 'pending',
-    mastery: 'none',
-    tags: [],
-    domain: 'general',
-    version: 1,
-    createdAt: '2026-08-09T00:00:00.000Z',
-    updatedAt: '2026-08-09T00:00:00.000Z',
-    hidden: false,
-    ...extra,
-  };
+  return { id, title, type, reasoning, premises, status: 'pending', tags: [], domain: 'general', version: 1,
+    createdAt: '2026-08-09T00:00:00.000Z', updatedAt: '2026-08-09T00:00:00.000Z', ...extra };
 }
+const code = result => result?.code;
 
-test('server accepts a complete reasoning chain as one batch', () => {
-  const existing = [
-    node('logic', 'Implication symbol', 'logic-symbol', 'Classifies implication'),
-    node('p1', 'Existing premise', 'fact', 'Existing premise description'),
-  ];
-  const incoming = [
-    node('r1', 'Inference process', 'reasoning', 'Inference process description', ['p1'], { logicRuleId: 'logic' }),
-    node('c1', 'Derived conclusion', 'theorem', 'Derived conclusion description', ['r1']),
-  ];
-  assert.equal(validateNodeBatch(existing, incoming), null);
+test('server accepts only a complete reasoning chain as one batch', () => {
+  const existing = [node('logic', 'Implication symbol', 'logic-symbol', 'Classifies implication'), node('p1', 'Existing premise', 'fact', 'Existing premise description')];
+  const reasoning = node('r1', 'Inference process', 'reasoning', 'Inference process description', ['p1'], { logicRuleId: 'logic' });
+  const conclusion = node('c1', 'Derived conclusion', 'theorem', 'Derived conclusion description', ['r1']);
+  assert.equal(validateNodeBatch(existing, [reasoning, conclusion]), null);
+  assert.equal(code(validateNodeBatch(existing, [reasoning])), 'INCOMPLETE_THEORY_CHAIN');
+  assert.equal(code(validateNodeBatch([...existing, reasoning], [conclusion])), 'INCOMPLETE_THEORY_CHAIN');
 });
 
-test('server rejects partial theory batches and invalid logic classification', () => {
+test('server returns stable errors for invalid theory structure', () => {
   const existing = [node('p1', 'Existing premise', 'fact', 'Existing premise description')];
-  const incomplete = [
-    node('r1', 'Inference process', 'reasoning', 'Inference process description', ['p1']),
-    node('c1', 'Derived conclusion', 'theorem', 'Derived conclusion description', ['r1']),
-  ];
-  assert.match(validateNodeBatch(existing, incomplete), /Invalid logic symbol/);
-  assert.match(
-    validateNodeBatch(existing, [node('c2', 'Direct conclusion', 'theorem', 'Direct description', ['p1'])]),
-    /Derived conclusion must depend on one reasoning node/,
-  );
+  const incomplete = [node('r1', 'Inference process', 'reasoning', 'Inference process description', ['p1']), node('c1', 'Derived conclusion', 'theorem', 'Derived conclusion description', ['r1'])];
+  assert.equal(code(validateNodeBatch(existing, incomplete)), 'LOGIC_RULE_REQUIRED');
+  assert.equal(code(validateNodeBatch(existing, [node('c2', 'Direct conclusion', 'theorem', 'Direct description', ['p1'])])), 'INCOMPLETE_THEORY_CHAIN');
 });
 
 test('hidden historical nodes still reserve title and description', () => {
-  const existing = [
-    node('old', 'Reserved title', 'definition', 'Reserved description', [], { hidden: true, status: 'suspended' }),
-  ];
-  assert.match(
-    validateNodeBatch(existing, [node('new-title', 'Reserved title', 'definition', 'Fresh description')]),
-    /Duplicate node title/,
-  );
-  assert.match(
-    validateNodeBatch(existing, [node('new-description', 'Fresh title', 'fact', 'Reserved description')]),
-    /Duplicate node description/,
-  );
+  const existing = [node('old', 'Reserved title', 'definition', 'Reserved description', [], { lifecycle: 'superseded' })];
+  assert.equal(code(validateNodeBatch(existing, [node('new-title', 'Reserved title', 'definition', 'Fresh description')])), 'DUPLICATE_TITLE');
+  assert.equal(code(validateNodeBatch(existing, [node('new-description', 'Fresh title', 'fact', 'Reserved description')])), 'DUPLICATE_CONTENT');
 });
 
-test('server accepts atomic merge persistence and checks successor references', () => {
-  const existing = [
-    node('a', 'Definition A', 'definition', 'Definition wording A'),
-    node('b', 'Definition B', 'definition', 'Definition wording B'),
-  ];
-  const merged = node('merged', 'Canonical definition', 'definition', 'Canonical definition wording', [], {
-    aliases: ['Definition A', 'Definition B'],
-    semanticKey: 'definition:canonical',
-  });
-  const incoming = [
-    { ...existing[0], hidden: true, status: 'suspended', supersededBy: 'merged', version: 2 },
-    { ...existing[1], hidden: true, status: 'suspended', supersededBy: 'merged', version: 2 },
-    merged,
-  ];
-  assert.equal(validateNodeBatch(existing, incoming), null);
-  assert.match(
-    validateNodeBatch(existing, [{ ...incoming[0], supersededBy: 'missing' }]),
-    /Missing successor/,
-  );
+test('same-batch updates participate in uniqueness', () => {
+  const existing = [node('a', 'A', 'fact', 'A text'), node('b', 'B', 'fact', 'B text')];
+  assert.equal(code(validateNodeBatch(existing, [{ ...existing[0], title: 'Same', version: 2 }, { ...existing[1], title: 'Same', version: 2 }])), 'DUPLICATE_TITLE');
+  assert.equal(code(validateNodeBatch(existing, [{ ...existing[0], reasoning: 'Same text', version: 2 }, { ...existing[1], reasoning: 'Same text', version: 2 }])), 'DUPLICATE_CONTENT');
 });
 
-test('server rejects edits that create duplicates or cycles', () => {
-  const existing = [
-    node('a', 'Node A', 'fact', 'Description A'),
-    node('b', 'Node B', 'fact', 'Description B'),
-  ];
-  assert.match(
-    validateNodeBatch(existing, [{ ...existing[1], title: 'Node A', version: 2 }]),
-    /Duplicate node title/,
-  );
-  const cyclic = [
-    { ...existing[0], premises: ['b'], version: 2 },
-    { ...existing[1], premises: ['a'], version: 2 },
-  ];
-  assert.match(validateNodeBatch(existing, cyclic), /Dependency cycle/);
+test('cycle detection includes premises and logic rule', () => {
+  const seed = [node('logic', 'Rule', 'logic-symbol', 'Rule text'), node('p', 'P', 'fact', 'P text')];
+  const reasoning = node('r', 'R', 'reasoning', 'R text', ['p'], { logicRuleId: 'logic' });
+  const conclusion = node('c', 'C', 'theorem', 'C text', ['r']);
+  assert.equal(code(validateNodeBatch([...seed, reasoning, conclusion], [{ ...seed[0], premises: ['r'], version: 2 }])), 'DEPENDENCY_CYCLE');
+});
+
+test('public payload rejects personal mastery', () => {
+  assert.equal(code(validateNodeBatch([], [node('a', 'A', 'fact', 'A text', [], { mastery: 'mastered' })])), 'PERSONAL_STATE_IN_PUBLIC_PAYLOAD');
 });

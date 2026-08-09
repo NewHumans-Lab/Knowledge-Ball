@@ -33,15 +33,8 @@ async function readJson(req) {
 }
 
 async function handleApi(req, res, url) {
-  if (url.pathname === '/api/knowledge/drafts' && req.method === 'POST') {
-    const body = await readJson(req);
-    const namespace = body.namespace || 'default';
-    if (!validNamespace(namespace) || !body.draft || typeof body.draft.title !== 'string') {
-      send(res, 400, { error: 'Invalid draft' });
-      return true;
-    }
-    await store.saveDraft(namespace, body.draft);
-    send(res, 204);
+  if (url.pathname === '/api/knowledge/drafts') {
+    send(res, 410, { error: { code: 'PERSONAL_STATE_IN_PUBLIC_PAYLOAD', path: 'draft' } });
     return true;
   }
   const prefix = '/api/knowledge/nodes';
@@ -78,19 +71,20 @@ async function handleApi(req, res, url) {
     const body = await readJson(req);
     const namespace = body.namespace || queryNamespace;
     const incomingNodes = Array.isArray(body.nodes) ? body.nodes : body.node ? [body.node] : [];
-    const existingNodes = validNamespace(namespace) ? await store.list(namespace) : [];
-    const validationError = validNamespace(namespace) ? validateNodeBatch(existingNodes, incomingNodes) : 'Invalid namespace';
-    if (validationError) {
-      send(res, 400, { error: validationError });
+    if (!validNamespace(namespace)) {
+      send(res, 400, { error: { code: 'REFERENCE_NOT_FOUND', path: 'namespace' } });
       return true;
     }
-    await store.saveBatch(namespace, incomingNodes);
-    send(res, 204);
+    const result = await store.validateAndSaveBatch(namespace, incomingNodes, body.expectedRevision, validateNodeBatch);
+    if (result.error) {
+      send(res, result.error.code === 'REVISION_CONFLICT' ? 409 : 400, { error: result.error, revision: result.revision });
+      return true;
+    }
+    send(res, 200, { revision: result.revision });
     return true;
   }
   if (req.method === 'DELETE' && id) {
-    await store.delete(queryNamespace, id);
-    send(res, 204);
+    send(res, 405, { error: { code: 'ILLEGAL_STATUS_TRANSITION', path: 'DELETE', entityId: id } });
     return true;
   }
   send(res, 405, { error: 'Method not allowed' });

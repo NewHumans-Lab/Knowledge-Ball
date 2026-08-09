@@ -1,6 +1,7 @@
-export type KnowledgeNodeType = 'axiom' | 'definition' | 'fact' | 'theorem' | 'hypothesis' | 'prediction' | 'opinion' | 'value' | 'reasoning' | 'logic-symbol';
+import type { Mastery, NodeType } from '../../domain/KnowledgeModel';
+export type KnowledgeNodeType = NodeType;
 export type KnowledgeNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
-export type KnowledgeMastery = 'none' | 'touched' | 'mastered';
+export type KnowledgeMastery = Mastery;
 export type KnowledgeDomain = 'logic' | 'mathematics' | 'physics' | 'biology' | 'chemistry' | 'computer-science' | 'economics' | 'history' | 'philosophy' | 'general';
 
 export const TWIN_META = { n6: { twinGroup: 'twinPrime', sharedTitle: '质数数量无穷' }, n15: { twinGroup: 'twinPrime', sharedTitle: '质数数量无穷' } } as const;
