@@ -219,7 +219,7 @@ export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningCh
     const premise = byId.get(id);
     if (!premise) errors.push(`前提不存在: ${id}`);
     else if (!active(premise)) errors.push(`前提当前不可用: ${id}`);
-    else if (!validOrdinaryPremise(premise)) errors.push(`普通前提不能是 reasoning 或 logic-symbol: ${id}`);
+    else if (!validOrdinaryPremise(premise)) errors.push(`普通知识结论前提不能是 reasoning 或 logic-symbol: ${id}`);
   }
 
   if (!reasoning) errors.push(`推理过程不存在: ${chain.reasoningId}`);
@@ -261,7 +261,7 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
         const premise = byId.get(id);
         if (!premise) errors.push(`所需前提不存在: ${id}`);
         else if (!active(premise)) errors.push(`所需前提当前不可用: ${id}`);
-        else if (!validOrdinaryPremise(premise)) errors.push(`所需前提不能是 reasoning 或 logic-symbol: ${id}`);
+        else if (!validOrdinaryPremise(premise)) errors.push(`所需的普通知识结论前提不能是 reasoning 或 logic-symbol: ${id}`);
         else if (premise.type === 'reasoning' || premise.type === 'logic-symbol') errors.push(`所需前提必须是普通知识结论: ${id}`);
       }
       if (edit.reasoning.type !== 'reasoning') errors.push('新增推理过程必须是 reasoning 类型');
