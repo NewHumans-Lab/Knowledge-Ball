@@ -1,36 +1,47 @@
-// 事件的最小单元定义
-export interface DomainEvent<P = Record<string, unknown>> {
-  id: string;           // 事件全局唯一ID (用于幂等去重)
-  seq: number;           // 单调递增序号，Replay顺序的唯一依据
-  timestamp: number;      // Unix ms
-  user: string;           // 发起者
-  command: string;        // 命令类型，如 'CreateNode'
-  version: number;        // payload schema 版本号，从1开始
-  payload: P;
+import type { Mastery, NodeType } from '../domain/KnowledgeModel';
+export type { Mastery, NodeType } from '../domain/KnowledgeModel';
+
+export type NodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
+
+interface EventEnvelope<TType extends string, TPayload> {
+  id: string;
+  type: TType;
+  schemaVersion: number;
+  timestamp: number;
+  seq?: number;
+  payload: TPayload;
 }
 
-// 创建事件的工厂函数，负责生成 id / seq / timestamp
-let seqCounter = 0;
+export type NodeCreatedEvent = EventEnvelope<'NodeCreated', {
+  nodeId: string; title: string; nodeType: NodeType; reasoning: string; premises: string[];
+  initialStatus?: NodeStatus; initialMastery?: Mastery; source?: 'import';
+  hidden?: boolean; aliases?: string[]; supersededBy?: string; logicRuleId?: string;
+  negatedBy?: string[]; semanticKey?: string;
+}>;
+export type NodeEditedEvent = EventEnvelope<'NodeEdited', {
+  nodeId: string; title?: string; nodeType?: NodeType; reasoning?: string; premises?: string[];
+}>;
+export type NodeFalsifiedEvent = EventEnvelope<'NodeFalsified', { nodeId: string }>;
+export type NodeSuspendedEvent = EventEnvelope<'NodeSuspended', { nodeId: string; causeNodeId: string }>;
+export type NodeDisputedEvent = EventEnvelope<'NodeDisputed', { nodeId: string }>;
+export type NodeResolvedEvent = EventEnvelope<'NodeResolved', { nodeId: string }>;
+export type NodeMasterySetEvent = EventEnvelope<'NodeMasterySet', { nodeId: string; mastery: Mastery }>;
 
-export function createEvent<P>(
-  command: string,
-  user: string,
-  payload: P,
-  version = 1
-): DomainEvent<P> {
-  seqCounter += 1;
-  return {
-    id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    seq: seqCounter,
-    timestamp: Date.now(),
-    user,
-    command,
-    version,
-    payload,
-  };
-}
+import type {
+  AddEdit,
+  DecomposeEdit,
+  MergeEdit,
+  NegateEdit,
+} from '../protocol/KnowledgeEditingProtocol';
 
-export function resetSeqCounter(startAt: number) {
-  // Store 加载完历史事件后，用最后一个 seq 恢复计数器
-  seqCounter = startAt;
-}
+export type KnowledgeAddedEvent = EventEnvelope<'KnowledgeAdded', { edit: AddEdit }>;
+export type KnowledgeNegatedEvent = EventEnvelope<'KnowledgeNegated', { edit: NegateEdit }>;
+export type KnowledgeDecomposedEvent = EventEnvelope<'KnowledgeDecomposed', { edit: DecomposeEdit }>;
+export type KnowledgeMergedEvent = EventEnvelope<'KnowledgeMerged', { edit: MergeEdit }>;
+
+export type DomainEvent =
+  | NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent
+  | NodeResolvedEvent | NodeMasterySetEvent | NodeDisputedEvent
+  | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent;
+
+export const CURRENT_SCHEMA_VERSION = 1;

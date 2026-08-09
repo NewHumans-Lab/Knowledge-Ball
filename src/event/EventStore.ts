@@ -1,46 +1,76 @@
-import { DomainEvent } from './Event';
+import type { DomainEvent } from './Event';
+import { KnowledgePersistence } from '../persistence/KnowledgePersistence';
+import { DomainEventValidationError, validateDomainEventEnvelope } from './EventValidation';
 
-// 持久化接口，先定义抽象层，方便以后换成 IndexedDB / 文件 / 链上存储
-export interface EventPersistence {
-  loadAll(): Promise<DomainEvent[]>;
-  appendBatch(events: DomainEvent[]): Promise<void>;
-}
+export interface Snapshot<TState> { upToSeq: number; schemaVersion: number; state: TState; takenAt: number; }
+export interface StoreListener { (event: DomainEvent): void; }
+export interface EventPersistence { loadLocal(): DomainEvent[]; saveLocal(events: DomainEvent[]): void; }
+const SNAPSHOT_EVERY_N_EVENTS = 5000;
+const DEFAULT_STORAGE_KEY = 'knowledge-ball.events.v1';
 
-export class EventStore {
+export class EventStore<TState> {
   private events: DomainEvent[] = [];
-  private seenIds = new Set<string>(); // 幂等去重
+  private idIndex = new Set<string>();
+  private listeners: StoreListener[] = [];
+  private snapshot: Snapshot<TState> | null = null;
+  private nextSeq = 1;
+  private readonly persistence: EventPersistence;
 
-  constructor(private persistence: EventPersistence) {}
-
-  async load(): Promise<DomainEvent[]> {
-    this.events = await this.persistence.loadAll();
-    this.events.sort((a, b) => a.seq - b.seq);
-    this.seenIds = new Set(this.events.map(e => e.id));
-    return this.events;
+  constructor(
+    private makeSnapshotState: () => TState,
+    persistence?: EventPersistence,
+    private validateEvent?: (event: DomainEvent) => string[],
+  ) {
+    this.persistence = persistence ?? new KnowledgePersistence<DomainEvent>({ storageKey: DEFAULT_STORAGE_KEY });
+    this.restore(this.persistence.loadLocal());
   }
 
-  // 只能追加，且拒绝重复事件（同一 command 因网络重试导致的重复提交）
-  async append(event: DomainEvent): Promise<boolean> {
-    if (this.seenIds.has(event.id)) {
-      console.warn(`[EventStore] duplicate event rejected: ${event.id}`);
-      return false;
+  hydrateLocal(): DomainEvent[] { this.restore(this.persistence.loadLocal()); return this.allEvents(); }
+
+  restore(events: DomainEvent[]): void {
+    this.events = [];
+    this.idIndex.clear();
+    this.snapshot = null;
+    this.nextSeq = 1;
+    for (const event of events) {
+      if (this.idIndex.has(event.id)) continue;
+      if (validateDomainEventEnvelope(event).length) continue;
+      const stamped = { ...event, seq: this.nextSeq++ } as DomainEvent;
+      this.events.push(stamped);
+      this.idIndex.add(stamped.id);
     }
-    this.events.push(event);
-    this.seenIds.add(event.id);
-    await this.persistence.appendBatch([event]);
+  }
+
+  append(event: DomainEvent): boolean {
+    if (this.idIndex.has(event.id)) return false;
+    const validationErrors = [
+      ...validateDomainEventEnvelope(event),
+      ...(this.validateEvent?.(event) ?? []),
+    ];
+    if (validationErrors.length) throw new DomainEventValidationError([...new Set(validationErrors)]);
+    const stamped: DomainEvent = { ...event, seq: this.nextSeq++ };
+    this.events.push(stamped);
+    this.idIndex.add(event.id);
+    this.listeners.forEach(listener => listener(stamped));
+    this.persistence.saveLocal(this.events);
+    if (this.events.length % SNAPSHOT_EVERY_N_EVENTS === 0) this.takeSnapshot();
     return true;
   }
 
-  getAll(): readonly DomainEvent[] {
-    return this.events;
+  subscribe(listener: StoreListener, replayExisting = true): () => void {
+    this.listeners.push(listener);
+    if (replayExisting) this.events.forEach(listener);
+    return () => { this.listeners = this.listeners.filter(l => l !== listener); };
   }
 
-  getAfter(seq: number): DomainEvent[] {
-    // 给快照机制用：只取快照之后的增量事件
-    return this.events.filter(e => e.seq > seq);
+  eventsSinceSnapshot(): DomainEvent[] {
+    const from = this.snapshot?.upToSeq ?? 0;
+    return this.events.filter(e => (e.seq ?? 0) > from);
   }
-
-  getLastSeq(): number {
-    return this.events.length ? this.events[this.events.length - 1].seq : 0;
+  allEvents(): DomainEvent[] { return this.events.slice(); }
+  latestSnapshot(): Snapshot<TState> | null { return this.snapshot; }
+  takeSnapshot(): void {
+    this.snapshot = { upToSeq: this.nextSeq - 1, schemaVersion: 1, state: this.makeSnapshotState(), takenAt: Date.now() };
   }
+  size(): number { return this.events.length; }
 }

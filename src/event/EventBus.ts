@@ -1,19 +1,16 @@
-import { DomainEvent } from './Event';
+import type { DomainEvent } from './Event';
 
-type Listener = (event: DomainEvent) => void;
+type Handler = (e: DomainEvent) => void;
 
-// 事件写入 Store 成功后广播，供 Projection 增量更新，避免每次都全量 Replay
 export class EventBus {
-  private listeners: Listener[] = [];
+  private handlers = new Set<Handler>();
 
-  subscribe(fn: Listener): () => void {
-    this.listeners.push(fn);
-    return () => {
-      this.listeners = this.listeners.filter(l => l !== fn);
-    };
+  on(handler: Handler): () => void {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
   }
 
-  publish(event: DomainEvent): void {
-    for (const l of this.listeners) l(event);
+  emit(event: DomainEvent): void {
+    this.handlers.forEach(h => h(event));
   }
 }

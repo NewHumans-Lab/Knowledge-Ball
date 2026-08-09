@@ -1,2 +1,21 @@
 # Knowledge-Ball
-Rigorously classify knowledge into verified facts, disproven claims, and genuinely disputed ideas. Decompose every piece of knowledge into the smallest verifiable units, enabling transparent verification, continuous correction, and collaborative refinement.
+
+Knowledge-Ball is a shared knowledge graph. User-created nodes are persisted by the bundled HTTP service and loaded by every browser when the app starts.
+
+The normative v1 model for nodes, premise relationships, knowledge states, versioning, and validation is documented in [知识协议：数据模型与验证规则](docs/knowledge-protocol.md).
+
+## Run locally
+
+```bash
+npm install
+npm run build
+npm run server
+```
+
+Open `http://localhost:8787/Knowledge-Ball/`. Data is stored in `data/knowledge.json`; set `KNOWLEDGE_DATA_FILE` to place it on a persistent volume and `PORT` to change the listening port.
+
+For frontend development, run `npm run server` and `npm run dev` in separate terminals. Vite proxies `/api/knowledge` to the service on port 8787.
+
+## Deployment
+
+Deploy the application as the Node service (`npm start`) with a persistent volume for `data/`. A static-only host such as GitHub Pages cannot accept user writes, so it cannot provide cross-user node sharing by itself. Put authentication and rate limiting at the hosting platform or reverse proxy before opening submissions to untrusted traffic.
