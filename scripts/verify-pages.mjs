@@ -27,8 +27,8 @@ async function verifyLocalBuild() {
     await access(resolve('dist', relative));
   }
   const manifest = JSON.parse(await readFile('dist/downloads/latest.json', 'utf8'));
-  assert.equal(manifest.version, '0.1.0');
-  await access('dist/downloads/knowledge-ball-android-v0.1.0.apk');
+  assert.equal(manifest.version, '0.2.0');
+  await access('dist/downloads/knowledge-ball-android-v0.2.0.apk');
   console.log(`GitHub Pages build regression tests passed (${assets.length} local assets checked)`);
 }
 
@@ -62,8 +62,8 @@ async function verifyLiveSite(root) {
 
   const manifestResponse = await fetchWithRetry(new URL('downloads/latest.json', pageUrl));
   const manifest = await manifestResponse.json();
-  assert.equal(manifest.version, '0.1.0');
-  const apkResponse = await fetchWithRetry(new URL('downloads/knowledge-ball-android-v0.1.0.apk', pageUrl));
+  assert.equal(manifest.version, '0.2.0');
+  const apkResponse = await fetchWithRetry(new URL('downloads/knowledge-ball-android-v0.2.0.apk', pageUrl));
   assert.match(apkResponse.headers.get('content-type') ?? '', /application\/(?:vnd\.android\.package-archive|octet-stream)/i);
   await apkResponse.body?.cancel();
   console.log(`Live GitHub Pages smoke test passed: ${pageUrl}`);

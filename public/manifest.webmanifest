@@ -1,0 +1,9 @@
+{
+  "name": "知识球",
+  "short_name": "知识球",
+  "start_url": "/Knowledge-Ball/",
+  "scope": "/Knowledge-Ball/",
+  "display": "standalone",
+  "background_color": "#080c16",
+  "theme_color": "#080c16"
+}
