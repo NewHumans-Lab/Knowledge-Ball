@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CORE_AMBIENT_LIGHT_INTENSITY, CORE_LABEL_REVEAL_ZOOM, CORE_SUN_GLOW_SCALE, CORE_SUN_LIGHT_DISTANCE, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_RADIUS, DEFAULT_CAM_Z, LAYER_BANDS, MAX_GRAPH_ZOOM, MIN_GRAPH_ZOOM, SUN_ANGULAR_SPEED, SUN_ORBIT_RADIUS, SUN_RADIUS_MM, SUN_TRIAD_IDS, TWIN_REST_LEN, TYPE_COLOR } from '../config/KnowledgeUiConfig';
+import { CORE_AMBIENT_LIGHT_INTENSITY, CORE_LABEL_REVEAL_ZOOM, CORE_SUN_COLOR, CORE_SUN_GLOW_SCALE, CORE_SUN_LIGHT_DECAY, CORE_SUN_LIGHT_DISTANCE, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_RADIUS, CORE_SUN_SHADOW_FAR, DEFAULT_CAM_Z, LAYER_BANDS, MAX_GRAPH_ZOOM, MIN_GRAPH_ZOOM, SUN_ANGULAR_SPEED, SUN_ORBIT_RADIUS, SUN_RADIUS_MM, SUN_TRIAD_IDS, TWIN_REST_LEN, TYPE_COLOR } from '../config/KnowledgeUiConfig';
 
 export interface KnowledgeSceneNode { id:string; title:string; type:keyof typeof TYPE_COLOR; status:'pending'|'verified'|'suspended'|'disputed'|'falsified'; mastery:'none'|'touched'|'mastered'; reasoning:string; premises:string[]; logicRuleId?:string; aliases?:string[]; semanticKey?:string; twinGroup?:string; sharedTitle?:string; pos?:THREE.Vector3; vel?:THREE.Vector3; homePos?:THREE.Vector3; layer?:'inner'|'middle'|'outer'|'core'; }
 export interface KnowledgeSceneCallbacks { onSelectNode:(id:string)=>void; onOpenPanel:(id:string)=>void; onBackgroundTap:()=>void; onBackgroundDoubleTap:()=>void; }
@@ -19,6 +19,7 @@ export function nodeRadiusForType(type:KnowledgeSceneNode['type'],conclusionRadi
 export function coreLabelsVisible(graphZoom:number){return graphZoom>=CORE_LABEL_REVEAL_ZOOM;}
 export function coreSunContainsTriad(){return CORE_SUN_RADIUS>SUN_ORBIT_RADIUS+SUN_RADIUS_MM;}
 export function coreOrbitScreenPosition(index:number,angle:number){const a=angle+index*Math.PI*2/SUN_TRIAD_IDS.length;return new THREE.Vector3(Math.cos(a)*SUN_ORBIT_RADIUS,Math.sin(a)*SUN_ORBIT_RADIUS,0);}
+export function createCoreSunLight(){const light=new THREE.PointLight(CORE_SUN_COLOR,CORE_SUN_LIGHT_INTENSITY,CORE_SUN_LIGHT_DISTANCE,CORE_SUN_LIGHT_DECAY);light.position.set(0,0,0);light.castShadow=true;light.shadow.mapSize.set(512,512);light.shadow.camera.near=.5;light.shadow.camera.far=CORE_SUN_SHADOW_FAR;light.shadow.camera.updateProjectionMatrix();return light;}
 
 export function createKnowledgeScene({host,labelsLayer,getNodes,callbacks}:KnowledgeSceneOptions):KnowledgeSceneRuntime{
  let running=false,rafId=0,labelBrightness=1,nodeRadiusMM=7.2,hideUntouched=false,selectedId:string|null=null,draggedNodeId:string|null=null,graphZoom=1.27;
@@ -29,9 +30,9 @@ export function createKnowledgeScene({host,labelsLayer,getNodes,callbacks}:Knowl
  const glow=(strong:boolean)=>{const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d')!,g=x.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(strong?.48:.34,strong?'rgba(255,255,255,.82)':'rgba(134,241,232,.68)');g.addColorStop(1,strong?'rgba(255,255,255,0)':'rgba(78,200,205,0)');x.fillStyle=g;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);};
  const strongTex=glow(true),fluorTex=glow(false);
  const coreSunGroup=new THREE.Group();coreSunGroup.position.set(0,0,0);worldGroup.add(coreSunGroup);
- const coreSun=new THREE.Mesh(new THREE.SphereGeometry(CORE_SUN_RADIUS,32,20),new THREE.MeshPhongMaterial({color:0xFFFFFF,emissive:0xFFFFFF,emissiveIntensity:.72,transparent:true,opacity:.88,depthTest:true,depthWrite:false,side:THREE.DoubleSide,wireframe:true}));coreSun.renderOrder=10;coreSunGroup.add(coreSun);
- const coreSunGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:strongTex,color:0xFFFFFF,transparent:true,opacity:.28,depthTest:true,depthWrite:false}));coreSunGlow.scale.setScalar(CORE_SUN_RADIUS*2*CORE_SUN_GLOW_SCALE);coreSunGlow.renderOrder=9;coreSunGroup.add(coreSunGlow);
- const coreLight=new THREE.PointLight(0xffffff,CORE_SUN_LIGHT_INTENSITY,CORE_SUN_LIGHT_DISTANCE,2);coreLight.position.set(0,0,0);coreLight.castShadow=true;coreLight.shadow.mapSize.set(512,512);coreLight.shadow.camera.near=.5;coreLight.shadow.camera.far=CORE_SUN_LIGHT_DISTANCE;coreSunGroup.add(coreLight);
+ const coreSun=new THREE.Mesh(new THREE.SphereGeometry(CORE_SUN_RADIUS,32,20),new THREE.MeshPhongMaterial({color:CORE_SUN_COLOR,emissive:CORE_SUN_COLOR,emissiveIntensity:.72,transparent:true,opacity:.88,depthTest:true,depthWrite:false,side:THREE.DoubleSide,wireframe:true}));coreSun.renderOrder=10;coreSunGroup.add(coreSun);
+ const coreSunGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:strongTex,color:CORE_SUN_COLOR,transparent:true,opacity:.28,depthTest:true,depthWrite:false}));coreSunGlow.scale.setScalar(CORE_SUN_RADIUS*2*CORE_SUN_GLOW_SCALE);coreSunGlow.renderOrder=9;coreSunGroup.add(coreSunGlow);
+ const coreLight=createCoreSunLight();coreSunGroup.add(coreLight);
  const nodeMap:Record<string,NodeMeshRecord>={},edgeMap:Record<string,THREE.Line>={},labelMap:Record<string,HTMLDivElement>={};
  const pointers=new Map<number,{x:number;y:number}>();let mode:'rotate'|'node'|'pinch'|null=null,pinchOccurred=false,downX=0,downY=0,lastX=0,lastY=0,pinchStartDist=0,pinchStartZoom=1,lastBgTapTime=0,bgTapTimer:number|null=null;
  const clock=new THREE.Clock(),raycaster=new THREE.Raycaster(),ndc=new THREE.Vector2(),scratch=new THREE.Vector3(),worldPos=new THREE.Vector3();
