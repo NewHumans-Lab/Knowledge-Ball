@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - agent/migrate-from-rushow111
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   migrate:
+    if: github.head_ref == 'agent/migrate-from-rushow111' || github.ref_name == 'agent/migrate-from-rushow111'
     runs-on: ubuntu-latest
     steps:
       - name: Check out target branch
