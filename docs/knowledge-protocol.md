@@ -224,3 +224,23 @@ v1 使用同一种有向依赖边表达两段关系：**前提结论进入推理
 当前代码同时包含事件投影模型（`GraphNode`）和服务端持久化模型（`KnowledgeNodeRecord`）。前者只包含图展示和状态传播需要的字段，后者额外包含标签、学科、作者、内容版本及时间戳。二者应通过显式映射转换，不应把节点内容版本等同于事件协议版本。
 
 建议后续协议升级优先完成：服务端统一校验、前提引用/环检测、带版本条件的更新、历史版本保存，以及需要多种语义关系时新增独立 `KnowledgeRelation`，而不是改变 v1 `premises` 的含义。
+
+## 9. Git 分支合并冲突与测试边界
+
+知识协议中的 `merge` 表示语义相同的推理链合并；GitHub 显示的“分支有合并冲突”则是两个 Git 分支修改了同一文件区域，二者不是同一种合并。
+
+处理 Git 分支冲突时，应先取得最新目标分支，再把功能分支变基到目标分支：
+
+```bash
+git fetch origin main
+git rebase origin/main
+# 逐个编辑冲突文件，保留目标分支的新功能和本分支的协议变更
+git add <resolved-files>
+git rebase --continue
+npm test
+npm run build
+npm run test:merge -- origin/main
+git push --force-with-lease
+```
+
+不得使用 `--force`，因为它可能覆盖其他人的远端提交；变基后的更新必须使用 `--force-with-lease`。冲突标记清除和单元测试通过并不等于可合并，因此 PR 验证工作流会额外运行三方合并预检。`test:merge` 使用 `git merge-tree`，在不修改工作区的情况下验证当前 `HEAD` 能否干净地合并到指定目标分支。

@@ -17,6 +17,7 @@
     "test:core-sun": "npx esbuild src/ui/scene/CoreSunVisualRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/core-sun-regression.mjs && node .test-dist/core-sun-regression.mjs",
     "test:mobile": "npx esbuild src/mobile/MobileShellRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/mobile-shell-regression.mjs && node .test-dist/mobile-shell-regression.mjs",
     "test:download": "node scripts/verify-android-download.mjs",
+    "test:merge": "node scripts/verify-merge-clean.mjs",
     "test:pages": "node scripts/verify-pages.mjs",
     "android:build": "CAPACITOR_BUILD=true npm run build",
     "android:sync": "npm run android:build && cap sync android",
