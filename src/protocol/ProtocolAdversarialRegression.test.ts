@@ -77,4 +77,32 @@ assert.deepEqual(
   'active dependants must be redirected away from hidden merged definitions',
 );
 
+const theories = [
+  node('tp', 'fact'),
+  node('trule', 'logic-symbol'),
+  node('tr1', 'reasoning', ['tp'], { logicRuleId: 'trule' }),
+  node('tc1', 'theorem', ['tr1']),
+  node('tr2', 'reasoning', ['tp'], { logicRuleId: 'trule' }),
+  node('tc2', 'theorem', ['tr2']),
+  node('theory-dependent', 'fact', ['tc1']),
+];
+const theoryMerge = applyKnowledgeEdit(theories, {
+  kind: 'merge',
+  mode: 'theory',
+  chains: [
+    { premiseIds: ['tp'], reasoningId: 'tr1', conclusionId: 'tc1' },
+    { premiseIds: ['tp'], reasoningId: 'tr2', conclusionId: 'tc2' },
+  ],
+  reasoningSemanticKey: 'reasoning:key',
+  semanticKey: 'conclusion:key',
+  mergedReasoning: node('tr3', 'reasoning', [], { logicRuleId: 'trule' }),
+  mergedConclusion: node('tc3', 'theorem'),
+});
+assert.deepEqual(theoryMerge.errors, []);
+assert.deepEqual(
+  theoryMerge.nodes.find(candidate => candidate.id === 'theory-dependent')?.premises,
+  ['tc3'],
+  'active dependants must be redirected to the unified theory conclusion',
+);
+
 console.log('Protocol adversarial regression tests passed');
