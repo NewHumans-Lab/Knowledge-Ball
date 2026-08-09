@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="知识球">
+<link rel="manifest" href="./manifest.webmanifest">
 <title>协议原型 v0.7.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -154,8 +158,11 @@
   .app-download-meta{font-size:11px;color:var(--ink-faint);line-height:1.65;margin-bottom:12px;}
   .app-download .btn{display:flex;width:100%;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box;}
   .native-app .web-download-action{display:none;}
-  .native-app .native-app-actions{display:grid;}
+  .native-app.android .android-native-actions,.native-app.ios .ios-native-actions{display:grid;}
+  .native-app.android .ios-download-card,.native-app.ios .android-download-card{display:none;}
   .native-app-actions{display:none;grid-template-columns:1fr 1fr;gap:10px;}
+  .app-download-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .native-app .app-download-grid{grid-template-columns:1fr;}
   @media (max-width:780px){
     .panel{width:min(340px,90vw);}
     .legend{display:none;}
@@ -333,15 +340,27 @@
         <input type="number" id="depthLimit" min="1" placeholder="∞" style="width:70px;">
       </div>
       <div class="form-hint" style="margin:18px 0 12px;">移动应用</div>
-      <div class="app-download">
+      <div class="app-download-grid">
+      <div class="app-download android-download-card">
         <div class="app-download-title">知识球 Android 应用</div>
         <div class="app-download-meta">版本 0.1.0 · Android 7.0 及以上<br>安装时请允许浏览器安装来自此来源的应用。</div>
         <a class="btn primary web-download-action" id="androidDownload" href="./downloads/knowledge-ball-android-v0.1.0.apk" download="knowledge-ball-android-v0.1.0.apk" type="application/vnd.android.package-archive">下载 Android 安装包（APK）</a>
-        <div class="native-app-actions" aria-label="应用版本操作">
+        <div class="native-app-actions android-native-actions" aria-label="Android 应用版本操作">
           <button class="btn primary" id="androidUpdate" type="button">检查更新</button>
           <button class="btn" id="androidShare" type="button">分享当前版本</button>
         </div>
         <div class="app-download-meta" id="androidActionStatus" role="status" aria-live="polite" style="margin:10px 0 0;"></div>
+      </div>
+      <div class="app-download ios-download-card">
+        <div class="app-download-title">知识球 iOS 应用</div>
+        <div class="app-download-meta">版本 0.1.0 · iOS 14 及以上<br>使用 Safari 安装，不依赖境外应用商店。</div>
+        <a class="btn primary web-download-action" id="iosDownload" href="./ios-install.html">安装 iOS 应用</a>
+        <div class="native-app-actions ios-native-actions" aria-label="iOS 应用版本操作">
+          <button class="btn primary" id="iosUpdate" type="button">检查更新</button>
+          <button class="btn" id="iosShare" type="button">分享当前版本</button>
+        </div>
+        <div class="app-download-meta" id="iosActionStatus" role="status" aria-live="polite" style="margin:10px 0 0;"></div>
+      </div>
       </div>
       <p class="note-small" style="text-align:left;">更多设置项（通知偏好、隐私范围、连接的第三方身份凭证等）预留，后续版本补充。</p>
     </div>

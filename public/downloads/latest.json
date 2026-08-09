@@ -2,5 +2,8 @@
   "version": "0.1.0",
   "android": {
     "url": "https://rushow111.github.io/Knowledge-Ball/downloads/knowledge-ball-android-v0.1.0.apk"
+  },
+  "ios": {
+    "url": "https://rushow111.github.io/Knowledge-Ball/ios-install.html"
   }
 }

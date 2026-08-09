@@ -10,10 +10,12 @@ export const CURRENT_APP_VERSION = '0.1.0';
 export const DOWNLOAD_ROOT = 'https://rushow111.github.io/Knowledge-Ball/downloads';
 export const CURRENT_APK_URL = `${DOWNLOAD_ROOT}/knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
 export const UPDATE_MANIFEST_URL = `${DOWNLOAD_ROOT}/latest.json`;
+export const IOS_INSTALL_URL = 'https://rushow111.github.io/Knowledge-Ball/ios-install.html';
 
 interface UpdateManifest {
   version: string;
   android: { url: string };
+  ios: { url: string };
 }
 
 export type BackAction = 'close-overlay' | 'close-panel' | 'exit';
@@ -34,8 +36,8 @@ export function isNewerVersion(candidate: string, current: string): boolean {
   return false;
 }
 
-function setActionStatus(message: string): void {
-  const status = document.getElementById('androidActionStatus');
+function setActionStatus(platform: 'android' | 'ios', message: string): void {
+  const status = document.getElementById(`${platform}ActionStatus`);
   if (status) status.textContent = message;
 }
 
@@ -43,28 +45,31 @@ async function loadUpdateManifest(): Promise<UpdateManifest> {
   const response = await fetch(`${UPDATE_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Update manifest request failed (${response.status})`);
   const manifest = await response.json() as UpdateManifest;
-  if (!manifest.version || !manifest.android?.url?.startsWith('https://')) throw new Error('Invalid update manifest');
+  if (!manifest.version || !manifest.android?.url?.startsWith('https://') || !manifest.ios?.url?.startsWith('https://')) {
+    throw new Error('Invalid update manifest');
+  }
   return manifest;
 }
 
 async function checkForUpdate(): Promise<void> {
-  setActionStatus('正在检查最新版…');
+  const platform = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+  setActionStatus(platform, '正在检查最新版…');
   try {
     const manifest = await loadUpdateManifest();
     if (!isNewerVersion(manifest.version, CURRENT_APP_VERSION)) {
-      setActionStatus(`当前已是最新版 v${CURRENT_APP_VERSION}`);
+      setActionStatus(platform, `当前已是最新版 v${CURRENT_APP_VERSION}`);
       return;
     }
-    setActionStatus(`发现 v${manifest.version}，正在打开安装页面…`);
-    await Browser.open({ url: manifest.android.url });
+    setActionStatus(platform, `发现 v${manifest.version}，正在打开安装页面…`);
+    await Browser.open({ url: platform === 'ios' ? manifest.ios.url : manifest.android.url });
   } catch (error) {
     console.error('Unable to check for Android updates', error);
-    setActionStatus('检查更新失败，请确认网络后重试。');
+    setActionStatus(platform, '检查更新失败，请确认网络后重试。');
   }
 }
 
 async function shareCurrentApk(): Promise<void> {
-  setActionStatus('正在准备当前版本安装包…');
+  setActionStatus('android', '正在准备当前版本安装包…');
   try {
     const response = await fetch(CURRENT_APK_URL, { cache: 'no-store' });
     if (!response.ok) throw new Error(`APK download failed (${response.status})`);
@@ -83,16 +88,33 @@ async function shareCurrentApk(): Promise<void> {
       files: [uri],
       dialogTitle: '分享知识球安装包',
     });
-    setActionStatus('安装包已交给系统分享面板。');
+    setActionStatus('android', '安装包已交给系统分享面板。');
   } catch (error) {
     console.error('Unable to share the current Android APK', error);
-    setActionStatus('准备分享失败，请确认网络和存储空间后重试。');
+    setActionStatus('android', '准备分享失败，请确认网络和存储空间后重试。');
+  }
+}
+
+async function shareIosVersion(): Promise<void> {
+  try {
+    await Share.share({
+      title: `知识球 iOS v${CURRENT_APP_VERSION}`,
+      text: `知识球 iOS 当前版本 v${CURRENT_APP_VERSION}，使用 Safari 打开即可安装。`,
+      url: IOS_INSTALL_URL,
+      dialogTitle: '分享知识球 iOS 应用',
+    });
+    setActionStatus('ios', '安装地址已交给系统分享面板。');
+  } catch (error) {
+    console.error('Unable to share the current iOS version', error);
+    setActionStatus('ios', '分享失败，请稍后重试。');
   }
 }
 
 function setupVersionActions(): void {
   document.getElementById('androidUpdate')?.addEventListener('click', () => void checkForUpdate());
   document.getElementById('androidShare')?.addEventListener('click', () => void shareCurrentApk());
+  document.getElementById('iosUpdate')?.addEventListener('click', () => void checkForUpdate());
+  document.getElementById('iosShare')?.addEventListener('click', () => void shareIosVersion());
 }
 
 function closeTopLayer(): BackAction {
@@ -121,6 +143,7 @@ function showNetworkState(connected: boolean): void {
 export async function setupMobileShell(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   document.documentElement.classList.add('native-app');
+  document.documentElement.classList.add(Capacitor.getPlatform());
   setupVersionActions();
   await StatusBar.setStyle({ style: Style.Dark });
   await StatusBar.setBackgroundColor({ color: '#080c16' });

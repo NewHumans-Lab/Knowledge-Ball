@@ -51,6 +51,8 @@ cd android && ./gradlew test assembleDebug
 
 Android 原生应用中不会显示“下载”按钮，而会显示“检查更新”和“分享当前版本”。检查更新每次都以 `no-store` 请求 `downloads/latest.json`，比较语义版本后打开最新 APK；Android 安全机制仍会要求用户确认安装。分享会下载当前版本 APK 到应用缓存，再把实际 APK 文件交给系统分享面板，用户可选择社交媒体、邮件、蓝牙或其他已安装应用。
 
+iOS 同时提供 Capacitor/Xcode 原生工程和无需境外 App Store 的可安装 Web App。网页设置中 iOS 与 Android 并列；iPhone 用户使用 Safari 的“添加到主屏幕”即可安装。iOS 原生壳内同样只显示“检查更新”和“分享当前版本”，更新由同一份 `latest.json` 清单指向最新安装入口，分享调用 iOS 系统分享面板发送当前版本安装地址。原生 IPA 的签名发布仍需在 macOS/Xcode 中使用有效 Apple Developer 身份完成，仓库不提交证书和描述文件。
+
 ## 5. Android SDK 配置与故障排除
 
 `SDK location not found` 不是项目编译错误，而是 Gradle 找不到本机 Android SDK。本工程需要 JDK 21、Android SDK Platform 35，以及 Build Tools 34.0.0/35.0.0（应用及 Capacitor 依赖可能分别选择其中一个版本）。

@@ -50,3 +50,18 @@ jobs:
       - name: Run Android tests and build debug APK
         working-directory: android
         run: ./gradlew test assembleDebug
+
+  ios-build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run ios:sync
+      - name: Build iOS simulator app without signing
+        working-directory: ios/App
+        run: xcodebuild -workspace App.xcworkspace -scheme App -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build

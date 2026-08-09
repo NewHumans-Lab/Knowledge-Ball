@@ -22,6 +22,8 @@
     "android:build": "CAPACITOR_BUILD=true npm run build",
     "android:sync": "npm run android:build && cap sync android",
     "android:open": "npm run android:sync && cap open android",
+    "ios:sync": "npm run android:build && cap sync ios",
+    "ios:open": "npm run ios:sync && cap open ios",
     "preview": "vite preview",
     "test:protocol": "npx esbuild src/protocol/KnowledgeEditingProtocol.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-editing-protocol.mjs && node .test-dist/knowledge-editing-protocol.mjs"
   },
@@ -37,6 +39,7 @@
     "@capacitor/browser": "^7.0.5",
     "@capacitor/core": "^7.6.8",
     "@capacitor/filesystem": "^7.1.8",
+    "@capacitor/ios": "^7.6.8",
     "@capacitor/network": "^7.0.4",
     "@capacitor/share": "^7.0.4",
     "@capacitor/status-bar": "^7.0.6",
