@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy Vite app to GitHub Pages
 
 on:
   push:
@@ -18,16 +18,32 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
-      - run: npm run build
-      - run: npm run test:pages
-      - uses: actions/upload-pages-artifact@v3
+          cache: npm
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Vite application
+        run: npm run build
+
+      - name: Verify Pages build
+        run: npm run test:pages
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
-          path: dist
+          path: ./dist
 
   deploy:
     needs: build
@@ -36,11 +52,17 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Checkout smoke-test script
+        uses: actions/checkout@v4
+
+      - name: Setup Node for smoke test
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - id: deployment
-        uses: actions/deploy-pages@v4
+
       - name: Verify deployed Pages site
         run: node scripts/verify-pages.mjs "${{ steps.deployment.outputs.page_url }}"
