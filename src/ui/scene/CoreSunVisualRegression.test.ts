@@ -23,6 +23,7 @@ assert(CORE_SUN_RADIUS > SUN_ORBIT_RADIUS + SUN_RADIUS_MM, 'Sun must fully enclo
 assert(CORE_SUN_GLOW_SCALE >= 6, 'corona must remain visible at whole-graph scale');
 assert(CORE_SUN_COLOR === 0xFFFFFF, 'central Sun surface, corona and light must use neutral white');
 assert(CORE_SUN_LIGHT_INTENSITY >= 20, 'central light must be visually meaningful');
+// Three.js uses distance=0 + decay=2 for physically-correct inverse-square attenuation with no artificial cutoff.
 assert(CORE_SUN_LIGHT_DISTANCE === 0, 'PointLight distance must be zero so no artificial cutoff modifies inverse-square attenuation');
 assert(CORE_SUN_LIGHT_DECAY === 2, 'PointLight decay must remain inverse-square');
 assert(CORE_AMBIENT_LIGHT_INTENSITY === 0, 'uniform ambient light must not bypass distance attenuation or occlusion');
