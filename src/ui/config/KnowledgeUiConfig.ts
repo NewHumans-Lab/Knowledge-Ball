@@ -9,9 +9,9 @@ export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', d
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
 // Relational-field palette: colour communicates epistemic role; status controls intensity.
-export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xB9C8C2, definition:0x9EB8AE, fact:0xB8E3D2, theorem:0xC7AC68, hypothesis:0x9384B5, prediction:0xB8E3D2, opinion:0x9384B5, value:0xC7AC68, reasoning:0x9384B5, 'logic-symbol':0x9EB8AE };
-export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#B9C8C2', definition:'#9EB8AE', fact:'#B8E3D2', theorem:'#C7AC68', hypothesis:'#9384B5', prediction:'#B8E3D2', opinion:'#9384B5', value:'#C7AC68', reasoning:'#9384B5', 'logic-symbol':'#9EB8AE' };
-export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#B8E3D2', pending:'#9384B5', suspended:'#667D78', disputed:'#D28170', falsified:'#D28170' };
+export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xB9D6D5, definition:0x69CFC7, fact:0x75E0D3, theorem:0xF0C66E, hypothesis:0xA98AE8, prediction:0x8BE9DE, opinion:0x9B7EDB, value:0xE7B961, reasoning:0xB39AF2, 'logic-symbol':0x8CCFCA };
+export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#B9D6D5', definition:'#69CFC7', fact:'#75E0D3', theorem:'#F0C66E', hypothesis:'#A98AE8', prediction:'#8BE9DE', opinion:'#9B7EDB', value:'#E7B961', reasoning:'#B39AF2', 'logic-symbol':'#8CCFCA' };
+export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#75E0D3', pending:'#A98AE8', suspended:'#547277', disputed:'#EE7A68', falsified:'#EE675B' };
 export const LAYER_BANDS = { inner:{rMin:0,rMax:95}, middle:{rMin:95,rMax:170}, outer:{rMin:170,rMax:260}, core:{rMin:0,rMax:16} } as const;
 export const LAYER_LABEL = { inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测', core:'核心 · 三体系统' } as const;
 export const TWIN_REST_LEN = 14;

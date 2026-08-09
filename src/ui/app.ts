@@ -584,10 +584,10 @@ store.subscribe((event) => {
 syncNodesFromProjection();
 
 panel.setSettingsValues({
-  nodeRadius: 9,
-  labelSize: 11,
+  nodeRadius: 7.2,
+  labelSize: 11.5,
   labelBrightness: 1,
-  labelColor: '#B8BFD4',
+  labelColor: '#C7DBDD',
   labelFont: `'Noto Sans SC','Inter',sans-serif`,
   depthLimit: null,
 });

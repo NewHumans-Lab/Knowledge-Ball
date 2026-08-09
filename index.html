@@ -174,24 +174,25 @@
     .ai-bar-wrap{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));}
     .btn,.avatar-btn,.ai-add,.ai-send,.panel-close{min-height:44px;min-width:44px;}
   }
-  /* Living Knowledge Field — quiet, state-led and deliberately non-neon. */
-  :root{--bg:#07110f;--bg-deep:#050b0a;--panel:rgba(12,28,25,.82);--panel-border:rgba(184,227,210,.16);--brass:#c7ac68;--brass-dim:#806f48;--ink:#e4eee9;--ink-dim:#9eb8ae;--ink-faint:#667d78;--c-axiom:#b9c8c2;--c-definition:#9eb8ae;--c-theorem:#c7ac68;--c-hypothesis:#9384b5;--c-prediction:#b8e3d2;--c-fact:#b8e3d2;--c-opinion:#9384b5;--c-value:#c7ac68;--c-reasoning:#9384b5;--c-logic-symbol:#9eb8ae;--st-disputed:#d28170;--st-falsified:#d28170;--st-suspended:#667d78;}
-  .app{background:radial-gradient(circle at 50% 48%,#102a24 0,#091815 37%,#050b0a 78%)}
-  header{background:rgba(5,11,10,.72);backdrop-filter:blur(18px);border-color:var(--panel-border)}
+  /* Living Knowledge Field — reference-calibrated colour and scale only. */
+  :root{--bg:#031015;--bg-deep:#02090d;--panel:rgba(7,22,27,.86);--panel-border:rgba(123,199,199,.18);--brass:#f0c66e;--brass-dim:#9b7e45;--ink:#e7f0f1;--ink-dim:#a7c1c4;--ink-faint:#607d82;--c-axiom:#b9d6d5;--c-definition:#69cfc7;--c-theorem:#f0c66e;--c-hypothesis:#a98ae8;--c-prediction:#8be9de;--c-fact:#75e0d3;--c-opinion:#9b7edb;--c-value:#e7b961;--c-reasoning:#b39af2;--c-logic-symbol:#8ccfca;--st-disputed:#ee7a68;--st-falsified:#ee675b;--st-suspended:#547277;--label-size:11.5px;--label-color:#c7dbdd;}
+  .app{background:radial-gradient(circle at 50% 48%,#0a2930 0,#06171d 40%,#02090d 80%)}
+  header{background:rgba(2,9,13,.8);backdrop-filter:blur(18px);border-color:var(--panel-border);padding:11px 16px}
   .brand-copy{display:flex;flex-direction:column;gap:2px}.brand-title{font:600 13px/1 'Inter',sans-serif;color:var(--ink);letter-spacing:.08em}.brand-subtitle{font-size:9px!important;color:var(--ink-faint)!important;letter-spacing:.14em!important}
-  .avatar-btn{border-radius:10px;background:#10231f;border-color:rgba(184,227,210,.28);color:var(--ink-dim)}
-  .panel,.modal,.ai-results{background:rgba(10,25,22,.82);backdrop-filter:blur(22px) saturate(110%);-webkit-backdrop-filter:blur(22px) saturate(110%)}
-  .panel{top:14px;right:14px;bottom:76px;border:1px solid var(--panel-border);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.34);opacity:0;pointer-events:none;transition:transform .2s ease,opacity .15s ease}
+  .avatar-btn{border-radius:10px;background:#0b2227;border-color:rgba(117,224,211,.3);color:var(--ink-dim)}
+  .panel,.modal,.ai-results{background:rgba(5,18,23,.86);backdrop-filter:blur(22px) saturate(110%);-webkit-backdrop-filter:blur(22px) saturate(110%)}
+  .panel{top:12px;right:12px;bottom:72px;width:338px;border:1px solid var(--panel-border);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:transform .2s ease,opacity .15s ease}
   .panel.open{opacity:1;pointer-events:auto}
-  .ai-bar{background:rgba(10,25,22,.78);border-color:var(--panel-border);box-shadow:0 16px 46px rgba(0,0,0,.32)}
-  .node-label{background:rgba(5,11,10,.74);border:1px solid rgba(184,227,210,.08);color:#c9d8d2;padding:3px 7px;border-radius:5px;text-shadow:0 1px 2px #000}
-  .node-label.selected{color:#fff;border-color:rgba(184,227,210,.52);box-shadow:0 0 0 2px rgba(184,227,210,.08)}
-  .legend{background:rgba(10,25,22,.72);border-color:var(--panel-border);backdrop-filter:blur(18px);border-radius:12px}
+  .ai-bar{max-width:552px;margin:auto;background:rgba(5,19,24,.84);border-color:var(--panel-border);box-shadow:0 16px 46px rgba(0,0,0,.38)}
+  .node-label{background:rgba(2,9,13,.52);border:1px solid rgba(117,224,211,.1);color:#c7dbdd;padding:2px 6px;border-radius:5px;text-shadow:0 1px 3px #000}
+  .node-label.selected{color:#fff;border-color:rgba(117,224,211,.58);box-shadow:0 0 0 2px rgba(117,224,211,.09)}
+  .legend{max-width:156px;padding:8px 10px;background:rgba(5,18,23,.76);border-color:var(--panel-border);backdrop-filter:blur(18px);border-radius:11px}
+  .legend-row{gap:5px;margin-bottom:2px;font-size:9px}.legend-dot{width:6px;height:6px}.layer-note{font-size:8.5px;line-height:1.4}
   .field-reasoning-band{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:8px;align-items:center;margin:14px 0;padding:11px;border:1px solid rgba(147,132,181,.25);border-radius:10px;background:rgba(147,132,181,.06)}
-  .reasoning-stage{font-size:10px;color:var(--ink-dim);text-align:center}.reasoning-stage b{display:block;color:var(--ink);font-size:11px;margin-top:3px}.reasoning-arrow{color:#667d78}
-  .mastery-display{border-left:3px solid #667d78}.mastery-private{font-size:9px;color:var(--ink-faint);margin:5px 0 8px}.operation-progress{height:4px;background:#10231f;border-radius:4px;overflow:hidden;margin:8px 0 14px}.operation-progress span{display:block;height:100%;background:#9384b5}
-  .difference-card{padding:9px;border:1px solid rgba(199,172,104,.22);border-radius:8px;background:rgba(199,172,104,.05);margin-bottom:10px}
-  .counterexample-callout{border-left:3px solid #d28170;padding:10px 12px;background:rgba(210,129,112,.07);color:#e6b2a7;font-size:11px;line-height:1.6;margin-bottom:14px}
+  .reasoning-stage{font-size:10px;color:var(--ink-dim);text-align:center}.reasoning-stage b{display:block;color:var(--ink);font-size:11px;margin-top:3px}.reasoning-arrow{color:#607d82}
+  .mastery-display{border-left:3px solid #607d82}.mastery-private{font-size:9px;color:var(--ink-faint);margin:5px 0 8px}.operation-progress{height:4px;background:#0b2227;border-radius:4px;overflow:hidden;margin:8px 0 14px}.operation-progress span{display:block;height:100%;background:#a98ae8}
+  .difference-card{padding:9px;border:1px solid rgba(240,198,110,.24);border-radius:8px;background:rgba(240,198,110,.06);margin-bottom:10px}
+  .counterexample-callout{border-left:3px solid #ee675b;padding:10px 12px;background:rgba(238,103,91,.08);color:#f0a49b;font-size:11px;line-height:1.6;margin-bottom:14px}
   @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
 </head>
@@ -337,8 +338,8 @@
       <div class="form-hint" style="margin-bottom:16px;">知识节点球体</div>
       <div class="settings-row">
         <label>球体半径 (mm)</label>
-        <input type="range" id="setNodeRadius" min="0.1" max="30" step="0.1" value="9">
-        <div class="settings-val" id="setNodeRadiusVal">9.0mm</div>
+        <input type="range" id="setNodeRadius" min="0.1" max="30" step="0.1" value="7.2">
+        <div class="settings-val" id="setNodeRadiusVal">7.2mm</div>
       </div>
       <div class="form-hint" style="margin:18px 0 16px;">知识节点文字标签</div>
       <div class="settings-row">
