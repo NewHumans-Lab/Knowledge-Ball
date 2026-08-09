@@ -45,11 +45,15 @@ export class GitHubKnowledgeGateway implements KnowledgeRepository {
   }
 
   async saveNode(node: KnowledgeNodeRecord): Promise<void> {
+    await this.saveNodes([node]);
+  }
+
+  async saveNodes(nodes: KnowledgeNodeRecord[]): Promise<void> {
     await this.request<void>('/nodes', {
       method: 'POST',
       body: JSON.stringify({
         namespace: this.namespace,
-        node,
+        nodes,
       }),
     });
   }

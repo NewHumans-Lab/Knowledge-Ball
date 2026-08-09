@@ -1,4 +1,4 @@
-import { clampGraphZoom, coreLabelsVisible, coreOrbitScreenPosition, coreSunContainsTriad, initialNodePosition, isCoreNodeId, layerForNode, ordinaryNodeCompensationScale, shouldRenderEdge } from './KnowledgeScene';
+import { clampGraphZoom, coreLabelsVisible, coreOrbitScreenPosition, coreSunContainsTriad, initialNodePosition, isCoreNodeId, layerForNode, nodeRadiusForType, ordinaryNodeCompensationScale, shouldRenderEdge } from './KnowledgeScene';
 import { CORE_AMBIENT_LIGHT_INTENSITY, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_RADIUS, DEFAULT_CAM_Z, LAYER_BANDS, MAX_GRAPH_ZOOM, MIN_GRAPH_ZOOM, SUN_ORBIT_RADIUS, SUN_RADIUS_MM, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 function assert(condition:unknown,message:string):asserts condition{if(!condition)throw new Error(message);}
 function node(id:string,type:'axiom'|'fact'|'theorem'='fact',status:'pending'|'verified'='verified'){return{id,type,status}as const;}
@@ -12,6 +12,8 @@ let sawMeaningfulZ=false;for(const sample of[node('inner-a','axiom'),node('inner
 assert(sawMeaningfulZ,'layout regressed toward a flat XY disk');let positiveZ=0,negativeZ=0;for(let i=0;i<200;i++){const p=initialNodePosition(node(`volume-${i}`));if(p.z>0)positiveZ++;if(p.z<0)negativeZ++;}assert(positiveZ>60&&negativeZ>60,'3D distribution must occupy both hemispheres');
 assert(clampGraphZoom(0)===MIN_GRAPH_ZOOM,'zoom must clamp at minimum');assert(clampGraphZoom(999)===MAX_GRAPH_ZOOM,'zoom must clamp at maximum');
 assert(Math.abs(ordinaryNodeCompensationScale(4)-.25)<1e-12,'ordinary node geometry must inverse-scale so zoom changes spacing, not node radius');
+assert(nodeRadiusForType('reasoning',9)===3,'reasoning process radius must be exactly one third of a conclusion radius');
+assert(nodeRadiusForType('theorem',9)===9,'conclusion radius must keep the configured value');
 assert(!coreLabelsVisible(9.99)&&coreLabelsVisible(10),'core labels must reveal only at 10x graph zoom');
 assert(DEFAULT_CAM_Z===640,'camera baseline changed unexpectedly; graph zoom must not require camera movement');
 console.log('Knowledge scene regression tests passed');

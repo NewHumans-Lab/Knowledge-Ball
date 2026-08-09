@@ -1,14 +1,14 @@
-export type KnowledgeNodeType = 'axiom' | 'definition' | 'fact' | 'theorem' | 'hypothesis' | 'prediction' | 'opinion' | 'value' | 'reasoning';
+export type KnowledgeNodeType = 'axiom' | 'definition' | 'fact' | 'theorem' | 'hypothesis' | 'prediction' | 'opinion' | 'value' | 'reasoning' | 'logic-symbol';
 export type KnowledgeNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 export type KnowledgeMastery = 'none' | 'touched' | 'mastered';
 export type KnowledgeDomain = 'logic' | 'mathematics' | 'physics' | 'biology' | 'chemistry' | 'computer-science' | 'economics' | 'history' | 'philosophy' | 'general';
 
 export const TWIN_META = { n6: { twinGroup: 'twinPrime', sharedTitle: '质数数量无穷' }, n15: { twinGroup: 'twinPrime', sharedTitle: '质数数量无穷' } } as const;
-export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', definition:'定义', fact:'事实', theorem:'定理', hypothesis:'假说', prediction:'预测', opinion:'观点', value:'价值判断', reasoning:'推理过程' };
+export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', definition:'定义', fact:'事实', theorem:'定理', hypothesis:'假说', prediction:'预测', opinion:'观点', value:'价值判断', reasoning:'推理过程', 'logic-symbol':'逻辑符号' };
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
-export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xE8E4D9, definition:0x7C93C9, fact:0x5BA88B, theorem:0xC9A227, hypothesis:0x9B7EDE, prediction:0x5FD1C9, opinion:0xE8825B, value:0xD8748A, reasoning:0x4DB6E5 };
-export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#E8E4D9', definition:'#7C93C9', fact:'#5BA88B', theorem:'#C9A227', hypothesis:'#9B7EDE', prediction:'#5FD1C9', opinion:'#E8825B', value:'#D8748A', reasoning:'#4DB6E5' };
+export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xE8E4D9, definition:0x7C93C9, fact:0x5BA88B, theorem:0xC9A227, hypothesis:0x9B7EDE, prediction:0x5FD1C9, opinion:0xE8825B, value:0xD8748A, reasoning:0x4DB6E5, 'logic-symbol':0xA6E3A1 };
+export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#E8E4D9', definition:'#7C93C9', fact:'#5BA88B', theorem:'#C9A227', hypothesis:'#9B7EDE', prediction:'#5FD1C9', opinion:'#E8825B', value:'#D8748A', reasoning:'#4DB6E5', 'logic-symbol':'#A6E3A1' };
 export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#5BA88B', pending:'#7C93C9', suspended:'#6B7290', disputed:'#E0A030', falsified:'#C85450' };
 export const LAYER_BANDS = { inner:{rMin:0,rMax:95}, middle:{rMin:95,rMax:170}, outer:{rMin:170,rMax:260}, core:{rMin:0,rMax:16} } as const;
 export const LAYER_LABEL = { inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测', core:'核心 · 三体系统' } as const;

@@ -1,6 +1,10 @@
 import type { NodeStatus, NodeType } from '../event/Event';
 
-/** A reasoning process is a first-class node between premise conclusions and a conclusion. */
+/**
+ * Canonical protocol representation used by command validation and deterministic
+ * event replay. Hidden and superseded nodes stay here so history also participates
+ * in uniqueness checks.
+ */
 export interface ProtocolNode {
   id: string;
   title: string;
@@ -8,8 +12,12 @@ export interface ProtocolNode {
   reasoning: string;
   premises: string[];
   status: NodeStatus;
+  hidden?: boolean;
   aliases?: string[];
   supersededBy?: string;
+  logicRuleId?: string;
+  negatedBy?: string[];
+  semanticKey?: string;
 }
 
 export interface ReasoningChain {
@@ -22,16 +30,19 @@ export interface NewProtocolNode {
   id: string;
   title: string;
   type: NodeType;
+  /** Description for a knowledge conclusion; inference text for a reasoning node. */
   reasoning: string;
+  /** Every new reasoning process must classify itself with an existing logic-symbol node. */
+  logicRuleId?: string;
 }
 
 export interface NegateEdit {
   kind: 'negate';
   target: 'premise' | 'reasoning' | 'conclusion';
   targetId: string;
-  /** Required evidence when negating a premise or conclusion. */
-  counterexampleIds?: string[];
-  /** Required replacement when the inference itself is wrong. */
+  /** A negation is evidence-bearing: at least one active counterexample is always required. */
+  counterexampleIds: string[];
+  /** A rejected inference additionally needs its complete replacement inference. */
   correctedReasoning?: NewProtocolNode;
 }
 
@@ -44,22 +55,43 @@ export interface DecomposeEdit {
   intermediateConclusions: NewProtocolNode[];
 }
 
-export interface MergeEdit {
+export interface DefinitionMergeEdit {
   kind: 'merge';
-  chains: ReasoningChain[];
-  /** Callers use the same key to assert that differently named conclusions are equivalent. */
+  mode: 'definition';
+  sourceNodeIds: string[];
   semanticKey: string;
+  mergedDefinition: NewProtocolNode;
+}
+
+export interface TheoryMergeEdit {
+  kind: 'merge';
+  mode: 'theory';
+  chains: ReasoningChain[];
+  /** Explicit identity for the inference process; validated before conclusion identity. */
+  reasoningSemanticKey: string;
+  semanticKey: string;
+  /** Created before the merged conclusion in the same atomic event. */
   mergedReasoning: NewProtocolNode;
   mergedConclusion: NewProtocolNode;
 }
 
-export interface AddEdit {
+export type MergeEdit = DefinitionMergeEdit | TheoryMergeEdit;
+
+export interface AddAtomicEdit {
   kind: 'add';
+  mode: 'atomic';
+  node: NewProtocolNode;
+}
+
+export interface AddTheoryEdit {
+  kind: 'add';
+  mode: 'theory';
   requiredPremiseIds: string[];
   reasoning: NewProtocolNode;
   conclusion: NewProtocolNode;
 }
 
+export type AddEdit = AddAtomicEdit | AddTheoryEdit;
 export type KnowledgeEdit = NegateEdit | DecomposeEdit | MergeEdit | AddEdit;
 
 export interface KnowledgeEditResult {
@@ -67,32 +99,107 @@ export interface KnowledgeEditResult {
   errors: string[];
 }
 
+const ATOMIC_TYPES = new Set<NodeType>(['axiom', 'definition', 'fact', 'logic-symbol']);
 const unique = (values: string[]) => [...new Set(values)];
-const sameSet = (left: string[], right: string[]) =>
-  left.length === right.length && unique(left).sort().join('\0') === unique(right).sort().join('\0');
-const canonicalText = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 
-function nodeFromDraft(draft: NewProtocolNode, premises: string[]): ProtocolNode {
-  return {
-    ...draft,
-    title: draft.title.trim(),
-    reasoning: draft.reasoning.trim(),
-    premises: unique(premises),
-    status: 'pending',
-  };
+export function canonicalKnowledgeText(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
 }
+
+const sameSet = (left: string[], right: string[]) => {
+  const a = unique(left);
+  const b = unique(right);
+  return a.length === left.length &&
+    b.length === right.length &&
+    a.length === b.length &&
+    a.sort().join('\0') === b.sort().join('\0');
+};
 
 function indexNodes(nodes: ProtocolNode[]): Map<string, ProtocolNode> {
   return new Map(nodes.map(node => [node.id, node]));
 }
 
-function validateDraft(draft: NewProtocolNode, existingIds: Set<string>, expectedType?: NodeType): string[] {
+function active(node: ProtocolNode | undefined): boolean {
+  return Boolean(node && !node.hidden && !node.supersededBy && node.status !== 'falsified');
+}
+
+function nodeFromDraft(draft: NewProtocolNode, premises: string[]): ProtocolNode {
+  return {
+    id: draft.id,
+    title: draft.title.trim(),
+    type: draft.type,
+    reasoning: draft.reasoning.trim(),
+    premises: unique(premises),
+    status: 'pending',
+    hidden: false,
+    logicRuleId: draft.logicRuleId,
+  };
+}
+
+function validateDraftBatch(nodes: ProtocolNode[], drafts: NewProtocolNode[]): string[] {
   const errors: string[] = [];
-  if (!draft.id.trim()) errors.push('新节点必须有 ID');
-  if (existingIds.has(draft.id)) errors.push(`节点 ID 已存在: ${draft.id}`);
-  if (!draft.title.trim()) errors.push(`节点 ${draft.id || '(unknown)'} 必须有标题`);
-  if (!draft.reasoning.trim()) errors.push(`节点 ${draft.id || '(unknown)'} 必须有描述`);
-  if (expectedType && draft.type !== expectedType) errors.push(`节点 ${draft.id || '(unknown)'} 必须是 ${expectedType} 类型`);
+  const byId = indexNodes(nodes);
+  const usedIds = new Set(byId.keys());
+  const usedTitles = new Map<string, string>();
+  const usedDescriptions = new Map<string, string>();
+
+  for (const node of nodes) {
+    const title = canonicalKnowledgeText(node.title);
+    const description = canonicalKnowledgeText(node.reasoning);
+    if (title && !usedTitles.has(title)) usedTitles.set(title, node.id);
+    if (description && !usedDescriptions.has(description)) usedDescriptions.set(description, node.id);
+  }
+
+  for (const draft of drafts) {
+    const id = draft.id.trim();
+    const title = canonicalKnowledgeText(draft.title);
+    const description = canonicalKnowledgeText(draft.reasoning);
+
+    if (!id || id !== draft.id) errors.push('新节点必须有不含首尾空白的 ID');
+    else if (usedIds.has(id)) errors.push(`节点 ID 已存在或在本次操作中重复: ${id}`);
+    else usedIds.add(id);
+
+    if (!title) errors.push(`节点 ${id || '(unknown)'} 必须有标题`);
+    else if (usedTitles.has(title)) {
+      errors.push(`节点标题与现有或本次操作中的节点重复: ${draft.title.trim()}`);
+    } else {
+      usedTitles.set(title, id);
+    }
+
+    if (!description) errors.push(`节点 ${id || '(unknown)'} 必须有描述或推理过程`);
+    else if (usedDescriptions.has(description)) {
+      errors.push(`节点描述或推理过程与现有或本次操作中的节点重复: ${draft.reasoning.trim()}`);
+    } else {
+      usedDescriptions.set(description, id);
+    }
+
+    if (draft.type === 'reasoning') {
+      const rule = draft.logicRuleId ? byId.get(draft.logicRuleId) : undefined;
+      if (!draft.logicRuleId) errors.push(`推理过程 ${id || '(unknown)'} 必须选择逻辑符号`);
+      else if (!rule) errors.push(`逻辑符号节点不存在: ${draft.logicRuleId}`);
+      else if (rule.type !== 'logic-symbol') errors.push(`节点不是逻辑符号: ${draft.logicRuleId}`);
+      else if (!active(rule)) errors.push(`逻辑符号节点当前不可用: ${draft.logicRuleId}`);
+    } else if (draft.logicRuleId) {
+      errors.push(`只有 reasoning 节点可以指定逻辑符号: ${id || '(unknown)'}`);
+    }
+  }
+
+  return errors;
+}
+
+function validateCounterexamples(nodes: ProtocolNode[], edit: NegateEdit): string[] {
+  const errors: string[] = [];
+  const byId = indexNodes(nodes);
+  if (edit.counterexampleIds.length === 0) errors.push('否定必须列举至少一个反例知识节点');
+  if (unique(edit.counterexampleIds).length !== edit.counterexampleIds.length) errors.push('反例知识节点不能重复');
+
+  for (const id of edit.counterexampleIds) {
+    const counterexample = byId.get(id);
+    if (!counterexample) errors.push(`反例节点不存在: ${id}`);
+    else if (id === edit.targetId) errors.push('知识节点不能作为自身的反例');
+    else if (!active(counterexample)) errors.push(`反例节点当前不可用: ${id}`);
+    else if (counterexample.type === 'reasoning') errors.push(`反例必须是知识结论而不是推理过程: ${id}`);
+  }
   return errors;
 }
 
@@ -103,32 +210,75 @@ export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningCh
   const errors: string[] = [];
 
   if (chain.premiseIds.length === 0) errors.push('推理链至少需要一个前提');
-  for (const id of chain.premiseIds) if (!byId.has(id)) errors.push(`前提不存在: ${id}`);
+  if (unique(chain.premiseIds).length !== chain.premiseIds.length) errors.push('推理链前提不能重复');
+  for (const id of chain.premiseIds) {
+    const premise = byId.get(id);
+    if (!premise) errors.push(`前提不存在: ${id}`);
+    else if (!active(premise)) errors.push(`前提当前不可用: ${id}`);
+  }
+
   if (!reasoning) errors.push(`推理过程不存在: ${chain.reasoningId}`);
   else {
+    if (!active(reasoning)) errors.push(`推理过程当前不可用: ${reasoning.id}`);
     if (reasoning.type !== 'reasoning') errors.push(`推理过程节点必须是 reasoning 类型: ${reasoning.id}`);
     if (!sameSet(reasoning.premises, chain.premiseIds)) errors.push('推理过程的前提与推理链声明不一致');
+    const logicRule = reasoning.logicRuleId ? byId.get(reasoning.logicRuleId) : undefined;
+    if (!reasoning.logicRuleId) errors.push(`推理过程尚未选择逻辑符号: ${reasoning.id}`);
+    else if (!logicRule || logicRule.type !== 'logic-symbol') errors.push(`推理过程引用的逻辑符号无效: ${reasoning.logicRuleId}`);
+    else if (!active(logicRule)) errors.push(`推理过程引用的逻辑符号当前不可用: ${reasoning.logicRuleId}`);
   }
+
   if (!conclusion) errors.push(`结论不存在: ${chain.conclusionId}`);
-  else if (!conclusion.premises.includes(chain.reasoningId)) errors.push('结论必须直接依赖推理过程节点');
+  else {
+    if (!active(conclusion)) errors.push(`结论当前不可用: ${conclusion.id}`);
+    if (conclusion.type === 'reasoning') errors.push('推理链结论不能是 reasoning 类型');
+    if (!conclusion.premises.includes(chain.reasoningId)) errors.push('结论必须直接依赖推理过程节点');
+  }
   return errors;
 }
 
 export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): string[] {
   const byId = indexNodes(nodes);
-  const existingIds = new Set(byId.keys());
   const errors: string[] = [];
+
+  if (edit.kind === 'add') {
+    if (edit.mode === 'atomic') {
+      if (!ATOMIC_TYPES.has(edit.node.type)) {
+        errors.push('公理、定义、事实和逻辑符号可以独立增加；其他结论必须提交完整推理链');
+      }
+      errors.push(...validateDraftBatch(nodes, [edit.node]));
+    } else {
+      if (edit.requiredPremiseIds.length === 0) errors.push('增加理论必须标记至少一个已有知识前提');
+      if (unique(edit.requiredPremiseIds).length !== edit.requiredPremiseIds.length) errors.push('所需前提不能重复');
+      for (const id of edit.requiredPremiseIds) {
+        const premise = byId.get(id);
+        if (!premise) errors.push(`所需前提不存在: ${id}`);
+        else if (!active(premise)) errors.push(`所需前提当前不可用: ${id}`);
+      }
+      if (edit.reasoning.type !== 'reasoning') errors.push('新增推理过程必须是 reasoning 类型');
+      if (ATOMIC_TYPES.has(edit.conclusion.type) || edit.conclusion.type === 'reasoning') {
+        errors.push('理论结论必须是定理、假说、预测、观点或价值判断');
+      }
+      errors.push(...validateDraftBatch(nodes, [edit.reasoning, edit.conclusion]));
+    }
+  }
 
   if (edit.kind === 'negate') {
     const target = byId.get(edit.targetId);
     if (!target) errors.push(`否定目标不存在: ${edit.targetId}`);
+    else if (!active(target)) errors.push(`否定目标当前不可用: ${edit.targetId}`);
+
+    errors.push(...validateCounterexamples(nodes, edit));
     if (edit.target === 'reasoning') {
       if (target && target.type !== 'reasoning') errors.push('否定推理过程时，目标必须是 reasoning 节点');
-      if (!edit.correctedReasoning) errors.push('否定错误推理过程时必须给出正确的推理过程');
-      else errors.push(...validateDraft(edit.correctedReasoning, existingIds, 'reasoning'));
+      if (!edit.correctedReasoning) errors.push('否定错误推理过程时必须给出完整的正确推理过程');
+      else {
+        if (edit.correctedReasoning.type !== 'reasoning') errors.push('正确推理过程必须是 reasoning 类型');
+        errors.push(...validateDraftBatch(nodes, [edit.correctedReasoning]));
+      }
     } else {
-      if (!edit.counterexampleIds?.length) errors.push('直接否定前提或结论时必须列举至少一个反例');
-      for (const id of edit.counterexampleIds ?? []) if (!byId.has(id)) errors.push(`反例节点不存在: ${id}`);
+      if (target?.type === 'reasoning') errors.push('reasoning 节点必须按推理过程方式否定');
+      if (edit.correctedReasoning) errors.push('否定知识结论时不能附带替换推理过程');
     }
   }
 
@@ -136,53 +286,117 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
     errors.push(...validateReasoningChain(nodes, edit.chain));
     if (edit.reasoningSteps.length < 2) errors.push('分解必须包含至少两个推理过程');
     if (edit.intermediateConclusions.length !== edit.reasoningSteps.length - 1) {
-      errors.push('相邻推理过程之间必须且只能添加一个中间知识节点');
+      errors.push('相邻推理过程之间必须且只能添加一个中间知识结论');
     }
-    const drafts = [...edit.reasoningSteps, ...edit.intermediateConclusions];
-    const draftIds = new Set<string>();
-    for (const draft of drafts) {
-      errors.push(...validateDraft(draft, existingIds, edit.reasoningSteps.includes(draft) ? 'reasoning' : undefined));
-      if (draftIds.has(draft.id)) errors.push(`分解中的新节点 ID 重复: ${draft.id}`);
-      draftIds.add(draft.id);
+    if (edit.reasoningSteps.some(step => step.type !== 'reasoning')) {
+      errors.push('分解中的每个推理步骤都必须是 reasoning 类型');
     }
-    if (edit.intermediateConclusions.some(node => node.type === 'reasoning')) errors.push('分解产生的中间结论不能是 reasoning 类型');
+    if (edit.intermediateConclusions.some(node => node.type === 'reasoning' || ATOMIC_TYPES.has(node.type))) {
+      errors.push('分解产生的中间结论必须是定理、假说、预测、观点或价值判断');
+    }
+    errors.push(...validateDraftBatch(nodes, [...edit.reasoningSteps, ...edit.intermediateConclusions]));
   }
 
-  if (edit.kind === 'merge') {
-    if (edit.chains.length < 2) errors.push('合并至少需要两条推理链');
+  if (edit.kind === 'merge' && edit.mode === 'definition') {
+    if (edit.sourceNodeIds.length < 2) errors.push('定义合并至少需要两个来源定义');
+    if (unique(edit.sourceNodeIds).length !== edit.sourceNodeIds.length) errors.push('定义合并来源不能重复');
+    const sources = edit.sourceNodeIds.map(id => byId.get(id));
+    for (let i = 0; i < sources.length; i++) {
+      const source = sources[i];
+      const id = edit.sourceNodeIds[i];
+      if (!source) errors.push(`来源定义不存在: ${id}`);
+      else if (!active(source)) errors.push(`来源定义当前不可用: ${id}`);
+      else if (source.type !== 'definition') errors.push(`来源节点不是定义: ${id}`);
+    }
+    const descriptions = new Set(sources.filter(Boolean).map(node => canonicalKnowledgeText(node!.reasoning)));
+    if (sources.length >= 2 && descriptions.size < 2) {
+      errors.push('定义合并需要同一定义的至少两种不同语言描述，不能提交完全重复文本');
+    }
+    if (!edit.semanticKey.trim()) errors.push('定义合并必须提供语义等价标识');
+    if (edit.mergedDefinition.type !== 'definition') errors.push('合并结果必须是 definition 类型');
+    errors.push(...validateDraftBatch(nodes, [edit.mergedDefinition]));
+  }
+
+  if (edit.kind === 'merge' && edit.mode === 'theory') {
+    if (edit.chains.length < 2) errors.push('理论合并至少需要两条推理链');
+    const conclusionIds = edit.chains.map(chain => chain.conclusionId);
+    const reasoningIds = edit.chains.map(chain => chain.reasoningId);
+    if (unique(conclusionIds).length !== conclusionIds.length) errors.push('理论合并的来源结论不能重复');
+    if (unique(reasoningIds).length !== reasoningIds.length) errors.push('理论合并必须先选择彼此独立的推理过程');
+
     for (const chain of edit.chains) errors.push(...validateReasoningChain(nodes, chain));
     const first = edit.chains[0];
     const firstReasoning = first ? byId.get(first.reasoningId) : undefined;
+    const firstConclusion = first ? byId.get(first.conclusionId) : undefined;
     for (const chain of edit.chains.slice(1)) {
-      if (!first || !sameSet(first.premiseIds, chain.premiseIds)) errors.push('合并要求所有推理链具有相同前提');
       const reasoning = byId.get(chain.reasoningId);
-      if (firstReasoning && reasoning && canonicalText(firstReasoning.reasoning) !== canonicalText(reasoning.reasoning)) {
-        errors.push('合并要求推理过程相同；必须先合并推理过程，再合并结论');
+      const conclusion = byId.get(chain.conclusionId);
+      if (!first || !sameSet(first.premiseIds, chain.premiseIds)) {
+        errors.push('理论合并要求所有推理链具有相同前提');
+      }
+      if (firstReasoning && reasoning && firstReasoning.logicRuleId !== reasoning.logicRuleId) {
+        errors.push('理论合并要求推理过程使用同一逻辑符号');
+      }
+      if (firstConclusion && conclusion && firstConclusion.type !== conclusion.type) {
+        errors.push('理论合并要求来源结论具有相同知识类型');
       }
     }
-    if (!edit.semanticKey.trim()) errors.push('合并结论必须提供语义等价标识');
-    errors.push(...validateDraft(edit.mergedReasoning, existingIds, 'reasoning'));
-    errors.push(...validateDraft(edit.mergedConclusion, existingIds));
-    if (edit.mergedConclusion.type === 'reasoning') errors.push('合并后的结论不能是 reasoning 类型');
-    if (edit.mergedConclusion.id === edit.mergedReasoning.id) errors.push('合并推理过程和结论必须使用不同 ID');
-  }
 
-  if (edit.kind === 'add') {
-    if (edit.requiredPremiseIds.length === 0) errors.push('增加推理链必须标记所需前提');
-    for (const id of edit.requiredPremiseIds) if (!byId.has(id)) errors.push(`所需前提不存在: ${id}`);
-    if (unique(edit.requiredPremiseIds).length !== edit.requiredPremiseIds.length) errors.push('所需前提不能重复');
-    errors.push(...validateDraft(edit.reasoning, existingIds, 'reasoning'));
-    errors.push(...validateDraft(edit.conclusion, existingIds));
-    if (edit.conclusion.type === 'reasoning') errors.push('新增结论不能是 reasoning 类型');
-    if (edit.reasoning.id === edit.conclusion.id) errors.push('推理过程和结论必须使用不同 ID');
+    if (!edit.reasoningSemanticKey.trim()) errors.push('理论合并必须先提供推理过程语义等价标识');
+    if (!edit.semanticKey.trim()) errors.push('理论合并必须提供语义等价标识');
+    if (edit.mergedReasoning.type !== 'reasoning') errors.push('合并推理过程必须是 reasoning 类型');
+    if (edit.mergedConclusion.type === 'reasoning' || ATOMIC_TYPES.has(edit.mergedConclusion.type)) {
+      errors.push('合并后的理论结论类型无效');
+    }
+    if (firstConclusion && edit.mergedConclusion.type !== firstConclusion.type) {
+      errors.push('合并后的理论结论必须保持来源结论类型');
+    }
+    errors.push(...validateDraftBatch(nodes, [edit.mergedReasoning, edit.mergedConclusion]));
   }
 
   return unique(errors);
 }
 
+function suspendDownstream(nodes: ProtocolNode[], fromId: string): void {
+  const visited = new Set<string>([fromId]);
+  const queue = [fromId];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const node of nodes) {
+      if (visited.has(node.id) || (!node.premises.includes(current) && node.logicRuleId !== current)) continue;
+      visited.add(node.id);
+      queue.push(node.id);
+      if (node.status !== 'falsified') node.status = 'suspended';
+    }
+  }
+}
+
+function restoreClaimsWhoseOppositionWasNegated(nodes: ProtocolNode[], negatedId: string): void {
+  const byId = indexNodes(nodes);
+  for (const node of nodes) {
+    if (node.status !== 'falsified' || !node.negatedBy?.includes(negatedId)) continue;
+    const allOppositionNegated = node.negatedBy.every(id => byId.get(id)?.status === 'falsified');
+    if (allOppositionNegated) {
+      const replacement = node.supersededBy ? byId.get(node.supersededBy) : undefined;
+      if (replacement) {
+        for (const dependent of nodes) {
+          if (dependent.hidden || dependent.supersededBy) continue;
+          dependent.premises = dependent.premises.map(id => id === replacement.id ? node.id : id);
+        }
+        replacement.status = 'suspended';
+        replacement.hidden = true;
+        replacement.supersededBy = node.id;
+        node.supersededBy = undefined;
+      }
+      node.status = 'pending';
+      node.hidden = false;
+    }
+  }
+}
+
 /**
- * Applies a validated edit without deleting history. Replaced nodes remain in the graph and
- * point to their successor through `supersededBy`, so editing is auditable.
+ * Apply exactly one validated edit. No source node is deleted: replaced or negated
+ * nodes remain queryable, default-hidden, and still block duplicate submissions.
  */
 export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): KnowledgeEditResult {
   const errors = validateKnowledgeEdit(nodes, edit);
@@ -190,28 +404,45 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
 
   const next = structuredClone(nodes);
   const byId = indexNodes(next);
-  const append = (node: ProtocolNode) => { next.push(node); byId.set(node.id, node); };
+  const append = (node: ProtocolNode) => {
+    next.push(node);
+    byId.set(node.id, node);
+  };
 
   if (edit.kind === 'add') {
-    append(nodeFromDraft(edit.reasoning, edit.requiredPremiseIds));
-    append(nodeFromDraft(edit.conclusion, [edit.reasoning.id]));
+    if (edit.mode === 'atomic') {
+      append(nodeFromDraft(edit.node, []));
+    } else {
+      append(nodeFromDraft(edit.reasoning, edit.requiredPremiseIds));
+      append(nodeFromDraft(edit.conclusion, [edit.reasoning.id]));
+    }
   }
 
   if (edit.kind === 'negate') {
     const target = byId.get(edit.targetId)!;
     target.status = 'falsified';
+    target.hidden = true;
+    target.negatedBy = unique([...(target.negatedBy ?? []), ...edit.counterexampleIds]);
+
     if (edit.target === 'reasoning') {
       const corrected = nodeFromDraft(edit.correctedReasoning!, target.premises);
       append(corrected);
       target.supersededBy = corrected.id;
-      for (const node of next) node.premises = node.premises.map(id => id === target.id ? corrected.id : id);
+      for (const node of next) {
+        if (node.hidden || node.supersededBy) continue;
+        node.premises = node.premises.map(id => id === target.id ? corrected.id : id);
+      }
+    } else {
+      suspendDownstream(next, target.id);
     }
+    restoreClaimsWhoseOppositionWasNegated(next, target.id);
   }
 
   if (edit.kind === 'decompose') {
     const original = byId.get(edit.chain.reasoningId)!;
     const conclusion = byId.get(edit.chain.conclusionId)!;
     let premises = edit.chain.premiseIds;
+
     edit.reasoningSteps.forEach((step, index) => {
       append(nodeFromDraft(step, premises));
       const intermediate = edit.intermediateConclusions[index];
@@ -220,18 +451,40 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
         premises = [intermediate.id];
       }
     });
-    const finalReasoning = edit.reasoningSteps[edit.reasoningSteps.length - 1];
+
+    const finalReasoning = edit.reasoningSteps[edit.reasoningSteps.length - 1]!;
     conclusion.premises = conclusion.premises.map(id => id === original.id ? finalReasoning.id : id);
     original.supersededBy = edit.reasoningSteps[0].id;
     original.status = 'suspended';
+    original.hidden = true;
   }
 
-  if (edit.kind === 'merge') {
-    const premises = edit.chains[0].premiseIds;
-    append(nodeFromDraft(edit.mergedReasoning, premises));
+  if (edit.kind === 'merge' && edit.mode === 'definition') {
+    const sources = edit.sourceNodeIds.map(id => byId.get(id)!);
+    const aliases = unique(sources.flatMap(node => [node.title, ...(node.aliases ?? [])]));
+    const merged = nodeFromDraft(edit.mergedDefinition, []);
+    merged.aliases = aliases;
+    merged.semanticKey = edit.semanticKey.trim();
+    append(merged);
+
+    for (const source of sources) {
+      source.supersededBy = merged.id;
+      source.status = 'suspended';
+      source.hidden = true;
+    }
+  }
+
+  if (edit.kind === 'merge' && edit.mode === 'theory') {
+    const mergedReasoning = nodeFromDraft(edit.mergedReasoning, edit.chains[0].premiseIds);
+    mergedReasoning.semanticKey = edit.reasoningSemanticKey.trim();
+    append(mergedReasoning);
     const sourceConclusions = edit.chains.map(chain => byId.get(chain.conclusionId)!);
     const aliases = unique(sourceConclusions.flatMap(node => [node.title, ...(node.aliases ?? [])]));
-    append({ ...nodeFromDraft(edit.mergedConclusion, [edit.mergedReasoning.id]), aliases });
+    const mergedConclusion = nodeFromDraft(edit.mergedConclusion, [edit.mergedReasoning.id]);
+    mergedConclusion.aliases = aliases;
+    mergedConclusion.semanticKey = edit.semanticKey.trim();
+    append(mergedConclusion);
+
     for (const chain of edit.chains) {
       const reasoning = byId.get(chain.reasoningId)!;
       const conclusion = byId.get(chain.conclusionId)!;
@@ -239,6 +492,8 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
       conclusion.supersededBy = edit.mergedConclusion.id;
       reasoning.status = 'suspended';
       conclusion.status = 'suspended';
+      reasoning.hidden = true;
+      conclusion.hidden = true;
     }
   }
 

@@ -22,10 +22,14 @@ export class KnowledgeStore {
   }
 
   async save(namespace, node) {
+    return this.saveBatch(namespace, [node]);
+  }
+
+  async saveBatch(namespace, nodes) {
     return this.enqueue(async () => {
       const data = await this.read();
       const space = data.namespaces[namespace] ??= { nodes: {}, drafts: [] };
-      space.nodes[node.id] = node;
+      for (const node of nodes) space.nodes[node.id] = node;
       await this.write(data);
     });
   }

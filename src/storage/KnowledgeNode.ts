@@ -7,7 +7,8 @@ export type KnowledgeNodeType =
   | 'prediction'
   | 'opinion'
   | 'value'
-  | 'reasoning';
+  | 'reasoning'
+  | 'logic-symbol';
 
 export type KnowledgeNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 export type KnowledgeMastery = 'none' | 'touched' | 'mastered';
@@ -32,6 +33,7 @@ export interface KnowledgeNodeDraft {
   tags?: string[];
   domain?: KnowledgeDomain;
   author?: string;
+  logicRuleId?: string;
 }
 
 export interface KnowledgeNodeRecord {
@@ -48,6 +50,12 @@ export interface KnowledgeNodeRecord {
   createdAt: string;
   updatedAt: string;
   author?: string;
+  hidden?: boolean;
+  aliases?: string[];
+  supersededBy?: string;
+  logicRuleId?: string;
+  negatedBy?: string[];
+  semanticKey?: string;
 }
 
 export function normalizeKnowledgeNodeDraft(draft: KnowledgeNodeDraft): KnowledgeNodeDraft {
@@ -81,6 +89,8 @@ export function buildKnowledgeNodeRecord(
     createdAt: iso,
     updatedAt: iso,
     author: normalized.author,
+    hidden: false,
+    logicRuleId: normalized.logicRuleId,
   };
 }
 
@@ -92,7 +102,7 @@ export function validateKnowledgeNodeRecord(node: KnowledgeNodeRecord): string[]
   if (!node.reasoning.trim()) errors.push('Missing reasoning');
 
   if (!node.domain) errors.push('Missing domain');
-  if (!['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value', 'reasoning'].includes(node.type)) {
+  if (!['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value', 'reasoning', 'logic-symbol'].includes(node.type)) {
     errors.push(`Invalid type: ${node.type}`);
   }
 
@@ -106,6 +116,13 @@ export function validateKnowledgeNodeRecord(node: KnowledgeNodeRecord): string[]
 
   if (!Array.isArray(node.premises)) errors.push('premises must be an array');
   if (!Array.isArray(node.tags)) errors.push('tags must be an array');
+  if (node.hidden !== undefined && typeof node.hidden !== 'boolean') errors.push('hidden must be a boolean');
+  if (node.aliases !== undefined && (!Array.isArray(node.aliases) || node.aliases.some(value => typeof value !== 'string'))) {
+    errors.push('aliases must be a string array');
+  }
+  if (node.negatedBy !== undefined && (!Array.isArray(node.negatedBy) || node.negatedBy.some(value => typeof value !== 'string'))) {
+    errors.push('negatedBy must be a string array');
+  }
 
   return errors;
 }
