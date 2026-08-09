@@ -1,6 +1,6 @@
 export type NodeType =
   | 'axiom' | 'definition' | 'fact' | 'theorem'
-  | 'hypothesis' | 'prediction' | 'opinion' | 'value';
+  | 'hypothesis' | 'prediction' | 'opinion' | 'value' | 'reasoning';
 
 export type NodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 export type Mastery = 'none' | 'touched' | 'mastered';

@@ -6,7 +6,7 @@ import { KnowledgeStore } from './store.mjs';
 const port = Number(process.env.PORT ?? 8787);
 const root = resolve('dist');
 const store = new KnowledgeStore(resolve(process.env.KNOWLEDGE_DATA_FILE ?? 'data/knowledge.json'));
-const types = new Set(['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value']);
+const types = new Set(['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value', 'reasoning']);
 const statuses = new Set(['pending', 'verified', 'suspended', 'disputed', 'falsified']);
 const masteryLevels = new Set(['none', 'touched', 'mastered']);
 const domains = new Set(['logic', 'mathematics', 'physics', 'biology', 'chemistry', 'computer-science', 'economics', 'history', 'philosophy', 'general']);

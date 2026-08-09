@@ -8,7 +8,7 @@
     "server": "node server/index.mjs",
     "start": "npm run build && node server/index.mjs",
     "build": "tsc && vite build",
-    "test": "npm run test:persistence && npm run test:gateway && npm run test:hosting && npm run test:scene && npm run test:core-sun && npm run test:mobile && npm run test:download && npm run test:server",
+    "test": "npm run test:protocol && npm run test:persistence && npm run test:gateway && npm run test:hosting && npm run test:scene && npm run test:core-sun && npm run test:mobile && npm run test:download && npm run test:server",
     "test:server": "node --test server/*.test.mjs",
     "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json --noEmit && npx esbuild src/persistence/PersistenceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/persistence-regression.mjs && node .test-dist/persistence-regression.mjs",
     "test:gateway": "npx esbuild src/storage/GitHubKnowledgeGatewayRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/gateway-regression.mjs && node .test-dist/gateway-regression.mjs",
@@ -17,11 +17,13 @@
     "test:core-sun": "npx esbuild src/ui/scene/CoreSunVisualRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/core-sun-regression.mjs && node .test-dist/core-sun-regression.mjs",
     "test:mobile": "npx esbuild src/mobile/MobileShellRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/mobile-shell-regression.mjs && node .test-dist/mobile-shell-regression.mjs",
     "test:download": "node scripts/verify-android-download.mjs",
+    "test:merge": "node scripts/verify-merge-clean.mjs",
     "test:pages": "node scripts/verify-pages.mjs",
     "android:build": "CAPACITOR_BUILD=true npm run build",
     "android:sync": "npm run android:build && cap sync android",
     "android:open": "npm run android:sync && cap open android",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:protocol": "npx esbuild src/protocol/KnowledgeEditingProtocol.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-editing-protocol.mjs && node .test-dist/knowledge-editing-protocol.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.8",
