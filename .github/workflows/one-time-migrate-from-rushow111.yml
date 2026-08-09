@@ -1,0 +1,41 @@
+name: One-time migrate from Rushow111
+
+on:
+  push:
+    branches:
+      - agent/migrate-from-rushow111
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/migrate-from-rushow111
+          fetch-depth: 0
+          path: target
+
+      - name: Clone personal source repository
+        run: |
+          git clone --depth 1 --branch main https://github.com/Rushow111/Knowledge-Ball.git source
+
+      - name: Synchronize tracked source content
+        run: |
+          rsync -a --delete --exclude='.git' source/ target/
+
+      - name: Commit migration
+        working-directory: target
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No migration changes required."
+            exit 0
+          fi
+          git commit -m "Migrate current Knowledge-Ball code from Rushow111"
+          git push origin HEAD:agent/migrate-from-rushow111
