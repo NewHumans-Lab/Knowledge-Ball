@@ -6,7 +6,7 @@ import { Network } from '@capacitor/network';
 import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
 
-export const CURRENT_APP_VERSION = '0.1.0';
+export const CURRENT_APP_VERSION = '0.2.0';
 export const DOWNLOAD_ROOT = 'https://rushow111.github.io/Knowledge-Ball/downloads';
 export const CURRENT_APK_URL = `${DOWNLOAD_ROOT}/knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
 export const UPDATE_MANIFEST_URL = `${DOWNLOAD_ROOT}/latest.json`;
@@ -117,6 +117,17 @@ function setupVersionActions(): void {
   document.getElementById('iosShare')?.addEventListener('click', () => void shareIosVersion());
 }
 
+export function applyPlatformVisibility(platform: 'android' | 'ios'): void {
+  document.documentElement.classList.add('native-app', platform);
+  document.querySelectorAll<HTMLElement>('.web-download-action').forEach(element => { element.hidden = true; });
+  document.querySelectorAll<HTMLElement>('.native-app-actions').forEach(element => { element.hidden = true; });
+  document.querySelectorAll<HTMLElement>('.app-download').forEach(element => { element.hidden = true; });
+  const card = document.querySelector<HTMLElement>(`.${platform}-download-card`);
+  const actions = document.querySelector<HTMLElement>(`.${platform}-native-actions`);
+  if (card) card.hidden = false;
+  if (actions) actions.hidden = false;
+}
+
 function closeTopLayer(): BackAction {
   const overlay = document.querySelector<HTMLElement>('.modal-overlay.show');
   const panel = document.getElementById('panel');
@@ -142,8 +153,9 @@ function showNetworkState(connected: boolean): void {
 
 export async function setupMobileShell(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
-  document.documentElement.classList.add('native-app');
-  document.documentElement.classList.add(Capacitor.getPlatform());
+  const platform = Capacitor.getPlatform();
+  if (platform !== 'android' && platform !== 'ios') return;
+  applyPlatformVisibility(platform);
   setupVersionActions();
   await StatusBar.setStyle({ style: Style.Dark });
   await StatusBar.setBackgroundColor({ color: '#080c16' });

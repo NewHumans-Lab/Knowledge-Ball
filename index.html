@@ -158,6 +158,7 @@
   .app-download-meta{font-size:11px;color:var(--ink-faint);line-height:1.65;margin-bottom:12px;}
   .app-download .btn{display:flex;width:100%;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box;}
   .native-app .web-download-action{display:none;}
+  [hidden]{display:none!important;}
   .native-app.android .android-native-actions,.native-app.ios .ios-native-actions{display:grid;}
   .native-app.android .ios-download-card,.native-app.ios .android-download-card{display:none;}
   .native-app-actions{display:none;grid-template-columns:1fr 1fr;gap:10px;}
@@ -343,8 +344,8 @@
       <div class="app-download-grid">
       <div class="app-download android-download-card">
         <div class="app-download-title">知识球 Android 应用</div>
-        <div class="app-download-meta">版本 0.1.0 · Android 7.0 及以上<br>安装时请允许浏览器安装来自此来源的应用。</div>
-        <a class="btn primary web-download-action" id="androidDownload" href="./downloads/knowledge-ball-android-v0.1.0.apk" download="knowledge-ball-android-v0.1.0.apk" type="application/vnd.android.package-archive">下载 Android 安装包（APK）</a>
+        <div class="app-download-meta">版本 0.2.0 · Android 7.0 及以上<br>安装时请允许浏览器安装来自此来源的应用。</div>
+        <a class="btn primary web-download-action" id="androidDownload" href="./downloads/knowledge-ball-android-v0.2.0.apk" download="knowledge-ball-android-v0.2.0.apk" type="application/vnd.android.package-archive">下载 Android 安装包（APK）</a>
         <div class="native-app-actions android-native-actions" aria-label="Android 应用版本操作">
           <button class="btn primary" id="androidUpdate" type="button">检查更新</button>
           <button class="btn" id="androidShare" type="button">分享当前版本</button>
@@ -353,7 +354,7 @@
       </div>
       <div class="app-download ios-download-card">
         <div class="app-download-title">知识球 iOS 应用</div>
-        <div class="app-download-meta">版本 0.1.0 · iOS 14 及以上<br>使用 Safari 安装，不依赖境外应用商店。</div>
+        <div class="app-download-meta">版本 0.2.0 · iOS 14 及以上<br>使用 Safari 安装，不依赖境外应用商店。</div>
         <a class="btn primary web-download-action" id="iosDownload" href="./ios-install.html">安装 iOS 应用</a>
         <div class="native-app-actions ios-native-actions" aria-label="iOS 应用版本操作">
           <button class="btn primary" id="iosUpdate" type="button">检查更新</button>
