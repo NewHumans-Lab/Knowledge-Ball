@@ -30,9 +30,15 @@ export const SUN_ANGULAR_SPEED = 0.6;
 // Its corona is much larger than the physical sphere so the central radiation remains visible at whole-graph scale.
 export const CORE_SUN_RADIUS = 18;
 export const CORE_SUN_GLOW_SCALE = 6;
+export const CORE_SUN_COLOR = 0xFFFFFF;
 export const CORE_SUN_LIGHT_INTENSITY = 24;
-export const CORE_SUN_LIGHT_DISTANCE = LAYER_BANDS.outer.rMax * 1.8;
-export const CORE_AMBIENT_LIGHT_INTENSITY = 0.24;
+// distance=0 is required by Three.js for pure inverse-square attenuation without an artificial cutoff.
+export const CORE_SUN_LIGHT_DISTANCE = 0;
+export const CORE_SUN_LIGHT_DECAY = 2;
+// Shadow reach is independent from PointLight.distance so physical attenuation can remain unbounded.
+export const CORE_SUN_SHADOW_FAR = LAYER_BANDS.outer.rMax * 1.8;
+// No uniform ambient contribution: apparent solar illumination is determined by distance and occlusion.
+export const CORE_AMBIENT_LIGHT_INTENSITY = 0;
 /** Legacy compatibility only. Camera distance no longer drives zoom. */
 export const SUN_REVEAL_CAM_Z = DEFAULT_CAM_Z / CORE_LABEL_REVEAL_ZOOM;
 export function isKnowledgeDomain(value: string): value is KnowledgeDomain { return ['logic','mathematics','physics','biology','chemistry','computer-science','economics','history','philosophy','general'].includes(value); }
