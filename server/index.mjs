@@ -30,9 +30,19 @@ async function readJson(req) {
   let body = '';
   for await (const chunk of req) {
     body += chunk;
-    if (body.length > 1_000_000) throw new Error('Request body too large');
+    if (body.length > 1_000_000) {
+      const error = new Error('Request body too large');
+      error.statusCode = 413;
+      throw error;
+    }
   }
-  return JSON.parse(body || '{}');
+  try {
+    return JSON.parse(body || '{}');
+  } catch {
+    const error = new Error('Invalid JSON');
+    error.statusCode = 400;
+    throw error;
+  }
 }
 
 function validNode(node) {
@@ -111,16 +121,31 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     if (await handleApi(req, res, url)) return;
-    let pathname = decodeURIComponent(url.pathname).replace(/^\/Knowledge-Ball\/?/, '/');
+    let pathname;
+    try {
+      pathname = decodeURIComponent(url.pathname).replace(/^\/Knowledge-Ball\/?/, '/');
+    } catch {
+      return send(res, 400, { error: 'Invalid URL encoding' });
+    }
     if (pathname === '/') pathname = '/index.html';
     const file = resolve(join(root, pathname));
     if (file !== root && !file.startsWith(`${root}${sep}`)) return send(res, 403, { error: 'Forbidden' });
     const content = await readFile(file);
-    const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }[extname(file)] ?? 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': `${mime}; charset=utf-8` });
+    const mime = {
+      '.html': 'text/html',
+      '.js': 'text/javascript',
+      '.css': 'text/css',
+      '.svg': 'image/svg+xml',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.apk': 'application/vnd.android.package-archive',
+    }[extname(file)] ?? 'application/octet-stream';
+    const textual = new Set(['.html', '.js', '.css', '.svg', '.json']).has(extname(file));
+    res.writeHead(200, { 'Content-Type': textual ? `${mime}; charset=utf-8` : mime });
     res.end(content);
   } catch (error) {
     if (error?.code === 'ENOENT') return send(res, 404, { error: 'Not found' });
+    if (Number.isInteger(error?.statusCode)) return send(res, error.statusCode, { error: error.message });
     console.error(error);
     send(res, 500, { error: 'Internal server error' });
   }
