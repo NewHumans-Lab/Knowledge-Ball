@@ -1,26 +1,29 @@
-import { DomainEvent, createEvent } from './Event';
-import { EventStore } from './EventStore';
-import { EventBus } from './EventBus';
+const TIME_BUCKET_MS = 5000;
 
-// Command 层：负责校验 + 生成事件，不直接改状态
-export interface CommandHandler<P> {
-  commandName: string;
-  validate(payload: P, currentState: unknown): void; // 校验失败抛异常
+async function sha256Hex(input: string): Promise<string> {
+  const enc = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(digest))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
-export class CommandDispatcher {
-  constructor(private store: EventStore, private bus: EventBus) {}
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const keys = Object.keys(value as object).sort();
+  const body = keys.map(k => `${JSON.stringify(k)}:${stableStringify((value as any)[k])}`).join(',');
+  return `{${body}}`;
+}
 
-  async dispatch<P>(
-    handler: CommandHandler<P>,
-    user: string,
-    payload: P,
-    currentState: unknown
-  ): Promise<DomainEvent<P>> {
-    handler.validate(payload, currentState); // 校验放在写入事件前，事件本身不可撤销
-    const event = createEvent(handler.commandName, user, payload);
-    const ok = await this.store.append(event);
-    if (ok) this.bus.publish(event);
-    return event;
-  }
+export async function fingerprint(type: string, payload: unknown, now = Date.now()): Promise<string> {
+  const bucket = Math.floor(now / TIME_BUCKET_MS);
+  const canonical = stableStringify({ type, payload, bucket });
+  return sha256Hex(canonical);
+}
+
+export interface CommandResult<E> {
+  ok: boolean;
+  event?: E;
+  error?: string;
 }

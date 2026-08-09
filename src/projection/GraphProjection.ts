@@ -1,82 +1,113 @@
-import { Projection } from './Projection';
-import { Graph } from '../graph/Graph';
-import { DomainEvent } from '../event/Event';
+import type { DomainEvent } from '../event/Event';
+import type { GraphState } from '../state/GraphState';
+import { emptyGraphState, nodeList } from '../state/GraphState';
+import type { Projection } from './Projection';
+import { cascadeReachable } from '../graph/Graph';
+import {
+  applyKnowledgeEdit,
+  type KnowledgeEdit,
+  type ProtocolNode,
+} from '../protocol/KnowledgeEditingProtocol';
 
-export class GraphProjection implements Projection<Graph> {
-  apply(graph: Graph, event: DomainEvent): Graph {
-    switch (event.command) {
-      case 'CreateNode': {
-        const p = event.payload as { nodeId: string; title: string; type: any; layer: string };
-        graph.addNode({
+let cascadeDepthLimit = Infinity;
+export function setCascadeDepthLimit(n: number | null) { cascadeDepthLimit = n ?? Infinity; }
+
+export class GraphProjection implements Projection<GraphState> {
+  state: GraphState = emptyGraphState();
+
+  reset(seed: GraphState): void { this.state = seed; }
+
+  hydrate(snapshotState: GraphState | null, eventsSinceSnapshot: DomainEvent[]): void {
+    this.state = snapshotState ? structuredClone(snapshotState) : emptyGraphState();
+    eventsSinceSnapshot.forEach(event => this.apply(event));
+  }
+
+  private applyKnowledgeEdit(edit: KnowledgeEdit): void {
+    const masteryById = new Map(nodeList(this.state).map(node => [node.id, node.mastery]));
+    const protocolNodes: ProtocolNode[] = nodeList(this.state).map(node => ({
+      id: node.id,
+      title: node.title,
+      type: node.type,
+      status: node.status,
+      reasoning: node.reasoning,
+      premises: [...node.premises],
+      hidden: node.hidden,
+      aliases: node.aliases ? [...node.aliases] : undefined,
+      supersededBy: node.supersededBy,
+      logicRuleId: node.logicRuleId,
+      negatedBy: node.negatedBy ? [...node.negatedBy] : undefined,
+      semanticKey: node.semanticKey,
+    }));
+    const result = applyKnowledgeEdit(protocolNodes, edit);
+    if (result.errors.length) {
+      throw new Error(`Invalid ${edit.kind} event: ${result.errors.join('；')}`);
+    }
+
+    this.state.nodesById = Object.fromEntries(result.nodes.map(node => [
+      node.id,
+      {
+        ...node,
+        mastery: masteryById.get(node.id) ?? 'none',
+        premises: [...node.premises],
+      },
+    ]));
+  }
+
+  apply(event: DomainEvent): void {
+    if (event.schemaVersion !== 1) console.warn(`[GraphProjection] unhandled schemaVersion ${event.schemaVersion} on ${event.type}`);
+    switch (event.type) {
+      case 'NodeCreated': {
+        const p = event.payload;
+        this.state.nodesById[p.nodeId] = {
           id: p.nodeId,
           title: p.title,
-          type: p.type,
-          layer: p.layer,
-          status: 'Draft',
-          createdAt: event.timestamp,
-          updatedAt: event.timestamp,
-        });
-        return graph;
+          type: p.nodeType,
+          status: p.initialStatus ?? 'pending',
+          mastery: p.initialMastery ?? 'none',
+          reasoning: p.reasoning,
+          premises: [...p.premises],
+          hidden: p.hidden ?? false,
+          aliases: p.aliases ? [...p.aliases] : undefined,
+          supersededBy: p.supersededBy,
+          logicRuleId: p.logicRuleId,
+          negatedBy: p.negatedBy ? [...p.negatedBy] : undefined,
+          semanticKey: p.semanticKey,
+        };
+        break;
       }
-
-      case 'RenameNode': {
-        const p = event.payload as { nodeId: string; title: string };
-        const node = graph.nodes.get(p.nodeId);
-        if (node) {
-          node.title = p.title;
-          node.updatedAt = event.timestamp;
+      case 'NodeEdited': {
+        const p = event.payload;
+        const n = this.state.nodesById[p.nodeId];
+        if (!n) break;
+        if (p.title !== undefined) n.title = p.title;
+        if (p.nodeType !== undefined) n.type = p.nodeType;
+        if (p.reasoning !== undefined) n.reasoning = p.reasoning;
+        if (p.premises !== undefined) n.premises = [...p.premises];
+        break;
+      }
+      case 'NodeFalsified': {
+        const n = this.state.nodesById[event.payload.nodeId];
+        if (n) {
+          n.status = 'falsified';
+          n.hidden = true;
         }
-        return graph;
+        break;
       }
-
-      case 'VerifyNode': {
-        const p = event.payload as { nodeId: string };
-        const node = graph.nodes.get(p.nodeId);
-        if (node) {
-          node.status = 'Verified';
-          node.updatedAt = event.timestamp;
-        }
-        return graph;
+      case 'NodeSuspended': { const n = this.state.nodesById[event.payload.nodeId]; if (n && n.status !== 'falsified') n.status = 'suspended'; break; }
+      case 'NodeResolved': { const n = this.state.nodesById[event.payload.nodeId]; if (n && n.status !== 'falsified') n.status = 'verified'; break; }
+      case 'NodeDisputed': { const n = this.state.nodesById[event.payload.nodeId]; if (n) n.status = 'disputed'; break; }
+      case 'NodeMasterySet': { const n = this.state.nodesById[event.payload.nodeId]; if (n) n.mastery = event.payload.mastery; break; }
+      case 'KnowledgeAdded':
+      case 'KnowledgeNegated':
+      case 'KnowledgeDecomposed':
+      case 'KnowledgeMerged': {
+        this.applyKnowledgeEdit(event.payload.edit);
+        break;
       }
-
-      case 'SuspendNode': {
-        // 级联失效：这是你架构里最有价值也最危险的部分
-        const p = event.payload as { nodeId: string; reason: string };
-        this.cascadeSuspend(graph, p.nodeId, p.reason, event.timestamp, new Set());
-        return graph;
-      }
-
-      case 'AddEdge': {
-        const p = event.payload as { edgeId: string; from: string; to: string; type: any };
-        graph.addEdge({ id: p.edgeId, from: p.from, to: p.to, type: p.type });
-        return graph;
-      }
-
-      default:
-        return graph; // 未知事件类型直接忽略，不抛异常，保证 replay 不中断
     }
   }
 
-  // 深度优先级联失效 + 环检测（visited）。你原设计完全没提环的处理，
-  // 知识图谱里 A 依赖 B、B 又间接依赖 A 完全可能出现，不做 visited 会死循环
-  private cascadeSuspend(
-    graph: Graph,
-    nodeId: string,
-    reason: string,
-    ts: number,
-    visited: Set<string>
-  ) {
-    if (visited.has(nodeId)) return;
-    visited.add(nodeId);
-
-    const node = graph.nodes.get(nodeId);
-    if (!node) return;
-    node.status = 'Suspended';
-    node.suspendedReason = reason;
-    node.updatedAt = ts;
-
-    for (const depId of graph.getDependents(nodeId)) {
-      this.cascadeSuspend(graph, depId, `upstream:${nodeId}`, ts, visited);
-    }
+  reachableForCascade(fromNodeId: string): { ids: string[]; truncated: boolean } {
+    return cascadeReachable(fromNodeId, nodeList(this.state), cascadeDepthLimit);
   }
 }

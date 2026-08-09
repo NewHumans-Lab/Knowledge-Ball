@@ -1,13 +1,17 @@
-export type NodeStatus = 'Draft' | 'Verified' | 'Suspended';
-export type NodeType = 'Axiom' | 'Hypothesis' | 'Theorem' | 'Fact';
+import type { NodeType, NodeStatus, Mastery } from '../event/Event';
 
-export interface KnowledgeNode {
+export interface GraphNode {
   id: string;
   title: string;
   type: NodeType;
-  layer: string;
   status: NodeStatus;
-  suspendedReason?: string;
-  createdAt: number;
-  updatedAt: number;
+  mastery: Mastery;
+  reasoning: string;
+  premises: string[];
+  hidden?: boolean;
+  aliases?: string[];
+  supersededBy?: string;
+  logicRuleId?: string;
+  negatedBy?: string[];
+  semanticKey?: string;
 }

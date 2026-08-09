@@ -1,29 +1,44 @@
-import { KnowledgeNode } from './Node';
-import { KnowledgeEdge } from './Edge';
+import type { GraphNode } from './Node';
+import type { GraphEdge } from './Edge';
 
-export class Graph {
-  nodes = new Map<string, KnowledgeNode>();
-  edges = new Map<string, KnowledgeEdge>();
+export function edgesFrom(nodes: GraphNode[]): GraphEdge[] {
+  const edges: GraphEdge[] = [];
+  nodes.forEach(n => {
+    n.premises.forEach(p => edges.push({ from: p, to: n.id }));
+    if (n.logicRuleId) edges.push({ from: n.logicRuleId, to: n.id });
+  });
+  return edges;
+}
 
-  // 反向依赖索引：谁依赖了这个节点。Suspend 级联失效必须靠这个，
-  // 否则每次 Invalidate 都要全图扫描，节点一多就是 O(n) 灾难
-  private dependents = new Map<string, Set<string>>();
+export function dependentsOf(nodeId: string, nodes: GraphNode[]): GraphNode[] {
+  return nodes.filter(n => n.premises.includes(nodeId) || n.logicRuleId === nodeId);
+}
 
-  addNode(node: KnowledgeNode) {
-    this.nodes.set(node.id, node);
-  }
+export function cascadeReachable(
+  startId: string,
+  nodes: GraphNode[],
+  depthLimit = Infinity
+): { ids: string[]; truncated: boolean } {
+  const visited = new Set<string>([startId]);
+  let frontier = [startId];
+  let depth = 0;
+  let truncated = false;
 
-  addEdge(edge: KnowledgeEdge) {
-    this.edges.set(edge.id, edge);
-    if (edge.type === 'DependsOn') {
-      if (!this.dependents.has(edge.to)) {
-        this.dependents.set(edge.to, new Set());
+  while (frontier.length > 0 && depth < depthLimit) {
+    depth++;
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const dep of dependentsOf(id, nodes)) {
+        if (!visited.has(dep.id)) {
+          visited.add(dep.id);
+          next.push(dep.id);
+        }
       }
-      this.dependents.get(edge.to)!.add(edge.from);
     }
+    frontier = next;
   }
+  if (frontier.length > 0 && depth >= depthLimit) truncated = true;
 
-  getDependents(nodeId: string): string[] {
-    return Array.from(this.dependents.get(nodeId) ?? []);
-  }
+  visited.delete(startId);
+  return { ids: Array.from(visited), truncated };
 }

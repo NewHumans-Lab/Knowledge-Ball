@@ -1,22 +1,37 @@
-import { CommandHandler } from '../event/Command';
-import { Graph } from '../graph/Graph';
+import { fingerprint } from '../event/Command';
+import { CURRENT_SCHEMA_VERSION, type NodeCreatedEvent, type NodeType } from '../event/Event';
+import type { EventStore } from '../event/EventStore';
+import type { GraphState } from '../state/GraphState';
 
 export interface CreateNodePayload {
   nodeId: string;
   title: string;
-  type: string;
-  layer: string;
+  nodeType: NodeType;
+  reasoning: string;
+  premises: string[];
+  initialStatus?: import('../event/Event').NodeStatus;
+  initialMastery?: import('../event/Event').Mastery;
+  source?: 'import';
+  hidden?: boolean;
+  aliases?: string[];
+  supersededBy?: string;
+  logicRuleId?: string;
+  negatedBy?: string[];
+  semanticKey?: string;
 }
 
-export const CreateNode: CommandHandler<CreateNodePayload> = {
-  commandName: 'CreateNode',
-  validate(payload, state) {
-    const graph = state as Graph;
-    if (graph.nodes.has(payload.nodeId)) {
-      throw new Error(`Node ${payload.nodeId} already exists`);
-    }
-    if (!payload.title?.trim()) {
-      throw new Error('title required');
-    }
-  },
-};
+export async function createNode(
+  store: EventStore<GraphState>,
+  payload: CreateNodePayload
+): Promise<NodeCreatedEvent> {
+  const id = await fingerprint('NodeCreated', payload);
+  const event: NodeCreatedEvent = {
+    id,
+    type: 'NodeCreated',
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    timestamp: Date.now(),
+    payload,
+  };
+  store.append(event);
+  return event;
+}
