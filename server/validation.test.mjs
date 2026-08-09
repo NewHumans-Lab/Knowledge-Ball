@@ -46,3 +46,31 @@ test('cycle detection includes premises and logic rule', () => {
 test('public payload rejects personal mastery', () => {
   assert.equal(code(validateNodeBatch([], [node('a', 'A', 'fact', 'A text', [], { mastery: 'mastered' })])), 'PERSONAL_STATE_IN_PUBLIC_PAYLOAD');
 });
+
+test('public persistence rejects personal mastery state', () => {
+  assert.equal(
+    code(validateNodeBatch([], [node('public', 'Public node', 'fact', 'Public description', [], { mastery: 'mastered' })])),
+    'PERSONAL_STATE_IN_PUBLIC_PAYLOAD',
+  );
+});
+
+test('batch updates cannot converge two records onto the same normalized value', () => {
+  const existing = [
+    node('a', 'Node A', 'fact', 'Description A'),
+    node('b', 'Node B', 'fact', 'Description B'),
+  ];
+  assert.equal(
+    code(validateNodeBatch(existing, [
+      { ...existing[0], title: 'Shared title', version: 2 },
+      { ...existing[1], title: '  SHARED   TITLE  ', version: 2 },
+    ])),
+    'DUPLICATE_TITLE',
+  );
+  assert.equal(
+    code(validateNodeBatch(existing, [
+      { ...existing[0], reasoning: 'Shared description', version: 2 },
+      { ...existing[1], reasoning: 'Ｓｈａｒｅｄ description', version: 2 },
+    ])),
+    'DUPLICATE_CONTENT',
+  );
+});

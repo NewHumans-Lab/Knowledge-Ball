@@ -49,7 +49,10 @@ export class GitHubKnowledgeGateway implements KnowledgeRepository {
   }
 
   async saveNodes(nodes: KnowledgeNodeRecord[]): Promise<void> {
-    const publicNodes = nodes.map(({ mastery: _personalMastery, ...node }) => node);
+    const publicNodes = nodes.map(record => {
+      const { mastery: _personalMastery, ...node } = record as KnowledgeNodeRecord & { mastery?: unknown };
+      return node;
+    });
     await this.request<void>('/nodes', {
       method: 'POST',
       body: JSON.stringify({

@@ -32,7 +32,6 @@ export interface KnowledgeNodeRecord {
   title: string;
   type: KnowledgeNodeType;
   status: KnowledgeNodeStatus;
-  mastery: KnowledgeMastery;
   reasoning: string;
   premises: string[];
   tags: string[];
@@ -71,7 +70,6 @@ export function buildKnowledgeNodeRecord(
     title: normalized.title.trim(),
     type: normalized.type,
     status: 'pending',
-    mastery: 'none',
     reasoning: normalized.reasoning.trim(),
     premises: normalized.premises ?? [],
     tags: normalized.tags ?? [],
@@ -99,10 +97,6 @@ export function validateKnowledgeNodeRecord(node: KnowledgeNodeRecord): string[]
 
   if (!['pending', 'verified', 'suspended', 'disputed', 'falsified'].includes(node.status)) {
     errors.push(`Invalid status: ${node.status}`);
-  }
-
-  if (!['none', 'touched', 'mastered'].includes(node.mastery)) {
-    errors.push(`Invalid mastery: ${node.mastery}`);
   }
 
   if (!Array.isArray(node.premises)) errors.push('premises must be an array');

@@ -120,7 +120,11 @@ function indexNodes(nodes: ProtocolNode[]): Map<string, ProtocolNode> {
 }
 
 function active(node: ProtocolNode | undefined): boolean {
-  return Boolean(node && !node.hidden && !node.supersededBy && node.status !== 'falsified');
+  return Boolean(node && !node.hidden && !node.supersededBy && node.status !== 'falsified' && node.status !== 'suspended');
+}
+
+function validOrdinaryPremise(node: ProtocolNode | undefined): boolean {
+  return active(node) && node!.type !== 'reasoning' && node!.type !== 'logic-symbol';
 }
 
 function nodeFromDraft(draft: NewProtocolNode, premises: string[]): ProtocolNode {
@@ -215,6 +219,7 @@ export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningCh
     const premise = byId.get(id);
     if (!premise) errors.push(`前提不存在: ${id}`);
     else if (!active(premise)) errors.push(`前提当前不可用: ${id}`);
+    else if (!validOrdinaryPremise(premise)) errors.push(`普通知识结论前提不能是 reasoning 或 logic-symbol: ${id}`);
   }
 
   if (!reasoning) errors.push(`推理过程不存在: ${chain.reasoningId}`);
@@ -232,7 +237,9 @@ export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningCh
   else {
     if (!active(conclusion)) errors.push(`结论当前不可用: ${conclusion.id}`);
     if (conclusion.type === 'reasoning') errors.push('推理链结论不能是 reasoning 类型');
-    if (!conclusion.premises.includes(chain.reasoningId)) errors.push('结论必须直接依赖推理过程节点');
+    if (conclusion.premises.length !== 1 || conclusion.premises[0] !== chain.reasoningId) {
+      errors.push('结论必须直接且只依赖一个推理过程节点');
+    }
   }
   return errors;
 }
@@ -254,6 +261,7 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
         const premise = byId.get(id);
         if (!premise) errors.push(`所需前提不存在: ${id}`);
         else if (!active(premise)) errors.push(`所需前提当前不可用: ${id}`);
+        else if (!validOrdinaryPremise(premise)) errors.push(`所需的普通知识结论前提不能是 reasoning 或 logic-symbol: ${id}`);
         else if (premise.type === 'reasoning' || premise.type === 'logic-symbol') errors.push(`所需前提必须是普通知识结论: ${id}`);
       }
       if (edit.reasoning.type !== 'reasoning') errors.push('新增推理过程必须是 reasoning 类型');
