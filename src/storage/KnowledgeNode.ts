@@ -6,7 +6,8 @@ export type KnowledgeNodeType =
   | 'hypothesis'
   | 'prediction'
   | 'opinion'
-  | 'value';
+  | 'value'
+  | 'reasoning';
 
 export type KnowledgeNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 export type KnowledgeMastery = 'none' | 'touched' | 'mastered';
@@ -91,7 +92,7 @@ export function validateKnowledgeNodeRecord(node: KnowledgeNodeRecord): string[]
   if (!node.reasoning.trim()) errors.push('Missing reasoning');
 
   if (!node.domain) errors.push('Missing domain');
-  if (!['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value'].includes(node.type)) {
+  if (!['axiom', 'definition', 'fact', 'theorem', 'hypothesis', 'prediction', 'opinion', 'value', 'reasoning'].includes(node.type)) {
     errors.push(`Invalid type: ${node.type}`);
   }
 

@@ -13,6 +13,7 @@
     "src/graph/**/*.ts",
     "src/projection/**/*.ts",
     "src/state/**/*.ts",
-    "src/persistence/**/*.ts"
+    "src/persistence/**/*.ts",
+    "src/protocol/**/*.ts"
   ]
 }
