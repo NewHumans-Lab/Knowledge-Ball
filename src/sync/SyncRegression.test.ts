@@ -72,6 +72,18 @@ const reloaded = client(remote, a.storage, a.persistence);
 await reloaded.engine.sync();
 assert.equal(remote.pushes.length, pushesBeforeReload, 'acknowledged events are not repushed after reload');
 
+const preexistingRemote = new RemoteStream();
+const preexistingProjection = new GraphProjection();
+const preexistingPersistence = new MemoryPersistence();
+const preexistingStore = new EventStore<GraphState>(() => structuredClone(preexistingProjection.state), preexistingPersistence);
+preexistingStore.subscribe(event => preexistingProjection.apply(event));
+await createNode(preexistingStore, { nodeId: 'before-engine', title: 'Created before engine', nodeType: 'fact', reasoning: '', premises: [] });
+const preexistingEngine = new SyncEngine(preexistingStore, preexistingRemote, new SyncMetadataStore(new MemoryStorage()));
+assert.equal(preexistingEngine.pendingCount(), 1, 'public events created before SyncEngine construction are reconciled into pending');
+await preexistingEngine.sync();
+assert.equal(preexistingRemote.events.length, 1, 'preexisting public event is uploaded on first hosted sync');
+assert.equal(preexistingEngine.pendingCount(), 0, 'preexisting public event is acknowledged after upload');
+
 const duplicate = remote.events[0];
 await remote.push([duplicate], String(remote.events.length));
 assert.equal(remote.events.filter(event => event.id === duplicate.id).length, 1, 'duplicate append is idempotent');
