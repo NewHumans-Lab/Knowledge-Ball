@@ -4,6 +4,11 @@ import { access, readFile } from 'node:fs/promises';
 const app = await readFile('src/ui/app.ts', 'utf8');
 const sources = await Promise.all(['src/ui/app.ts', 'vite.config.ts', 'package.json'].map(file => readFile(file, 'utf8')));
 assert.match(app, /new SyncEngine\(/, 'web runtime must instantiate SyncEngine');
+assert.match(app, /initializeSyncEngine\(\);/, 'web runtime must initialize hosted sync explicitly');
+assert.ok(
+  app.indexOf('initializeSyncEngine();') < app.indexOf('void seedDemoData()'),
+  'hosted sync must initialize before demo seeding so seed failures cannot disable remote sync',
+);
 assert.doesNotMatch(app, /saveNode|KnowledgeNodeRecord|KnowledgeRepository/, 'app must not persist node snapshots');
 assert.ok(sources.every(source => !source.includes('GitHubKnowledgeGateway')), 'legacy gateway must not be referenced');
 assert.ok(sources.every(source => !source.includes('/api/knowledge')), 'legacy API must not be referenced');

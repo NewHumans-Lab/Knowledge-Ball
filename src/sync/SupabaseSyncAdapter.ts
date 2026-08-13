@@ -2,10 +2,18 @@ import { isPublicKnowledgeEvent, type DomainEvent, type PublicKnowledgeEvent } f
 import { RemoteHeadConflictError, type PushResult, type SyncAdapter, type SyncBatch } from './SyncAdapter';
 import type { StorageLike } from '../persistence/KnowledgePersistence';
 
-interface SupabaseConfig { url: string; publishableKey: string; pageSize?: number; storage?: StorageLike; fetch?: typeof fetch; }
+interface SupabaseConfig { url: string; publishableKey: string; pageSize?: number; storage?: StorageLike | null; fetch?: typeof fetch; }
 interface Session { access_token: string; expires_at?: number; }
 interface EventRow { sequence: number; envelope: DomainEvent; }
 const SESSION_KEY = 'knowledge-ball.supabase-session.v1';
+
+function browserStorage(): StorageLike | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 export class SupabaseSyncAdapter implements SyncAdapter {
   private readonly request: typeof fetch;
@@ -62,11 +70,12 @@ export class SupabaseSyncAdapter implements SyncAdapter {
   }
 
   private async session(): Promise<Session> {
-    const storage = this.config.storage ?? localStorage;
+    const storage = this.config.storage === undefined ? browserStorage() : this.config.storage;
     try {
-      const saved = JSON.parse(storage.getItem(SESSION_KEY) ?? 'null') as Session | null;
+      const saved = JSON.parse(storage?.getItem(SESSION_KEY) ?? 'null') as Session | null;
       if (saved?.access_token && (!saved.expires_at || saved.expires_at > Date.now() / 1000 + 60)) return saved;
     } catch { /* create a fresh anonymous identity */ }
+
     const response = await this.request(`${this.config.url.replace(/\/$/, '')}/auth/v1/signup`, {
       method: 'POST', headers: { apikey: this.config.publishableKey, 'Content-Type': 'application/json' }, body: '{}',
     });
@@ -74,7 +83,7 @@ export class SupabaseSyncAdapter implements SyncAdapter {
     const result = await response.json() as { access_token?: string; expires_in?: number };
     if (!result.access_token) throw new Error('Supabase anonymous authentication returned no access token');
     const session = { access_token: result.access_token, expires_at: Math.floor(Date.now() / 1000) + (result.expires_in ?? 3600) };
-    storage.setItem(SESSION_KEY, JSON.stringify(session));
+    try { storage?.setItem(SESSION_KEY, JSON.stringify(session)); } catch { /* ephemeral session remains usable */ }
     return session;
   }
 }
