@@ -11,6 +11,7 @@ export async function disputeNode(
   const event: NodeDisputedEvent = {
     id,
     type: 'NodeDisputed',
+    scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
     payload,
