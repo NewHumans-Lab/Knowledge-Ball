@@ -63,7 +63,7 @@ export class GraphProjection implements Projection<GraphState> {
           title: p.title,
           type: p.nodeType,
           status: p.initialStatus ?? 'pending',
-          mastery: p.initialMastery ?? 'none',
+          mastery: 'none',
           reasoning: p.reasoning,
           premises: [...p.premises],
           hidden: p.hidden ?? false,

@@ -17,9 +17,9 @@ import {
   type MergeEdit,
   type NegateEdit,
 } from '../protocol/KnowledgeEditingProtocol';
-import { GitHubKnowledgeGateway } from '../storage/GitHubKnowledgeGateway';
-import type { KnowledgeNodeRecord } from '../storage/KnowledgeNode';
-import { supportsSharedKnowledgeApi } from '../storage/HostingEnvironment';
+import type { PublicKnowledgeEvent } from '../event/Event';
+import { SyncEngine } from '../sync/SyncEngine';
+import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
 
 import {
   TWIN_META,
@@ -57,16 +57,12 @@ const store = new EventStore(
   undefined,
   event => validateDomainEventAgainstState(event, projection.state),
 );
-const knowledgeRepository = supportsSharedKnowledgeApi(window.location.hostname)
-  ? new GitHubKnowledgeGateway({ endpoint: '/api/knowledge', namespace: 'public' })
-  : null;
-const sharedRecords = new Map<string, KnowledgeNodeRecord>();
-
 let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
 let panel: PanelController;
 let interaction: InteractionController;
 let currentPanelId: string | null = null;
+let syncEngine: SyncEngine<typeof projection.state> | null = null;
 
 function must<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -210,101 +206,14 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
           reasoning: payload.description,
         },
       };
-  await applyAndPersistKnowledgeEdit(edit);
+  await applyKnowledgeEdit(edit);
   currentPanelId = conclusionId;
   panel.openNodePanel(conclusionId);
   scene.markDirty();
 }
 
-async function importKnowledgeNode(node: KnowledgeNodeRecord): Promise<void> {
-  sharedRecords.set(node.id, node);
-  if (projection.state.nodesById[node.id]) return;
-  await seedNode(node.id, node.title, node.type, node.reasoning, node.premises, {
-    initialStatus: node.status,
-    initialMastery: 'none',
-    source: 'import',
-    hidden: node.hidden,
-    aliases: node.aliases,
-    supersededBy: node.supersededBy,
-    logicRuleId: node.logicRuleId,
-    negatedBy: node.negatedBy,
-    semanticKey: node.semanticKey,
-  });
-}
-
-async function loadSharedKnowledge(): Promise<void> {
-  if (!knowledgeRepository) return;
-  const nodes = await knowledgeRepository.listNodes();
-  for (const node of nodes) await importKnowledgeNode(node);
-}
-
-function projectionSignatures(): Map<string, string> {
-  return new Map(nodeList(projection.state).map(node => [node.id, JSON.stringify(node)]));
-}
-
-async function persistProjectedNodes(ids: Iterable<string>): Promise<void> {
-  if (!knowledgeRepository) return;
-  const idsToPersist = new Set(ids);
-  const queue = [...idsToPersist];
-  while (queue.length) {
-    const id = queue.shift()!;
-    const node = projection.state.nodesById[id];
-    if (!node) continue;
-    const references = [
-      ...node.premises,
-      ...(node.logicRuleId ? [node.logicRuleId] : []),
-      ...(node.supersededBy ? [node.supersededBy] : []),
-      ...(node.negatedBy ?? []),
-    ];
-    for (const referenceId of references) {
-      if (sharedRecords.has(referenceId) || idsToPersist.has(referenceId)) continue;
-      idsToPersist.add(referenceId);
-      queue.push(referenceId);
-    }
-  }
-  const records: KnowledgeNodeRecord[] = [];
-  for (const id of idsToPersist) {
-    const node = projection.state.nodesById[id];
-    if (!node) continue;
-    const previous = sharedRecords.get(id);
-    const now = new Date().toISOString();
-    records.push({
-      id: node.id,
-      title: node.title,
-      type: node.type,
-      status: node.status,
-      reasoning: node.reasoning,
-      premises: [...node.premises],
-      tags: previous?.tags ?? [],
-      domain: previous?.domain ?? 'general',
-      version: (previous?.version ?? 0) + 1,
-      createdAt: previous?.createdAt ?? now,
-      updatedAt: now,
-      author: previous?.author,
-      hidden: node.hidden ?? false,
-      aliases: node.aliases ? [...node.aliases] : undefined,
-      supersededBy: node.supersededBy,
-      logicRuleId: node.logicRuleId,
-      negatedBy: node.negatedBy ? [...node.negatedBy] : undefined,
-      semanticKey: node.semanticKey,
-    });
-  }
-  if (records.length === 0) return;
-  await knowledgeRepository.saveNodes(records);
-  for (const record of records) sharedRecords.set(record.id, record);
-}
-
-async function persistProjectedNode(id: string): Promise<void> {
-  await persistProjectedNodes([id]);
-}
-
-async function applyAndPersistKnowledgeEdit(edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit): Promise<void> {
-  const before = projectionSignatures();
+async function applyKnowledgeEdit(edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit): Promise<void> {
   await executeKnowledgeEdit(store, projection, edit);
-  const changed = nodeList(projection.state)
-    .filter(node => before.get(node.id) !== JSON.stringify(node))
-    .map(node => node.id);
-  await persistProjectedNodes(changed);
 }
 
 async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<void> {
@@ -323,7 +232,6 @@ async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<
     nodeType: payload.type,
     reasoning: payload.reasoning,
   });
-  await persistProjectedNode(id);
 }
 
 async function negateKnowledgeNode(id: string, payload: NegateNodePayload): Promise<void> {
@@ -344,7 +252,7 @@ async function negateKnowledgeNode(id: string, payload: NegateNodePayload): Prom
         }
       : undefined,
   };
-  await applyAndPersistKnowledgeEdit(edit);
+  await applyKnowledgeEdit(edit);
   currentPanelId = null;
 }
 
@@ -372,7 +280,7 @@ async function decomposeKnowledgeNode(id: string, payload: DecomposeNodePayload)
       reasoning: item.description,
     })),
   };
-  await applyAndPersistKnowledgeEdit(edit);
+  await applyKnowledgeEdit(edit);
   currentPanelId = null;
 }
 
@@ -389,7 +297,7 @@ async function mergeDefinitions(payload: MergeDefinitionPayload): Promise<void> 
       reasoning: payload.mergedDefinition.description,
     },
   };
-  await applyAndPersistKnowledgeEdit(edit);
+  await applyKnowledgeEdit(edit);
   currentPanelId = null;
 }
 
@@ -427,44 +335,20 @@ async function mergeTheories(payload: MergeTheoryPayload): Promise<void> {
       reasoning: payload.mergedConclusion.description,
     },
   };
-  await applyAndPersistKnowledgeEdit(edit);
+  await applyKnowledgeEdit(edit);
   currentPanelId = null;
 }
 
 async function resolveKnowledgeNode(id: string): Promise<void> {
   await cmdResolveNode(store, { nodeId: id });
-  await persistProjectedNode(id);
 }
 
 async function disputeKnowledgeNode(id: string): Promise<void> {
   await cmdDisputeNode(store, { nodeId: id });
-  await persistProjectedNode(id);
 }
 
 async function setKnowledgeMastery(id: string, mastery: 'none' | 'touched' | 'mastered'): Promise<void> {
   await cmdSetMastery(store, { nodeId: id, mastery });
-}
-
-async function seedNode(
-  nodeId: string,
-  title: string,
-  nodeType: KnowledgeNodeType,
-  reasoning: string,
-  premises: string[] = [],
-  metadata: Pick<KnowledgeNodeRecord, 'hidden' | 'aliases' | 'supersededBy' | 'logicRuleId' | 'negatedBy' | 'semanticKey'> & {
-    initialStatus?: KnowledgeNodeRecord['status'];
-    initialMastery?: KnowledgeMastery;
-    source?: 'import';
-  } = {},
-): Promise<void> {
-  await cmdCreateNode(store, {
-    nodeId,
-    title,
-    nodeType,
-    reasoning,
-    premises,
-    ...metadata,
-  });
 }
 
 async function seedDemoData(): Promise<void> {
@@ -576,9 +460,9 @@ store.subscribe((event) => {
   syncNodesFromProjection();
   scene.markDirty();
 
-  if (currentPanelId) {
-    panel.openNodePanel(currentPanelId);
-  }
+  if (currentPanelId) panel.openNodePanel(currentPanelId);
+  if (syncEngine && event.scope === 'public') void syncEngine.sync().catch(error =>
+    console.warn('[Knowledge-Ball] background sync deferred:', error));
 });
 
 syncNodesFromProjection();
@@ -635,21 +519,40 @@ sendButton?.addEventListener('click', () => {
 
 interaction.setHideUntouched(false);
 
-void loadSharedKnowledge()
-  .catch(err => {
-    console.error('[Knowledge-Ball] shared knowledge load failed:', err);
-    panel.showToast('共享知识服务暂不可用，当前显示演示数据。');
-  })
-  .then(() => seedDemoData())
+function validateRemoteEvent(event: PublicKnowledgeEvent, rebaseBase?: readonly import('../event/Event').DomainEvent[]): string | null {
+  let state = projection.state;
+  if (rebaseBase) {
+    const rebasedProjection = new GraphProjection();
+    for (const baseEvent of rebaseBase) rebasedProjection.apply(baseEvent);
+    state = rebasedProjection.state;
+  }
+  const errors = validateDomainEventAgainstState(event, state);
+  return errors[0] ?? null;
+}
+
+void seedDemoData()
   .then(() => {
+    syncEngine = new SyncEngine(store, createProductionSyncAdapter(), undefined, validateRemoteEvent);
+    syncEngine.subscribe((status, failures) => {
+      document.documentElement.dataset.syncStatus = status;
+      const settingsButton = opt<HTMLButtonElement>('btnSettings');
+      if (settingsButton) settingsButton.title = status === 'unavailable' ? '同步未配置 · 当前为本地模式' : `同步状态：${status}`;
+      if (status === 'unavailable') panel.showToast('未配置远程同步，当前为本地模式');
+      if (status === 'conflict' && failures.length) panel.showToast(`同步冲突：${failures.length} 个本地事件需要处理`);
+    });
     syncNodesFromProjection();
     scene.markDirty();
     scene.start();
+    void syncEngine.sync().catch(error => console.warn('[Knowledge-Ball] startup sync unavailable; using local data:', error));
   })
-  .catch(err => {
-    console.error('[Knowledge-Ball] seed failed:', err);
+  .catch(error => {
+    console.error('[Knowledge-Ball] seed failed:', error);
     scene.start();
   });
+
+window.addEventListener('online', () => {
+  void syncEngine?.sync().catch(error => console.warn('[Knowledge-Ball] reconnect sync deferred:', error));
+});
 
 window.addEventListener('resize', () => {
   scene.resize();
@@ -666,4 +569,5 @@ void setupMobileShell();
   interaction,
   panel,
   scene,
+  get syncEngine() { return syncEngine; },
 };

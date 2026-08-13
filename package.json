@@ -5,15 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node server/index.mjs",
-    "start": "npm run build && node server/index.mjs",
     "build": "tsc && vite build",
-    "test": "npm run test:domain && npm run test:protocol && npm run test:protocol-adversarial && npm run test:knowledge-edits && npm run test:demo && npm run test:edit-ui && npm run test:persistence && npm run test:gateway && npm run test:hosting && npm run test:scene && npm run test:core-sun && npm run test:mobile && npm run test:download && npm run test:server",
+    "test": "npm run test:domain && npm run test:protocol && npm run test:protocol-adversarial && npm run test:knowledge-edits && npm run test:demo && npm run test:edit-ui && npm run test:persistence && npm run test:sync && npm run test:architecture && npm run test:scene && npm run test:core-sun",
     "test:domain": "npx esbuild src/domain/KnowledgeModel.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-model.mjs && node .test-dist/knowledge-model.mjs && npx esbuild src/domain/KnowledgeMigration.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-migration.mjs && node .test-dist/knowledge-migration.mjs",
-    "test:server": "node --test server/*.test.mjs",
     "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json --noEmit && npx esbuild src/persistence/PersistenceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/persistence-regression.mjs && node .test-dist/persistence-regression.mjs",
-    "test:gateway": "npx esbuild src/storage/GitHubKnowledgeGatewayRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/gateway-regression.mjs && node .test-dist/gateway-regression.mjs",
-    "test:hosting": "npx esbuild src/storage/HostingEnvironmentRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/hosting-environment-regression.mjs && node .test-dist/hosting-environment-regression.mjs",
     "test:scene": "npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/scene-regression.mjs && node .test-dist/scene-regression.mjs",
     "test:core-sun": "npx esbuild src/ui/scene/CoreSunVisualRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/core-sun-regression.mjs && node .test-dist/core-sun-regression.mjs",
     "test:mobile": "npx esbuild src/mobile/MobileShellRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/mobile-shell-regression.mjs && node .test-dist/mobile-shell-regression.mjs",
@@ -30,7 +25,9 @@
     "test:protocol-adversarial": "npx esbuild src/protocol/ProtocolAdversarialRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/protocol-adversarial-regression.mjs && node .test-dist/protocol-adversarial-regression.mjs",
     "test:knowledge-edits": "npx esbuild src/protocol/KnowledgeEditEventRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-edit-event-regression.mjs && node .test-dist/knowledge-edit-event-regression.mjs",
     "test:edit-ui": "npx esbuild src/ui/KnowledgeEditUiRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-edit-ui-regression.mjs && node .test-dist/knowledge-edit-ui-regression.mjs",
-    "test:demo": "npx esbuild src/demo/seedDemoKnowledge.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/demo-knowledge-regression.mjs && node .test-dist/demo-knowledge-regression.mjs"
+    "test:demo": "npx esbuild src/demo/seedDemoKnowledge.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/demo-knowledge-regression.mjs && node .test-dist/demo-knowledge-regression.mjs",
+    "test:sync": "npx esbuild src/sync/SyncRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/sync-regression.mjs && node .test-dist/sync-regression.mjs",
+    "test:architecture": "node scripts/verify-scheme7-architecture.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.8",

@@ -11,6 +11,7 @@ export async function suspendNode(
   const event: NodeSuspendedEvent = {
     id,
     type: 'NodeSuspended',
+    scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
     payload: { nodeId: payload.nodeId, causeNodeId: payload.nodeId },

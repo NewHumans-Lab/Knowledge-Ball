@@ -28,6 +28,7 @@ export async function createNode(
   const event: NodeCreatedEvent = {
     id,
     type: 'NodeCreated',
+    scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
     payload,

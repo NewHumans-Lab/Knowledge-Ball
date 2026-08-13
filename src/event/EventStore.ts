@@ -1,4 +1,4 @@
-import type { DomainEvent } from './Event';
+import { migrateEventScope, type DomainEvent } from './Event';
 import { KnowledgePersistence } from '../persistence/KnowledgePersistence';
 import { DomainEventValidationError, validateDomainEventEnvelope } from './EventValidation';
 
@@ -35,7 +35,7 @@ export class EventStore<TState> {
     for (const event of events) {
       if (this.idIndex.has(event.id)) continue;
       if (validateDomainEventEnvelope(event).length) continue;
-      const stamped = { ...event, seq: this.nextSeq++ } as DomainEvent;
+      const stamped = { ...migrateEventScope(event), seq: this.nextSeq++ } as DomainEvent;
       this.events.push(stamped);
       this.idIndex.add(stamped.id);
     }

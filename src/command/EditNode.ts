@@ -16,6 +16,7 @@ export async function editNode(store: EventStore<GraphState>, payload: EditNodeP
   const event: NodeEditedEvent = {
     id,
     type: 'NodeEdited',
+    scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
     payload,

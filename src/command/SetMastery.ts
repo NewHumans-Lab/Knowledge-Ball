@@ -11,6 +11,7 @@ export async function setMastery(
   const event: NodeMasterySetEvent = {
     id,
     type: 'NodeMasterySet',
+    scope: 'personal',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
     payload,

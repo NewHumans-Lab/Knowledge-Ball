@@ -1,21 +1,35 @@
 # Knowledge-Ball
 
-Knowledge-Ball is a shared knowledge graph. User-created nodes are persisted by the bundled HTTP service and loaded by every browser when the app starts.
+Knowledge-Ball is a local-first shared knowledge graph. The web production flow is:
 
-The normative v1 model for nodes, premise relationships, knowledge states, versioning, and validation is documented in [知识协议：数据模型与验证规则](docs/knowledge-protocol.md).
+`UI command → immutable local event → EventStore → projection/UI → SyncEngine → Supabase Postgres/Auth/RLS → other web clients`
 
-## Run locally
+The local event log is authoritative for responsiveness and offline use. Public knowledge events replicate in the background; projections are derived. Personal events such as mastery remain in the browser-local personal event log and are structurally excluded from the public stream.
+
+## Run the web app
 
 ```bash
 npm install
-npm run build
-npm run server
+npm run dev
 ```
 
-Open `http://localhost:8787/Knowledge-Ball/`. Data is stored in `data/knowledge.json`; set `KNOWLEDGE_DATA_FILE` to place it on a persistent volume and `PORT` to change the listening port.
+Without Supabase configuration the app starts normally in explicit local-only mode. Local creation, edits, statuses, premises, and mastery survive reload through `localStorage`; remote success is never simulated.
 
-For frontend development, run `npm run server` and `npm run dev` in separate terminals. Vite proxies `/api/knowledge` to the service on port 8787.
+## Supabase setup
 
-## Deployment
+1. Create/select a hosted Supabase project and enable anonymous sign-ins under Authentication settings.
+2. Apply `supabase/migrations/202608130001_scheme7_event_streams.sql` with the Supabase CLI or SQL editor.
+3. Set these browser-safe Vite values (and matching GitHub Actions repository variables for Pages):
 
-Deploy the application as the Node service (`npm start`) with a persistent volume for `data/`. A static-only host such as GitHub Pages cannot accept user writes, so it cannot provide cross-user node sharing by itself. Put authentication and rate limiting at the hosting platform or reverse proxy before opening submissions to untrusted traffic.
+```text
+VITE_SUPABASE_URL=https://PROJECT.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+Never expose a service-role key, database password, GitHub PAT, or other privileged secret in Vite variables. The migration enables RLS, authenticated reads, an atomic expected-head append RPC, immutable rows, and an owner-scoped private table reserved for future account-linked personal sync.
+
+## Synchronization and conflicts
+
+`SyncEngine` persists a separate `knowledge-ball.sync-metadata.v1` record containing the remote cursor plus pending, acknowledged, and failed event IDs. Network failures keep pending work queued. Reconnect/startup sync pulls paginated remote events, then flushes pending public events. Expected-head conflicts cause pull/rebase/revalidation/retry; invalidated local work is retained as an explicit conflict report instead of being silently discarded. Event IDs make remote append idempotent, and acknowledged events are not repushed after reload.
+
+Projected node snapshots are not a production persistence model. The former bundled Node JSON server and `/api/knowledge` gateway have been removed; GitHub Pages remains a static frontend and Supabase is the sole production remote event exchange.

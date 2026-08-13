@@ -63,6 +63,7 @@ export async function executeKnowledgeEdit(
   const event = {
     id,
     type,
+    scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp,
     payload,

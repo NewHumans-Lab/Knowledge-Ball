@@ -11,6 +11,7 @@ export async function resolveNode(
   const event: NodeResolvedEvent = {
     id,
     type: 'NodeResolved',
+    scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
     payload,
