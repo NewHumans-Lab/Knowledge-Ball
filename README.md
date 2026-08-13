@@ -19,7 +19,8 @@ Without Supabase configuration the app starts normally in explicit local-only mo
 
 1. Create/select a hosted Supabase project and enable anonymous sign-ins under Authentication settings.
 2. Apply `supabase/migrations/202608130001_scheme7_event_streams.sql` with the Supabase CLI or SQL editor.
-3. Set these browser-safe Vite values (and matching GitHub Actions repository variables for Pages):
+3. Apply the remaining migrations in timestamp order. For phone accounts, enable **Authentication → Providers → Phone**, configure a supported SMS provider, and require phone confirmation/OTP. The browser contains only the publishable key; SMS and service-role secrets must remain in Supabase. Hosted SMS registration is not operational until those project settings are verified.
+4. Set these browser-safe Vite values (and matching GitHub Actions repository variables for Pages):
 
 ```text
 VITE_SUPABASE_URL=https://PROJECT.supabase.co

@@ -1,4 +1,4 @@
-import { createProductionAuthClient } from '../auth/AuthClient';
+import { compactEnergy, createProductionAuthClient, type AccountProfile } from '../auth/AuthClient';
 import { setMastery } from '../command/SetMastery';
 
 const WRITE_ENTRY_IDS = new Set([
@@ -31,7 +31,7 @@ const auth = createProductionAuthClient();
 let authOverlay: HTMLElement | null = null;
 let authMode: 'login' | 'register' = 'login';
 let pendingPhone = '';
-let balanceCache: { mine: number | null; system: number | null } = { mine: null, system: null };
+let accountCache: AccountProfile | null = null;
 let markingNode = false;
 
 function start(): void {
@@ -200,6 +200,7 @@ function onAuthenticated(message: string): void {
   closeAuth();
   updateAvatarState();
   showToast(message);
+  void loadAccount();
   void window.__debug?.syncEngine?.sync().catch(error => console.warn('[Knowledge-Ball] post-login sync failed:', error));
 }
 
@@ -221,42 +222,65 @@ function openAccount(): void {
     });
   } else {
     body.innerHTML = `
-      <div class="account-stat"><span>我的能量</span><b id="kbMyBalance">${balanceCache.mine ?? '—'}</b></div>
-      <div class="account-stat"><span>总能量</span><b id="kbSystemBalance">${balanceCache.system ?? '—'}</b></div>
-      <div class="account-stat"><span>预测准确率</span><b>0%</b></div>
-      <button class="btn primary kb-account-main-action" id="kbRefreshBalances" type="button">刷新余额</button>
+      <div class="kb-profile-head"><div class="kb-profile-avatar" id="kbProfileAvatar">${profileInitial(accountCache)}</div><div><strong id="kbProfileName">${profileName(accountCache)}</strong><small>@${accountCache?.username ?? '设置用户名'}</small></div></div>
+      <div class="kb-profile-bio" id="kbProfileBio">${accountCache?.bio ?? '还没有个人简介'}</div>
+      <div class="account-stat"><span>我的能量</span><b id="kbMyBalance">${accountCache ? compactEnergy(accountCache.myBalance) : '—'}</b></div>
+      <div class="account-stat"><span>总能量</span><b id="kbTotalEnergy">${accountCache ? compactEnergy(accountCache.totalEnergy) : '—'}</b></div>
+      <div class="account-stat"><span>准确率</span><b>${accountCache?.accuracy ?? 0}%</b></div>
+      <button class="btn primary kb-account-main-action" id="kbEditProfile" type="button">编辑资料</button>
       <button class="btn ghost kb-account-main-action" id="kbLogout" type="button">退出登录</button>
-      <div class="form-hint kb-auth-status" id="kbBalanceStatus">余额仅在你主动刷新时请求最新值。</div>`;
-    body.querySelector('#kbRefreshBalances')?.addEventListener('click', () => void refreshBalances(body));
+      <div class="form-hint kb-auth-status" id="kbBalanceStatus">正在加载账户资料…</div>`;
+    body.querySelector('#kbEditProfile')?.addEventListener('click', () => editProfile(body));
     body.querySelector('#kbLogout')?.addEventListener('click', () => void logout(overlay));
+    void loadAccount(body);
   }
   overlay.classList.add('show');
 }
 
-async function refreshBalances(body: HTMLElement): Promise<void> {
-  const button = body.querySelector<HTMLButtonElement>('#kbRefreshBalances');
-  const status = body.querySelector<HTMLElement>('#kbBalanceStatus');
+async function loadAccount(body?: HTMLElement): Promise<void> {
+  const status = body?.querySelector<HTMLElement>('#kbBalanceStatus');
   if (!auth) return;
-  if (button) button.disabled = true;
   if (status) status.textContent = '正在读取最新余额…';
   try {
-    const balances = await auth.getBalances();
-    balanceCache = { mine: balances.myBalance, system: balances.systemBalance };
-    const mine = body.querySelector<HTMLElement>('#kbMyBalance');
-    const system = body.querySelector<HTMLElement>('#kbSystemBalance');
-    if (mine) mine.textContent = String(balances.myBalance);
-    if (system) system.textContent = String(balances.systemBalance);
-    if (status) status.textContent = '已刷新为当前最新余额。';
+    accountCache = await auth.getAccount();
+    const mine = body?.querySelector<HTMLElement>('#kbMyBalance');
+    const total = body?.querySelector<HTMLElement>('#kbTotalEnergy');
+    if (mine) mine.textContent = compactEnergy(accountCache.myBalance);
+    if (total) total.textContent = compactEnergy(accountCache.totalEnergy);
+    if (status) status.textContent = '';
+    updateAvatarState();
+    if (body) {
+      const name = body.querySelector<HTMLElement>('#kbProfileName');
+      const bio = body.querySelector<HTMLElement>('#kbProfileBio');
+      const profileAvatar = body.querySelector<HTMLElement>('#kbProfileAvatar');
+      if (name) name.textContent = profileName(accountCache);
+      if (bio) bio.textContent = accountCache.bio ?? '还没有个人简介';
+      if (profileAvatar) applyAvatar(profileAvatar, accountCache);
+    }
   } catch (error) {
     if (status) status.textContent = error instanceof Error ? error.message : '余额读取失败';
-  } finally {
-    if (button) button.disabled = false;
   }
+}
+
+function editProfile(body: HTMLElement): void {
+  const username = prompt('用户名（3-24 位小写字母、数字或下划线）', accountCache?.username ?? '');
+  if (username === null || !auth) return;
+  const displayName = prompt('显示名称', accountCache?.displayName ?? '') ?? '';
+  const avatarUrl = prompt('头像 HTTPS 地址（可选）', accountCache?.avatarUrl ?? '') ?? '';
+  const bio = prompt('个人简介（最多 280 字）', accountCache?.bio ?? '') ?? '';
+  void auth.updateProfile({ username, displayName, avatarUrl, bio }).then(profile => {
+    accountCache = profile;
+    openAccount();
+    showToast('资料已保存');
+  }).catch(error => {
+    const status = body.querySelector<HTMLElement>('#kbBalanceStatus');
+    if (status) status.textContent = error instanceof Error ? error.message : '资料保存失败';
+  });
 }
 
 async function logout(overlay: HTMLElement): Promise<void> {
   await auth?.signOut();
-  balanceCache = { mine: null, system: null };
+  accountCache = null;
   overlay.classList.remove('show');
   updateAvatarState();
   showToast('已退出登录，仍可继续浏览公共知识。');
@@ -266,9 +290,19 @@ function updateAvatarState(): void {
   const avatar = document.querySelector<HTMLElement>('.avatar-btn');
   if (!avatar) return;
   const loggedIn = auth?.hasVerifiedIdentity() ?? false;
-  avatar.textContent = loggedIn ? 'ME' : '访';
+  avatar.textContent = loggedIn ? profileInitial(accountCache) : '访';
+  applyAvatar(avatar, loggedIn ? accountCache : null);
   avatar.title = loggedIn ? '个人账户' : '游客 · 点击登录或注册';
   avatar.dataset.authState = loggedIn ? 'authenticated' : 'guest';
+}
+
+function profileName(profile: AccountProfile | null): string { return profile?.displayName || profile?.username || '知识探索者'; }
+function profileInitial(profile: AccountProfile | null): string { return profileName(profile).slice(0, 1).toUpperCase(); }
+function applyAvatar(element: HTMLElement, profile: AccountProfile | null): void {
+  element.style.backgroundImage = profile?.avatarUrl ? `url("${profile.avatarUrl.replace(/["\\]/g, '')}")` : '';
+  element.style.backgroundSize = 'cover';
+  element.style.backgroundPosition = 'center';
+  element.textContent = profile?.avatarUrl ? '' : profileInitial(profile);
 }
 
 function setStatus(message: string, isError = false): void {
@@ -297,6 +331,9 @@ function installStyles(): void {
     .kb-auth-status[data-error="true"]{color:#E8918E}
     .kb-account-guest{font-size:13px;line-height:1.7;color:var(--ink-dim);padding:4px 0 14px}
     .kb-account-main-action{width:100%;margin-top:10px}
+    .kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}
+    .kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}
+    .kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}
     .avatar-btn[data-auth-state="guest"]{border-style:dashed;color:var(--ink-dim)}
   `;
   document.head.appendChild(style);
