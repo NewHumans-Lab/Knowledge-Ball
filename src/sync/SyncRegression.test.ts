@@ -143,4 +143,29 @@ assert.deepEqual(paged.events.map(event => event.id), ['page-0', 'page-1', 'page
 await assert.rejects(supabase.push([{ id: 'private', type: 'NodeMasterySet', scope: 'personal', schemaVersion: 1,
   timestamp: 1, payload: { nodeId: 'x', mastery: 'mastered' } } as any], '0'), /Personal events/);
 
+const blockedStorage: StorageLike = {
+  getItem() { throw new Error('storage blocked'); },
+  setItem() { throw new Error('storage blocked'); },
+  removeItem() { throw new Error('storage blocked'); },
+};
+let anonymousSignupRequests = 0;
+const storageResilientSupabase = new SupabaseSyncAdapter({
+  url: 'https://example.supabase.co',
+  publishableKey: 'publishable',
+  storage: blockedStorage,
+  fetch: (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith('/auth/v1/signup')) {
+      anonymousSignupRequests += 1;
+      return new Response(JSON.stringify({ access_token: 'ephemeral-token', expires_in: 3600 }), { status: 200 });
+    }
+    if (url.includes('/rest/v1/public_knowledge_events')) {
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }) as typeof fetch,
+});
+await storageResilientSupabase.pull('0');
+assert.equal(anonymousSignupRequests, 1, 'blocked localStorage must not prevent anonymous Supabase authentication');
+
 console.log('Scheme 7 sync and privacy regression tests passed');
