@@ -11,11 +11,18 @@ try {
   const page = await context.newPage();
 
   const pageErrors = [];
+  const consoleMessages = [];
+  const supabaseRequests = [];
   const networkFailures = [];
   let signupStatus = null;
   let publicEventsStatus = null;
 
   page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('console', message => consoleMessages.push(`${message.type()}: ${message.text()}`));
+  page.on('request', request => {
+    const url = request.url();
+    if (url.includes('supabase.co')) supabaseRequests.push(`${request.method()} ${url}`);
+  });
   page.on('requestfailed', request => {
     const url = request.url();
     if (url.includes('supabase.co')) networkFailures.push(`${request.method()} ${url}: ${request.failure()?.errorText ?? 'request failed'}`);
@@ -28,13 +35,36 @@ try {
 
   await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.locator('.ai-add').waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForFunction(
-    () => document.documentElement.dataset.syncStatus === 'idle' || document.documentElement.dataset.syncStatus === 'conflict',
-    null,
-    { timeout: 20_000 },
-  );
-  await page.waitForTimeout(1_000);
+  await page.waitForTimeout(8_000);
 
+  const diagnostics = await page.evaluate(() => {
+    const debug = window.__debug;
+    const engine = debug?.syncEngine;
+    return {
+      datasetSyncStatus: document.documentElement.dataset.syncStatus ?? null,
+      debugPresent: Boolean(debug),
+      syncEnginePresent: Boolean(engine),
+      engineStatus: typeof engine?.currentStatus === 'function' ? engine.currentStatus() : null,
+      pendingCount: typeof engine?.pendingCount === 'function' ? engine.pendingCount() : null,
+      modalClass: document.querySelector('#modalOverlay')?.className ?? null,
+    };
+  });
+
+  console.log('Production browser diagnostics:');
+  console.log(JSON.stringify({
+    ...diagnostics,
+    signupStatus,
+    publicEventsStatus,
+    supabaseRequests,
+    networkFailures,
+    pageErrors,
+    consoleMessages,
+  }, null, 2));
+
+  assert.ok(
+    diagnostics.datasetSyncStatus === 'idle' || diagnostics.datasetSyncStatus === 'conflict',
+    `hosted sync did not become usable (status: ${diagnostics.datasetSyncStatus ?? 'missing'})`,
+  );
   assert.equal(signupStatus, 200, `anonymous Supabase signup did not succeed (status: ${signupStatus})`);
   assert.equal(publicEventsStatus, 200, `public event pull did not succeed (status: ${publicEventsStatus})`);
   assert.deepEqual(networkFailures, [], `Supabase network failures:\n${networkFailures.join('\n')}`);
