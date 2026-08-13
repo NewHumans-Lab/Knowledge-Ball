@@ -530,24 +530,31 @@ function validateRemoteEvent(event: PublicKnowledgeEvent, rebaseBase?: readonly 
   return errors[0] ?? null;
 }
 
+function initializeSyncEngine(): void {
+  syncEngine = new SyncEngine(store, createProductionSyncAdapter(), undefined, validateRemoteEvent);
+  syncEngine.subscribe((status, failures) => {
+    document.documentElement.dataset.syncStatus = status;
+    const settingsButton = opt<HTMLButtonElement>('btnSettings');
+    if (settingsButton) settingsButton.title = status === 'unavailable' ? '同步未配置 · 当前为本地模式' : `同步状态：${status}`;
+    if (status === 'unavailable') panel.showToast('未配置远程同步，当前为本地模式');
+    if (status === 'conflict' && failures.length) panel.showToast(`同步冲突：${failures.length} 个本地事件需要处理`);
+  });
+  void syncEngine.sync().catch(error => console.warn('[Knowledge-Ball] startup sync unavailable; using local data:', error));
+}
+
+initializeSyncEngine();
+
 void seedDemoData()
   .then(() => {
-    syncEngine = new SyncEngine(store, createProductionSyncAdapter(), undefined, validateRemoteEvent);
-    syncEngine.subscribe((status, failures) => {
-      document.documentElement.dataset.syncStatus = status;
-      const settingsButton = opt<HTMLButtonElement>('btnSettings');
-      if (settingsButton) settingsButton.title = status === 'unavailable' ? '同步未配置 · 当前为本地模式' : `同步状态：${status}`;
-      if (status === 'unavailable') panel.showToast('未配置远程同步，当前为本地模式');
-      if (status === 'conflict' && failures.length) panel.showToast(`同步冲突：${failures.length} 个本地事件需要处理`);
-    });
     syncNodesFromProjection();
     scene.markDirty();
     scene.start();
-    void syncEngine.sync().catch(error => console.warn('[Knowledge-Ball] startup sync unavailable; using local data:', error));
+    void syncEngine?.sync().catch(error => console.warn('[Knowledge-Ball] post-seed sync deferred:', error));
   })
   .catch(error => {
     console.error('[Knowledge-Ball] seed failed:', error);
     scene.start();
+    void syncEngine?.sync().catch(syncError => console.warn('[Knowledge-Ball] sync remains available after seed failure:', syncError));
   });
 
 window.addEventListener('online', () => {
