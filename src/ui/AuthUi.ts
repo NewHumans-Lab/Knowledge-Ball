@@ -221,8 +221,8 @@ function openAccount(): void {
     });
   } else {
     body.innerHTML = `
-      <div class="account-stat"><span>我的余额</span><b id="kbMyBalance">${balanceCache.mine ?? '—'}</b></div>
-      <div class="account-stat"><span>知识球系统总额</span><b id="kbSystemBalance">${balanceCache.system ?? '—'}</b></div>
+      <div class="account-stat"><span>我的能量</span><b id="kbMyBalance">${balanceCache.mine ?? '—'}</b></div>
+      <div class="account-stat"><span>总能量</span><b id="kbSystemBalance">${balanceCache.system ?? '—'}</b></div>
       <div class="account-stat"><span>预测准确率</span><b>0%</b></div>
       <button class="btn primary kb-account-main-action" id="kbRefreshBalances" type="button">刷新余额</button>
       <button class="btn ghost kb-account-main-action" id="kbLogout" type="button">退出登录</button>
