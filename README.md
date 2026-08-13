@@ -26,6 +26,8 @@ VITE_SUPABASE_URL=https://PROJECT.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
+After changing either Pages repository variable, trigger a fresh `Deploy to GitHub Pages` workflow run so Vite rebuilds the static bundle with the new values.
+
 Never expose a service-role key, database password, GitHub PAT, or other privileged secret in Vite variables. The migration enables RLS, authenticated reads, an atomic expected-head append RPC, immutable rows, and an owner-scoped private table reserved for future account-linked personal sync.
 
 ## Synchronization and conflicts
