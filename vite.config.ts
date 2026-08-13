@@ -8,8 +8,11 @@ export default defineConfig({
   plugins: [
     {
       name: 'knowledge-ball-auth-ui',
-      transformIndexHtml() {
-        return [{ tag: 'script', attrs: { type: 'module', src: '/src/ui/AuthUi.ts' }, injectTo: 'body-prepend' }];
+      transformIndexHtml: {
+        order: 'pre',
+        handler() {
+          return [{ tag: 'script', attrs: { type: 'module', src: '/src/ui/AuthUi.ts' }, injectTo: 'body-prepend' }];
+        },
       },
     },
   ],
