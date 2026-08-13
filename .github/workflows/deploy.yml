@@ -47,3 +47,9 @@ jobs:
         uses: actions/deploy-pages@v4
       - name: Verify deployed Pages site
         run: node scripts/verify-pages.mjs "${{ steps.deployment.outputs.page_url }}"
+      - name: Install Chromium browser test
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Click-test deployed Pages and Supabase wiring
+        run: node scripts/verify-production-browser.mjs "${{ steps.deployment.outputs.page_url }}?e2e=${{ github.sha }}"
