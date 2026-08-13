@@ -12,9 +12,19 @@ export interface AuthConfig {
 }
 
 export interface EnergyBalances {
-  myBalance: number;
-  systemBalance: number;
+  myBalance: string;
+  totalEnergy: string;
 }
+
+export interface AccountProfile extends EnergyBalances {
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+  accuracy: number;
+}
+
+export interface ProfileChanges { username: string; displayName?: string; avatarUrl?: string; bio?: string; }
 
 export interface SignUpResult {
   verificationRequired: boolean;
@@ -157,15 +167,42 @@ export class KnowledgeBallAuthClient {
   }
 
   async getBalances(): Promise<EnergyBalances> {
+    const account = await this.getAccount();
+    return { myBalance: account.myBalance, totalEnergy: account.totalEnergy };
+  }
+
+  async getAccount(): Promise<AccountProfile> {
     const current = await this.session();
     if (!current) throw new Error('请先登录或注册');
-    const response = await this.restRequest('/rest/v1/rpc/get_energy_balances', current, {
+    const response = await this.restRequest('/rest/v1/rpc/get_my_account', current, {
       method: 'POST',
       body: '{}',
-    }) as { my_balance?: number; system_balance?: number };
+    }) as Record<string, unknown>;
     return {
-      myBalance: Number(response.my_balance ?? 0),
-      systemBalance: Number(response.system_balance ?? 0),
+      username: typeof response.username === 'string' ? response.username : null,
+      displayName: typeof response.display_name === 'string' ? response.display_name : null,
+      avatarUrl: typeof response.avatar_url === 'string' ? response.avatar_url : null,
+      bio: typeof response.bio === 'string' ? response.bio : null,
+      myBalance: exactEnergy(response.my_balance),
+      totalEnergy: exactEnergy(response.total_energy),
+      accuracy: typeof response.accuracy === 'number' ? response.accuracy : 0,
+    };
+  }
+
+  async updateProfile(changes: ProfileChanges): Promise<AccountProfile> {
+    const current = await this.session();
+    if (!current) throw new Error('请先登录或注册');
+    const response = await this.restRequest('/rest/v1/rpc/update_my_profile', current, {
+      method: 'POST',
+      body: JSON.stringify({ new_username: changes.username, new_display_name: changes.displayName ?? null, new_avatar_url: changes.avatarUrl ?? null, new_bio: changes.bio ?? null }),
+    }) as Record<string, unknown>;
+    return {
+      username: typeof response.username === 'string' ? response.username : null,
+      displayName: typeof response.display_name === 'string' ? response.display_name : null,
+      avatarUrl: typeof response.avatar_url === 'string' ? response.avatar_url : null,
+      bio: typeof response.bio === 'string' ? response.bio : null,
+      myBalance: exactEnergy(response.my_balance), totalEnergy: exactEnergy(response.total_energy),
+      accuracy: typeof response.accuracy === 'number' ? response.accuracy : 0,
     };
   }
 
@@ -294,9 +331,24 @@ async function parseResponse(response: Response): Promise<Record<string, unknown
         : typeof body.error_description === 'string'
           ? body.error_description
           : `请求失败 (${response.status})`;
-    throw new Error(message);
+    const actionable = /phone signups? (are )?disabled/i.test(message)
+      ? '手机号注册尚未启用。管理员需在 Supabase 启用 Phone Provider、配置短信服务商并开启 OTP 验证。'
+      : message;
+    throw new Error(actionable);
   }
   return body;
+}
+
+function exactEnergy(value: unknown): string {
+  const text = typeof value === 'string' ? value : String(value ?? '0');
+  if (!/^-?\d+(?:\.\d{1,6})?$/.test(text)) throw new Error('服务端返回了无效能量精度');
+  const [whole, fraction = ''] = text.split('.');
+  return `${whole}.${fraction.padEnd(6, '0')}`;
+}
+
+export function compactEnergy(value: string): string {
+  if (!/^-?\d+\.\d{6}$/.test(value)) return '—';
+  return value.split('.')[0];
 }
 
 export function normalizePhoneInput(phone: string): string {
