@@ -19,7 +19,7 @@ export class SupabaseSyncAdapter implements SyncAdapter {
   private readonly request: typeof fetch;
   private readonly pageSize: number;
   constructor(private readonly config: SupabaseConfig) {
-    this.request = config.fetch ?? fetch;
+    this.request = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.pageSize = config.pageSize ?? 200;
   }
 

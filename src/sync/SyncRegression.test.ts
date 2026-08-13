@@ -168,4 +168,29 @@ const storageResilientSupabase = new SupabaseSyncAdapter({
 await storageResilientSupabase.pull('0');
 assert.equal(anonymousSignupRequests, 1, 'blocked localStorage must not prevent anonymous Supabase authentication');
 
+const originalGlobalFetch = globalThis.fetch;
+let defaultFetchReceiverCorrect = false;
+try {
+  globalThis.fetch = (async function(this: typeof globalThis, input: string | URL | Request) {
+    defaultFetchReceiverCorrect = this === globalThis;
+    const url = String(input);
+    if (url.endsWith('/auth/v1/signup')) {
+      return new Response(JSON.stringify({ access_token: 'bound-token', expires_in: 3600 }), { status: 200 });
+    }
+    if (url.includes('/rest/v1/public_knowledge_events')) {
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }) as typeof fetch;
+  const defaultFetchSupabase = new SupabaseSyncAdapter({
+    url: 'https://example.supabase.co',
+    publishableKey: 'publishable',
+    storage: new MemoryStorage(),
+  });
+  await defaultFetchSupabase.pull('0');
+  assert.equal(defaultFetchReceiverCorrect, true, 'default browser/global fetch must keep its required receiver');
+} finally {
+  globalThis.fetch = originalGlobalFetch;
+}
+
 console.log('Scheme 7 sync and privacy regression tests passed');
