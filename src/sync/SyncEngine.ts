@@ -18,18 +18,20 @@ export class SyncEngine<TState> {
     private readonly adapter: SyncAdapter | null,
     private readonly metadataStore = new SyncMetadataStore(),
     private readonly validate: EventValidator = () => null,
+    private readonly shouldQueue: (event:DomainEvent)=>boolean = isCanonicalPublicKnowledgeEvent,
   ) {
     this.metadata = metadataStore.load();
     store.subscribe(event => {
-      if (!this.applyingRemote && isCanonicalPublicKnowledgeEvent(event)) this.queue(event.id);
+      if (!this.applyingRemote && this.shouldQueue(event)) this.queue(event.id);
     }, false);
 
     // The web app restores and may seed local events before the SyncEngine is
     // constructed. Reconcile those already-present public events so enabling a
     // hosted adapter later does not permanently strand them in localStorage.
     for (const event of store.allEvents()) {
-      if (isCanonicalPublicKnowledgeEvent(event)) this.queue(event.id);
+      if (this.shouldQueue(event)) this.queue(event.id);
     }
+    this.reconcileDisallowedPendingEvents();
 
     if (!adapter) this.setStatus('unavailable');
   }
@@ -106,6 +108,23 @@ export class SyncEngine<TState> {
   private pendingEvents(): PublicKnowledgeEvent[] {
     const wanted = new Set(this.metadata.pendingEventIds);
     return this.store.allEvents().filter(isCanonicalPublicKnowledgeEvent).filter(event => wanted.has(event.id));
+  }
+  private reconcileDisallowedPendingEvents(): void {
+    const byId = new Map(this.store.allEvents().map(event => [event.id, event]));
+    const disallowedIds = this.metadata.pendingEventIds.filter(id => {
+      const event = byId.get(id);
+      return event !== undefined && isPublicKnowledgeEvent(event) && !this.shouldQueue(event);
+    });
+    if (!disallowedIds.length) return;
+    const failed = new Set(this.metadata.failedEvents.map(item => item.eventId));
+    this.metadata.pendingEventIds = this.metadata.pendingEventIds.filter(id => !disallowedIds.includes(id));
+    for (const eventId of disallowedIds) {
+      const event=byId.get(eventId)!;
+      if(isCanonicalPublicKnowledgeEvent(event)){
+        if(!this.metadata.acknowledgedEventIds.includes(eventId))this.metadata.acknowledgedEventIds.push(eventId);
+      }else if (!failed.has(eventId)) this.metadata.failedEvents.push({eventId,reason:'旧版离线公共事件不能静默同步；请在当前版本重新提交该更改',failedAt:new Date().toISOString()});
+    }
+    this.persist();
   }
   private queue(id: string): void {
     if (!this.metadata.acknowledgedEventIds.includes(id) && !this.metadata.pendingEventIds.includes(id)) {

@@ -8,6 +8,15 @@ import { setMastery } from '../command/SetMastery';
 import { suspendNode } from '../command/SuspendNode';
 import { disputeNode } from '../command/DisputeNode';
 import type { NodeType } from '../event/Event';
+import type { DomainEvent } from '../event/Event';
+
+const DEMO_NODE_IDS = new Set(['n1','n2','n16','logic-deduction','n3','n4','r-n5','n5','r-n6','n6','r-n15','n15','r-n7','n7','n-ai-trend','r-n8','n8','n-market-observation','r-n9','n9','n-autonomy-definition','r-n10','n10','n11','r-n12','n12','r-n13','n13','r-n14','n14','n11-counter']);
+export function isDemoSeedEvent(event:DomainEvent):boolean {
+  if(event.type==='KnowledgeAdded')return event.payload.edit.mode==='atomic'?DEMO_NODE_IDS.has(event.payload.edit.node.id):DEMO_NODE_IDS.has(event.payload.edit.reasoning.id)&&DEMO_NODE_IDS.has(event.payload.edit.conclusion.id);
+  if(event.type==='KnowledgeStatusChanged')return DEMO_NODE_IDS.has(event.payload.edit.nodeId);
+  if(event.type==='KnowledgeNegated')return event.payload.edit.targetId==='n11'&&event.payload.edit.counterexampleIds.length===1&&event.payload.edit.counterexampleIds[0]==='n11-counter';
+  return false;
+}
 
 type DerivedType = Exclude<NodeType, 'axiom' | 'definition' | 'fact' | 'logic-symbol' | 'reasoning'>;
 

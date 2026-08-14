@@ -12,6 +12,9 @@ import { RemoteHeadConflictError, type PushResult, type SyncAdapter, type SyncBa
 import { SyncEngine } from './SyncEngine';
 import { SyncMetadataStore } from './SyncMetadata';
 import { SupabaseSyncAdapter } from './SupabaseSyncAdapter';
+import { isDemoSeedEvent } from '../demo/seedDemoKnowledge';
+import { isCanonicalPublicKnowledgeEvent } from '../event/Event';
+import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
 
 class MemoryStorage implements StorageLike {
   data = new Map<string, string>();
@@ -50,6 +53,13 @@ function client(remote: SyncAdapter, storage = new MemoryStorage(), persistence 
 async function addAtomic(target:ReturnType<typeof client>,nodeId:string,title:string,reasoning='r'){
   await executeKnowledgeEdit(target.store,target.projection,{kind:'add',mode:'atomic',node:{id:nodeId,title,type:'fact',reasoning}});
 }
+
+const populatedRemote=new RemoteStream();const populatedWriter=client(populatedRemote);await addAtomic(populatedWriter,'remote-existing','Remote existing knowledge');await populatedWriter.engine.sync();
+const freshHostedBrowser=client(populatedRemote,new MemoryStorage(),new MemoryPersistence());let unexpectedDemoSeeds=0;
+await bootstrapRemoteFirst({hosted:true,hydrateRemote:()=>freshHostedBrowser.engine.sync(),hasKnowledge:()=>Object.keys(freshHostedBrowser.projection.state.nodesById).length>0,seedDemo:async()=>{unexpectedDemoSeeds++;}});
+assert.equal(freshHostedBrowser.projection.state.nodesById['remote-existing'].title,'Remote existing knowledge','fresh browser hydrates remote knowledge first');
+assert.equal(unexpectedDemoSeeds,0,'remote knowledge plus empty localStorage must never seed demo');
+assert.equal(populatedRemote.pushes.length,1,'fresh browser hydration must not append any public event');
 
 const remote = new RemoteStream();
 const a = client(remote);
@@ -90,6 +100,19 @@ assert.equal(preexistingEngine.pendingCount(), 1, 'public events created before 
 await preexistingEngine.sync();
 assert.equal(preexistingRemote.events.length, 1, 'preexisting public event is uploaded on first hosted sync');
 assert.equal(preexistingEngine.pendingCount(), 0, 'preexisting public event is acknowledged after upload');
+
+const legacyStorage=new MemoryStorage();legacyStorage.setItem('knowledge-ball.sync-metadata.v1',JSON.stringify({schemaVersion:1,cursor:'0',pendingEventIds:['legacy-edit'],acknowledgedEventIds:[],failedEvents:[]}));
+const legacyEvent={id:'legacy-edit',type:'NodeEdited',scope:'public',schemaVersion:1,timestamp:1,payload:{nodeId:'old',title:'offline legacy'}} as const;
+const legacyClient=client(new RemoteStream(),legacyStorage,new MemoryPersistence([legacyEvent]));
+assert.equal(legacyClient.engine.pendingCount(),0,'legacy pending IDs must not remain stuck forever');
+assert.match(legacyClient.engine.failures()[0]?.reason??'',/重新提交/,'legacy offline writes are explicitly surfaced instead of silently dropped');
+
+const demoEvent={id:'demo-n1',type:'KnowledgeAdded',scope:'public',schemaVersion:1,timestamp:1,payload:{edit:{kind:'add',mode:'atomic',node:{id:'n1',title:'同一律',type:'axiom',reasoning:'demo'}}}} as PublicKnowledgeEvent;
+const demoStorage=new MemoryStorage();demoStorage.setItem('knowledge-ball.sync-metadata.v1',JSON.stringify({schemaVersion:1,cursor:'0',pendingEventIds:['demo-n1'],acknowledgedEventIds:[],failedEvents:[]}));
+const demoProjection=new GraphProjection(),demoStore=new EventStore<GraphState>(()=>structuredClone(demoProjection.state),new MemoryPersistence([demoEvent]));demoStore.subscribe(event=>demoProjection.apply(event));
+const demoRemote=new RemoteStream(),hostedDemoEngine=new SyncEngine(demoStore,demoRemote,new SyncMetadataStore(demoStorage),()=>null,event=>isCanonicalPublicKnowledgeEvent(event)&&!isDemoSeedEvent(event));
+assert.equal(hostedDemoEngine.pendingCount(),0,'hosted production suppresses restored demo seed events');await hostedDemoEngine.sync();
+assert.equal(demoRemote.pushes.length,0,'empty localStorage against hosted knowledge never uploads demo events');
 
 const duplicate = remote.events[0];
 await remote.push([duplicate], String(remote.events.length));
