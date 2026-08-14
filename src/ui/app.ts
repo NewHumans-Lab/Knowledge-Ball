@@ -49,7 +49,9 @@ import {
   type PanelNodeSummary,
 } from './panels/PanelController';
 import { setupMobileShell } from '../mobile/MobileShell';
-import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
+import { isDemoSeedEvent, seedDemoKnowledge } from '../demo/seedDemoKnowledge';
+import { isCanonicalPublicKnowledgeEvent } from '../event/Event';
+import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
 
 const projection = new GraphProjection();
 const store = new EventStore(
@@ -63,6 +65,11 @@ let panel: PanelController;
 let interaction: InteractionController;
 let currentPanelId: string | null = null;
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
+let backgroundSyncTimer:number|null=null;
+function scheduleBackgroundSync():void {
+  if(backgroundSyncTimer!==null)return;
+  backgroundSyncTimer=window.setTimeout(()=>{backgroundSyncTimer=null;void syncEngine?.sync().catch(error=>console.warn('[Knowledge-Ball] background sync deferred:',error));},0);
+}
 
 function must<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -461,8 +468,10 @@ store.subscribe((event) => {
   scene.markDirty();
 
   if (currentPanelId) panel.openNodePanel(currentPanelId);
-  if (syncEngine && event.scope === 'public') void syncEngine.sync().catch(error =>
-    console.warn('[Knowledge-Ball] background sync deferred:', error));
+  // Never begin network/rebase work inside the submit click stack. The modal
+  // closes immediately after the local append; one deferred sync handles any
+  // events appended in the same task.
+  if (syncEngine && event.scope === 'public') scheduleBackgroundSync();
 });
 
 syncNodesFromProjection();
@@ -530,8 +539,10 @@ function validateRemoteEvent(event: PublicKnowledgeEvent, rebaseBase?: readonly 
   return errors[0] ?? null;
 }
 
+const productionSyncAdapter = createProductionSyncAdapter();
 function initializeSyncEngine(): void {
-  syncEngine = new SyncEngine(store, createProductionSyncAdapter(), undefined, validateRemoteEvent);
+  syncEngine = new SyncEngine(store, productionSyncAdapter, undefined, validateRemoteEvent,
+    event => isCanonicalPublicKnowledgeEvent(event) && !(productionSyncAdapter && isDemoSeedEvent(event)));
   syncEngine.subscribe((status, failures) => {
     document.documentElement.dataset.syncStatus = status;
     const settingsButton = opt<HTMLButtonElement>('btnSettings');
@@ -539,22 +550,24 @@ function initializeSyncEngine(): void {
     if (status === 'unavailable') panel.showToast('未配置远程同步，当前为本地模式');
     if (status === 'conflict' && failures.length) panel.showToast(`同步冲突：${failures.length} 个本地事件需要处理`);
   });
-  void syncEngine.sync().catch(error => console.warn('[Knowledge-Ball] startup sync unavailable; using local data:', error));
 }
 
 initializeSyncEngine();
 
-void seedDemoData()
+void bootstrapRemoteFirst({
+  hosted: productionSyncAdapter !== null,
+  hydrateRemote: () => syncEngine?.sync() ?? Promise.resolve(),
+  hasKnowledge: () => nodeList(projection.state).length > 0,
+  seedDemo: seedDemoData,
+})
   .then(() => {
     syncNodesFromProjection();
     scene.markDirty();
     scene.start();
-    void syncEngine?.sync().catch(error => console.warn('[Knowledge-Ball] post-seed sync deferred:', error));
   })
   .catch(error => {
-    console.error('[Knowledge-Ball] seed failed:', error);
+    console.error('[Knowledge-Ball] remote-first bootstrap failed:', error);
     scene.start();
-    void syncEngine?.sync().catch(syncError => console.warn('[Knowledge-Ball] sync remains available after seed failure:', syncError));
   });
 
 window.addEventListener('online', () => {
