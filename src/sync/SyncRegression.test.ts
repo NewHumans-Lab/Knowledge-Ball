@@ -14,6 +14,7 @@ import { SyncMetadataStore } from './SyncMetadata';
 import { SupabaseSyncAdapter } from './SupabaseSyncAdapter';
 import { isDemoSeedEvent } from '../demo/seedDemoKnowledge';
 import { isCanonicalPublicKnowledgeEvent } from '../event/Event';
+import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
 
 class MemoryStorage implements StorageLike {
   data = new Map<string, string>();
@@ -52,6 +53,13 @@ function client(remote: SyncAdapter, storage = new MemoryStorage(), persistence 
 async function addAtomic(target:ReturnType<typeof client>,nodeId:string,title:string,reasoning='r'){
   await executeKnowledgeEdit(target.store,target.projection,{kind:'add',mode:'atomic',node:{id:nodeId,title,type:'fact',reasoning}});
 }
+
+const populatedRemote=new RemoteStream();const populatedWriter=client(populatedRemote);await addAtomic(populatedWriter,'remote-existing','Remote existing knowledge');await populatedWriter.engine.sync();
+const freshHostedBrowser=client(populatedRemote,new MemoryStorage(),new MemoryPersistence());let unexpectedDemoSeeds=0;
+await bootstrapRemoteFirst({hosted:true,hydrateRemote:()=>freshHostedBrowser.engine.sync(),hasKnowledge:()=>Object.keys(freshHostedBrowser.projection.state.nodesById).length>0,seedDemo:async()=>{unexpectedDemoSeeds++;}});
+assert.equal(freshHostedBrowser.projection.state.nodesById['remote-existing'].title,'Remote existing knowledge','fresh browser hydrates remote knowledge first');
+assert.equal(unexpectedDemoSeeds,0,'remote knowledge plus empty localStorage must never seed demo');
+assert.equal(populatedRemote.pushes.length,1,'fresh browser hydration must not append any public event');
 
 const remote = new RemoteStream();
 const a = client(remote);
