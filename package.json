@@ -28,7 +28,8 @@
     "test:edit-ui": "npx esbuild src/ui/KnowledgeEditUiRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-edit-ui-regression.mjs && node .test-dist/knowledge-edit-ui-regression.mjs",
     "test:demo": "npx esbuild src/demo/seedDemoKnowledge.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/demo-knowledge-regression.mjs && node .test-dist/demo-knowledge-regression.mjs",
     "test:sync": "npx esbuild src/sync/SyncRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/sync-regression.mjs && node .test-dist/sync-regression.mjs",
-    "test:architecture": "node scripts/verify-scheme7-architecture.mjs && node scripts/verify-energy-migration.mjs && node scripts/verify-account-ui.mjs"
+    "test:architecture": "node scripts/verify-scheme7-architecture.mjs && node scripts/verify-energy-migration.mjs && node scripts/verify-account-ui.mjs && node scripts/verify-issue45-regressions.mjs",
+    "test:auth": "npx esbuild src/auth/AuthClientRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/auth-regression.mjs && node .test-dist/auth-regression.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.8",
