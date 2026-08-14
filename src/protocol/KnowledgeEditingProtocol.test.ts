@@ -59,7 +59,7 @@ const incompleteTheory = validateKnowledgeEdit(base, {
   conclusion: { id: 'c-invalid', title: 'Invalid result', type: 'theorem', reasoning: 'Invalid result text' },
 });
 assert(incompleteTheory.some(error => error.includes('至少一个已有知识前提')));
-assert(incompleteTheory.some(error => error.includes('逻辑符号')));
+assert(!incompleteTheory.some(error => error.includes('逻辑符号')), 'logic-symbol classification is optional');
 
 const added = apply(base, {
   kind: 'add',
@@ -251,7 +251,7 @@ assert.deepEqual(mergedTheory.find(item => item.id === 'c-merged')?.premises, ['
 assert.equal(mergedTheory.find(item => item.id === 'r1')?.hidden, true);
 assert.equal(mergedTheory.find(item => item.id === 'c2')?.hidden, true);
 
-// Historical hidden nodes still reserve both their title and their description.
+// Historical hidden nodes reserve titles; duplicate descriptions are advisory only.
 const duplicateHidden = validateKnowledgeEdit(mergedDefinitions, {
   kind: 'add',
   mode: 'atomic',
@@ -263,7 +263,7 @@ const duplicateHiddenDescription = validateKnowledgeEdit(mergedDefinitions, {
   mode: 'atomic',
   node: { id: 'duplicate-hidden-description', title: 'Fresh title', type: 'fact', reasoning: '质数只有两个正因数' },
 });
-assert(duplicateHiddenDescription.some(error => error.includes('描述')));
+assert.deepEqual(duplicateHiddenDescription, []);
 
 console.log('Knowledge editing protocol regression tests passed');
 

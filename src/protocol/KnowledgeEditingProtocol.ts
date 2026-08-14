@@ -145,13 +145,10 @@ function validateDraftBatch(nodes: ProtocolNode[], drafts: NewProtocolNode[]): s
   const byId = indexNodes(nodes);
   const usedIds = new Set(byId.keys());
   const usedTitles = new Map<string, string>();
-  const usedDescriptions = new Map<string, string>();
 
   for (const node of nodes) {
     const title = canonicalKnowledgeText(node.title);
-    const description = canonicalKnowledgeText(node.reasoning);
     if (title && !usedTitles.has(title)) usedTitles.set(title, node.id);
-    if (description && !usedDescriptions.has(description)) usedDescriptions.set(description, node.id);
   }
 
   for (const draft of drafts) {
@@ -171,18 +168,13 @@ function validateDraftBatch(nodes: ProtocolNode[], drafts: NewProtocolNode[]): s
     }
 
     if (!description) errors.push(`节点 ${id || '(unknown)'} 必须有描述或推理过程`);
-    else if (usedDescriptions.has(description)) {
-      errors.push(`节点描述或推理过程与现有或本次操作中的节点重复: ${draft.reasoning.trim()}`);
-    } else {
-      usedDescriptions.set(description, id);
-    }
+    // Similar descriptions are advisory duplicate candidates, never a hard submission gate.
 
     if (draft.type === 'reasoning') {
       const rule = draft.logicRuleId ? byId.get(draft.logicRuleId) : undefined;
-      if (!draft.logicRuleId) errors.push(`推理过程 ${id || '(unknown)'} 必须选择逻辑符号`);
-      else if (!rule) errors.push(`逻辑符号节点不存在: ${draft.logicRuleId}`);
-      else if (rule.type !== 'logic-symbol') errors.push(`节点不是逻辑符号: ${draft.logicRuleId}`);
-      else if (!active(rule)) errors.push(`逻辑符号节点当前不可用: ${draft.logicRuleId}`);
+      if (draft.logicRuleId && !rule) errors.push(`逻辑符号节点不存在: ${draft.logicRuleId}`);
+      else if (draft.logicRuleId && rule?.type !== 'logic-symbol') errors.push(`节点不是逻辑符号: ${draft.logicRuleId}`);
+      else if (draft.logicRuleId && !active(rule)) errors.push(`逻辑符号节点当前不可用: ${draft.logicRuleId}`);
     } else if (draft.logicRuleId) {
       errors.push(`只有 reasoning 节点可以指定逻辑符号: ${id || '(unknown)'}`);
     }
@@ -228,9 +220,8 @@ export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningCh
     if (reasoning.type !== 'reasoning') errors.push(`推理过程节点必须是 reasoning 类型: ${reasoning.id}`);
     if (!sameSet(reasoning.premises, chain.premiseIds)) errors.push('推理过程的前提与推理链声明不一致');
     const logicRule = reasoning.logicRuleId ? byId.get(reasoning.logicRuleId) : undefined;
-    if (!reasoning.logicRuleId) errors.push(`推理过程尚未选择逻辑符号: ${reasoning.id}`);
-    else if (!logicRule || logicRule.type !== 'logic-symbol') errors.push(`推理过程引用的逻辑符号无效: ${reasoning.logicRuleId}`);
-    else if (!active(logicRule)) errors.push(`推理过程引用的逻辑符号当前不可用: ${reasoning.logicRuleId}`);
+    if (reasoning.logicRuleId && (!logicRule || logicRule.type !== 'logic-symbol')) errors.push(`推理过程引用的逻辑符号无效: ${reasoning.logicRuleId}`);
+    else if (reasoning.logicRuleId && !active(logicRule)) errors.push(`推理过程引用的逻辑符号当前不可用: ${reasoning.logicRuleId}`);
   }
 
   if (!conclusion) errors.push(`结论不存在: ${chain.conclusionId}`);
