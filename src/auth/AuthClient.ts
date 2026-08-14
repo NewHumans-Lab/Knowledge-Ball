@@ -116,7 +116,11 @@ function exactEnergy(value: unknown): string {
   if (!/^-?\d+(?:\.\d{1,6})?$/.test(text)) throw new Error('服务端返回了无效能量精度');
   const [whole, fraction = ''] = text.split('.'); return `${whole}.${fraction.padEnd(6, '0')}`;
 }
-export function compactEnergy(value: string): string { return /^-?\d+\.\d{6}$/.test(value) ? value.split('.')[0] : '—'; }
+export function compactEnergy(value: string): string {
+  if (!/^-?\d+\.\d{6}$/.test(value)) return '—';
+  const whole = value.split('.')[0];
+  return whole === '-0' ? '0' : whole;
+}
 
 export function createProductionAuthClient(): KnowledgeBallAuthClient | null {
   const url = import.meta.env.VITE_SUPABASE_URL?.trim(); const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();

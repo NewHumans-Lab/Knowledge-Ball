@@ -70,6 +70,25 @@ try {
   assert.deepEqual(networkFailures, [], `Supabase network failures:\n${networkFailures.join('\n')}`);
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.join('\n')}`);
 
+  // Real append-only E2E: anonymous writer -> remote acknowledgement -> reload
+  // -> a second isolated anonymous session observes the same public node.
+  const marker = `E2E ${new URL(target).searchParams.get('e2e') ?? Date.now()} ${crypto.randomUUID()}`;
+  await page.locator('.ai-add').click();
+  await page.locator('#fTitle').fill(marker);
+  await page.locator('#fType').selectOption('fact');
+  await page.locator('#fDescription').fill(`Public synchronization probe for ${marker}`);
+  await page.locator('#modalSubmit').click();
+  await page.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).some(node => node.title === title), marker);
+  await page.waitForFunction(() => window.__debug?.syncEngine?.pendingCount?.() === 0 && window.__debug?.syncEngine?.currentStatus?.() === 'idle', null, { timeout: 20_000 });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length === 1, marker);
+  const secondContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const secondPage = await secondContext.newPage();
+    await secondPage.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await secondPage.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length === 1, marker, { timeout: 20_000 });
+  } finally { await secondContext.close(); }
+
   await page.locator('.ai-add').click();
   await page.locator('#modalOverlay.show').waitFor({ state: 'visible', timeout: 5_000 });
   await page.locator('#modalCancel').click();
