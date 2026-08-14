@@ -23,6 +23,9 @@ jobs:
       - run: npm run test:pages
       - run: npm test
       - run: npm run test:download
+      - name: Install Chromium for mobile browser regression
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:browser-mobile
       - name: Verify pull request merges cleanly with its base
         if: github.event_name == 'pull_request'
         run: |

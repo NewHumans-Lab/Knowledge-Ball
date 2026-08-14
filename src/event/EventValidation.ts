@@ -10,6 +10,8 @@ const editKindByType = {
   KnowledgeNegated: 'negate',
   KnowledgeDecomposed: 'decompose',
   KnowledgeMerged: 'merge',
+  KnowledgeStatusChanged: 'status',
+  KnowledgeNodeEdited: 'update',
 } as const;
 
 export function validateDomainEventEnvelope(event: DomainEvent): string[] {
@@ -56,6 +58,16 @@ export function validateDomainEventAgainstState(event: DomainEvent, state: Graph
     case 'KnowledgeDecomposed':
     case 'KnowledgeMerged':
       return validateKnowledgeEdit(protocolNodes(state), event.payload.edit);
+    case 'KnowledgeStatusChanged': {
+      const target = state.nodesById[event.payload.edit.nodeId];
+      if (!target) return [`事件目标不存在: ${event.payload.edit.nodeId}`];
+      if (target.status === 'falsified') return ['已证伪节点不能通过普通状态命令恢复'];
+      if (event.payload.edit.status === 'suspended' && !event.payload.edit.causeNodeId) return ['悬置必须记录原因节点'];
+      if (event.payload.edit.causeNodeId && !state.nodesById[event.payload.edit.causeNodeId]) return [`原因节点不存在: ${event.payload.edit.causeNodeId}`];
+      return [];
+    }
+    case 'KnowledgeNodeEdited':
+      return state.nodesById[event.payload.edit.nodeId] ? [] : [`事件目标不存在: ${event.payload.edit.nodeId}`];
     case 'NodeCreated':
       if (event.payload.source !== 'import') return ['NodeCreated 仅用于导入旧记录；新的增加必须提交 KnowledgeAdded'];
       if (state.nodesById[event.payload.nodeId]) return [`节点 ID 已存在: ${event.payload.nodeId}`];

@@ -1,4 +1,4 @@
-import { isPublicKnowledgeEvent, type DomainEvent, type PublicKnowledgeEvent } from '../event/Event';
+import { isCanonicalPublicKnowledgeEvent, isPublicKnowledgeEvent, type DomainEvent, type PublicKnowledgeEvent } from '../event/Event';
 import { KnowledgeBallAuthClient } from '../auth/AuthClient';
 import { RemoteHeadConflictError, type PushResult, type SyncAdapter, type SyncBatch } from './SyncAdapter';
 import type { StorageLike } from '../persistence/KnowledgePersistence';
@@ -33,7 +33,7 @@ export class SupabaseSyncAdapter implements SyncAdapter {
   }
 
   async push(events: PublicKnowledgeEvent[], expectedCursor: string): Promise<PushResult> {
-    if (events.some(event => !isPublicKnowledgeEvent(event))) throw new Error('Personal events cannot enter the public stream');
+    if (events.some(event => !isCanonicalPublicKnowledgeEvent(event))) throw new Error('Only canonical public knowledge events can enter the public stream');
     const envelopes = events.map(({ seq: _localSequence, ...event }) => event);
     try {
       const result = await this.api<{ head: number; acknowledged_event_ids: string[] }>('/rest/v1/rpc/append_public_knowledge_events', { method: 'POST', body: JSON.stringify({ expected_head: Number(expectedCursor), event_batch: envelopes }) });
