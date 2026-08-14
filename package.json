@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "npm run test:domain && npm run test:protocol && npm run test:protocol-adversarial && npm run test:knowledge-edits && npm run test:demo && npm run test:edit-ui && npm run test:persistence && npm run test:sync && npm run test:architecture && npm run test:scene && npm run test:core-sun",
+    "test": "npm run test:domain && npm run test:protocol && npm run test:protocol-adversarial && npm run test:knowledge-edits && npm run test:demo && npm run test:edit-ui && npm run test:persistence && npm run test:sync && npm run test:architecture && npm run test:auth && npm run test:scene && npm run test:core-sun && npm run test:mobile",
     "test:domain": "npx esbuild src/domain/KnowledgeModel.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-model.mjs && node .test-dist/knowledge-model.mjs && npx esbuild src/domain/KnowledgeMigration.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-migration.mjs && node .test-dist/knowledge-migration.mjs",
     "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json --noEmit && npx esbuild src/persistence/PersistenceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/persistence-regression.mjs && node .test-dist/persistence-regression.mjs",
     "test:scene": "npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/scene-regression.mjs && node .test-dist/scene-regression.mjs",

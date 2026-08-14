@@ -22,6 +22,7 @@ jobs:
       - run: npm run build
       - run: npm run test:pages
       - run: npm test
+      - run: npm run test:download
       - name: Verify pull request merges cleanly with its base
         if: github.event_name == 'pull_request'
         run: |
