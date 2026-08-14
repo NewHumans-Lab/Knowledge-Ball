@@ -1,4 +1,4 @@
-import { isPublicKnowledgeEvent, type DomainEvent, type PublicKnowledgeEvent } from '../event/Event';
+import { isCanonicalPublicKnowledgeEvent, isPublicKnowledgeEvent, type DomainEvent, type PublicKnowledgeEvent } from '../event/Event';
 import type { EventStore } from '../event/EventStore';
 import { RemoteHeadConflictError, type SyncAdapter } from './SyncAdapter';
 import { SyncMetadataStore, type FailedSyncEvent, type SyncMetadata } from './SyncMetadata';
@@ -21,14 +21,14 @@ export class SyncEngine<TState> {
   ) {
     this.metadata = metadataStore.load();
     store.subscribe(event => {
-      if (!this.applyingRemote && isPublicKnowledgeEvent(event)) this.queue(event.id);
+      if (!this.applyingRemote && isCanonicalPublicKnowledgeEvent(event)) this.queue(event.id);
     }, false);
 
     // The web app restores and may seed local events before the SyncEngine is
     // constructed. Reconcile those already-present public events so enabling a
     // hosted adapter later does not permanently strand them in localStorage.
     for (const event of store.allEvents()) {
-      if (isPublicKnowledgeEvent(event)) this.queue(event.id);
+      if (isCanonicalPublicKnowledgeEvent(event)) this.queue(event.id);
     }
 
     if (!adapter) this.setStatus('unavailable');
@@ -105,7 +105,7 @@ export class SyncEngine<TState> {
 
   private pendingEvents(): PublicKnowledgeEvent[] {
     const wanted = new Set(this.metadata.pendingEventIds);
-    return this.store.allEvents().filter(isPublicKnowledgeEvent).filter(event => wanted.has(event.id));
+    return this.store.allEvents().filter(isCanonicalPublicKnowledgeEvent).filter(event => wanted.has(event.id));
   }
   private queue(id: string): void {
     if (!this.metadata.acknowledgedEventIds.includes(id) && !this.metadata.pendingEventIds.includes(id)) {

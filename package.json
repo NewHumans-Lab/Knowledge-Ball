@@ -30,12 +30,14 @@
     "test:sync": "npx esbuild src/sync/SyncRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/sync-regression.mjs && node .test-dist/sync-regression.mjs",
     "test:architecture": "node scripts/verify-scheme7-architecture.mjs && node scripts/verify-energy-migration.mjs && node scripts/verify-account-ui.mjs && node scripts/verify-issue45-regressions.mjs",
     "test:auth": "npx esbuild src/auth/AuthClientRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/auth-regression.mjs && node .test-dist/auth-regression.mjs"
+    ,"test:browser-mobile": "node scripts/verify-mobile-browser.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.8",
     "@types/three": "^0.185.4",
     "typescript": "^5.5.4",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "playwright": "^1.55.0"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.8",

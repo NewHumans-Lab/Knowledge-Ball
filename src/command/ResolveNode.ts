@@ -1,20 +1,21 @@
 import { fingerprint } from '../event/Command';
-import { CURRENT_SCHEMA_VERSION, type NodeResolvedEvent } from '../event/Event';
+import { CURRENT_SCHEMA_VERSION, type KnowledgeStatusChangedEvent } from '../event/Event';
 import type { EventStore } from '../event/EventStore';
 import type { GraphState } from '../state/GraphState';
 
 export async function resolveNode(
   store: EventStore<GraphState>,
   payload: { nodeId: string }
-): Promise<NodeResolvedEvent> {
-  const id = await fingerprint('NodeResolved', payload);
-  const event: NodeResolvedEvent = {
+): Promise<KnowledgeStatusChangedEvent> {
+  const edit = { kind: 'status' as const, nodeId: payload.nodeId, status: 'verified' as const };
+  const id = await fingerprint('KnowledgeStatusChanged', { edit });
+  const event: KnowledgeStatusChangedEvent = {
     id,
-    type: 'NodeResolved',
+    type: 'KnowledgeStatusChanged',
     scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
-    payload,
+    payload: { edit },
   };
   store.append(event);
   return event;

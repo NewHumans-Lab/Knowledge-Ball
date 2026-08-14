@@ -96,6 +96,8 @@ export class GraphProjection implements Projection<GraphState> {
       case 'NodeSuspended': { const n = this.state.nodesById[event.payload.nodeId]; if (n && n.status !== 'falsified') n.status = 'suspended'; break; }
       case 'NodeResolved': { const n = this.state.nodesById[event.payload.nodeId]; if (n && n.status !== 'falsified') n.status = 'verified'; break; }
       case 'NodeDisputed': { const n = this.state.nodesById[event.payload.nodeId]; if (n) n.status = 'disputed'; break; }
+      case 'KnowledgeStatusChanged': { const n = this.state.nodesById[event.payload.edit.nodeId]; if (n && n.status !== 'falsified') n.status = event.payload.edit.status; break; }
+      case 'KnowledgeNodeEdited': { const n = this.state.nodesById[event.payload.edit.nodeId]; if(n){const p=event.payload.edit;if(p.title!==undefined)n.title=p.title;if(p.nodeType!==undefined)n.type=p.nodeType;if(p.reasoning!==undefined)n.reasoning=p.reasoning;if(p.premises!==undefined)n.premises=[...p.premises];}break; }
       case 'NodeMasterySet': { const n = this.state.nodesById[event.payload.nodeId]; if (n) n.mastery = event.payload.mastery; break; }
       case 'KnowledgeAdded':
       case 'KnowledgeNegated':

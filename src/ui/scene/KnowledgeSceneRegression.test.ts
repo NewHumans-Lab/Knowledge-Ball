@@ -1,4 +1,4 @@
-import { clampGraphZoom, coreLabelsVisible, coreOrbitScreenPosition, coreSunContainsTriad, initialNodePosition, isCoreNodeId, layerForNode, nodeRadiusForType, ordinaryNodeCompensationScale, shouldRenderEdge } from './KnowledgeScene';
+import { clampGraphZoom, coreLabelsVisible, coreOrbitScreenPosition, coreSunContainsTriad, hasFiniteCoordinates, initialNodePosition, isCoreNodeId, layerForNode, nodeRadiusForType, ordinaryNodeCompensationScale, shouldRenderEdge } from './KnowledgeScene';
 import { CORE_AMBIENT_LIGHT_INTENSITY, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_RADIUS, DEFAULT_CAM_Z, LAYER_BANDS, MAX_GRAPH_ZOOM, MIN_GRAPH_ZOOM, SUN_ORBIT_RADIUS, SUN_RADIUS_MM, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 function assert(condition:unknown,message:string):asserts condition{if(!condition)throw new Error(message);}
 function node(id:string,type:'axiom'|'fact'|'theorem'='fact',status:'pending'|'verified'='verified'){return{id,type,status}as const;}
@@ -16,4 +16,7 @@ assert(nodeRadiusForType('reasoning',9)===3,'reasoning process radius must be ex
 assert(nodeRadiusForType('theorem',9)===9,'conclusion radius must keep the configured value');
 assert(!coreLabelsVisible(9.99)&&coreLabelsVisible(10),'core labels must reveal only at 10x graph zoom');
 assert(DEFAULT_CAM_Z===640,'camera baseline changed unexpectedly; graph zoom must not require camera movement');
+assert(hasFiniteCoordinates({x:0,y:-1,z:2}),'finite scene coordinates must be accepted');
+assert(!hasFiniteCoordinates({x:Number.NaN,y:0,z:0}),'NaN edge/node coordinates must be rejected before geometry creation');
+assert(!hasFiniteCoordinates({x:0,y:Number.POSITIVE_INFINITY,z:0}),'infinite edge/node coordinates must be rejected before geometry creation');
 console.log('Knowledge scene regression tests passed');

@@ -7,7 +7,7 @@ if (!target) throw new Error('Usage: node scripts/verify-production-browser.mjs 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
 
 try {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
 
   const pageErrors = [];
@@ -70,6 +70,16 @@ try {
   assert.deepEqual(networkFailures, [], `Supabase network failures:\n${networkFailures.join('\n')}`);
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.join('\n')}`);
 
+  const tappable = await page.evaluate(() => {
+    const debug = window.__debug;
+    debug?.scene?.stop?.();
+    const node = debug?.renderNodes?.find(candidate => !['n1','n2','n16'].includes(candidate.id)) ?? debug?.renderNodes?.[0];
+    const point = node ? debug?.scene?.screenPositionForNode?.(node.id) : null;
+    return point && node ? { ...point, id: node.id, title: node.title } : null;
+  });
+  assert.ok(tappable, 'scene did not expose a finite tappable node position');
+  assert.ok(Number.isFinite(tappable.x) && Number.isFinite(tappable.y), 'mobile raycast target coordinates must be finite');
+
   // Real append-only E2E: anonymous writer -> remote acknowledgement -> reload
   // -> a second isolated anonymous session observes the same public node.
   const marker = `E2E ${new URL(target).searchParams.get('e2e') ?? Date.now()} ${crypto.randomUUID()}`;
@@ -82,7 +92,7 @@ try {
   await page.waitForFunction(() => window.__debug?.syncEngine?.pendingCount?.() === 0 && window.__debug?.syncEngine?.currentStatus?.() === 'idle', null, { timeout: 20_000 });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length === 1, marker);
-  const secondContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const secondContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   try {
     const secondPage = await secondContext.newPage();
     await secondPage.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });

@@ -1,5 +1,5 @@
 import { fingerprint } from '../event/Command';
-import { CURRENT_SCHEMA_VERSION, type NodeEditedEvent, type NodeType } from '../event/Event';
+import { CURRENT_SCHEMA_VERSION, type KnowledgeNodeEditedEvent, type NodeType } from '../event/Event';
 import type { EventStore } from '../event/EventStore';
 import type { GraphState } from '../state/GraphState';
 
@@ -11,15 +11,16 @@ export interface EditNodePayload {
   premises?: string[];
 }
 
-export async function editNode(store: EventStore<GraphState>, payload: EditNodePayload): Promise<NodeEditedEvent> {
-  const id = await fingerprint('NodeEdited', payload);
-  const event: NodeEditedEvent = {
+export async function editNode(store: EventStore<GraphState>, payload: EditNodePayload): Promise<KnowledgeNodeEditedEvent> {
+  const edit = { kind: 'update' as const, ...payload };
+  const id = await fingerprint('KnowledgeNodeEdited', { edit });
+  const event: KnowledgeNodeEditedEvent = {
     id,
-    type: 'NodeEdited',
+    type: 'KnowledgeNodeEdited',
     scope: 'public',
     schemaVersion: CURRENT_SCHEMA_VERSION,
     timestamp: Date.now(),
-    payload,
+    payload: { edit },
   };
   store.append(event);
   return event;
