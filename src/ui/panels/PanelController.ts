@@ -87,6 +87,7 @@ export interface PanelControllerCallbacks {
   onDisputeNode: (id: string) => Promise<void> | void;
   onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
   onSelectRelatedNode?: (id: string) => void;
+  onOverlayVisibilityChange?: (visible: boolean) => void;
 
   onOpenSettings?: () => void;
   onCloseSettings?: () => void;
@@ -170,6 +171,7 @@ export class PanelController {
   private readonly onDisputeNode: (id: string) => Promise<void> | void;
   private readonly onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
   private readonly onSelectRelatedNode?: (id: string) => void;
+  private readonly onOverlayVisibilityChange?: (visible: boolean) => void;
   private readonly onOpenSettings?: () => void;
   private readonly onCloseSettings?: () => void;
 
@@ -236,6 +238,7 @@ export class PanelController {
     this.onDisputeNode = options.onDisputeNode;
     this.onSetMastery = options.onSetMastery;
     this.onSelectRelatedNode = options.onSelectRelatedNode;
+    this.onOverlayVisibilityChange = options.onOverlayVisibilityChange;
     this.onOpenSettings = options.onOpenSettings;
     this.onCloseSettings = options.onCloseSettings;
 
@@ -300,11 +303,15 @@ export class PanelController {
   }
 
   openNodePanel(id: string): void {
-    const node = this.getNodeById(id);
+    performance.mark?.('knowledge-panel-open-start');
+    const nodes = this.getNodes();
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const node = byId.get(id);
     if (!node) return;
 
     this.selectedId = id;
     this.editMode = false;
+    this.onOverlayVisibilityChange?.(true);
     this.panel.classList.add('open');
     this.panelTitle.textContent = node.title;
 
@@ -312,18 +319,18 @@ export class PanelController {
     const statusColor = STATUS_COLOR_HEX[node.status] ?? '#ffffff';
 
     const premisesHtml = node.premises.map(pid => {
-      const p = this.getNodeById(pid);
+      const p = byId.get(pid);
       if (!p) return '';
       return `<div class="chip" data-jump="${escapeHtml(pid)}">${escapeHtml(shortText(p.title, 20))}</div>`;
     }).join('') || '<div class="chip empty">无前置（公理层或独立节点）</div>';
 
-    const depsHtml = this.getNodes()
+    const depsHtml = nodes
       .filter(n => n.premises.includes(id) || n.logicRuleId === id)
       .map(n => `<div class="chip" data-jump="${escapeHtml(n.id)}">${escapeHtml(shortText(n.title, 20))}</div>`)
       .join('') || '<div class="chip empty">暂无下游依赖节点</div>';
 
     const twinNodes = node.twinGroup
-      ? this.getNodes().filter(n => n.twinGroup === node.twinGroup && n.id !== node.id)
+      ? nodes.filter(n => n.twinGroup === node.twinGroup && n.id !== node.id)
       : [];
 
     const twinHtml = twinNodes.length
@@ -337,7 +344,7 @@ export class PanelController {
       `
       : '';
 
-    const logicRule = node.logicRuleId ? this.getNodeById(node.logicRuleId) : null;
+    const logicRule = node.logicRuleId ? byId.get(node.logicRuleId) ?? null : null;
     const logicRuleHtml = node.type === 'reasoning'
       ? `
         <div class="field">
@@ -402,7 +409,7 @@ export class PanelController {
       </div>
       <div class="action-grid">
         ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">Decompose · 分解</button>' : ''}
-        ${this.canMerge(node) ? '<button class="btn ghost" id="btnMerge">Merge · 合并</button>' : ''}
+        ${this.canMerge(node, nodes, byId) ? '<button class="btn ghost" id="btnMerge">Merge · 合并</button>' : ''}
       </div>
       ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Negate · 以 Counterexample 否定</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
@@ -411,10 +418,16 @@ export class PanelController {
     `;
 
     this.bindPanelRuntimeEvents(id);
+    performance.mark?.('knowledge-panel-open-end');
+    performance.measure?.('knowledge-panel-open', 'knowledge-panel-open-start', 'knowledge-panel-open-end');
+    if (performance.getEntriesByName?.('knowledge-node-tap-start').length) {
+      performance.measure?.('knowledge-tap-to-panel', 'knowledge-node-tap-start', 'knowledge-panel-open-end');
+    }
   }
 
   closeNodePanel(): void {
     this.panel.classList.remove('open');
+    this.onOverlayVisibilityChange?.(false);
     this.selectedId = null;
     this.editMode = false;
   }
@@ -437,11 +450,13 @@ export class PanelController {
     this.renderPremiseList();
     this.renderLogicRuleList();
     this.updateCreateMode();
+    this.onOverlayVisibilityChange?.(true);
     this.modalOverlay.classList.add('show');
   }
 
   closeCreateModal(): void {
     this.modalOverlay.classList.remove('show');
+    this.onOverlayVisibilityChange?.(this.panel.classList.contains('open'));
   }
 
   openAccountOverlay(): void {
@@ -724,9 +739,9 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
     ].join('');
   }
 
-  private reasoningParent(node: PanelNodeSummary): PanelNodeSummary | null {
+  private reasoningParent(node: PanelNodeSummary, byId?: ReadonlyMap<string, PanelNodeSummary>): PanelNodeSummary | null {
     const parents = node.premises
-      .map(id => this.getNodeById(id))
+      .map(id => byId?.get(id) ?? this.getNodeById(id))
       .filter((candidate): candidate is PanelNodeSummary => candidate?.type === 'reasoning');
     return parents.length === 1 ? parents[0] : null;
   }
@@ -735,16 +750,16 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
     return [...new Set(left.premises)].sort().join('\0') === [...new Set(right.premises)].sort().join('\0');
   }
 
-  private canMerge(node: PanelNodeSummary): boolean {
+  private canMerge(node: PanelNodeSummary, nodes = this.getNodes(), byId = new Map(nodes.map(item => [item.id, item]))): boolean {
     if (node.type === 'definition') {
-      return this.getNodes().some(candidate => candidate.id !== node.id && candidate.type === 'definition');
+      return nodes.some(candidate => candidate.id !== node.id && candidate.type === 'definition');
     }
     if (!this.isDerivedType(node.type)) return false;
-    const reasoning = this.reasoningParent(node);
+    const reasoning = this.reasoningParent(node, byId);
     if (!reasoning) return false;
-    return this.getNodes().some(candidate => {
+    return nodes.some(candidate => {
       if (candidate.id === node.id || candidate.type !== node.type) return false;
-      const otherReasoning = this.reasoningParent(candidate);
+      const otherReasoning = this.reasoningParent(candidate, byId);
       return Boolean(
         otherReasoning &&
         otherReasoning.id !== reasoning.id &&

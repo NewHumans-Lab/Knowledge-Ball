@@ -47,10 +47,15 @@ export function dedupeEvents<TEvent extends KnowledgeEvent>(events: TEvent[]): T
 export class KnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent> {
   private readonly storageKey: string;
   private readonly storage: StorageLike | null;
+  private pendingEvents: TEvent[] | null = null;
+  private saveScheduled = false;
 
   constructor(options: KnowledgePersistenceOptions) {
     this.storageKey = options.storageKey;
     this.storage = options.storage === undefined ? browserStorage() : options.storage;
+    if (options.storage === undefined && typeof window !== 'undefined') {
+      window.addEventListener('pagehide', () => this.flushLocal());
+    }
   }
 
   loadLocal(): TEvent[] {
@@ -69,6 +74,29 @@ export class KnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent
 
   saveLocal(events: TEvent[]): void {
     if (!this.storage) return;
+    if (typeof window !== 'undefined' && this.storage === window.localStorage) {
+      this.pendingEvents = events;
+      if (!this.saveScheduled) {
+        this.saveScheduled = true;
+        const flush = () => { this.saveScheduled = false; this.flushLocal(); };
+        if ('requestIdleCallback' in window) window.requestIdleCallback(flush, { timeout: 500 });
+        else globalThis.setTimeout(flush, 0);
+      }
+      return;
+    }
+    this.writeLocal(events);
+  }
+
+  flushLocal(): void {
+    if (!this.pendingEvents) return;
+    const events = this.pendingEvents;
+    this.pendingEvents = null;
+    this.writeLocal(events);
+  }
+
+  private writeLocal(events: TEvent[]): void {
+    if (!this.storage) return;
+    performance.mark?.('knowledge-persistence-start');
     const envelope: PersistedEnvelope<TEvent> = {
       schemaVersion: 1,
       savedAt: new Date().toISOString(),
@@ -79,6 +107,8 @@ export class KnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent
     } catch {
       return;
     }
+    performance.mark?.('knowledge-persistence-end');
+    performance.measure?.('knowledge-persistence', 'knowledge-persistence-start', 'knowledge-persistence-end');
   }
 
   clearLocal(): void {

@@ -53,7 +53,10 @@ export async function executeKnowledgeEdit(
   projection: GraphProjection,
   edit: KnowledgeEdit,
 ): Promise<DomainEvent> {
+  performance.mark?.('knowledge-edit-validate-start');
   const errors = validateKnowledgeEdit(protocolNodesFromState(projection.state), edit);
+  performance.mark?.('knowledge-edit-validate-end');
+  performance.measure?.('knowledge-edit-validate', 'knowledge-edit-validate-start', 'knowledge-edit-validate-end');
   if (errors.length) throw new KnowledgeEditValidationError(errors);
 
   const type = eventTypeFor(edit);
@@ -69,8 +72,11 @@ export async function executeKnowledgeEdit(
     payload,
   } as DomainEvent;
 
-  if (!store.append(event)) {
+  performance.mark?.('knowledge-edit-append-start');
+  if (!store.appendValidated(event)) {
     throw new Error(`Duplicate knowledge edit event: ${id}`);
   }
+  performance.mark?.('knowledge-edit-append-end');
+  performance.measure?.('knowledge-edit-append', 'knowledge-edit-append-start', 'knowledge-edit-append-end');
   return event;
 }

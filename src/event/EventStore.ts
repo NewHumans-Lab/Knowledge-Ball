@@ -42,10 +42,19 @@ export class EventStore<TState> {
   }
 
   append(event: DomainEvent): boolean {
+    return this.appendInternal(event, true);
+  }
+
+  /** Append an event whose state-dependent validation was already completed by its command. */
+  appendValidated(event: DomainEvent): boolean {
+    return this.appendInternal(event, false);
+  }
+
+  private appendInternal(event: DomainEvent, validateState: boolean): boolean {
     if (this.idIndex.has(event.id)) return false;
     const validationErrors = [
       ...validateDomainEventEnvelope(event),
-      ...(this.validateEvent?.(event) ?? []),
+      ...(validateState ? this.validateEvent?.(event) ?? [] : []),
     ];
     if (validationErrors.length) throw new DomainEventValidationError([...new Set(validationErrors)]);
     const stamped: DomainEvent = { ...event, seq: this.nextSeq++ };

@@ -6,6 +6,7 @@ import { cascadeReachable } from '../graph/Graph';
 import {
   applyKnowledgeEdit,
   type KnowledgeEdit,
+  type NewProtocolNode,
   type ProtocolNode,
 } from '../protocol/KnowledgeEditingProtocol';
 
@@ -23,6 +24,29 @@ export class GraphProjection implements Projection<GraphState> {
   }
 
   private applyKnowledgeEdit(edit: KnowledgeEdit): void {
+    // Adds were validated at the command/event boundary and only append one or
+    // two nodes. Do not clone and rebuild the entire graph for this hot path.
+    if (edit.kind === 'add') {
+      const append = (draft: NewProtocolNode, premises: string[]) => {
+        this.state.nodesById[draft.id] = {
+          id: draft.id,
+          title: draft.title.trim(),
+          type: draft.type,
+          status: 'pending',
+          mastery: 'none',
+          reasoning: draft.reasoning.trim(),
+          premises: [...new Set(premises)],
+          hidden: false,
+          logicRuleId: draft.logicRuleId,
+        };
+      };
+      if (edit.mode === 'atomic') append(edit.node, []);
+      else {
+        append(edit.reasoning, edit.requiredPremiseIds);
+        append(edit.conclusion, [edit.reasoning.id]);
+      }
+      return;
+    }
     const masteryById = new Map(nodeList(this.state).map(node => [node.id, node.mastery]));
     const protocolNodes: ProtocolNode[] = nodeList(this.state).map(node => ({
       id: node.id,
