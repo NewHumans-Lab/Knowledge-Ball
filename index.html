@@ -180,8 +180,10 @@
   header{background:rgba(2,9,13,.8);backdrop-filter:blur(18px);border-color:var(--panel-border);padding:11px 16px}
   .brand-copy{display:flex;flex-direction:column;gap:2px}.brand-title{font:600 13px/1 'Inter',sans-serif;color:var(--ink);letter-spacing:.08em}.brand-subtitle{font-size:9px!important;color:var(--ink-faint)!important;letter-spacing:.14em!important}
   .avatar-btn{border-radius:10px;background:#0b2227;border-color:rgba(117,224,211,.3);color:var(--ink-dim)}
-  .panel,.modal,.ai-results{background:rgba(5,18,23,.86);backdrop-filter:blur(22px) saturate(110%);-webkit-backdrop-filter:blur(22px) saturate(110%)}
-  .panel{top:12px;right:12px;bottom:72px;width:338px;border:1px solid var(--panel-border);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:transform .2s ease,opacity .15s ease}
+  .modal,.ai-results{background:rgba(5,18,23,.86);backdrop-filter:blur(22px) saturate(110%);-webkit-backdrop-filter:blur(22px) saturate(110%)}
+  /* Do not backdrop-filter over the live WebGL canvas. On mobile GPUs this
+     forces an expensive canvas readback/composite and can freeze the page. */
+  .panel{top:12px;right:12px;bottom:72px;width:338px;background:rgb(5,18,23);border:1px solid var(--panel-border);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:none}
   .panel.open{opacity:1;pointer-events:auto}
   .ai-bar{max-width:552px;margin:auto;background:rgba(5,19,24,.84);border-color:var(--panel-border);box-shadow:0 16px 46px rgba(0,0,0,.38)}
   .node-label{background:rgba(2,9,13,.52);border:1px solid rgba(117,224,211,.1);color:#c7dbdd;padding:2px 6px;border-radius:5px;text-shadow:0 1px 3px #000}
