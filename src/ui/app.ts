@@ -372,8 +372,7 @@ scene = createKnowledgeScene({
   labelsLayer,
   getNodes: () => renderNodes,
   callbacks: {
-    onSelectNode: openNode,
-    onOpenPanel: openNode,
+    onNodeTap: openNode,
     onBackgroundTap: () => {
       currentPanelId = null;
       panel.closeNodePanel();
