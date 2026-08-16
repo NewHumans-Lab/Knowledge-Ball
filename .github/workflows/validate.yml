@@ -26,6 +26,15 @@ jobs:
       - name: Install Chromium for mobile browser regression
         run: npx playwright install --with-deps chromium
       - run: npm run test:browser-mobile
+      - name: Run Issue 51 production-scale interaction trace
+        run: npm run test:issue51-browser
+      - name: Upload Issue 51 Playwright trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue51-playwright-trace
+          path: artifacts/issue51-trace.zip
+          if-no-files-found: warn
       - name: Verify pull request merges cleanly with its base
         if: github.event_name == 'pull_request'
         run: |

@@ -2,6 +2,7 @@ import { EventStore } from '../event/EventStore';
 import { validateDomainEventAgainstState } from '../event/EventValidation';
 import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjection';
 import { nodeList } from '../state/GraphState';
+import type { GraphNode } from '../graph/Node';
 
 import { createNode as cmdCreateNode } from '../command/CreateNode';
 import { editNode as cmdEditNode } from '../command/EditNode';
@@ -66,6 +67,16 @@ let interaction: InteractionController;
 let currentPanelId: string | null = null;
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
 let backgroundSyncTimer:number|null=null;
+const mobileSceneNodeLimit = window.matchMedia('(max-width: 640px)').matches ? 48 : Infinity;
+function getSceneNodes(): KnowledgeSceneNode[] {
+  if (renderNodes.length <= mobileSceneNodeLimit) return renderNodes;
+  const visible = renderNodes.slice(0, mobileSceneNodeLimit);
+  if (currentPanelId && !visible.some(node => node.id === currentPanelId)) {
+    const selected = getNodeById(currentPanelId);
+    if (selected) visible[visible.length - 1] = selected;
+  }
+  return visible;
+}
 function scheduleBackgroundSync():void {
   if(backgroundSyncTimer!==null)return;
   backgroundSyncTimer=window.setTimeout(()=>{backgroundSyncTimer=null;void syncEngine?.sync().catch(error=>console.warn('[Knowledge-Ball] background sync deferred:',error));},0);
@@ -99,9 +110,13 @@ function syncNodesFromProjection(): void {
 
   renderNodes = domainNodes.filter(dn => !dn.hidden).map(dn => {
     const prev = prevById[dn.id];
-    const meta = (TWIN_META as Record<string, { twinGroup: string; sharedTitle: string }>)[dn.id] ?? {};
+    return renderNodeFromDomain(dn, prev);
+  });
+}
 
-    return {
+function renderNodeFromDomain(dn: GraphNode, prev?: KnowledgeSceneNode): KnowledgeSceneNode {
+  const meta = (TWIN_META as Record<string, { twinGroup: string; sharedTitle: string }>)[dn.id] ?? {};
+  return {
       id: dn.id,
       title: dn.title,
       type: dn.type as KnowledgeNodeType,
@@ -117,8 +132,17 @@ function syncNodesFromProjection(): void {
       vel: prev?.vel,
       homePos: prev?.homePos,
       layer: prev?.layer,
-    };
-  });
+  };
+}
+
+function syncAddedRenderNodes(event: Extract<PublicKnowledgeEvent, { type: 'KnowledgeAdded' }>): void {
+  const ids = event.payload.edit.mode === 'atomic'
+    ? [event.payload.edit.node.id]
+    : [event.payload.edit.reasoning.id, event.payload.edit.conclusion.id];
+  for (const id of ids) {
+    const node = projection.state.nodesById[id];
+    if (node && !node.hidden) renderNodes.push(renderNodeFromDomain(node));
+  }
 }
 
 function getNodeById(id: string): KnowledgeSceneNode | null {
@@ -181,6 +205,10 @@ function openNode(id: string): void {
   scene.markDirty();
 }
 
+function updateSceneOverlayState(visible: boolean): void {
+  scene.setOverlayVisible(visible);
+}
+
 async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
   const conclusionId = generateNodeId();
   const atomic = ['axiom', 'definition', 'fact', 'logic-symbol'].includes(payload.type);
@@ -213,10 +241,12 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
           reasoning: payload.description,
         },
       };
-  await applyKnowledgeEdit(edit);
-  currentPanelId = conclusionId;
-  panel.openNodePanel(conclusionId);
-  scene.markDirty();
+  currentPanelId = null;
+  try {
+    await applyKnowledgeEdit(edit);
+  } catch (error) {
+    throw error;
+  }
 }
 
 async function applyKnowledgeEdit(edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit): Promise<void> {
@@ -370,7 +400,7 @@ let closeSettingsOverlay: (() => void) | undefined;
 scene = createKnowledgeScene({
   host,
   labelsLayer,
-  getNodes: () => renderNodes,
+  getNodes: getSceneNodes,
   callbacks: {
     onNodeTap: openNode,
     onBackgroundTap: () => {
@@ -397,6 +427,7 @@ panel = new PanelController({
   onDisputeNode: disputeKnowledgeNode,
   onSetMastery: setKnowledgeMastery,
   onSelectRelatedNode: openNode,
+  onOverlayVisibilityChange: updateSceneOverlayState,
 
   panel: must<HTMLElement>('panel'),
   panelTitle: must<HTMLElement>('panelTitle'),
@@ -462,8 +493,10 @@ interaction = new InteractionController({
 });
 
 store.subscribe((event) => {
+  performance.mark?.('knowledge-subscriber-start');
   projection.apply(event);
-  syncNodesFromProjection();
+  if (event.type === 'KnowledgeAdded') syncAddedRenderNodes(event);
+  else syncNodesFromProjection();
   scene.markDirty();
 
   if (currentPanelId) panel.openNodePanel(currentPanelId);
@@ -471,6 +504,8 @@ store.subscribe((event) => {
   // closes immediately after the local append; one deferred sync handles any
   // events appended in the same task.
   if (syncEngine && event.scope === 'public') scheduleBackgroundSync();
+  performance.mark?.('knowledge-subscriber-end');
+  performance.measure?.('knowledge-subscriber', 'knowledge-subscriber-start', 'knowledge-subscriber-end');
 });
 
 syncNodesFromProjection();
@@ -588,5 +623,6 @@ void setupMobileShell();
   interaction,
   panel,
   scene,
+  createKnowledgeNode,
   get syncEngine() { return syncEngine; },
 };
