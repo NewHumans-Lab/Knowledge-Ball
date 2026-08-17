@@ -7,6 +7,7 @@ const votes = await readFile('supabase/migrations/202608170001_pending_knowledge
 const rounds = await readFile('supabase/migrations/202608180001_pending_vote_round_settlement.sql', 'utf8');
 const poolCorrection = await readFile('supabase/migrations/202608180002_pending_vote_settlement_pool_correction.sql', 'utf8');
 const readySweep = await readFile('supabase/migrations/202608180003_pending_vote_ready_sweep.sql', 'utf8');
+const lateRefund = await readFile('supabase/migrations/202608180004_legacy_late_vote_refunds.sql', 'utf8');
 for (const table of ['phone_registration_registry', 'knowledge_ball_profiles', 'energy_accounts', 'energy_transactions', 'energy_ledger_entries', 'referrals']) {
   assert.match(sql, new RegExp(`create table public\\.${table}`), `missing ${table}`);
   assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`), `RLS missing for ${table}`);
@@ -45,7 +46,7 @@ assert.match(rounds, /transaction_type in \('REFERRAL', 'SPEND', 'TRANSFER', 'VO
 assert.match(rounds, /fund_new_pending_vote_round/, 'new KnowledgeAdded events must atomically create and fund their verification round');
 assert.match(rounds, /balance-stake_amount >= -10\.000000/, 'creator stake must respect the same user balance floor');
 assert.match(rounds, /perform public\.finalize_pending_vote_round\(vote_round_id\)/g, 'cast RPC must evaluate the round inside the serialized vote transaction');
-assert.match(rounds, /KnowledgeVerdictFinalized/, 'final verdict must enter the canonical public event stream');
+assert.match(rounds, /KnowledgeVerdictFinalized/, 'final verdict must enter the public server event stream');
 assert.match(rounds, /protocol verdict events are server-only/, 'browser event batches must not forge truth-protocol verdicts');
 assert.match(rounds, /event_type='KnowledgeVerdictFinalized'/, 'pending detection must stop once the server verdict exists');
 assert.match(rounds, /revoke all on public\.knowledge_pending_vote_rounds from public, anon, authenticated/, 'browser roles must not read or mutate raw round rows directly');
@@ -57,12 +58,21 @@ assert.match(poolCorrection, /losing_atoms := agree_count::bigint \* 1000000/, '
 assert.doesNotMatch(poolCorrection, /losing_atoms := .*funded/, 'creator/system wager must never contaminate the ordinary voter pool');
 assert.match(poolCorrection, /creator_payout := 2\.000000/, 'winning creator gets their one-energy stake back plus exactly one system energy');
 assert.match(poolCorrection, /funded and decided_verdict='CORRECT'/, 'creator payout only occurs on a funded correct verdict');
-assert.match(poolCorrection, /perform public\.assert_energy_conservation\(\)/, 'final settlement must end with a conservation assertion');
 
 assert.match(readySweep, /r\.deadline<=now\(\)/, 'readiness sweep must cover V1 timeout');
 assert.match(readySweep, /v\.side='AGREE'.*>= r\.required_votes/s, 'readiness sweep must cover reached AGREE threshold');
 assert.match(readySweep, /v\.side='DISAGREE'.*>= r\.required_votes/s, 'readiness sweep must cover reached DISAGREE threshold');
-assert.match(readySweep, /where verdict='PENDING' and legacy_unfunded/, 'migration must immediately repair historical threshold-ready rounds');
-assert.match(readySweep, /202608180003/, 'schema version must advance through the completed adjudication chain');
+assert.doesNotMatch(readySweep, /perform public\.finalize_pending_vote_round\(item\.id\).*legacy_unfunded/s, 'legacy repair must wait until late ballots can be normalized and refunded');
+
+assert.match(lateRefund, /settlement_status in \('ACTIVE','VOID_LATE'\)/, 'late historical votes must be retained with an explicit audit state');
+assert.match(lateRefund, /created_at > closure_at.*id::text > closure_id::text/s, 'only ballots after the exact threshold-closing ballot may be voided');
+assert.match(lateRefund, /set settlement_status='VOID_LATE'/, 'late historical ballots must be excluded rather than treated as losers');
+assert.match(lateRefund, /balance=balance\+1\.000000/, 'every void late ballot must receive its exact one-energy refund');
+assert.match(lateRefund, /set refunded_transaction_id=tx/, 'late-vote refund must be auditable against the settlement transaction');
+assert.match(lateRefund, /settlement_status='ACTIVE'/g, 'verdict counts and winner pool must use only active ballots');
+assert.match(lateRefund, /creator_payout := 2\.000000/, 'final corrected settlement must keep creator/system wager separate');
+assert.match(lateRefund, /perform public\.assert_energy_conservation\(\)/, 'final corrected settlement must end with a conservation assertion');
+assert.match(lateRefund, /where verdict='PENDING' and legacy_unfunded/, 'after late-vote normalization is installed the migration must repair every old unresolved round');
+assert.match(lateRefund, /202608180004/, 'schema version must advance through late-vote-compatible adjudication');
 
 console.log('Energy ledger and pending-vote settlement architecture checks passed');
