@@ -55,23 +55,15 @@ try {
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
 
-  // Keep the already-proven mastery-private selector defect neutralized so this
-  // run measures only the AuthUi observer fix with the real production store.
-  const removed = await page.evaluate(() => {
-    let count = 0;
+  const oldSelectorPresent = await page.evaluate(() => {
     for (const sheet of [...document.styleSheets]) {
       let rules;
       try { rules = [...sheet.cssRules]; } catch { continue; }
-      for (let i = rules.length - 1; i >= 0; i -= 1) {
-        if (rules[i].selectorText === '.mastery-private') {
-          sheet.deleteRule(i);
-          count += 1;
-        }
-      }
+      if (rules.some(rule => rule.selectorText === '.mastery-private')) return true;
     }
-    return count;
+    return false;
   });
-  assert.ok(removed >= 1, 'diagnostic must neutralize the independent mastery-private CSS defect');
+  assert.equal(oldSelectorPresent, false, 'unstable .mastery-private CSS selector must not return');
 
   const before = await page.evaluate(() => window.__debug.store.allEvents().length);
   const target = await page.evaluate(() => {
@@ -92,10 +84,15 @@ try {
   const state = await deadline(page.evaluate(({ beforeCount, nodeId }) => {
     const events = window.__debug.store.allEvents();
     const appended = events.slice(beforeCount);
+    const privacy = document.querySelector('.mastery-private');
+    const privacyStyle = privacy ? getComputedStyle(privacy) : null;
     return {
       masteryEvents: appended.filter(event => event.type === 'NodeMasterySet'),
       mastery: window.__debug.projection.state.nodesById[nodeId]?.mastery,
       panelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
+      privacyText: privacy?.textContent ?? '',
+      privacyFontSize: privacyStyle?.fontSize ?? '',
+      privacyMarginTop: privacyStyle?.marginTop ?? '',
     };
   }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
 
@@ -106,6 +103,9 @@ try {
   assert.equal(state.masteryEvents.length, 1, `one view must append exactly one mastery event, got ${state.masteryEvents.length}`);
   assert.equal(state.masteryEvents[0]?.payload?.nodeId, target.id, 'mastery event must target the viewed node');
   assert.equal(state.masteryEvents[0]?.payload?.mastery, 'touched', 'viewed node must append touched mastery');
+  assert.ok(state.privacyText.includes('LOCAL ONLY'), 'AuthUi must still update the private mastery note');
+  assert.equal(state.privacyFontSize, '9px', 'replacement selector must preserve private-note typography');
+  assert.equal(state.privacyMarginTop, '5px', 'replacement selector must preserve private-note spacing');
 
   await context.close();
 } finally {
