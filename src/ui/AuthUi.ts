@@ -16,8 +16,11 @@ function start(): void {
     if (!target) return;
     event.preventDefault(); event.stopImmediatePropagation(); openAccount();
   }, true);
-  const panel = document.getElementById('panel');
-  if (panel) new MutationObserver(() => void markViewedNode()).observe(panel, { subtree:true, childList:true, attributes:true });
+  // Observe only the node-title signal. markViewedNode() intentionally mutates
+  // panelBody; observing the whole panel subtree would feed those mutations
+  // back into markViewedNode and can starve the browser microtask queue.
+  const panelTitle = document.getElementById('panelTitle');
+  if (panelTitle) new MutationObserver(() => void markViewedNode()).observe(panelTitle, { subtree:true, childList:true, characterData:true });
   updateAvatar();
   if (account) void account.publicSession().then(() => loadAccount()).catch(() => undefined);
 }
