@@ -73,7 +73,7 @@ try {
   });
   assert.ok(removed >= 1, 'diagnostic must neutralize the independent mastery-private CSS defect');
 
-  const before = await page.evaluate(() => window.__debug.store.getAllEvents().length);
+  const before = await page.evaluate(() => window.__debug.store.allEvents().length);
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
       const point = window.__debug.scene.screenPositionForNode(node.id);
@@ -90,7 +90,7 @@ try {
   await new Promise(resolve => setTimeout(resolve, 100));
 
   const state = await deadline(page.evaluate(({ beforeCount, nodeId }) => {
-    const events = window.__debug.store.getAllEvents();
+    const events = window.__debug.store.allEvents();
     const appended = events.slice(beforeCount);
     return {
       masteryEvents: appended.filter(event => event.type === 'NodeMasterySet'),
