@@ -8,10 +8,38 @@ export const TWIN_META = { n6: { twinGroup: 'twinPrime', sharedTitle: '质数数
 export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', definition:'定义', fact:'事实', theorem:'定理', hypothesis:'假说', prediction:'预测', opinion:'观点', value:'价值判断', reasoning:'推理过程', 'logic-symbol':'逻辑符号' };
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
-// Deep-space palette: colour communicates epistemic role; status controls intensity.
-export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xF7FBFF, definition:0x55ECFF, fact:0x72F4FF, theorem:0x16D9FF, hypothesis:0x7C6CFF, prediction:0x35E5FF, opinion:0x957BFF, value:0xB18CFF, reasoning:0x4B9DFF, 'logic-symbol':0x8AF5FF };
-export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#F7FBFF', definition:'#55ECFF', fact:'#72F4FF', theorem:'#16D9FF', hypothesis:'#7C6CFF', prediction:'#35E5FF', opinion:'#957BFF', value:'#B18CFF', reasoning:'#4B9DFF', 'logic-symbol':'#8AF5FF' };
-export const KNOWLEDGE_BACKGROUND = 'radial-gradient(circle at 50% 46%, rgba(16,24,64,0.96) 0%, rgba(6,8,24,1) 34%, #02030a 74%, #000 100%)';
+// Remotion-derived deep-space palette. Only node hue encoding changes; geometry and edge styling stay untouched.
+export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xF7FBFF, definition:0x55ECFF, fact:0x55ECFF, theorem:0x16D9FF, hypothesis:0xB18CFF, prediction:0x7C6CFF, opinion:0x7C6CFF, value:0xB18CFF, reasoning:0x7C6CFF, 'logic-symbol':0xB18CFF };
+export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#F7FBFF', definition:'#55ECFF', fact:'#55ECFF', theorem:'#16D9FF', hypothesis:'#B18CFF', prediction:'#7C6CFF', opinion:'#7C6CFF', value:'#B18CFF', reasoning:'#7C6CFF', 'logic-symbol':'#B18CFF' };
+export const KNOWLEDGE_BACKGROUND = [
+  'radial-gradient(circle at 8% 13%, rgba(216,246,255,.60) 0, rgba(216,246,255,.60) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 18% 28%, rgba(216,246,255,.34) 0, rgba(216,246,255,.34) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 28% 9%, rgba(216,246,255,.46) 0, rgba(216,246,255,.46) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 37% 22%, rgba(216,246,255,.28) 0, rgba(216,246,255,.28) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 47% 7%, rgba(216,246,255,.54) 0, rgba(216,246,255,.54) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 57% 18%, rgba(216,246,255,.31) 0, rgba(216,246,255,.31) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 68% 11%, rgba(216,246,255,.52) 0, rgba(216,246,255,.52) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 79% 24%, rgba(216,246,255,.30) 0, rgba(216,246,255,.30) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 91% 10%, rgba(216,246,255,.48) 0, rgba(216,246,255,.48) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 12% 46%, rgba(216,246,255,.32) 0, rgba(216,246,255,.32) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 23% 61%, rgba(216,246,255,.50) 0, rgba(216,246,255,.50) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 34% 43%, rgba(216,246,255,.27) 0, rgba(216,246,255,.27) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 45% 68%, rgba(216,246,255,.42) 0, rgba(216,246,255,.42) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 58% 54%, rgba(216,246,255,.25) 0, rgba(216,246,255,.25) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 71% 67%, rgba(216,246,255,.47) 0, rgba(216,246,255,.47) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 83% 48%, rgba(216,246,255,.29) 0, rgba(216,246,255,.29) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 94% 63%, rgba(216,246,255,.43) 0, rgba(216,246,255,.43) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 7% 82%, rgba(216,246,255,.44) 0, rgba(216,246,255,.44) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 19% 92%, rgba(216,246,255,.28) 0, rgba(216,246,255,.28) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 32% 79%, rgba(216,246,255,.52) 0, rgba(216,246,255,.52) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 51% 91%, rgba(216,246,255,.30) 0, rgba(216,246,255,.30) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 65% 83%, rgba(216,246,255,.46) 0, rgba(216,246,255,.46) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 78% 94%, rgba(216,246,255,.26) 0, rgba(216,246,255,.26) 1px, transparent 1.5px)',
+  'radial-gradient(circle at 91% 81%, rgba(216,246,255,.50) 0, rgba(216,246,255,.50) 1px, transparent 1.6px)',
+  'radial-gradient(circle at 44% 48%, rgba(85,236,255,.035) 0%, transparent 44%)',
+  'radial-gradient(circle at 61% 45%, rgba(124,108,255,.045) 0%, transparent 50%)',
+  'radial-gradient(circle at 50% 46%, rgba(7,11,34,.98) 0%, rgba(3,5,18,1) 38%, #010208 76%, #000 100%)',
+].join(',');
 
 // Visual-only theme application. Geometry, edge styling, layout, interaction and protocol settings remain untouched.
 if (typeof document !== 'undefined') {
