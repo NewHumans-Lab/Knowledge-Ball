@@ -169,6 +169,33 @@ try {
   console.log(`issue51: post-tap page command delay ${postTapCommandDelay.toFixed(1)}ms`);
   assert.ok(postTapCommandDelay <= 250, `page command after real tap took ${postTapCommandDelay.toFixed(1)}ms`);
 
+  console.log('issue51: injecting static full-panel-shaped DOM');
+  const staticPanelStartedAt = performance.now();
+  const staticPanelLayout = await withDeadline(page.evaluate(() => {
+    const body = document.querySelector('#panelBody');
+    const actions = document.querySelector('#panelActions');
+    body.innerHTML = `
+      <div class="badge-row"><div class="badge">THEOREM</div><div class="badge">VERIFIED</div><div class="badge">general</div></div>
+      <div class="field"><label>掌握程度</label><div class="mastery-display">接触过</div><div class="mastery-private">PRIVATE STATE · 仅你可见</div><div class="mastery-demo-controls"><div class="chip">未接触</div><div class="chip active">接触过</div><div class="chip">完全掌握</div></div></div>
+      <div class="field-reasoning-band"><div class="reasoning-stage">PREMISES<b>1</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">REASONING<b>已连接</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">CONCLUSION<b>当前节点</b></div></div>
+      <div class="field"><label>知识描述</label><div class="val">Production-scale fixture reasoning repeated for a representative mobile panel.</div></div>
+      <div class="field"><label>前置知识点</label><div class="chip-list">${Array.from({ length: 12 }, (_, i) => `<div class="chip">Premise ${i}</div>`).join('')}</div></div>
+      <div class="field"><label>下游依赖节点</label><div class="chip-list">${Array.from({ length: 12 }, (_, i) => `<div class="chip">Dependency ${i}</div>`).join('')}</div></div>
+      <div class="field"><label>孪生证明</label><div class="chip-list">${Array.from({ length: 8 }, (_, i) => `<div class="chip">Twin ${i}</div>`).join('')}</div></div>
+    `;
+    actions.textContent = '';
+    return { scrollHeight: body.scrollHeight, clientHeight: body.clientHeight };
+  }), 1_000, 'static panel DOM injection');
+  const staticPanelWall = performance.now() - staticPanelStartedAt;
+  console.log(`issue51: static panel DOM injected in ${staticPanelWall.toFixed(1)}ms; scroll ${staticPanelLayout.scrollHeight}/${staticPanelLayout.clientHeight}`);
+  assert.ok(staticPanelWall <= 250, `static panel DOM injection took ${staticPanelWall.toFixed(1)}ms`);
+
+  const staticResponseStartedAt = performance.now();
+  await withDeadline(page.evaluate(() => performance.now()), 250, 'post-static-panel responsiveness');
+  const staticPostCommandDelay = performance.now() - staticResponseStartedAt;
+  console.log(`issue51: post-static-panel command delay ${staticPostCommandDelay.toFixed(1)}ms`);
+  assert.ok(staticPostCommandDelay <= 250, `page command after static panel DOM took ${staticPostCommandDelay.toFixed(1)}ms`);
+
   void page.close({ runBeforeUnload: false }).catch(() => {});
   page = await context.newPage();
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
@@ -185,7 +212,7 @@ try {
   const selectedSubmitDuration = await submitFact(page, liveTitle);
 
   const maxLongTask = selectedSubmitDuration.maxLongTask;
-  console.log(JSON.stringify({ eventCount, baselineTaskDelay, backgroundTapWall, realTapWall, tapDuration, panelDuration, tapToPanelDuration, postTapCommandDelay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
+  console.log(JSON.stringify({ eventCount, baselineTaskDelay, backgroundTapWall, realTapWall, tapDuration, panelDuration, tapToPanelDuration, postTapCommandDelay, staticPanelWall, staticPostCommandDelay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
   assert.ok(maxLongTask <= 500, `longest main-thread task was ${maxLongTask.toFixed(1)}ms`);
   await context.tracing.stop({ path: tracePath });
   traceSaved = true;
