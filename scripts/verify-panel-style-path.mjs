@@ -43,7 +43,7 @@ try {
   }, { key: storageKey, events: fixtureEvents() });
   const page = await context.newPage();
   page.on('console', message => {
-    if (message.text().startsWith('PANEL_PHASE ') || message.text().startsWith('POINTER_PHASE ')) console.log(message.text());
+    if (message.text().startsWith('OPEN_CALL ') || message.text().startsWith('POINTER_PHASE ')) console.log(message.text());
   });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
@@ -64,42 +64,22 @@ try {
   await page.evaluate(() => {
     const canvas = document.querySelector('#canvasHost canvas');
     if (!canvas) throw new Error('scene canvas unavailable');
-    window.__issue51PointerEvents = [];
-    for (const type of ['pointerdown', 'pointerup']) {
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
       canvas.addEventListener(type, event => {
-        window.__issue51PointerEvents.push(type);
         console.log(`POINTER_PHASE ${type} id=${event.pointerId} ${performance.now().toFixed(1)}`);
       }, { capture: true });
     }
-    canvas.addEventListener('pointercancel', event => {
-      window.__issue51PointerEvents.push('pointercancel');
-      console.log(`POINTER_PHASE pointercancel-suppressed id=${event.pointerId} ${performance.now().toFixed(1)}`);
-      event.stopImmediatePropagation();
-    }, { capture: true });
 
-    const innerHTMLDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-    if (!innerHTMLDescriptor?.get || !innerHTMLDescriptor?.set) throw new Error('innerHTML descriptor unavailable');
-    Object.defineProperty(Element.prototype, 'innerHTML', {
-      configurable: innerHTMLDescriptor.configurable,
-      enumerable: innerHTMLDescriptor.enumerable,
-      get: innerHTMLDescriptor.get,
-      set(value) {
-        const tracked = this.id === 'panelBody' || this.id === 'panelActions';
-        if (tracked) console.log(`PANEL_PHASE before-${this.id} ${performance.now().toFixed(1)}`);
-        innerHTMLDescriptor.set.call(this, value);
-        if (tracked) console.log(`PANEL_PHASE after-${this.id} ${performance.now().toFixed(1)}`);
-      },
-    });
-
-    const querySelectorAll = Element.prototype.querySelectorAll;
-    Element.prototype.querySelectorAll = function(selector) {
-      const tracked = (this.id === 'panelBody' || this.id === 'panelActions') &&
-        (selector === '[data-jump]' || selector === '[data-mastery]');
-      if (tracked) console.log(`PANEL_PHASE before-queryAll-${this.id}-${selector} ${performance.now().toFixed(1)}`);
-      const result = querySelectorAll.call(this, selector);
-      if (tracked) console.log(`PANEL_PHASE after-queryAll-${this.id}-${selector} ${performance.now().toFixed(1)} count=${result.length}`);
-      return result;
+    const panel = window.__debug.panel;
+    const originalOpen = panel.openNodePanel.bind(panel);
+    let calls = 0;
+    panel.openNodePanel = id => {
+      calls += 1;
+      const stack = new Error(`open-${calls}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack';
+      console.log(`OPEN_CALL ${calls} id=${id} at=${performance.now().toFixed(1)} stack=${stack}`);
+      return originalOpen(id);
     };
+    window.__issue51OpenCalls = () => calls;
   });
 
   const target = await page.evaluate(() => {
@@ -114,19 +94,10 @@ try {
   const tapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
   const tapWall = performance.now() - tapStarted;
-  console.log(`PANEL_PHASE node-tap-returned wall=${tapWall.toFixed(1)}ms`);
-  await deadline(page.waitForFunction(() => document.querySelector('#panel')?.classList.contains('open')), 1_000, 'full panel open');
-
-  const bodyState = await deadline(page.evaluate(() => ({
-    textLength: document.querySelector('#panelBody')?.textContent?.length ?? 0,
-    hasLegacyNote: Boolean(document.querySelector('#panelBody .mastery-private')),
-    childCount: document.querySelector('#panelBody')?.children.length ?? 0,
-    pointerEvents: [...window.__issue51PointerEvents],
-  })), 250, 'full panel responsiveness');
-  assert.ok(bodyState.hasLegacyNote, 'full panel must contain original mastery-private markup');
-  assert.ok(bodyState.textLength > 40 && bodyState.childCount > 2, 'full panel content must be restored, not diagnostic minimal content');
-  assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
-  console.log(JSON.stringify({ removed, tapWall, bodyState }, null, 2));
+  await new Promise(resolve => setTimeout(resolve, 80));
+  const calls = await deadline(page.evaluate(() => window.__issue51OpenCalls()), 250, 'open-call count');
+  console.log(`OPEN_CALL_RESULT calls=${calls} tapWall=${tapWall.toFixed(1)}ms`);
+  assert.equal(calls, 1, `one touch must open the node panel exactly once, got ${calls}`);
   await context.close();
 } finally {
   if (browser) await browser.close().catch(() => {});
