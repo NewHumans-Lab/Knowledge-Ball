@@ -49,7 +49,7 @@ try {
   const page = await context.newPage();
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
-  console.log('basic-bisect: fixture ready');
+  console.log('mastery-style: fixture ready');
 
   const { target, background } = await page.evaluate(() => {
     const points = window.__debug.renderNodes
@@ -67,7 +67,7 @@ try {
 
   const panelSignal = new Promise(resolve => {
     const listener = message => {
-      if (message.text() !== 'BASIC_BISECT_PANEL_OPEN') return;
+      if (message.text() !== 'MASTERY_STYLE_PANEL_OPEN') return;
       page.off('console', listener); resolve();
     };
     page.on('console', listener);
@@ -76,7 +76,7 @@ try {
     const panel = document.querySelector('#panel');
     const observer = new MutationObserver(() => {
       if (!panel.classList.contains('open')) return;
-      console.log('BASIC_BISECT_PANEL_OPEN'); observer.disconnect();
+      console.log('MASTERY_STYLE_PANEL_OPEN'); observer.disconnect();
     });
     observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
   });
@@ -85,52 +85,35 @@ try {
   await withDeadline(page.touchscreen.tap(target.x, target.y), 1_000, 'node tap');
   const nodeTap = performance.now() - nodeStarted;
   await withDeadline(panelSignal, 1_000, 'panel open');
-  console.log(`basic-bisect: node tap ${nodeTap.toFixed(1)}ms`);
+  console.log(`mastery-style: node tap ${nodeTap.toFixed(1)}ms`);
   assert.ok(nodeTap <= 250, `node tap took ${nodeTap.toFixed(1)}ms`);
 
   async function injectStage(name, html) {
     const started = performance.now();
-    const layout = await withDeadline(page.evaluate(markup => {
-      const body = document.querySelector('#panelBody');
-      body.innerHTML = markup;
-      return { scrollHeight: body.scrollHeight, clientHeight: body.clientHeight };
+    await withDeadline(page.evaluate(markup => {
+      document.querySelector('#panelBody').innerHTML = markup;
     }, html), 1_000, `${name} injection`);
     const injectWall = performance.now() - started;
     const responseStarted = performance.now();
     await withDeadline(page.evaluate(() => performance.now()), 250, `${name} responsiveness`);
     const response = performance.now() - responseStarted;
-    console.log(`basic-bisect: ${name} inject ${injectWall.toFixed(1)}ms, response ${response.toFixed(1)}ms, scroll ${layout.scrollHeight}/${layout.clientHeight}`);
+    console.log(`mastery-style: ${name} inject ${injectWall.toFixed(1)}ms, response ${response.toFixed(1)}ms`);
     assert.ok(injectWall <= 250, `${name} injection took ${injectWall.toFixed(1)}ms`);
     assert.ok(response <= 250, `${name} response took ${response.toFixed(1)}ms`);
   }
 
-  await injectStage('badge-only', `
-    <div class="badge-row">
-      <div class="badge">THEOREM</div>
-      <div class="badge">VERIFIED</div>
-      <div class="badge">general</div>
-    </div>
-  `);
+  const text = 'PRIVATE STATE · 仅你可见';
+  await injectStage('exact-text-no-style', `<div>${text}</div>`);
+  await injectStage('font-size-only', `<div style="font-size:9px">${text}</div>`);
+  await injectStage('color-only', `<div style="color:var(--ink-faint)">${text}</div>`);
+  await injectStage('margin-only', `<div style="margin:5px 0 8px">${text}</div>`);
+  await injectStage('font-size-plus-color', `<div style="font-size:9px;color:var(--ink-faint)">${text}</div>`);
+  await injectStage('font-size-plus-margin', `<div style="font-size:9px;margin:5px 0 8px">${text}</div>`);
+  await injectStage('color-plus-margin', `<div style="color:var(--ink-faint);margin:5px 0 8px">${text}</div>`);
+  await injectStage('all-inline', `<div style="font-size:9px;color:var(--ink-faint);margin:5px 0 8px">${text}</div>`);
+  await injectStage('class-exact', `<div class="mastery-private">${text}</div>`);
 
-  const oneField = `<div class="field"><label>Field 1</label><div class="val">Representative panel value 1</div></div>`;
-  await injectStage('one-field', oneField);
-
-  const manyFields = Array.from({ length: 18 }, (_, i) => `<div class="field"><label>Field ${i+1}</label><div class="val">Representative panel value ${i+1}</div></div>`).join('');
-  await injectStage('many-fields', manyFields);
-
-  await injectStage('mastery-display-only', `
-    <div class="field"><label>掌握程度</label><div class="mastery-display">接触过</div></div>
-  `);
-
-  await injectStage('mastery-private-only', `
-    <div class="field"><label>掌握程度</label><div class="mastery-private">PRIVATE STATE · 仅你可见</div></div>
-  `);
-
-  await injectStage('mastery-combined', `
-    <div class="field"><label>掌握程度</label><div class="mastery-display">接触过</div><div class="mastery-private">PRIVATE STATE · 仅你可见</div></div>
-  `);
-
-  console.log('Basic panel group bisection passed all stages');
+  console.log('Mastery-private style bisection passed all stages');
   await context.close();
 } finally {
   if (browser) await browser.close().catch(() => {});
