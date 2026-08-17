@@ -1,4 +1,7 @@
 import type { Mastery, NodeType } from '../../domain/KnowledgeModel';
+import { KNOWLEDGE_SCENE_THEME } from './KnowledgeSceneTheme';
+export { KNOWLEDGE_SCENE_THEME } from './KnowledgeSceneTheme';
+
 export type KnowledgeNodeType = NodeType;
 export type KnowledgeNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 export type KnowledgeMastery = Mastery;
@@ -9,12 +12,25 @@ export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', d
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
 
-// Canonical node-color semantics. Database/domain fields remain the source of truth;
-// the renderer maps those fields to this small visual vocabulary.
-export const NODE_LAYER_COLOR = { inner:0x55ECFF, middle:0x16D9FF, outer:0x7C6CFF, core:0xFFFFFF } as const;
-export const NODE_SPECIAL_COLOR = { structural:0xF7FBFF, falsified:0xEE675B } as const;
-export const NODE_LAYER_COLOR_HEX = { inner:'#55ECFF', middle:'#16D9FF', outer:'#7C6CFF', core:'#FFFFFF' } as const;
-export const NODE_SPECIAL_COLOR_HEX = { structural:'#F7FBFF', falsified:'#EE675B' } as const;
+// Canonical scene colors come from KnowledgeSceneTheme. Domain/database fields remain
+// the source of semantic truth; the renderer only maps those fields to this theme.
+export const NODE_LAYER_COLOR = {
+  inner:KNOWLEDGE_SCENE_THEME.node.inner,
+  middle:KNOWLEDGE_SCENE_THEME.node.middle,
+  outer:KNOWLEDGE_SCENE_THEME.node.outer,
+  core:KNOWLEDGE_SCENE_THEME.node.core,
+} as const;
+export const NODE_SPECIAL_COLOR = {
+  structural:KNOWLEDGE_SCENE_THEME.node.structural,
+  falsified:KNOWLEDGE_SCENE_THEME.node.falsified,
+} as const;
+const toHex=(value:number)=>`#${value.toString(16).padStart(6,'0').toUpperCase()}`;
+export const NODE_LAYER_COLOR_HEX = {
+  inner:toHex(NODE_LAYER_COLOR.inner), middle:toHex(NODE_LAYER_COLOR.middle), outer:toHex(NODE_LAYER_COLOR.outer), core:toHex(NODE_LAYER_COLOR.core),
+} as const;
+export const NODE_SPECIAL_COLOR_HEX = {
+  structural:toHex(NODE_SPECIAL_COLOR.structural), falsified:toHex(NODE_SPECIAL_COLOR.falsified),
+} as const;
 
 // Type colors are retained as a semantic fallback for non-scene UI. The live 3D scene
 // additionally applies status/layer priority in KnowledgeScene.colorForNode().
@@ -72,7 +88,7 @@ export const KNOWLEDGE_BACKGROUND = [
   'radial-gradient(circle at 50% 46%, rgba(7,11,34,.98) 0%, rgba(3,5,18,1) 38%, #010208 76%, #000 100%)',
 ].join(',');
 
-// Visual-only theme application. Geometry, edge styling, layout, interaction and protocol settings remain untouched.
+// Visual-only theme application. Geometry, layout, interaction and protocol settings remain untouched.
 if (typeof document !== 'undefined') {
   const rootStyle = document.documentElement.style;
   Object.entries(TYPE_COLOR_HEX).forEach(([type, color]) => rootStyle.setProperty(`--c-${type}`, color));
@@ -107,10 +123,9 @@ export const SUN_GLOW_SCALE = 12;
 export const SUN_ORBIT_RADIUS = 3.2;
 export const SUN_ANGULAR_SPEED = 0.6;
 // The enclosing visual Sun is deliberately 2x the default ordinary-node radius (9 -> 18).
-// Its corona is much larger than the physical sphere so the central radiation remains visible at whole-graph scale.
 export const CORE_SUN_RADIUS = 18;
-export const CORE_SUN_GLOW_SCALE = 6;
-export const CORE_SUN_COLOR = 0xFFFFFF;
+export const CORE_SUN_GLOW_SCALE = KNOWLEDGE_SCENE_THEME.sun.coronaScale;
+export const CORE_SUN_COLOR = KNOWLEDGE_SCENE_THEME.sun.core;
 export const CORE_SUN_LIGHT_INTENSITY = 24;
 // distance=0 is required by Three.js for pure inverse-square attenuation without an artificial cutoff.
 export const CORE_SUN_LIGHT_DISTANCE = 0;
