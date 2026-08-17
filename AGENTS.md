@@ -188,9 +188,23 @@ For Supabase/Postgres changes:
 - never expose service-role credentials to browser/Vite public variables;
 - never grant browser roles direct mutation rights to protected ledger/internal tables unless the architecture explicitly requires it.
 
+### Migration immutability and production drift
+
+- Once a migration has been applied to a hosted environment, do not rewrite that historical migration to change production behavior. Add a new forward migration.
+- Any production DDL/hotfix must be represented in the repository by a migration so Git history and hosted schema do not drift apart.
+- Destructive or irreversible migrations require explicit maintainer approval and a stated backup/rollback/recovery plan before production execution.
+- Verify the hosted schema/RPC/table after applying a migration; do not assume the SQL succeeded merely because it was committed.
+
 Repository migration and hosted deployment are separate states. Do not claim a database-backed feature is live until the required migration is actually applied to the hosted project and verified.
 
 Do not apply a production migration unless the task explicitly authorizes deployment or the maintainer directly asks for it.
+
+### Secrets and privacy
+
+- Never commit or paste service-role keys, JWTs, SMS-provider secrets, private API keys, recovery credentials, or other production secrets into source, fixtures, PR descriptions, issues, or logs.
+- Do not log full auth tokens or sensitive personal data merely for debugging.
+- Use redacted/synthetic values in tests and examples.
+- Treat user identity/contact data as data that should be minimized and exposed only to the layer that needs it.
 
 ## 12. Performance rules for large graphs
 
@@ -215,6 +229,13 @@ Prefer:
 - GPU work for massively parallel visual-only effects when it reduces main-thread churn.
 
 Changing animation frequency does not automatically multiply computation if the same shared per-frame time function is used; object count, draw calls, overdraw, DOM work, and per-object CPU mutation are often the real bottlenecks.
+
+### Motion and flashing safety
+
+- Attention-grabbing animation must not rely on dangerous high-frequency flashing.
+- Keep flashing well below accessibility risk thresholds; never introduce rapid full-contrast flashing merely to make a state more noticeable.
+- Respect `prefers-reduced-motion` where practical; provide a stable or reduced-motion representation of important state.
+- Motion must carry meaning without becoming the only way a user can discover critical information.
 
 ## 13. UI acceptance must test the real visible behavior
 
@@ -262,6 +283,20 @@ Before creating a PR, verify:
 - branch is based on the intended current `main`.
 
 A small intended edit that suddenly rewrites or shrinks a large app entry file is a stop signal. Investigate before opening the PR.
+
+### Diagnostic code hygiene
+
+Temporary diagnosis mechanisms must not silently ship as product behavior.
+
+Before opening a formal PR, remove temporary:
+
+- runtime CSS deletion/injection used only to isolate a selector;
+- monkeypatches that bypass real EventStore/database/render behavior;
+- artificial event interception that changes projection state;
+- debug timers/counters/log spam that are not intentional diagnostics;
+- test-only bypasses inserted into runtime code.
+
+Keep a diagnostic only if it has been deliberately converted into a supported debug facility or regression test and is safe for production.
 
 ## 16. PR reporting must be truthful and causal
 
