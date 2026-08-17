@@ -8,9 +8,40 @@ export const TWIN_META = { n6: { twinGroup: 'twinPrime', sharedTitle: '质数数
 export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', definition:'定义', fact:'事实', theorem:'定理', hypothesis:'假说', prediction:'预测', opinion:'观点', value:'价值判断', reasoning:'推理过程', 'logic-symbol':'逻辑符号' };
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
-// Remotion-derived deep-space palette. Only node hue encoding changes; geometry and edge styling stay untouched.
-export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xF7FBFF, definition:0x55ECFF, fact:0x55ECFF, theorem:0x16D9FF, hypothesis:0xB18CFF, prediction:0x7C6CFF, opinion:0x7C6CFF, value:0xB18CFF, reasoning:0x7C6CFF, 'logic-symbol':0xB18CFF };
-export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#F7FBFF', definition:'#55ECFF', fact:'#55ECFF', theorem:'#16D9FF', hypothesis:'#B18CFF', prediction:'#7C6CFF', opinion:'#7C6CFF', value:'#B18CFF', reasoning:'#7C6CFF', 'logic-symbol':'#B18CFF' };
+
+// Canonical node-color semantics. Database/domain fields remain the source of truth;
+// the renderer maps those fields to this small visual vocabulary.
+export const NODE_LAYER_COLOR = { inner:0x55ECFF, middle:0x16D9FF, outer:0x7C6CFF, core:0xFFFFFF } as const;
+export const NODE_SPECIAL_COLOR = { structural:0xF7FBFF, falsified:0xEE675B } as const;
+export const NODE_LAYER_COLOR_HEX = { inner:'#55ECFF', middle:'#16D9FF', outer:'#7C6CFF', core:'#FFFFFF' } as const;
+export const NODE_SPECIAL_COLOR_HEX = { structural:'#F7FBFF', falsified:'#EE675B' } as const;
+
+// Type colors are retained as a semantic fallback for non-scene UI. The live 3D scene
+// additionally applies status/layer priority in KnowledgeScene.colorForNode().
+export const TYPE_COLOR: Record<KnowledgeNodeType, number> = {
+  axiom:NODE_LAYER_COLOR.inner,
+  definition:NODE_LAYER_COLOR.inner,
+  fact:NODE_LAYER_COLOR.middle,
+  theorem:NODE_LAYER_COLOR.middle,
+  hypothesis:NODE_LAYER_COLOR.outer,
+  prediction:NODE_LAYER_COLOR.outer,
+  opinion:NODE_LAYER_COLOR.outer,
+  value:NODE_LAYER_COLOR.outer,
+  reasoning:NODE_SPECIAL_COLOR.structural,
+  'logic-symbol':NODE_SPECIAL_COLOR.structural,
+};
+export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = {
+  axiom:NODE_LAYER_COLOR_HEX.inner,
+  definition:NODE_LAYER_COLOR_HEX.inner,
+  fact:NODE_LAYER_COLOR_HEX.middle,
+  theorem:NODE_LAYER_COLOR_HEX.middle,
+  hypothesis:NODE_LAYER_COLOR_HEX.outer,
+  prediction:NODE_LAYER_COLOR_HEX.outer,
+  opinion:NODE_LAYER_COLOR_HEX.outer,
+  value:NODE_LAYER_COLOR_HEX.outer,
+  reasoning:NODE_SPECIAL_COLOR_HEX.structural,
+  'logic-symbol':NODE_SPECIAL_COLOR_HEX.structural,
+};
 export const KNOWLEDGE_BACKGROUND = [
   'radial-gradient(circle at 8% 13%, rgba(216,246,255,.60) 0, rgba(216,246,255,.60) 1px, transparent 1.6px)',
   'radial-gradient(circle at 18% 28%, rgba(216,246,255,.34) 0, rgba(216,246,255,.34) 1px, transparent 1.5px)',
@@ -45,12 +76,15 @@ export const KNOWLEDGE_BACKGROUND = [
 if (typeof document !== 'undefined') {
   const rootStyle = document.documentElement.style;
   Object.entries(TYPE_COLOR_HEX).forEach(([type, color]) => rootStyle.setProperty(`--c-${type}`, color));
+  Object.entries(NODE_LAYER_COLOR_HEX).forEach(([layer, color]) => rootStyle.setProperty(`--node-${layer}`, color));
+  rootStyle.setProperty('--node-structural', NODE_SPECIAL_COLOR_HEX.structural);
+  rootStyle.setProperty('--node-falsified', NODE_SPECIAL_COLOR_HEX.falsified);
   document.documentElement.style.background = '#000';
   document.body?.style.setProperty('background', '#000');
   document.querySelector<HTMLElement>('.app')?.style.setProperty('background', KNOWLEDGE_BACKGROUND);
 }
 
-export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#75E0D3', pending:'#A98AE8', suspended:'#547277', disputed:'#EE7A68', falsified:'#EE675B' };
+export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#75E0D3', pending:'#A98AE8', suspended:'#547277', disputed:'#EE7A68', falsified:NODE_SPECIAL_COLOR_HEX.falsified };
 export const LAYER_BANDS = { inner:{rMin:0,rMax:95}, middle:{rMin:95,rMax:170}, outer:{rMin:170,rMax:260}, core:{rMin:0,rMax:16} } as const;
 export const LAYER_LABEL = { inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测', core:'核心 · 三体系统' } as const;
 export const TWIN_REST_LEN = 14;
