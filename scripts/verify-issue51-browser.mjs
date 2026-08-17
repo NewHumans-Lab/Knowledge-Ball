@@ -7,6 +7,7 @@ const origin = 'http://127.0.0.1:4173/Knowledge-Ball/';
 const eventCount = 343;
 const storageKey = 'knowledge-ball.events.v1';
 const exactText = 'PRIVATE STATE · 仅你可见';
+const renamedClass = 'personal-mastery-note';
 const artifactPath = 'artifacts/issue51-trace.zip';
 
 function fixtureEvents() {
@@ -35,7 +36,7 @@ async function withDeadline(promise, milliseconds, label) {
   } finally { clearTimeout(timer); }
 }
 
-async function runCase(name, { prewarm = false, systemFont = false } = {}) {
+async function runSelectorCase() {
   const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
   try {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -56,80 +57,60 @@ async function runCase(name, { prewarm = false, systemFont = false } = {}) {
       const bg = candidates.map(candidate => ({ candidate, nearest: Math.min(...points.map(({ point }) => Math.hypot(point.x-candidate.x, point.y-candidate.y))) })).sort((a,b)=>b.nearest-a.nearest)[0];
       return { target: targetEntry ? { ...targetEntry.point, id: targetEntry.node.id } : null, background: bg?.nearest > 40 ? bg.candidate : null };
     });
-    assert.ok(target && background, `${name}: fixture must expose node and background points`);
+    assert.ok(target && background, 'selector-name: fixture must expose node and background points');
 
     const backgroundStarted = performance.now();
-    await withDeadline(page.touchscreen.tap(background.x, background.y), 1_000, `${name}: background tap`);
+    await withDeadline(page.touchscreen.tap(background.x, background.y), 1_000, 'selector-name: background tap');
     const backgroundTap = performance.now() - backgroundStarted;
     await new Promise(resolve => setTimeout(resolve, 350));
 
     const panelSignal = new Promise(resolve => {
       const listener = message => {
-        if (message.text() !== `COLD_FONT_PANEL_OPEN:${name}`) return;
+        if (message.text() !== 'SELECTOR_NAME_PANEL_OPEN') return;
         page.off('console', listener); resolve();
       };
       page.on('console', listener);
     });
-    await page.evaluate(caseName => {
+    await page.evaluate(() => {
       const panel = document.querySelector('#panel');
       const observer = new MutationObserver(() => {
         if (!panel.classList.contains('open')) return;
-        console.log(`COLD_FONT_PANEL_OPEN:${caseName}`); observer.disconnect();
+        console.log('SELECTOR_NAME_PANEL_OPEN'); observer.disconnect();
       });
       observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
-    }, name);
+    });
 
     const tapStarted = performance.now();
-    await withDeadline(page.touchscreen.tap(target.x, target.y), 1_000, `${name}: node tap`);
+    await withDeadline(page.touchscreen.tap(target.x, target.y), 1_000, 'selector-name: node tap');
     const nodeTap = performance.now() - tapStarted;
-    await withDeadline(panelSignal, 1_000, `${name}: panel open`);
-    assert.ok(nodeTap <= 250, `${name}: node tap took ${nodeTap.toFixed(1)}ms`);
+    await withDeadline(panelSignal, 1_000, 'selector-name: panel open');
+    assert.ok(nodeTap <= 250, `selector-name: node tap took ${nodeTap.toFixed(1)}ms`);
 
-    let warmWall = null;
-    let warmResponse = null;
-    if (prewarm) {
-      const warmStarted = performance.now();
-      await withDeadline(page.evaluate(text => {
-        const body = document.querySelector('#panelBody');
-        body.innerHTML = `<div style="font-size:14px">${text}</div>`;
-        void body.offsetHeight;
-      }, exactText), 1_000, `${name}: prewarm`);
-      warmWall = performance.now() - warmStarted;
-      const warmResponseStarted = performance.now();
-      await withDeadline(page.evaluate(() => performance.now()), 250, `${name}: prewarm responsiveness`);
-      warmResponse = performance.now() - warmResponseStarted;
-    }
+    await page.evaluate(className => {
+      const style = document.createElement('style');
+      style.dataset.issue51SelectorProbe = 'true';
+      style.textContent = `.${className}{font-size:9px;color:var(--ink-faint);margin:5px 0 8px}`;
+      document.head.appendChild(style);
+    }, renamedClass);
 
-    const html = systemFont
-      ? `<div class="mastery-private" style="font-family:Arial,sans-serif">${exactText}</div>`
-      : `<div class="mastery-private">${exactText}</div>`;
     const injectStarted = performance.now();
-    await withDeadline(page.evaluate(markup => {
+    await withDeadline(page.evaluate(({ className, text }) => {
       const body = document.querySelector('#panelBody');
-      body.innerHTML = markup;
+      body.innerHTML = `<div class="${className}">${text}</div>`;
       void body.offsetHeight;
-    }, html), 1_000, `${name}: mastery-private injection`);
+    }, { className: renamedClass, text: exactText }), 1_000, 'selector-name: renamed class injection');
     const injectWall = performance.now() - injectStarted;
 
     const responseStarted = performance.now();
-    await withDeadline(page.evaluate(() => performance.now()), 250, `${name}: post-injection responsiveness`);
+    await withDeadline(page.evaluate(() => performance.now()), 250, 'selector-name: post-injection responsiveness');
     const responseWall = performance.now() - responseStarted;
-    assert.ok(injectWall <= 250, `${name}: mastery-private injection took ${injectWall.toFixed(1)}ms`);
-    assert.ok(responseWall <= 250, `${name}: post-injection response took ${responseWall.toFixed(1)}ms`);
+    assert.ok(injectWall <= 250, `selector-name: renamed class injection took ${injectWall.toFixed(1)}ms`);
+    assert.ok(responseWall <= 250, `selector-name: post-injection response took ${responseWall.toFixed(1)}ms`);
 
     await context.close();
-    return { backgroundTap, nodeTap, warmWall, warmResponse, injectWall, responseWall };
+    return { backgroundTap, nodeTap, className: renamedClass, injectWall, responseWall };
   } finally {
     await browser.close().catch(() => {});
-  }
-}
-
-async function attempt(name, options) {
-  try {
-    const metrics = await runCase(name, options);
-    return { ok: true, metrics };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
   }
 }
 
@@ -140,15 +121,16 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 
-  const results = {
-    coldDefault: await attempt('cold-default'),
-    coldSystemFont: await attempt('cold-system-font', { systemFont: true }),
-    warmedDefault: await attempt('warmed-default', { prewarm: true }),
-  };
+  let result;
+  try {
+    result = { ok: true, metrics: await runSelectorCase() };
+  } catch (error) {
+    result = { ok: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
+  }
   await mkdir('artifacts', { recursive: true });
-  await writeFile(artifactPath, JSON.stringify(results, null, 2));
-  console.log(`COLD_FONT_RESULTS ${JSON.stringify(results)}`);
-  assert.ok(results.coldDefault.ok && results.coldSystemFont.ok && results.warmedDefault.ok, 'one or more isolated cold-font cases failed; inspect uploaded diagnostic artifact');
+  await writeFile(artifactPath, JSON.stringify(result, null, 2));
+  console.log(`SELECTOR_NAME_RESULT ${JSON.stringify(result)}`);
+  assert.ok(result.ok, 'renamed mastery selector failed; inspect uploaded diagnostic artifact');
 } finally {
   server.kill('SIGKILL'); server.unref();
 }
