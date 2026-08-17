@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const origin='http://127.0.0.1:4173/Knowledge-Ball/';
@@ -37,6 +38,34 @@ try{
     console.log(`mobile raycast targets: ${targets.length}`);
     assert.ok(targets.length,'mobile scene must expose finite on-screen raycast targets');
     assert.ok(targets.every(target=>Number.isFinite(target.x)&&Number.isFinite(target.y)),'mobile raycast targets must be finite');
+
+    // Real visual-experience gate: capture the actual composited WebGL scene at a phone viewport,
+    // then inspect screenshot pixels rather than merely checking source constants.
+    await mkdir('artifacts',{recursive:true});
+    const screenshot=await page.locator('#canvasHost').screenshot({path:'artifacts/mobile-scene-visual.png',type:'png'});
+    assert.ok(screenshot.length>5_000,'mobile WebGL scene screenshot must contain real rendered visual data');
+    const screenshotUrl=`data:image/png;base64,${screenshot.toString('base64')}`;
+    const visual=await page.evaluate(async src=>{
+      const image=new Image();image.src=src;await image.decode();
+      const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D screenshot analysis context unavailable');
+      ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+      let trueBlue=0,violet=0,cyan=0,white=0,greenDominant=0,bright=0;
+      for(let i=0;i<data.length;i+=16){const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];if(a<180||Math.max(r,g,b)<72)continue;bright++;
+        if(r>205&&g>205&&b>205)white++;
+        if(b>=145&&b-g>=45&&b-r>=45&&r<g+18)trueBlue++;
+        if(b>=145&&b-g>=38&&r-g>=8)violet++;
+        if(b>=145&&g>=120&&b>=g&&b-g<=38&&g-r>=38)cyan++;
+        if(g>=120&&g-b>=18&&g-r>=28)greenDominant++;
+      }
+      return{width:canvas.width,height:canvas.height,trueBlue,violet,cyan,white,greenDominant,bright};
+    },screenshotUrl);
+    console.log('mobile scene visual pixels',visual);
+    assert.ok(visual.bright>80,'mobile scene must contain enough visible non-background rendered pixels');
+    assert.ok(visual.white>=8,'real WebGL screenshot must visibly contain the white structural/core light language');
+    assert.ok(visual.trueBlue>=4,'real WebGL screenshot must visibly contain true-blue pixels, not only cyan/teal');
+    assert.ok(visual.violet>=4,'real WebGL screenshot must visibly contain violet outer-layer pixels');
+    assert.ok(visual.trueBlue+visual.violet>visual.greenDominant,'blue/violet visual signal must outweigh green-dominant contamination in the actual scene screenshot');
 
     await page.locator('.ai-add').click();
     await page.locator('#modalOverlay.show').waitFor({state:'visible'});
@@ -79,5 +108,5 @@ try{
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, real scene pixels, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}
