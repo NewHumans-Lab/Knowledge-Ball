@@ -26,6 +26,13 @@ jobs:
       - name: Install Chromium for mobile browser regression
         run: npx playwright install --with-deps chromium
       - run: npm run test:browser-mobile
+      - name: Upload mobile scene visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-scene-visual
+          path: artifacts/mobile-scene-*.png
+          if-no-files-found: warn
       - name: Run Issue 51 production-scale interaction trace
         run: npm run test:issue51-browser
       - name: Upload Issue 51 Playwright trace
