@@ -6,11 +6,11 @@ export const KNOWLEDGE_SCENE_THEME = {
     core: 0xFFFFFF,
     structural: 0xF7FBFF,
     falsified: 0xEE5B63,
-    // The solid sphere body must fully occlude the page backdrop. Glow sprites remain
-    // transparent and may blend outside the silhouette, but the semantic base hue itself
-    // must never be darkened by the blue/violet background showing through the sphere.
+    // Semantic node bodies are absolute presentation colors. They must occlude the
+    // backdrop and must not be darkened by scene lighting or status/selection fades.
     shellOpacity: 1.00,
-    pointOpacity: 0.90,
+    // The semantic point is only an outer aura around the opaque body.
+    pointOpacity: 0.52,
     selectedEmissiveIntensity: 0.30,
     baseEmissiveIntensity: 0.08,
   },
@@ -40,13 +40,15 @@ export const KNOWLEDGE_SCENE_THEME = {
     core: 0xFFFFFF,
     corona: 0x55ECFF,
     halo: 0x7C6CFF,
-    coreOpacity: 0.94,
-    innerGlowOpacity: 0.30,
-    coronaOpacity: 0.30,
-    haloOpacity: 0.18,
-    innerGlowScale: 2.4,
-    coronaScale: 6.0,
-    haloScale: 9.0,
+    coreOpacity: 0.96,
+    // Keep the sun layered and luminous, but do not wash half of the phone viewport
+    // in blue haze. The page backdrop supplies the broad deep-space field.
+    innerGlowOpacity: 0.24,
+    coronaOpacity: 0.18,
+    haloOpacity: 0.10,
+    innerGlowScale: 1.9,
+    coronaScale: 3.8,
+    haloScale: 5.5,
   },
 } as const;
 
