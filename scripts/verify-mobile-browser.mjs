@@ -22,15 +22,18 @@ async function analyzeScreenshot(page,screenshot){
     const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
     const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D screenshot analysis context unavailable');
     ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
-    let trueBlue=0,violet=0,cyan=0,white=0,greenDominant=0,bright=0;
-    for(let i=0;i<data.length;i+=16){const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];if(a<180||Math.max(r,g,b)<72)continue;bright++;
-      if(r>205&&g>205&&b>205)white++;
-      if(b>=145&&b-g>=45&&b-r>=45&&r<g+18)trueBlue++;
-      if(b>=145&&b-g>=38&&r-g>=8)violet++;
-      if(b>=145&&g>=120&&b>=g&&b-g<=38&&g-r>=38)cyan++;
-      if(g>=120&&g-b>=18&&g-r>=28)greenDominant++;
+    const hsv=(r,g,b)=>{const rn=r/255,gn=g/255,bn=b/255,max=Math.max(rn,gn,bn),min=Math.min(rn,gn,bn),d=max-min;let h=0;if(d){if(max===rn)h=60*(((gn-bn)/d)%6);else if(max===gn)h=60*((bn-rn)/d+2);else h=60*((rn-gn)/d+4);if(h<0)h+=360;}return{h,s:max?d/max:0,v:max};};
+    let trueBlue=0,violet=0,cyan=0,white=0,greenDominant=0,visible=0;
+    // Sample every fourth pixel. Hue/saturation are more faithful than absolute RGB
+    // thresholds after WebGL transparency is composited over the deep-space background.
+    for(let i=0;i<data.length;i+=16){const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];if(a<180)continue;const {h,s,v}=hsv(r,g,b);if(v<.12)continue;visible++;
+      if(s<=.12&&v>=.42)white++;
+      if(h>=185&&h<215&&s>=.25&&v>=.14)cyan++;
+      if(h>=215&&h<238&&s>=.28&&v>=.14)trueBlue++;
+      if(h>=238&&h<=285&&s>=.25&&v>=.14)violet++;
+      if(h>=80&&h<=165&&s>=.25&&v>=.14)greenDominant++;
     }
-    return{width:canvas.width,height:canvas.height,trueBlue,violet,cyan,white,greenDominant,bright};
+    return{width:canvas.width,height:canvas.height,trueBlue,violet,cyan,white,greenDominant,visible};
   },screenshotUrl);
 }
 
@@ -65,10 +68,10 @@ try{
     assert.ok(screenshot.length>5_000,'mobile WebGL scene screenshot must contain real rendered visual data');
     const visual=await analyzeScreenshot(page,screenshot);
     console.log('mobile actual-scene visual pixels',visual);
-    assert.ok(visual.bright>80,'mobile scene must contain enough visible non-background rendered pixels');
-    assert.ok(visual.white>=8,'actual WebGL screenshot must visibly contain the white structural/core light language');
-    assert.ok(visual.trueBlue>=4,'actual WebGL screenshot must visibly contain true-blue pixels, not only cyan/teal');
-    assert.ok(visual.trueBlue>visual.greenDominant,'true-blue signal must outweigh green-dominant contamination in the actual scene screenshot');
+    assert.ok(visual.visible>1_000,'mobile scene must contain enough visible non-background rendered pixels');
+    assert.ok(visual.white>=100,'actual WebGL screenshot must visibly contain the white structural/core light language');
+    assert.ok(visual.trueBlue>=100,'actual WebGL screenshot must visibly contain a true-blue scene signal, not only cyan/teal');
+    assert.ok(visual.greenDominant<=5,'old green/teal contamination must not reappear in the actual scene screenshot');
 
     // Gate B: data distribution is allowed to vary, so calibrate the renderer itself with four real,
     // on-screen graph nodes temporarily assigned to the canonical semantic classes. The screenshot is
@@ -86,11 +89,15 @@ try{
     assert.ok(paletteScreenshot.length>5_000,'semantic palette screenshot must contain real rendered visual data');
     const palette=await analyzeScreenshot(page,paletteScreenshot);
     console.log('mobile semantic-palette visual pixels',palette);
-    assert.ok(palette.cyan>=4,'real WebGL calibration must visibly render the inner ice-blue semantic color');
-    assert.ok(palette.trueBlue>=4,'real WebGL calibration must visibly render the middle true-blue semantic color');
-    assert.ok(palette.violet>=4,'real WebGL calibration must visibly render the outer violet semantic color');
-    assert.ok(palette.white>=8,'real WebGL calibration must visibly render structural white');
-    assert.ok(palette.cyan+palette.trueBlue+palette.violet>palette.greenDominant,'canonical cool-color signal must dominate green contamination in the real calibration screenshot');
+    assert.equal(palette.width,visual.width,'actual and semantic-palette screenshots must share the same width');
+    assert.equal(palette.height,visual.height,'actual and semantic-palette screenshots must share the same height');
+    assert.ok(palette.cyan>=100,'real WebGL calibration must visibly retain the inner ice-blue color family');
+    assert.ok(palette.trueBlue>=100,'real WebGL calibration must visibly retain the middle true-blue color family');
+    // The background contains a stable blue-violet field, so compare against the immediately preceding
+    // actual-scene frame: adding a real outer hypothesis node must measurably increase violet pixels.
+    assert.ok(palette.violet>=visual.violet+20,`real WebGL calibration must visibly add outer violet pixels (actual=${visual.violet}, palette=${palette.violet})`);
+    assert.ok(palette.white>=100,'real WebGL calibration must visibly retain structural white');
+    assert.ok(palette.greenDominant<=5,'semantic calibration must not reintroduce green/teal contamination');
     await page.evaluate(original=>{for(const saved of original){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;}}window.__debug.scene.markDirty();window.__debug.scene.start();},originals);
     await page.waitForTimeout(100);
     await page.evaluate(()=>window.__debug.scene.stop());
