@@ -31,20 +31,8 @@ grant execute on function public.settle_expired_pending_knowledge_votes(integer)
 comment on function public.settle_expired_pending_knowledge_votes(integer) is
   'Low-frequency readiness sweep: finalizes threshold-ready or 720-hour-expired ORIGINAL_DESIGN_V1 rounds.';
 
--- Immediately repair the historical gap once this migration lands. Legacy rows
--- were never charged a creator stake, so the finalizer settles only their already
--- recorded ordinary voter stakes and emits the server verdict event.
-do $$
-declare item record;
-begin
-  for item in
-    select id from public.knowledge_pending_vote_rounds
-    where verdict='PENDING' and legacy_unfunded
-    order by opened_at,id
-  loop
-    perform public.finalize_pending_vote_round(item.id);
-  end loop;
-end $$;
+-- Historical settlement is intentionally deferred to 202608180004, which first
+-- identifies and refunds ballots that arrived after the round should have closed.
 
 create or replace function public.knowledge_ball_schema_version() returns text
 language sql security definer stable set search_path=public,pg_temp
