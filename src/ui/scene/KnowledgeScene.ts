@@ -9,7 +9,7 @@ type NodeMeshRecord={group:THREE.Group;shell:THREE.Mesh;point:THREE.Sprite;dot:T
 type Layer=NonNullable<KnowledgeSceneNode['layer']>;
 
 export function isCoreNodeId(id:string):boolean{return(SUN_TRIAD_IDS as readonly string[]).includes(id);}
-export function layerForNode(node:Pick<KnowledgeSceneNode,'id'|'status'|'type'>):Layer{if(isCoreNodeId(node.id))return'core';if(['pending','suspended','disputed'].includes(node.status))return'outer';if(node.type==='axiom'||node.type==='definition'||node.type==='logic-symbol')return'inner';return'middle';}
+export function layerForNode(node:Pick<KnowledgeSceneNode,'id'|'status'|'type'>):Layer{if(isCoreNodeId(node.id))return'core';if(['pending','suspended','disputed'].includes(node.status))return'outer';if(['hypothesis','prediction','opinion','value'].includes(node.type))return'outer';if(node.type==='definition'||node.type==='fact'||node.type==='logic-symbol')return'inner';return'middle';}
 export function colorForNode(node:Pick<KnowledgeSceneNode,'id'|'status'|'type'>):number{if(node.status==='falsified')return NODE_SPECIAL_COLOR.falsified;if(node.type==='reasoning'||node.type==='logic-symbol')return NODE_SPECIAL_COLOR.structural;return NODE_LAYER_COLOR[layerForNode(node)];}
 function hash01(input:string,salt:number){let h=(2166136261^salt)>>>0;for(let i=0;i<input.length;i++){h^=input.charCodeAt(i);h=Math.imul(h,16777619);}h^=h>>>16;h=Math.imul(h,2246822507);h^=h>>>13;return(h>>>0)/4294967296;}
 function smoothStep01(value:number){const t=THREE.MathUtils.clamp(value,0,1);return t*t*(3-2*t);}
