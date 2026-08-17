@@ -115,8 +115,11 @@ try{
     assert.equal(palette.height,visual.height,'actual and semantic-palette screenshots must share the same height');
     assert.ok(palette.regions[0].cyan>=control.regions[0].cyan+6,`inner calibration must add local ice-blue pixels (control=${control.regions[0].cyan}, palette=${palette.regions[0].cyan})`);
     assert.ok(palette.regions[0].cyanPeak>=.60,`inner ice-blue must stay bright in the real composite (peak=${palette.regions[0].cyanPeak})`);
-    assert.ok(palette.regions[1].trueBlue>=control.regions[1].trueBlue+2,`middle calibration must add local true-blue pixels (control=${control.regions[1].trueBlue}, palette=${palette.regions[1].trueBlue})`);
-    assert.ok(palette.regions[1].trueBluePeak>=.60,`middle true-blue must stay bright in the real composite (peak=${palette.regions[1].trueBluePeak})`);
+    // The intended middle hue sits on an intentionally blue background. Replacing a white control sphere
+    // with a purer/brighter blue can reduce the total count of already-blue background pixels, so count
+    // deltas are not a reliable signal. Require a strong local brightness gain in the true-blue hue instead.
+    assert.ok(palette.regions[1].trueBluePeak>=.75,`middle true-blue must stay bright in the real composite (peak=${palette.regions[1].trueBluePeak})`);
+    assert.ok(palette.regions[1].trueBluePeak>=control.regions[1].trueBluePeak+.15,`middle calibration must increase local true-blue brightness (control=${control.regions[1].trueBluePeak}, palette=${palette.regions[1].trueBluePeak})`);
     assert.ok(palette.regions[2].violet>=control.regions[2].violet+6,`outer calibration must add local violet pixels (control=${control.regions[2].violet}, palette=${palette.regions[2].violet})`);
     assert.ok(palette.regions[2].violetPeak>=.55,`outer violet must stay bright in the real composite (peak=${palette.regions[2].violetPeak})`);
     assert.ok(palette.white>=100,'semantic calibration must retain the whole-frame structural white language');
