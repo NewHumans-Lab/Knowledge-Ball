@@ -13,7 +13,10 @@ export const KNOWLEDGE_SCENE_THEME = {
     sphereWidthSegments: 24,
     sphereHeightSegments: 16,
     matcapLight: 255,
-    matcapMid: 236,
+    // Most visible pixels on these small phone-scale spheres sample the middle of
+    // the matcap. Keep that midtone clearly below the highlight while preserving
+    // the same safe dark floor, so depth reads without muddying semantic hues.
+    matcapMid: 220,
     matcapDark: 214,
     selectedEmissiveIntensity: 0.30,
     baseEmissiveIntensity: 0.08,
