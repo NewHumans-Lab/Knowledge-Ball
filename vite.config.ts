@@ -11,7 +11,10 @@ export default defineConfig({
       transformIndexHtml: {
         order: 'pre',
         handler() {
-          return [{ tag: 'script', attrs: { type: 'module', src: '/src/ui/AuthUi.ts' }, injectTo: 'body-prepend' }];
+          return [
+            { tag: 'script', attrs: { type: 'module', src: '/src/ui/AuthUi.ts' }, injectTo: 'body-prepend' },
+            { tag: 'script', attrs: { type: 'module', src: '/src/ui/ExitUi.ts' }, injectTo: 'body-prepend' },
+          ];
         },
       },
     },
