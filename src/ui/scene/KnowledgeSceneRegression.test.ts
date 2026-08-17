@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { clampGraphZoom, coreLabelsVisible, coreOrbitScreenPosition, coreSunContainsTriad, hasFiniteCoordinates, initialNodePosition, isCoreNodeId, layerForNode, nodeRadiusForType, ordinaryNodeCompensationScale, shouldRenderEdge } from './KnowledgeScene';
-import { CORE_AMBIENT_LIGHT_INTENSITY, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_RADIUS, DEFAULT_CAM_Z, LAYER_BANDS, MAX_GRAPH_ZOOM, MIN_GRAPH_ZOOM, SUN_ORBIT_RADIUS, SUN_RADIUS_MM, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
+import { clampGraphZoom, coreLabelsVisible, coreOrbitScreenPosition, coreSunContainsTriad, hasFiniteCoordinates, initialNodePosition, isCoreNodeId, layerForNode, nodeRadiusForType, ordinaryNodeCompensationScale, pendingPulseAtCycleMs, pendingPulsePhaseMs, shouldRenderEdge } from './KnowledgeScene';
+import { CORE_AMBIENT_LIGHT_INTENSITY, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_RADIUS, DEFAULT_CAM_Z, LAYER_BANDS, MAX_GRAPH_ZOOM, MIN_GRAPH_ZOOM, PENDING_PULSE_FADE_MS, PENDING_PULSE_LOW_MS, PENDING_PULSE_MIN_OPACITY, PENDING_PULSE_MIN_SCALE, PENDING_PULSE_PERIOD_MS, PENDING_PULSE_RISE_MS, PENDING_PULSE_VISIBLE_MS, SUN_ORBIT_RADIUS, SUN_RADIUS_MM, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 function assert(condition:unknown,message:string):asserts condition{if(!condition)throw new Error(message);}
 function node(id:string,type:'axiom'|'fact'|'theorem'='fact',status:'pending'|'verified'='verified'){return{id,type,status}as const;}
 for(const id of SUN_TRIAD_IDS){assert(isCoreNodeId(id),`${id} must be core`);assert(layerForNode(node(id,'axiom'))==='core',`${id} must stay in core layer`);assert(!shouldRenderEdge(id,'ordinary'),`core edge ${id}->ordinary must be suppressed`);assert(!shouldRenderEdge('ordinary',id),`core edge ordinary->${id} must be suppressed`);}
@@ -20,6 +20,13 @@ assert(DEFAULT_CAM_Z===640,'camera baseline changed unexpectedly; graph zoom mus
 assert(hasFiniteCoordinates({x:0,y:-1,z:2}),'finite scene coordinates must be accepted');
 assert(!hasFiniteCoordinates({x:Number.NaN,y:0,z:0}),'NaN edge/node coordinates must be rejected before geometry creation');
 assert(!hasFiniteCoordinates({x:0,y:Number.POSITIVE_INFINITY,z:0}),'infinite edge/node coordinates must be rejected before geometry creation');
+
+assert(PENDING_PULSE_VISIBLE_MS+PENDING_PULSE_FADE_MS+PENDING_PULSE_LOW_MS+PENDING_PULSE_RISE_MS===PENDING_PULSE_PERIOD_MS,'pending pulse stages must fill exactly one period');
+const visiblePulse=pendingPulseAtCycleMs(0);assert(visiblePulse.opacityFactor===1&&visiblePulse.scale===1,'pending node must spend its visible stage at full opacity and scale');
+const fadeMid=pendingPulseAtCycleMs(PENDING_PULSE_VISIBLE_MS+PENDING_PULSE_FADE_MS/2);assert(fadeMid.opacityFactor<1&&fadeMid.opacityFactor>PENDING_PULSE_MIN_OPACITY,'pending node must fade smoothly between full and low opacity');assert(fadeMid.scale<1&&fadeMid.scale>PENDING_PULSE_MIN_SCALE,'pending node must shrink smoothly during fade');
+const lowPulse=pendingPulseAtCycleMs(PENDING_PULSE_VISIBLE_MS+PENDING_PULSE_FADE_MS+PENDING_PULSE_LOW_MS/2);assert(Math.abs(lowPulse.opacityFactor-PENDING_PULSE_MIN_OPACITY)<1e-12,'pending node low stage must use configured minimum opacity');assert(Math.abs(lowPulse.scale-PENDING_PULSE_MIN_SCALE)<1e-12,'pending node low stage must use configured minimum scale');
+const recoveredPulse=pendingPulseAtCycleMs(PENDING_PULSE_PERIOD_MS);assert(recoveredPulse.opacityFactor===1&&recoveredPulse.scale===1,'pending pulse must recover exactly at the next period');
+const phaseA=pendingPulsePhaseMs('pending-a');assert(phaseA===pendingPulsePhaseMs('pending-a'),'pending phase must be deterministic for a node id');const phases=new Set(['pending-a','pending-b','pending-c','pending-d'].map(pendingPulsePhaseMs));assert(phases.size>1,'pending nodes must not all share the same phase');
 
 const sceneSource=readFileSync('src/ui/scene/KnowledgeScene.ts','utf8');
 const tapStart=sceneSource.indexOf('const up=');
@@ -45,4 +52,16 @@ assert(sceneSource.includes("const down=(e:PointerEvent)=>{if(overlayVisible)ret
 assert(sceneSource.includes("const move=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointermove must be gated by scene overlay state');
 assert(sceneSource.includes("const up=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointerup/pointercancel must be gated by scene overlay state');
 assert(sceneSource.includes("const wheel=(e:WheelEvent)=>{if(overlayVisible)return;"),'wheel input must be gated by scene overlay state');
+const pulseStart=sceneSource.indexOf('const applyPendingPulse=');
+const pulseEnd=sceneSource.indexOf('const physics=');
+assert(pulseStart>=0&&pulseEnd>pulseStart,'pending pulse implementation must remain discoverable');
+const pulseSource=sceneSource.slice(pulseStart,pulseEnd);
+assert(!pulseSource.includes('setInterval'),'pending pulse must never create per-node intervals');
+assert(!pulseSource.includes('setTimeout'),'pending pulse must never create per-node timers');
+assert(pulseSource.includes('r.group.scale.setScalar(pulse.scale)'),'pending state must pulse the whole node group, not the mastery glow alone');
+assert(pulseSource.includes('r.baseShellOpacity*pulse.opacityFactor'),'pending pulse must fade the node shell');
+assert(pulseSource.includes('r.baseDotOpacity*pulse.opacityFactor'),'pending pulse must fade the mastery dot proportionally without changing mastery semantics');
+assert(sceneSource.includes("pending=!core&&n.status==='pending'"),'only non-core pending nodes may receive the pending pulse');
+assert(sceneSource.includes('r.shell.visible=!largeMobileGraph||core||pending||selectedId===n.id'),'pending shells must remain renderable in large mobile graphs');
+assert(sceneSource.includes('pendingNodeIds.size>0'),'large mobile graphs must keep lightweight rendering alive while pending nodes animate');
 console.log('Knowledge scene regression tests passed');
