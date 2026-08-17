@@ -9,8 +9,8 @@ export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', d
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
 // Remotion-derived deep-space palette. Only node hue encoding changes; geometry and edge styling stay untouched.
-export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xF7FBFF, definition:0x55ECFF, fact:0x7C6CFF, theorem:0x16D9FF, hypothesis:0xB18CFF, prediction:0x55ECFF, opinion:0x7C6CFF, value:0xB18CFF, reasoning:0x16D9FF, 'logic-symbol':0x55ECFF };
-export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#F7FBFF', definition:'#55ECFF', fact:'#7C6CFF', theorem:'#16D9FF', hypothesis:'#B18CFF', prediction:'#55ECFF', opinion:'#7C6CFF', value:'#B18CFF', reasoning:'#16D9FF', 'logic-symbol':'#55ECFF' };
+export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xF7FBFF, definition:0x55ECFF, fact:0x55ECFF, theorem:0x16D9FF, hypothesis:0xB18CFF, prediction:0x7C6CFF, opinion:0x7C6CFF, value:0xB18CFF, reasoning:0x7C6CFF, 'logic-symbol':0xB18CFF };
+export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#F7FBFF', definition:'#55ECFF', fact:'#55ECFF', theorem:'#16D9FF', hypothesis:'#B18CFF', prediction:'#7C6CFF', opinion:'#7C6CFF', value:'#B18CFF', reasoning:'#7C6CFF', 'logic-symbol':'#B18CFF' };
 export const KNOWLEDGE_BACKGROUND = [
   'radial-gradient(circle at 8% 13%, rgba(216,246,255,.60) 0, rgba(216,246,255,.60) 1px, transparent 1.6px)',
   'radial-gradient(circle at 18% 28%, rgba(216,246,255,.34) 0, rgba(216,246,255,.34) 1px, transparent 1.5px)',
@@ -36,7 +36,9 @@ export const KNOWLEDGE_BACKGROUND = [
   'radial-gradient(circle at 65% 83%, rgba(216,246,255,.46) 0, rgba(216,246,255,.46) 1px, transparent 1.6px)',
   'radial-gradient(circle at 78% 94%, rgba(216,246,255,.26) 0, rgba(216,246,255,.26) 1px, transparent 1.5px)',
   'radial-gradient(circle at 91% 81%, rgba(216,246,255,.50) 0, rgba(216,246,255,.50) 1px, transparent 1.6px)',
-  'radial-gradient(circle at 50% 46%, rgba(16,24,64,0.96) 0%, rgba(6,8,24,1) 34%, #02030a 74%, #000 100%)',
+  'radial-gradient(circle at 44% 48%, rgba(85,236,255,.035) 0%, transparent 44%)',
+  'radial-gradient(circle at 61% 45%, rgba(124,108,255,.045) 0%, transparent 50%)',
+  'radial-gradient(circle at 50% 46%, rgba(7,11,34,.98) 0%, rgba(3,5,18,1) 38%, #010208 76%, #000 100%)',
 ].join(',');
 
 // Visual-only theme application. Geometry, edge styling, layout, interaction and protocol settings remain untouched.
