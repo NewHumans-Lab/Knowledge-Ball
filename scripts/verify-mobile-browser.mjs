@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
@@ -27,11 +26,6 @@ try{
     await page.goto(origin,{waitUntil:'domcontentloaded'});
     console.log('mobile page loaded');
     await page.waitForFunction(()=>Boolean(window.__debug?.scene&&window.__debug?.renderNodes?.length),null,{timeout:10_000});
-    await page.waitForTimeout(600);
-    await page.evaluate(()=>window.__debug.scene.stop());
-    await mkdir('artifacts',{recursive:true});
-    await page.screenshot({path:'artifacts/mobile-visual-review.png',fullPage:false});
-    console.log('mobile visual review screenshot captured');
     const targets=await page.evaluate(()=>{
       window.__debug.scene.stop();
       return window.__debug.renderNodes
