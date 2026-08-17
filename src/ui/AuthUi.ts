@@ -18,6 +18,10 @@ const account = createProductionAuthClient();
 let cached: AccountProfile | null = null;
 let markingNode = false;
 let voteRenderToken = 0;
+let voteRefreshTimer: number | null = null;
+let expirySweepTimer: number | null = null;
+const VOTE_REFRESH_MS = 3_000;
+const EXPIRY_SWEEP_MS = 5 * 60_000;
 
 function start(): void {
   installStyles();
@@ -44,7 +48,11 @@ function start(): void {
   }).observe(panelTitle, { subtree:true, childList:true, characterData:true });
 
   updateAvatar();
-  if (account) void account.publicSession().then(() => loadAccount()).catch(() => undefined);
+  if (account) void account.publicSession().then(async () => {
+    await loadAccount();
+    await sweepExpiredVoteRounds();
+    scheduleExpirySweep();
+  }).catch(() => scheduleExpirySweep());
 }
 
 function currentPanelNode(): { id:string; title:string; mastery?:string; status?:string } | null {
@@ -69,8 +77,14 @@ async function markViewedNode(): Promise<void> {
   try { await setMastery(debug.store, { nodeId:node.id, mastery:'touched' }); } finally { markingNode = false; }
 }
 
+function clearVoteRefresh(): void {
+  if (voteRefreshTimer !== null) window.clearTimeout(voteRefreshTimer);
+  voteRefreshTimer = null;
+}
+
 async function renderPendingVoteControls(): Promise<void> {
   const token = ++voteRenderToken;
+  clearVoteRefresh();
   const panel = document.getElementById('panel');
   const actions = document.getElementById('panelActions');
   actions?.querySelector('.kb-pending-vote')?.remove();
@@ -86,7 +100,7 @@ async function renderPendingVoteControls(): Promise<void> {
       <button class="btn confirm kb-vote-button" type="button" data-vote-side="AGREE"><span>赞成</span><small>−1 能量</small></button>
       <button class="btn danger kb-vote-button" type="button" data-vote-side="DISAGREE"><span>反对</span><small>−1 能量</small></button>
     </div>
-    <div class="kb-vote-status" role="status" aria-live="polite">${account ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>`;
+    <div class="kb-vote-status" role="status" aria-live="polite">${account ? '正在同步全网投票状态…' : '共享服务未配置，暂不能投票'}</div>`;
   actions.prepend(root);
 
   const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
@@ -104,6 +118,8 @@ async function renderPendingVoteControls(): Promise<void> {
     const snapshot = await account.getPendingKnowledgeVote(node.id);
     if (token !== voteRenderToken || !root.isConnected || currentPanelNode()?.id !== node.id) return;
     applyVoteSnapshot(root, snapshot);
+    if (snapshot.verdict === 'PENDING') scheduleVoteRefresh(node.id, root, token);
+    else await handleFinalizedVote(root, snapshot);
   } catch (error) {
     if (token !== voteRenderToken || !root.isConnected) return;
     const status = root.querySelector<HTMLElement>('.kb-vote-status');
@@ -111,9 +127,33 @@ async function renderPendingVoteControls(): Promise<void> {
   }
 }
 
+function scheduleVoteRefresh(nodeId: string, root: HTMLElement, token: number): void {
+  clearVoteRefresh();
+  voteRefreshTimer = window.setTimeout(() => {
+    voteRefreshTimer = null;
+    void refreshPendingVote(nodeId, root, token);
+  }, VOTE_REFRESH_MS);
+}
+
+async function refreshPendingVote(nodeId: string, root: HTMLElement, token: number): Promise<void> {
+  if (!account || token !== voteRenderToken || !root.isConnected || currentPanelNode()?.id !== nodeId) return;
+  try {
+    const snapshot = await account.getPendingKnowledgeVote(nodeId);
+    if (token !== voteRenderToken || !root.isConnected || currentPanelNode()?.id !== nodeId) return;
+    applyVoteSnapshot(root, snapshot);
+    if (snapshot.verdict === 'PENDING') scheduleVoteRefresh(nodeId, root, token);
+    else await handleFinalizedVote(root, snapshot);
+  } catch (error) {
+    const status = root.querySelector<HTMLElement>('.kb-vote-status');
+    if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '投票状态同步失败';
+    if (document.visibilityState !== 'hidden') scheduleVoteRefresh(nodeId, root, token);
+  }
+}
+
 async function castPendingVote(nodeId: string, side: PendingVoteSide, root: HTMLElement): Promise<void> {
   if (!account || root.dataset.busy === '1') return;
   root.dataset.busy = '1';
+  clearVoteRefresh();
   const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
   buttons.forEach(button => { button.disabled = true; });
   const status = root.querySelector<HTMLElement>('.kb-vote-status');
@@ -123,29 +163,73 @@ async function castPendingVote(nodeId: string, side: PendingVoteSide, root: HTML
     if (!root.isConnected || currentPanelNode()?.id !== nodeId) return;
     applyVoteSnapshot(root, snapshot, true);
     await refreshCachedAccount();
+    if (snapshot.verdict === 'PENDING') scheduleVoteRefresh(nodeId, root, voteRenderToken);
+    else await handleFinalizedVote(root, snapshot);
   } catch (error) {
     if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '投票失败';
     buttons.forEach(button => { button.disabled = false; });
+    scheduleVoteRefresh(nodeId, root, voteRenderToken);
   } finally {
     delete root.dataset.busy;
   }
 }
 
 function applyVoteSnapshot(root: HTMLElement, snapshot: PendingKnowledgeVoteSnapshot, justVoted = false): void {
+  const open = snapshot.verdict === 'PENDING';
   const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
   for (const button of buttons) {
     const side = button.dataset.voteSide as PendingVoteSide | undefined;
     button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
-    button.disabled = snapshot.mySide !== null;
+    button.disabled = !open || snapshot.mySide !== null;
   }
   const status = root.querySelector<HTMLElement>('.kb-vote-status');
   if (!status) return;
   const tally = `赞成 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
-  if (snapshot.mySide) {
-    status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '赞成' : '反对'} · ${tally}`;
-  } else {
-    status.textContent = tally;
+  if (!open) {
+    const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
+    status.textContent = `${snapshot.verdict === 'CORRECT' ? '已判定正确' : '已判定错误'} · ${reason} · ${tally}`;
+    return;
   }
+  const deadline = formatVoteDeadline(snapshot.deadline);
+  if (snapshot.mySide) {
+    status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '赞成' : '反对'} · ${tally}${deadline}`;
+  } else {
+    status.textContent = `${tally}${deadline}`;
+  }
+}
+
+function formatVoteDeadline(value?: string): string {
+  if (!value) return '';
+  const time = new Date(value);
+  if (!Number.isFinite(time.getTime())) return '';
+  return ` · 截止 ${time.toLocaleDateString(undefined, { month:'numeric', day:'numeric' })}`;
+}
+
+async function handleFinalizedVote(root: HTMLElement, snapshot: PendingKnowledgeVoteSnapshot): Promise<void> {
+  if (root.dataset.finalized === '1') return;
+  root.dataset.finalized = '1';
+  clearVoteRefresh();
+  await refreshCachedAccount();
+  window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
+    detail: { nodeId:snapshot.nodeId, verdict:snapshot.verdict },
+  }));
+}
+
+async function sweepExpiredVoteRounds(): Promise<void> {
+  if (!account || document.visibilityState === 'hidden') return;
+  try {
+    const processed = await account.settleExpiredPendingKnowledgeVotes(50);
+    if (processed > 0) window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', { detail:{ sweep:true } }));
+  } catch { /* old schema/offline clients retry on the next low-frequency sweep */ }
+}
+
+function scheduleExpirySweep(): void {
+  if (!account || expirySweepTimer !== null) return;
+  expirySweepTimer = window.setTimeout(async () => {
+    expirySweepTimer = null;
+    await sweepExpiredVoteRounds();
+    scheduleExpirySweep();
+  }, EXPIRY_SWEEP_MS);
 }
 
 async function refreshCachedAccount(): Promise<void> {
@@ -155,7 +239,7 @@ async function refreshCachedAccount(): Promise<void> {
     updateAvatar();
     const overlay = document.getElementById('accountOverlay');
     if (overlay?.classList.contains('show')) openAccount(false);
-  } catch { /* vote already committed; account panel can retry independently */ }
+  } catch { /* committed ledger state can retry independently */ }
 }
 
 function openAccount(shouldLoad = true): void {
