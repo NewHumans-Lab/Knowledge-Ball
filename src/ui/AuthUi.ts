@@ -1,13 +1,23 @@
-import { compactEnergy, createProductionAuthClient, type AccountProfile } from '../auth/AuthClient';
+import {
+  compactEnergy,
+  createProductionAuthClient,
+  type AccountProfile,
+  type PendingKnowledgeVoteSnapshot,
+  type PendingVoteSide,
+} from '../auth/AuthClient';
 import { safeAvatarUrl } from '../auth/AuthProfilePresentation';
 import { setMastery } from '../command/SetMastery';
 
-interface DebugState { store?: Parameters<typeof setMastery>[0]; projection?: { state?: { nodesById?: Record<string, { id:string; title:string; mastery?:string }> } }; }
+interface DebugState {
+  store?: Parameters<typeof setMastery>[0];
+  projection?: { state?: { nodesById?: Record<string, { id:string; title:string; mastery?:string; status?:string }> } };
+}
 declare global { interface Window { __debug?: DebugState; } }
 
 const account = createProductionAuthClient();
 let cached: AccountProfile | null = null;
 let markingNode = false;
+let voteRenderToken = 0;
 
 function start(): void {
   installStyles();
@@ -16,13 +26,34 @@ function start(): void {
     if (!target) return;
     event.preventDefault(); event.stopImmediatePropagation(); openAccount();
   }, true);
-  // Observe only the node-title signal. markViewedNode() intentionally mutates
-  // panelBody; observing the whole panel subtree would feed those mutations
-  // back into markViewedNode and can starve the browser microtask queue.
+
+  const panelClose = document.getElementById('panelClose');
+  if (panelClose) {
+    panelClose.textContent = '❌';
+    panelClose.setAttribute('aria-label', '返回知识球');
+    panelClose.setAttribute('title', '返回知识球');
+  }
+
+  // Observe only the node-title signal. The panel-body/actions enhancements below
+  // intentionally mutate other panel descendants; observing the whole subtree
+  // would recreate the self-feedback loop fixed in PR #54.
   const panelTitle = document.getElementById('panelTitle');
-  if (panelTitle) new MutationObserver(() => void markViewedNode()).observe(panelTitle, { subtree:true, childList:true, characterData:true });
+  if (panelTitle) new MutationObserver(() => {
+    void markViewedNode();
+    void renderPendingVoteControls();
+  }).observe(panelTitle, { subtree:true, childList:true, characterData:true });
+
   updateAvatar();
   if (account) void account.publicSession().then(() => loadAccount()).catch(() => undefined);
+}
+
+function currentPanelNode(): { id:string; title:string; mastery?:string; status?:string } | null {
+  const panel = document.getElementById('panel');
+  if (!panel?.classList.contains('open')) return null;
+  const title = document.getElementById('panelTitle')?.textContent?.trim();
+  const nodes = window.__debug?.projection?.state?.nodesById;
+  if (!title || !nodes) return null;
+  return Object.values(nodes).find(candidate => candidate.title === title) ?? null;
 }
 
 async function markViewedNode(): Promise<void> {
@@ -31,13 +62,100 @@ async function markViewedNode(): Promise<void> {
   panel.querySelector<HTMLElement>('.mastery-demo-controls')?.remove();
   const privacy = panel.querySelector<HTMLElement>('.mastery-private');
   if (privacy) privacy.textContent = 'LOCAL ONLY · 查看即自动点亮，只保存在当前设备';
-  const title = document.getElementById('panelTitle')?.textContent?.trim();
-  const debug = window.__debug; const nodes = debug?.projection?.state?.nodesById;
-  if (!title || !nodes || !debug?.store || markingNode) return;
-  const node = Object.values(nodes).find(candidate => candidate.title === title);
-  if (!node || node.mastery !== 'none') return;
+  const node = currentPanelNode();
+  const debug = window.__debug;
+  if (!node || !debug?.store || markingNode || node.mastery !== 'none') return;
   markingNode = true;
   try { await setMastery(debug.store, { nodeId:node.id, mastery:'touched' }); } finally { markingNode = false; }
+}
+
+async function renderPendingVoteControls(): Promise<void> {
+  const token = ++voteRenderToken;
+  const panel = document.getElementById('panel');
+  const actions = document.getElementById('panelActions');
+  actions?.querySelector('.kb-pending-vote')?.remove();
+  const node = currentPanelNode();
+  if (!panel?.classList.contains('open') || !actions || !node || node.status !== 'pending') return;
+
+  const root = document.createElement('section');
+  root.className = 'kb-pending-vote';
+  root.dataset.nodeId = node.id;
+  root.innerHTML = `
+    <div class="kb-vote-heading"><b>待验证投票</b><span>每票质押 1 能量</span></div>
+    <div class="kb-vote-grid">
+      <button class="btn confirm kb-vote-button" type="button" data-vote-side="AGREE"><span>赞成</span><small>−1 能量</small></button>
+      <button class="btn danger kb-vote-button" type="button" data-vote-side="DISAGREE"><span>反对</span><small>−1 能量</small></button>
+    </div>
+    <div class="kb-vote-status" role="status" aria-live="polite">${account ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>`;
+  actions.prepend(root);
+
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+  if (!account) {
+    buttons.forEach(button => { button.disabled = true; });
+    return;
+  }
+
+  buttons.forEach(button => button.addEventListener('click', () => {
+    const side = button.dataset.voteSide as PendingVoteSide | undefined;
+    if (side === 'AGREE' || side === 'DISAGREE') void castPendingVote(node.id, side, root);
+  }));
+
+  try {
+    const snapshot = await account.getPendingKnowledgeVote(node.id);
+    if (token !== voteRenderToken || !root.isConnected || currentPanelNode()?.id !== node.id) return;
+    applyVoteSnapshot(root, snapshot);
+  } catch (error) {
+    if (token !== voteRenderToken || !root.isConnected) return;
+    const status = root.querySelector<HTMLElement>('.kb-vote-status');
+    if (status) status.textContent = error instanceof Error ? error.message : '投票状态读取失败';
+  }
+}
+
+async function castPendingVote(nodeId: string, side: PendingVoteSide, root: HTMLElement): Promise<void> {
+  if (!account || root.dataset.busy === '1') return;
+  root.dataset.busy = '1';
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+  buttons.forEach(button => { button.disabled = true; });
+  const status = root.querySelector<HTMLElement>('.kb-vote-status');
+  if (status) status.textContent = `${side === 'AGREE' ? '赞成' : '反对'}票提交中 · 将质押 1 能量…`;
+  try {
+    const snapshot = await account.castPendingKnowledgeVote(nodeId, side);
+    if (!root.isConnected || currentPanelNode()?.id !== nodeId) return;
+    applyVoteSnapshot(root, snapshot, true);
+    await refreshCachedAccount();
+  } catch (error) {
+    if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '投票失败';
+    buttons.forEach(button => { button.disabled = false; });
+  } finally {
+    delete root.dataset.busy;
+  }
+}
+
+function applyVoteSnapshot(root: HTMLElement, snapshot: PendingKnowledgeVoteSnapshot, justVoted = false): void {
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+  for (const button of buttons) {
+    const side = button.dataset.voteSide as PendingVoteSide | undefined;
+    button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
+    button.disabled = snapshot.mySide !== null;
+  }
+  const status = root.querySelector<HTMLElement>('.kb-vote-status');
+  if (!status) return;
+  const tally = `赞成 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+  if (snapshot.mySide) {
+    status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '赞成' : '反对'} · ${tally}`;
+  } else {
+    status.textContent = tally;
+  }
+}
+
+async function refreshCachedAccount(): Promise<void> {
+  if (!account) return;
+  try {
+    cached = await account.getAccount();
+    updateAvatar();
+    const overlay = document.getElementById('accountOverlay');
+    if (overlay?.classList.contains('show')) openAccount(false);
+  } catch { /* vote already committed; account panel can retry independently */ }
 }
 
 function openAccount(shouldLoad = true): void {
@@ -81,6 +199,6 @@ function renderProfile(body:HTMLElement, profile:AccountProfile|null):void {
 function updateAvatar(): void { const avatar=document.querySelector<HTMLElement>('.avatar-btn');if(!avatar)return;avatar.replaceChildren();const src=safeAvatarUrl(cached?.avatarUrl);if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(cached);},{once:true});avatar.append(image);}else avatar.textContent=initial(cached);avatar.title='个人空间 · 匿名参与';avatar.dataset.authState='anonymous'; }
 function name(profile:AccountProfile|null):string{return profile?.displayName||profile?.username||'匿名探索者';}
 function initial(profile:AccountProfile|null):string{return name(profile).slice(0,1).toUpperCase();}
-function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:10px}`;document.head.appendChild(style);}
+function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:10px}#panelClose{min-width:38px;min-height:38px;display:grid;place-items:center;font-size:19px}.kb-pending-vote{padding:10px;border:1px solid rgba(169,138,232,.34);border-radius:10px;background:rgba(169,138,232,.07)}.kb-vote-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.kb-vote-heading b{font-size:12px;color:var(--ink)}.kb-vote-heading span{font-size:10px;color:#c8b9ed}.kb-vote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kb-vote-button{display:flex!important;flex-direction:column;align-items:center;gap:2px}.kb-vote-button span{font-size:13px}.kb-vote-button small{font-size:9px;opacity:.78}.kb-vote-button.active{box-shadow:inset 0 0 0 1px currentColor}.kb-vote-status{margin-top:7px;font-size:9.5px;line-height:1.45;color:var(--ink-faint);text-align:center}`;document.head.appendChild(style);}
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
