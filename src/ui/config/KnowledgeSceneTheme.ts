@@ -6,13 +6,25 @@ export const KNOWLEDGE_SCENE_THEME = {
     core: 0xFFFFFF,
     structural: 0xF7FBFF,
     falsified: 0xEE5B63,
-    // Semantic node bodies are absolute presentation colors. They must occlude the
-    // backdrop and must not be darkened by scene lighting or status/selection fades.
+    // Semantic node bodies remain opaque presentation colors. Surface depth comes
+    // from a neutral grayscale matcap, never from the central sun or page backdrop.
     shellOpacity: 1.00,
-    // The semantic point is only an outer aura around the opaque body.
     pointOpacity: 0.52,
+    sphereWidthSegments: 24,
+    sphereHeightSegments: 16,
+    matcapLight: 255,
+    // Most visible pixels on these small phone-scale spheres sample the middle of
+    // the matcap. Keep that midtone clearly below the highlight while preserving
+    // the same safe dark floor, so depth reads without muddying semantic hues.
+    matcapMid: 220,
+    matcapDark: 214,
     selectedEmissiveIntensity: 0.30,
     baseEmissiveIntensity: 0.08,
+  },
+  renderer: {
+    antialias: true,
+    mobilePixelRatio: 1.25,
+    desktopPixelRatio: 2,
   },
   mastery: {
     tint: 0xFFFFFF,

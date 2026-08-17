@@ -11,7 +11,7 @@ assert(shouldRenderEdge('a','b'),'ordinary dependency edges must remain visible'
 assert(CORE_SUN_RADIUS>SUN_ORBIT_RADIUS+SUN_RADIUS_MM,'core sun must fully enclose triad orbit and core sphere radius');
 assert(coreSunContainsTriad(),'core sun containment invariant failed');
 for(const angle of [0,.7,2.4,5.9]){const points=SUN_TRIAD_IDS.map((_,i)=>coreOrbitScreenPosition(i,angle));const centroid=points.reduce((sum,p)=>sum.add(p),points[0].clone().set(0,0,0)).multiplyScalar(1/points.length);assert(centroid.length()<1e-10,'core triad projected centroid must remain at the exact visual center');for(const p of points){assert(Math.abs(p.z)<1e-12,'core triad orbit must remain camera-facing to prevent depth occlusion');assert(Math.abs(p.length()-SUN_ORBIT_RADIUS)<1e-10,'core triad must retain its orbital radius');}}
-assert(CORE_SUN_LIGHT_INTENSITY>1,'core light must remain available for the sun visual system');assert(CORE_AMBIENT_LIGHT_INTENSITY===0,'ambient light stays disabled; ordinary semantic shells are deliberately unlit');
+assert(CORE_SUN_LIGHT_INTENSITY>1,'core light must remain available for the sun visual system');assert(CORE_AMBIENT_LIGHT_INTENSITY===0,'ambient light stays disabled; ordinary semantic shells use a neutral unlit matcap instead');
 
 // Three-layer semantic projection must match the product vocabulary, not an old type-color shortcut.
 assert(layerForNode(node('definition','definition','verified'))==='inner','definitions must live in the descriptive inner layer');
@@ -38,6 +38,12 @@ assert(middleRgb.b-middleRgb.g>=60&&middleRgb.b>middleRgb.r,'middle-layer color 
 assert(innerRgb.b>=innerRgb.g&&innerRgb.g>innerRgb.r,'inner-layer color may be icy cyan but must not be green-dominant');
 assert(KNOWLEDGE_SCENE_THEME.node.shellOpacity===1,'ordinary semantic shell must fully occlude the page backdrop');
 assert(KNOWLEDGE_SCENE_THEME.node.pointOpacity<=.6,'semantic aura must remain secondary to the opaque node body');
+assert(KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments>=24&&KNOWLEDGE_SCENE_THEME.node.sphereHeightSegments>=16,'ordinary spheres need enough shared geometry segments to avoid visible polygonal silhouettes');
+assert(KNOWLEDGE_SCENE_THEME.node.matcapLight===255,'matcap highlight must be able to reach the canonical semantic color');
+assert(KNOWLEDGE_SCENE_THEME.node.matcapDark/255>=.82,'matcap dark side must preserve at least 82% of semantic base intensity');
+assert(KNOWLEDGE_SCENE_THEME.node.matcapDark<KNOWLEDGE_SCENE_THEME.node.matcapMid&&KNOWLEDGE_SCENE_THEME.node.matcapMid<KNOWLEDGE_SCENE_THEME.node.matcapLight,'matcap must encode a real but bounded light-to-dark gradient');
+assert(KNOWLEDGE_SCENE_THEME.renderer.antialias,'WebGL antialiasing must stay enabled for small node silhouettes');
+assert(KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio>=1&&KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio<=1.5,'mobile pixel ratio must improve edge sampling without returning to an expensive full device DPR');
 assert(KNOWLEDGE_SCENE_THEME.mastery.tint===0xFFFFFF,'mastery glow tint must stay neutral white so it cannot recolor semantic node hues');
 assert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity<=.16,'ordinary relation lines must stay visually quiet');
 assert(KNOWLEDGE_SCENE_THEME.edge.activeOpacity>=.4,'selected relation paths must remain visibly distinguishable');
@@ -99,7 +105,11 @@ assert(pulseSource.includes('r.baseShellOpacity*pulse.opacityFactor'),'pending p
 assert(pulseSource.includes('r.basePointOpacity*pulse.opacityFactor'),'pending pulse must fade the semantic color point');
 assert(pulseSource.includes('r.baseDotOpacity*pulse.opacityFactor'),'pending pulse must fade the mastery dot proportionally without changing mastery semantics');
 assert(sceneSource.includes("pending=!core&&n.status==='pending'"),'only non-core pending nodes may receive the pending pulse');
-assert(sceneSource.includes('new THREE.MeshBasicMaterial'),'ordinary semantic node bodies must use an unlit material so distance/light cannot darken their color');
+assert(sceneSource.includes('new THREE.MeshMatcapMaterial'),'ordinary semantic node bodies must use unlit matcap shading so surface depth cannot reintroduce sun-distance darkening');
+assert(sceneSource.includes('const nodeMatcap=()=>'),'semantic sphere depth must come from one shared neutral runtime matcap');
+assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments'),'ordinary sphere geometry must use centralized smoothness settings');
+assert(sceneSource.includes('antialias:KNOWLEDGE_SCENE_THEME.renderer.antialias'),'renderer antialiasing must be governed by the scene theme');
+assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'),'mobile renderer must use the bounded higher-resolution sampling path');
 assert(sceneSource.includes('r.shell.visible=true'),'large mobile graphs must retain the opaque semantic body instead of falling back to a translucent sprite only');
 assert(!sceneSource.includes('r.shell.visible=!largeMobileGraph'),'large-mobile optimization must not hide ordinary semantic shells');
 assert(sceneSource.includes('r.baseShellOpacity=core?.84:KNOWLEDGE_SCENE_THEME.node.shellOpacity'),'ordinary shell opacity must not depend on status or selection');
