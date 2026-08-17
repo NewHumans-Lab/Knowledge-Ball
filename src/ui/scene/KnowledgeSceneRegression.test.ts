@@ -30,7 +30,7 @@ assert(KNOWLEDGE_SCENE_THEME.mastery.tint===0xFFFFFF,'mastery glow tint must sta
 assert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity<=.16,'ordinary relation lines must stay visually quiet');
 assert(KNOWLEDGE_SCENE_THEME.edge.activeOpacity>=.4,'selected relation paths must remain visibly distinguishable');
 assert(KNOWLEDGE_SCENE_THEME.sun.core===0xFFFFFF,'sun core must remain white');
-assert(KNOWLEDGE_SCENE_THEME.sun.corona!==KNOWLEDGE_SCENE_THEME.sun.halo,'sun corona and outer halo must remain distinct color layers');
+assert(Number(KNOWLEDGE_SCENE_THEME.sun.corona)!==Number(KNOWLEDGE_SCENE_THEME.sun.halo),'sun corona and outer halo must remain distinct color layers');
 
 let sawMeaningfulZ=false;for(const sample of[node('inner-a','axiom'),node('inner-b','axiom'),node('middle-a'),node('middle-b','theorem'),node('outer-a','fact','pending'),node('outer-b','theorem','pending')]){const layer=layerForNode(sample),pos=initialNodePosition(sample),radius=pos.length();if(layer!=='core'){const band=LAYER_BANDS[layer];assert(radius>=band.rMin-1e-9&&radius<=band.rMax+1e-9,`${sample.id} outside ${layer} volume`);if(Math.abs(pos.z)>radius*.15)sawMeaningfulZ=true;assert(pos.distanceTo(initialNodePosition(sample))<1e-12,`${sample.id} layout must be deterministic`);}}
 assert(sawMeaningfulZ,'layout regressed toward a flat XY disk');let positiveZ=0,negativeZ=0;for(let i=0;i<200;i++){const p=initialNodePosition(node(`volume-${i}`));if(p.z>0)positiveZ++;if(p.z<0)negativeZ++;}assert(positiveZ>60&&negativeZ>60,'3D distribution must occupy both hemispheres');
@@ -63,7 +63,7 @@ const overlaySource=sceneSource.slice(overlayStart,overlayEnd);
 assert(tapSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');
 assert(!tapSource.includes('queueMicrotask'),'node tap must not defer panel dispatch into the microtask queue');
 assert(!tapSource.includes('forceContextLoss'),'node tap must never force WebGL context loss');
-assert(!tapSource.includes('forceContextRestore'),'node tap must never force WebGL context restore');
+assert(!tapSource.includes('forceContextRestore'),'node tap must never force context restore');
 assert(!tapSource.includes('domElement.remove'),'node tap must keep the renderer canvas attached');
 assert(!overlaySource.includes('forceContextLoss'),'overlay open must not destroy the WebGL context');
 assert(!overlaySource.includes('forceContextRestore'),'overlay close must not force context restoration');
