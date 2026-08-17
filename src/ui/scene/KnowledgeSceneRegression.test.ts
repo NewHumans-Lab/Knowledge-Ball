@@ -11,7 +11,7 @@ assert(shouldRenderEdge('a','b'),'ordinary dependency edges must remain visible'
 assert(CORE_SUN_RADIUS>SUN_ORBIT_RADIUS+SUN_RADIUS_MM,'core sun must fully enclose triad orbit and core sphere radius');
 assert(coreSunContainsTriad(),'core sun containment invariant failed');
 for(const angle of [0,.7,2.4,5.9]){const points=SUN_TRIAD_IDS.map((_,i)=>coreOrbitScreenPosition(i,angle));const centroid=points.reduce((sum,p)=>sum.add(p),points[0].clone().set(0,0,0)).multiplyScalar(1/points.length);assert(centroid.length()<1e-10,'core triad projected centroid must remain at the exact visual center');for(const p of points){assert(Math.abs(p.z)<1e-12,'core triad orbit must remain camera-facing to prevent depth occlusion');assert(Math.abs(p.length()-SUN_ORBIT_RADIUS)<1e-10,'core triad must retain its orbital radius');}}
-assert(CORE_SUN_LIGHT_INTENSITY>1,'core light must be strong enough to produce visible illumination');assert(CORE_AMBIENT_LIGHT_INTENSITY===0,'ambient light must stay disabled so solar illumination only weakens by distance and occlusion');
+assert(CORE_SUN_LIGHT_INTENSITY>1,'core light must remain available for the sun visual system');assert(CORE_AMBIENT_LIGHT_INTENSITY===0,'ambient light stays disabled; ordinary semantic shells are deliberately unlit');
 
 // Three-layer semantic projection must match the product vocabulary, not an old type-color shortcut.
 assert(layerForNode(node('definition','definition','verified'))==='inner','definitions must live in the descriptive inner layer');
@@ -36,11 +36,14 @@ assert(colorForNode(node('falsified-reasoning','reasoning','falsified'))===NODE_
 const middleRgb=rgb(KNOWLEDGE_SCENE_THEME.node.middle),innerRgb=rgb(KNOWLEDGE_SCENE_THEME.node.inner);
 assert(middleRgb.b-middleRgb.g>=60&&middleRgb.b>middleRgb.r,'middle-layer color must read as visibly blue rather than cyan/green');
 assert(innerRgb.b>=innerRgb.g&&innerRgb.g>innerRgb.r,'inner-layer color may be icy cyan but must not be green-dominant');
+assert(KNOWLEDGE_SCENE_THEME.node.shellOpacity===1,'ordinary semantic shell must fully occlude the page backdrop');
+assert(KNOWLEDGE_SCENE_THEME.node.pointOpacity<=.6,'semantic aura must remain secondary to the opaque node body');
 assert(KNOWLEDGE_SCENE_THEME.mastery.tint===0xFFFFFF,'mastery glow tint must stay neutral white so it cannot recolor semantic node hues');
 assert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity<=.16,'ordinary relation lines must stay visually quiet');
 assert(KNOWLEDGE_SCENE_THEME.edge.activeOpacity>=.4,'selected relation paths must remain visibly distinguishable');
 assert(KNOWLEDGE_SCENE_THEME.sun.core===0xFFFFFF,'sun core must remain white');
 assert(Number(KNOWLEDGE_SCENE_THEME.sun.corona)!==Number(KNOWLEDGE_SCENE_THEME.sun.halo),'sun corona and outer halo must remain distinct color layers');
+assert(KNOWLEDGE_SCENE_THEME.sun.coronaScale<=4&&KNOWLEDGE_SCENE_THEME.sun.haloScale<=6,'sun glow must not wash most of a phone viewport in cyan/violet haze');
 
 let sawMeaningfulZ=false;for(const sample of[node('inner-a','definition'),node('inner-b','fact'),node('middle-a','axiom'),node('middle-b','theorem'),node('outer-a','hypothesis'),node('outer-b','theorem','pending')]){const layer=layerForNode(sample),pos=initialNodePosition(sample),radius=pos.length();if(layer!=='core'){const band=LAYER_BANDS[layer];assert(radius>=band.rMin-1e-9&&radius<=band.rMax+1e-9,`${sample.id} outside ${layer} volume`);if(Math.abs(pos.z)>radius*.15)sawMeaningfulZ=true;assert(pos.distanceTo(initialNodePosition(sample))<1e-12,`${sample.id} layout must be deterministic`);}}
 assert(sawMeaningfulZ,'layout regressed toward a flat XY disk');let positiveZ=0,negativeZ=0;for(let i=0;i<200;i++){const p=initialNodePosition(node(`volume-${i}`));if(p.z>0)positiveZ++;if(p.z<0)negativeZ++;}assert(positiveZ>60&&negativeZ>60,'3D distribution must occupy both hemispheres');
@@ -96,9 +99,13 @@ assert(pulseSource.includes('r.baseShellOpacity*pulse.opacityFactor'),'pending p
 assert(pulseSource.includes('r.basePointOpacity*pulse.opacityFactor'),'pending pulse must fade the semantic color point');
 assert(pulseSource.includes('r.baseDotOpacity*pulse.opacityFactor'),'pending pulse must fade the mastery dot proportionally without changing mastery semantics');
 assert(sceneSource.includes("pending=!core&&n.status==='pending'"),'only non-core pending nodes may receive the pending pulse');
-assert(sceneSource.includes('r.shell.visible=!largeMobileGraph||core||pending||selectedId===n.id'),'pending shells must remain renderable in large mobile graphs');
-assert(sceneSource.includes('r.point.visible=!core'),'large-mobile optimization must retain the lightweight semantic color point even when heavy shells are hidden');
-assert(sceneSource.includes('r.point.scale.setScalar'),'semantic node color must have its own lightweight visual carrier independent of mastery glow');
+assert(sceneSource.includes('new THREE.MeshBasicMaterial'),'ordinary semantic node bodies must use an unlit material so distance/light cannot darken their color');
+assert(sceneSource.includes('r.shell.visible=true'),'large mobile graphs must retain the opaque semantic body instead of falling back to a translucent sprite only');
+assert(!sceneSource.includes('r.shell.visible=!largeMobileGraph'),'large-mobile optimization must not hide ordinary semantic shells');
+assert(sceneSource.includes('r.baseShellOpacity=core?.84:KNOWLEDGE_SCENE_THEME.node.shellOpacity'),'ordinary shell opacity must not depend on status or selection');
+assert(!sceneSource.includes("r.baseShellOpacity=(n.status==='falsified'"),'status must not be encoded by making the semantic node body translucent');
+assert(sceneSource.includes('r.point.visible=!core'),'semantic aura must remain available independently of the opaque node body');
+assert(sceneSource.includes('r.point.scale.setScalar'),'semantic node color must retain a lightweight aura independent of mastery glow');
 assert(sceneSource.includes('pendingNodeIds.size>0'),'large mobile graphs must keep lightweight rendering alive while pending nodes animate');
 assert(sceneSource.includes('const colorFor=(n:KnowledgeSceneNode)=>colorForNode(n);'),'scene rendering must use the canonical status/layer-aware color mapping');
 assert(sceneSource.includes('wireframe:false'),'ordinary nodes must render as solid scientific points rather than the old dotted wireframe shells');

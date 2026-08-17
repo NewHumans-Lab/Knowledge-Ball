@@ -23,17 +23,17 @@ async function analyzeScreenshot(page,screenshot,regions=[]){
     const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D screenshot analysis context unavailable');
     ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
     const hsv=(r,g,b)=>{const rn=r/255,gn=g/255,bn=b/255,max=Math.max(rn,gn,bn),min=Math.min(rn,gn,bn),d=max-min;let h=0;if(d){if(max===rn)h=60*(((gn-bn)/d)%6);else if(max===gn)h=60*((bn-rn)/d+2);else h=60*((rn-gn)/d+4);if(h<0)h+=360;}return{h,s:max?d/max:0,v:max};};
-    const empty=()=>({trueBlue:0,violet:0,cyan:0,white:0,greenDominant:0,visible:0});
+    const empty=()=>({trueBlue:0,violet:0,cyan:0,white:0,greenDominant:0,visible:0,cyanPeak:0,trueBluePeak:0,violetPeak:0,whitePeak:0});
     const add=(stats,r,g,b,a)=>{if(a<180)return;const {h,s,v}=hsv(r,g,b);if(v<.12)return;stats.visible++;
-      if(s<=.12&&v>=.42)stats.white++;
-      if(h>=185&&h<215&&s>=.25&&v>=.14)stats.cyan++;
-      if(h>=215&&h<238&&s>=.28&&v>=.14)stats.trueBlue++;
-      if(h>=238&&h<=285&&s>=.25&&v>=.14)stats.violet++;
+      if(s<=.12&&v>=.42){stats.white++;stats.whitePeak=Math.max(stats.whitePeak,v);}
+      if(h>=185&&h<215&&s>=.25&&v>=.14){stats.cyan++;stats.cyanPeak=Math.max(stats.cyanPeak,v);}
+      if(h>=215&&h<238&&s>=.28&&v>=.14){stats.trueBlue++;stats.trueBluePeak=Math.max(stats.trueBluePeak,v);}
+      if(h>=238&&h<=285&&s>=.25&&v>=.14){stats.violet++;stats.violetPeak=Math.max(stats.violetPeak,v);}
       if(h>=80&&h<=165&&s>=.25&&v>=.14)stats.greenDominant++;
     };
     const global=empty();
     // Sample every fourth pixel for the whole-frame gate. Hue/saturation are more faithful than
-    // absolute RGB thresholds after WebGL transparency is composited over the deep-space background.
+    // absolute RGB thresholds after WebGL is composited over the deep-space background.
     for(let i=0;i<data.length;i+=16)add(global,data[i],data[i+1],data[i+2],data[i+3]);
     const local=regions.map(region=>{const stats=empty(),radius=Math.max(1,Math.round(region.radius??18)),cx=Math.round(region.x),cy=Math.round(region.y);for(let y=Math.max(0,cy-radius);y<=Math.min(canvas.height-1,cy+radius);y++){for(let x=Math.max(0,cx-radius);x<=Math.min(canvas.width-1,cx+radius);x++){const dx=x-cx,dy=y-cy;if(dx*dx+dy*dy>radius*radius)continue;const i=(y*canvas.width+x)*4;add(stats,data[i],data[i+1],data[i+2],data[i+3]);}}return stats;});
     return{width:canvas.width,height:canvas.height,...global,regions:local};
@@ -70,7 +70,6 @@ try{
     const toLocalRegions=points=>points.map(point=>({x:point.x-hostBox.x,y:point.y-hostBox.y,radius:18}));
 
     // Gate A: capture the actual graph exactly as current data renders on a phone viewport.
-    // This verifies the final production-like composition, including the real CSS backdrop behind WebGL.
     await mkdir('artifacts',{recursive:true});
     const screenshot=await canvasHost.screenshot({path:'artifacts/mobile-scene-visual.png',type:'png'});
     assert.ok(screenshot.length>5_000,'mobile WebGL scene screenshot must contain real rendered visual data');
@@ -79,12 +78,11 @@ try{
     assert.ok(visual.visible>1_000,'mobile scene must contain enough visible non-background rendered pixels');
     assert.ok(visual.white>=100,'actual WebGL screenshot must visibly contain the white structural/core light language');
     assert.ok(visual.trueBlue>=100,'actual WebGL screenshot must visibly contain a true-blue scene signal, not only cyan/teal');
+    assert.ok(visual.trueBluePeak>=.55,'actual true-blue scene signal must remain visibly bright instead of collapsing into near-black blue');
     assert.ok(visual.greenDominant<=5,'old green/teal contamination must not reappear in the actual scene screenshot');
 
-    // Gate B: a colored page backdrop makes whole-frame hue deltas meaningless. Calibrate the renderer
-    // around four real, on-screen node positions instead. First force all four fixtures to neutral white,
-    // then assign the canonical semantic classes and compare each node's local pixels against its own
-    // immediately preceding control. This keeps the test strict even when the background itself is blue/violet.
+    // Gate B: calibrate semantic colors around four real on-screen nodes. The local peak checks are
+    // deliberate: hue alone is insufficient because a correctly-hued node can still be visually too dark.
     const calibrationIds=targets.slice(0,4).map(target=>target.id);
     const originals=await page.evaluate(ids=>{
       const original=[];
@@ -116,12 +114,14 @@ try{
     assert.equal(palette.width,visual.width,'actual and semantic-palette screenshots must share the same width');
     assert.equal(palette.height,visual.height,'actual and semantic-palette screenshots must share the same height');
     assert.ok(palette.regions[0].cyan>=control.regions[0].cyan+6,`inner calibration must add local ice-blue pixels (control=${control.regions[0].cyan}, palette=${palette.regions[0].cyan})`);
-    // True blue sits directly on the intentional blue space field, so the paired local test uses the
-    // measured 3–7 pixel delta from repeated real mobile runs rather than a whole-frame threshold.
-    assert.ok(palette.regions[1].trueBlue>=control.regions[1].trueBlue+2,`middle calibration must add local true-blue pixels (control=${control.regions[1].trueBlue}, palette=${palette.regions[1].trueBlue})`);
+    assert.ok(palette.regions[0].cyanPeak>=.60,`inner ice-blue must stay bright in the real composite (peak=${palette.regions[0].cyanPeak})`);
+    // The intended middle hue sits on an intentionally blue background. Replacing a white control sphere
+    // with a purer/brighter blue can reduce the total count of already-blue background pixels, so count
+    // deltas are not a reliable signal. Require a strong local brightness gain in the true-blue hue instead.
+    assert.ok(palette.regions[1].trueBluePeak>=.75,`middle true-blue must stay bright in the real composite (peak=${palette.regions[1].trueBluePeak})`);
+    assert.ok(palette.regions[1].trueBluePeak>=control.regions[1].trueBluePeak+.15,`middle calibration must increase local true-blue brightness (control=${control.regions[1].trueBluePeak}, palette=${palette.regions[1].trueBluePeak})`);
     assert.ok(palette.regions[2].violet>=control.regions[2].violet+6,`outer calibration must add local violet pixels (control=${control.regions[2].violet}, palette=${palette.regions[2].violet})`);
-    // Structural white remains covered by the whole-frame real visual gate above and the scene regression
-    // test. A randomly selected 3D calibration node can be depth-occluded even when its projected point is finite.
+    assert.ok(palette.regions[2].violetPeak>=.55,`outer violet must stay bright in the real composite (peak=${palette.regions[2].violetPeak})`);
     assert.ok(palette.white>=100,'semantic calibration must retain the whole-frame structural white language');
     assert.ok(palette.greenDominant<=5,'semantic calibration must not reintroduce green/teal contamination');
     await page.evaluate(original=>{for(const saved of original){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;}}window.__debug.scene.markDirty();window.__debug.scene.start();},originals);
@@ -169,5 +169,5 @@ try{
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, actual scene pixels, semantic palette, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, bright semantic colors, actual scene pixels, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}
