@@ -15,6 +15,25 @@ async function assertExit(locator,name){
   assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
 }
 
+async function analyzeScreenshot(page,screenshot){
+  const screenshotUrl=`data:image/png;base64,${screenshot.toString('base64')}`;
+  return page.evaluate(async src=>{
+    const image=new Image();image.src=src;await image.decode();
+    const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D screenshot analysis context unavailable');
+    ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let trueBlue=0,violet=0,cyan=0,white=0,greenDominant=0,bright=0;
+    for(let i=0;i<data.length;i+=16){const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];if(a<180||Math.max(r,g,b)<72)continue;bright++;
+      if(r>205&&g>205&&b>205)white++;
+      if(b>=145&&b-g>=45&&b-r>=45&&r<g+18)trueBlue++;
+      if(b>=145&&b-g>=38&&r-g>=8)violet++;
+      if(b>=145&&g>=120&&b>=g&&b-g<=38&&g-r>=38)cyan++;
+      if(g>=120&&g-b>=18&&g-r>=28)greenDominant++;
+    }
+    return{width:canvas.width,height:canvas.height,trueBlue,violet,cyan,white,greenDominant,bright};
+  },screenshotUrl);
+}
+
 try{
   for(let attempt=0;attempt<50;attempt++){try{if((await fetch(origin)).ok)break;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}
   const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader']});
@@ -31,41 +50,50 @@ try{
       window.__debug.scene.stop();
       return window.__debug.renderNodes
         .filter(node=>!['n1','n2','n16'].includes(node.id))
-        .map(node=>{const point=window.__debug.scene.screenPositionForNode(node.id);return point?{...point,title:node.title}:null;})
+        .map(node=>{const point=window.__debug.scene.screenPositionForNode(node.id);return point?{...point,id:node.id,title:node.title}:null;})
         .filter(target=>target&&target.x>12&&target.x<378&&target.y>70&&target.y<820)
         .slice(0,8);
     });
     console.log(`mobile raycast targets: ${targets.length}`);
-    assert.ok(targets.length,'mobile scene must expose finite on-screen raycast targets');
+    assert.ok(targets.length>=4,'mobile scene must expose at least four finite on-screen raycast targets for visual calibration');
     assert.ok(targets.every(target=>Number.isFinite(target.x)&&Number.isFinite(target.y)),'mobile raycast targets must be finite');
 
-    // Real visual-experience gate: capture the actual composited WebGL scene at a phone viewport,
-    // then inspect screenshot pixels rather than merely checking source constants.
+    // Gate A: capture the actual graph exactly as current data renders on a phone viewport.
+    // This verifies the production-like composition is no longer contaminated by the old teal/green visual path.
     await mkdir('artifacts',{recursive:true});
     const screenshot=await page.locator('#canvasHost').screenshot({path:'artifacts/mobile-scene-visual.png',type:'png'});
     assert.ok(screenshot.length>5_000,'mobile WebGL scene screenshot must contain real rendered visual data');
-    const screenshotUrl=`data:image/png;base64,${screenshot.toString('base64')}`;
-    const visual=await page.evaluate(async src=>{
-      const image=new Image();image.src=src;await image.decode();
-      const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
-      const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D screenshot analysis context unavailable');
-      ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
-      let trueBlue=0,violet=0,cyan=0,white=0,greenDominant=0,bright=0;
-      for(let i=0;i<data.length;i+=16){const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];if(a<180||Math.max(r,g,b)<72)continue;bright++;
-        if(r>205&&g>205&&b>205)white++;
-        if(b>=145&&b-g>=45&&b-r>=45&&r<g+18)trueBlue++;
-        if(b>=145&&b-g>=38&&r-g>=8)violet++;
-        if(b>=145&&g>=120&&b>=g&&b-g<=38&&g-r>=38)cyan++;
-        if(g>=120&&g-b>=18&&g-r>=28)greenDominant++;
-      }
-      return{width:canvas.width,height:canvas.height,trueBlue,violet,cyan,white,greenDominant,bright};
-    },screenshotUrl);
-    console.log('mobile scene visual pixels',visual);
+    const visual=await analyzeScreenshot(page,screenshot);
+    console.log('mobile actual-scene visual pixels',visual);
     assert.ok(visual.bright>80,'mobile scene must contain enough visible non-background rendered pixels');
-    assert.ok(visual.white>=8,'real WebGL screenshot must visibly contain the white structural/core light language');
-    assert.ok(visual.trueBlue>=4,'real WebGL screenshot must visibly contain true-blue pixels, not only cyan/teal');
-    assert.ok(visual.violet>=4,'real WebGL screenshot must visibly contain violet outer-layer pixels');
-    assert.ok(visual.trueBlue+visual.violet>visual.greenDominant,'blue/violet visual signal must outweigh green-dominant contamination in the actual scene screenshot');
+    assert.ok(visual.white>=8,'actual WebGL screenshot must visibly contain the white structural/core light language');
+    assert.ok(visual.trueBlue>=4,'actual WebGL screenshot must visibly contain true-blue pixels, not only cyan/teal');
+    assert.ok(visual.trueBlue>visual.greenDominant,'true-blue signal must outweigh green-dominant contamination in the actual scene screenshot');
+
+    // Gate B: data distribution is allowed to vary, so calibrate the renderer itself with four real,
+    // on-screen graph nodes temporarily assigned to the canonical semantic classes. The screenshot is
+    // still a genuine Three.js/mobile composition; only the semantic fixture is controlled. Restore immediately.
+    const calibrationIds=targets.slice(0,4).map(target=>target.id);
+    const originals=await page.evaluate(ids=>{
+      const specs=[['definition','verified'],['theorem','verified'],['hypothesis','verified'],['reasoning','verified']];
+      const original=[];
+      ids.forEach((id,index)=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;original.push({id,type:node.type,status:node.status,mastery:node.mastery});node.type=specs[index][0];node.status=specs[index][1];node.mastery='none';});
+      window.__debug.scene.markDirty();window.__debug.scene.start();return original;
+    },calibrationIds);
+    await page.waitForTimeout(180);
+    await page.evaluate(()=>window.__debug.scene.stop());
+    const paletteScreenshot=await page.locator('#canvasHost').screenshot({path:'artifacts/mobile-scene-palette.png',type:'png'});
+    assert.ok(paletteScreenshot.length>5_000,'semantic palette screenshot must contain real rendered visual data');
+    const palette=await analyzeScreenshot(page,paletteScreenshot);
+    console.log('mobile semantic-palette visual pixels',palette);
+    assert.ok(palette.cyan>=4,'real WebGL calibration must visibly render the inner ice-blue semantic color');
+    assert.ok(palette.trueBlue>=4,'real WebGL calibration must visibly render the middle true-blue semantic color');
+    assert.ok(palette.violet>=4,'real WebGL calibration must visibly render the outer violet semantic color');
+    assert.ok(palette.white>=8,'real WebGL calibration must visibly render structural white');
+    assert.ok(palette.cyan+palette.trueBlue+palette.violet>palette.greenDominant,'canonical cool-color signal must dominate green contamination in the real calibration screenshot');
+    await page.evaluate(original=>{for(const saved of original){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;}}window.__debug.scene.markDirty();window.__debug.scene.start();},originals);
+    await page.waitForTimeout(100);
+    await page.evaluate(()=>window.__debug.scene.stop());
 
     await page.locator('.ai-add').click();
     await page.locator('#modalOverlay.show').waitFor({state:'visible'});
@@ -108,5 +136,5 @@ try{
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, real scene pixels, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, actual scene pixels, semantic palette, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}
