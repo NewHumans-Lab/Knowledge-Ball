@@ -10,7 +10,10 @@ function fixtureEvents() {
   const timestamp = Date.now() - eventCount;
   return Array.from({ length: eventCount }, (_, index) => ({
     id: `panel-style-event-${index}`,
-    type: 'NodeCreated', scope: 'public', schemaVersion: 1, timestamp: timestamp + index,
+    type: 'NodeCreated',
+    scope: 'public',
+    schemaVersion: 1,
+    timestamp: timestamp + index,
     payload: {
       nodeId: `panel-style-node-${index}`,
       title: `Panel style node ${index}`,
@@ -25,14 +28,26 @@ function fixtureEvents() {
 async function deadline(promise, ms, label) {
   let timer;
   try {
-    return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms); })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms}ms`)), ms); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1'], { stdio: 'ignore' });
+// Use Vite's dev transform only for this diagnostic so browser Error.stack
+// contains source module URLs instead of minified production function names.
+const server = spawn(process.execPath, [
+  'node_modules/vite/bin/vite.js',
+  '--host', '127.0.0.1',
+  '--port', '4173',
+  '--strictPort',
+], { stdio: 'ignore' });
 let browser;
 try {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 100; i += 1) {
     try { if ((await fetch(origin)).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -45,66 +60,40 @@ try {
 
   const page = await context.newPage();
   page.on('console', message => {
-    const text = message.text();
-    if (text.startsWith('MASTERY_CALLBACK ') || text.startsWith('OPEN_CALL ')) console.log(text);
+    if (message.text().startsWith('SOURCE_APPEND ')) console.log(message.text());
   });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
 
-  const removed = await page.evaluate(() => {
-    let count = 0;
+  await page.evaluate(() => {
     for (const sheet of [...document.styleSheets]) {
       let rules;
       try { rules = [...sheet.cssRules]; } catch { continue; }
-      for (let i = rules.length - 1; i >= 0; i--) {
-        if (rules[i].selectorText === '.mastery-private') { sheet.deleteRule(i); count++; }
+      for (let i = rules.length - 1; i >= 0; i -= 1) {
+        if (rules[i].selectorText === '.mastery-private') sheet.deleteRule(i);
       }
     }
-    return count;
-  });
-  assert.ok(removed >= 1, 'legacy .mastery-private rule must be removed for diagnostic');
 
-  const setup = await page.evaluate(() => {
-    const panel = window.__debug.panel;
-    if (!panel || typeof panel.openNodePanel !== 'function') throw new Error('panel unavailable');
-    if (typeof panel.onSetMastery !== 'function') return { available: false, keys: Object.keys(panel) };
-
-    const originalOpen = panel.openNodePanel.bind(panel);
-    let openCalls = 0;
-    const openTraces = [];
-    panel.openNodePanel = id => {
-      openCalls += 1;
-      const trace = {
-        index: openCalls,
-        id,
-        at: performance.now(),
-        stack: new Error(`open-${openCalls}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
-      };
-      if (openTraces.length < 3) openTraces.push(trace);
-      console.log(`OPEN_CALL ${JSON.stringify(trace)}`);
-      return originalOpen(id);
-    };
-
-    let masteryCalls = 0;
-    const masteryTraces = [];
-    panel.onSetMastery = async (id, mastery) => {
-      masteryCalls += 1;
-      if (masteryTraces.length < 3) {
+    const store = window.__debug.store;
+    const traces = [];
+    let appendCount = 0;
+    store.append = event => {
+      appendCount += 1;
+      if (traces.length < 3) {
         const trace = {
-          index: masteryCalls,
-          id,
-          mastery,
-          stack: new Error(`mastery-${masteryCalls}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
+          index: appendCount,
+          type: event.type,
+          scope: event.scope,
+          payload: structuredClone(event.payload),
+          stack: new Error(`source-append-${appendCount}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
         };
-        masteryTraces.push(trace);
-        console.log(`MASTERY_CALLBACK ${JSON.stringify(trace)}`);
+        traces.push(trace);
+        console.log(`SOURCE_APPEND ${JSON.stringify(trace)}`);
       }
+      return true;
     };
-
-    window.__issue51Diagnostic = () => ({ openCalls, masteryCalls, openTraces: structuredClone(openTraces), masteryTraces: structuredClone(masteryTraces) });
-    return { available: true, keys: Object.keys(panel) };
+    window.__issue51Diagnostic = () => ({ appendCount, traces: structuredClone(traces) });
   });
-  assert.ok(setup.available, `PanelController.onSetMastery must be runtime-accessible; keys=${setup.keys.join(',')}`);
 
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
@@ -116,12 +105,11 @@ try {
   assert.ok(target, 'must expose a tappable node');
 
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
-  await new Promise(resolve => setTimeout(resolve, 40));
-
-  const result = await deadline(page.evaluate(() => window.__issue51Diagnostic()), 250, 'post-tap diagnostic');
+  await new Promise(resolve => setTimeout(resolve, 80));
+  const result = await deadline(page.evaluate(() => window.__issue51Diagnostic()), 250, 'source-stack diagnostic');
   console.log(JSON.stringify(result, null, 2));
-  assert.equal(result.masteryCalls, 0, `mastery no-op boundary unexpectedly entered ${result.masteryCalls} times`);
-  assert.equal(result.openCalls, 1, `one touch must have exactly one openNodePanel caller; got ${result.openCalls}`);
+  assert.ok(result.appendCount >= 1, 'tap path must expose at least one append caller');
+  assert.ok(result.traces[0]?.stack.includes('/src/'), `expected Vite source stack, got: ${result.traces[0]?.stack ?? 'none'}`);
 
   await context.close();
 } finally {
