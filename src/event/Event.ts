@@ -70,8 +70,12 @@ export const CURRENT_SCHEMA_VERSION = 1;
 export function isPublicKnowledgeEvent(event: DomainEvent): event is PublicKnowledgeEvent {
   return event.type !== 'NodeMasterySet' && (event.scope === undefined || event.scope === 'public');
 }
-export function isCanonicalPublicKnowledgeEvent(event: DomainEvent): event is KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent {
-  return event.scope === 'public' && ['KnowledgeAdded','KnowledgeNegated','KnowledgeDecomposed','KnowledgeMerged','KnowledgeStatusChanged','KnowledgeNodeEdited','KnowledgeVerdictFinalized'].includes(event.type);
+
+// This guard is intentionally the client-writable canonical command family.
+// Server-authored KnowledgeVerdictFinalized is public and sync-readable, but it
+// must never be queued or pushed back through append_public_knowledge_events.
+export function isCanonicalPublicKnowledgeEvent(event: DomainEvent): event is KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent {
+  return event.scope === 'public' && ['KnowledgeAdded','KnowledgeNegated','KnowledgeDecomposed','KnowledgeMerged','KnowledgeStatusChanged','KnowledgeNodeEdited'].includes(event.type);
 }
 export function migrateEventScope(event: DomainEvent): DomainEvent {
   return event.scope ? event : { ...event, scope: event.type === 'NodeMasterySet' ? 'personal' : 'public' } as DomainEvent;
