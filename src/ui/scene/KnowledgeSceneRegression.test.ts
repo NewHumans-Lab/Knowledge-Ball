@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { clampGraphZoom, coreLabelsVisible, coreOrbitScreenPosition, coreSunContainsTriad, hasFiniteCoordinates, initialNodePosition, isCoreNodeId, layerForNode, nodeRadiusForType, ordinaryNodeCompensationScale, shouldRenderEdge } from './KnowledgeScene';
 import { CORE_AMBIENT_LIGHT_INTENSITY, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_RADIUS, DEFAULT_CAM_Z, LAYER_BANDS, MAX_GRAPH_ZOOM, MIN_GRAPH_ZOOM, SUN_ORBIT_RADIUS, SUN_RADIUS_MM, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 function assert(condition:unknown,message:string):asserts condition{if(!condition)throw new Error(message);}
@@ -19,4 +20,29 @@ assert(DEFAULT_CAM_Z===640,'camera baseline changed unexpectedly; graph zoom mus
 assert(hasFiniteCoordinates({x:0,y:-1,z:2}),'finite scene coordinates must be accepted');
 assert(!hasFiniteCoordinates({x:Number.NaN,y:0,z:0}),'NaN edge/node coordinates must be rejected before geometry creation');
 assert(!hasFiniteCoordinates({x:0,y:Number.POSITIVE_INFINITY,z:0}),'infinite edge/node coordinates must be rejected before geometry creation');
+
+const sceneSource=readFileSync('src/ui/scene/KnowledgeScene.ts','utf8');
+const tapStart=sceneSource.indexOf('const up=');
+const tapEnd=sceneSource.indexOf('const wheel=');
+const overlayStart=sceneSource.indexOf('setOverlayVisible:');
+const overlayEnd=sceneSource.indexOf(',resize,setLabelBrightness');
+assert(tapStart>=0&&tapEnd>tapStart,'node tap implementation must remain discoverable');
+assert(overlayStart>=0&&overlayEnd>overlayStart,'overlay lifecycle implementation must remain discoverable');
+const tapSource=sceneSource.slice(tapStart,tapEnd);
+const overlaySource=sceneSource.slice(overlayStart,overlayEnd);
+assert(tapSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');
+assert(!tapSource.includes('queueMicrotask'),'node tap must not defer panel dispatch into the microtask queue');
+assert(!tapSource.includes('forceContextLoss'),'node tap must never force WebGL context loss');
+assert(!tapSource.includes('forceContextRestore'),'node tap must never force WebGL context restore');
+assert(!tapSource.includes('domElement.remove'),'node tap must keep the renderer canvas attached');
+assert(!overlaySource.includes('forceContextLoss'),'overlay open must not destroy the WebGL context');
+assert(!overlaySource.includes('forceContextRestore'),'overlay close must not force context restoration');
+assert(!overlaySource.includes('domElement.remove'),'overlay lifecycle must keep the renderer canvas attached');
+assert(!overlaySource.includes('pointerEvents'),'overlay lifecycle must not retarget the active pointer by mutating canvas hit testing');
+assert(sceneSource.includes('const pauseFrameLoop='),'scene must pause work without destroying GPU state');
+assert(sceneSource.includes('const resumeFrameLoop='),'scene must resume work without recreating GPU state');
+assert(sceneSource.includes("const down=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointerdown must be gated by scene overlay state');
+assert(sceneSource.includes("const move=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointermove must be gated by scene overlay state');
+assert(sceneSource.includes("const up=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointerup/pointercancel must be gated by scene overlay state');
+assert(sceneSource.includes("const wheel=(e:WheelEvent)=>{if(overlayVisible)return;"),'wheel input must be gated by scene overlay state');
 console.log('Knowledge scene regression tests passed');
