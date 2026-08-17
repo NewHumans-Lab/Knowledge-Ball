@@ -15,26 +15,29 @@ async function assertExit(locator,name){
   assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
 }
 
-async function analyzeScreenshot(page,screenshot){
+async function analyzeScreenshot(page,screenshot,regions=[]){
   const screenshotUrl=`data:image/png;base64,${screenshot.toString('base64')}`;
-  return page.evaluate(async src=>{
+  return page.evaluate(async ({src,regions})=>{
     const image=new Image();image.src=src;await image.decode();
     const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
     const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D screenshot analysis context unavailable');
     ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
     const hsv=(r,g,b)=>{const rn=r/255,gn=g/255,bn=b/255,max=Math.max(rn,gn,bn),min=Math.min(rn,gn,bn),d=max-min;let h=0;if(d){if(max===rn)h=60*(((gn-bn)/d)%6);else if(max===gn)h=60*((bn-rn)/d+2);else h=60*((rn-gn)/d+4);if(h<0)h+=360;}return{h,s:max?d/max:0,v:max};};
-    let trueBlue=0,violet=0,cyan=0,white=0,greenDominant=0,visible=0;
-    // Sample every fourth pixel. Hue/saturation are more faithful than absolute RGB
-    // thresholds after WebGL transparency is composited over the deep-space background.
-    for(let i=0;i<data.length;i+=16){const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];if(a<180)continue;const {h,s,v}=hsv(r,g,b);if(v<.12)continue;visible++;
-      if(s<=.12&&v>=.42)white++;
-      if(h>=185&&h<215&&s>=.25&&v>=.14)cyan++;
-      if(h>=215&&h<238&&s>=.28&&v>=.14)trueBlue++;
-      if(h>=238&&h<=285&&s>=.25&&v>=.14)violet++;
-      if(h>=80&&h<=165&&s>=.25&&v>=.14)greenDominant++;
-    }
-    return{width:canvas.width,height:canvas.height,trueBlue,violet,cyan,white,greenDominant,visible};
-  },screenshotUrl);
+    const empty=()=>({trueBlue:0,violet:0,cyan:0,white:0,greenDominant:0,visible:0});
+    const add=(stats,r,g,b,a)=>{if(a<180)return;const {h,s,v}=hsv(r,g,b);if(v<.12)return;stats.visible++;
+      if(s<=.12&&v>=.42)stats.white++;
+      if(h>=185&&h<215&&s>=.25&&v>=.14)stats.cyan++;
+      if(h>=215&&h<238&&s>=.28&&v>=.14)stats.trueBlue++;
+      if(h>=238&&h<=285&&s>=.25&&v>=.14)stats.violet++;
+      if(h>=80&&h<=165&&s>=.25&&v>=.14)stats.greenDominant++;
+    };
+    const global=empty();
+    // Sample every fourth pixel for the whole-frame gate. Hue/saturation are more faithful than
+    // absolute RGB thresholds after WebGL transparency is composited over the deep-space background.
+    for(let i=0;i<data.length;i+=16)add(global,data[i],data[i+1],data[i+2],data[i+3]);
+    const local=regions.map(region=>{const stats=empty(),radius=Math.max(1,Math.round(region.radius??18)),cx=Math.round(region.x),cy=Math.round(region.y);for(let y=Math.max(0,cy-radius);y<=Math.min(canvas.height-1,cy+radius);y++){for(let x=Math.max(0,cx-radius);x<=Math.min(canvas.width-1,cx+radius);x++){const dx=x-cx,dy=y-cy;if(dx*dx+dy*dy>radius*radius)continue;const i=(y*canvas.width+x)*4;add(stats,data[i],data[i+1],data[i+2],data[i+3]);}}return stats;});
+    return{width:canvas.width,height:canvas.height,...global,regions:local};
+  },{src:screenshotUrl,regions});
 }
 
 try{
@@ -54,17 +57,22 @@ try{
       return window.__debug.renderNodes
         .filter(node=>!['n1','n2','n16'].includes(node.id))
         .map(node=>{const point=window.__debug.scene.screenPositionForNode(node.id);return point?{...point,id:node.id,title:node.title}:null;})
-        .filter(target=>target&&target.x>12&&target.x<378&&target.y>70&&target.y<820)
+        .filter(target=>target&&target.x>24&&target.x<366&&target.y>88&&target.y<808)
         .slice(0,8);
     });
     console.log(`mobile raycast targets: ${targets.length}`);
     assert.ok(targets.length>=4,'mobile scene must expose at least four finite on-screen raycast targets for visual calibration');
     assert.ok(targets.every(target=>Number.isFinite(target.x)&&Number.isFinite(target.y)),'mobile raycast targets must be finite');
 
+    const canvasHost=page.locator('#canvasHost');
+    const hostBox=await canvasHost.boundingBox();
+    assert.ok(hostBox,'mobile canvas host must expose a finite bounding box');
+    const toLocalRegions=points=>points.map(point=>({x:point.x-hostBox.x,y:point.y-hostBox.y,radius:18}));
+
     // Gate A: capture the actual graph exactly as current data renders on a phone viewport.
-    // This verifies the production-like composition is no longer contaminated by the old teal/green visual path.
+    // This verifies the final production-like composition, including the real CSS backdrop behind WebGL.
     await mkdir('artifacts',{recursive:true});
-    const screenshot=await page.locator('#canvasHost').screenshot({path:'artifacts/mobile-scene-visual.png',type:'png'});
+    const screenshot=await canvasHost.screenshot({path:'artifacts/mobile-scene-visual.png',type:'png'});
     assert.ok(screenshot.length>5_000,'mobile WebGL scene screenshot must contain real rendered visual data');
     const visual=await analyzeScreenshot(page,screenshot);
     console.log('mobile actual-scene visual pixels',visual);
@@ -73,30 +81,44 @@ try{
     assert.ok(visual.trueBlue>=100,'actual WebGL screenshot must visibly contain a true-blue scene signal, not only cyan/teal');
     assert.ok(visual.greenDominant<=5,'old green/teal contamination must not reappear in the actual scene screenshot');
 
-    // Gate B: data distribution is allowed to vary, so calibrate the renderer itself with four real,
-    // on-screen graph nodes temporarily assigned to the canonical semantic classes. The screenshot is
-    // still a genuine Three.js/mobile composition; only the semantic fixture is controlled. Restore immediately.
+    // Gate B: a colored page backdrop makes whole-frame hue deltas meaningless. Calibrate the renderer
+    // around four real, on-screen node positions instead. First force all four fixtures to neutral white,
+    // then assign the canonical semantic classes and compare each node's local pixels against its own
+    // immediately preceding control. This keeps the test strict even when the background itself is blue/violet.
     const calibrationIds=targets.slice(0,4).map(target=>target.id);
     const originals=await page.evaluate(ids=>{
-      const specs=[['definition','verified'],['theorem','verified'],['hypothesis','verified'],['reasoning','verified']];
       const original=[];
-      ids.forEach((id,index)=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;original.push({id,type:node.type,status:node.status,mastery:node.mastery});node.type=specs[index][0];node.status=specs[index][1];node.mastery='none';});
+      ids.forEach(id=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;original.push({id,type:node.type,status:node.status,mastery:node.mastery});node.type='reasoning';node.status='verified';node.mastery='none';});
       window.__debug.scene.markDirty();window.__debug.scene.start();return original;
     },calibrationIds);
     await page.waitForTimeout(180);
     await page.evaluate(()=>window.__debug.scene.stop());
-    const paletteScreenshot=await page.locator('#canvasHost').screenshot({path:'artifacts/mobile-scene-palette.png',type:'png'});
+    const controlPoints=await page.evaluate(ids=>ids.map(id=>window.__debug.scene.screenPositionForNode(id)),calibrationIds);
+    assert.ok(controlPoints.every(Boolean),'calibration control nodes must remain on screen');
+    const controlScreenshot=await canvasHost.screenshot({type:'png'});
+    const control=await analyzeScreenshot(page,controlScreenshot,toLocalRegions(controlPoints));
+
+    await page.evaluate(ids=>{
+      const specs=[['definition','verified'],['theorem','verified'],['hypothesis','verified'],['reasoning','verified']];
+      ids.forEach((id,index)=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;node.type=specs[index][0];node.status=specs[index][1];node.mastery='none';});
+      window.__debug.scene.markDirty();window.__debug.scene.start();
+    },calibrationIds);
+    await page.waitForTimeout(180);
+    await page.evaluate(()=>window.__debug.scene.stop());
+    const palettePoints=await page.evaluate(ids=>ids.map(id=>window.__debug.scene.screenPositionForNode(id)),calibrationIds);
+    assert.ok(palettePoints.every(Boolean),'semantic palette nodes must remain on screen');
+    const paletteScreenshot=await canvasHost.screenshot({path:'artifacts/mobile-scene-palette.png',type:'png'});
     assert.ok(paletteScreenshot.length>5_000,'semantic palette screenshot must contain real rendered visual data');
-    const palette=await analyzeScreenshot(page,paletteScreenshot);
+    const palette=await analyzeScreenshot(page,paletteScreenshot,toLocalRegions(palettePoints));
     console.log('mobile semantic-palette visual pixels',palette);
+    console.log('mobile semantic local control',control.regions);
+    console.log('mobile semantic local palette',palette.regions);
     assert.equal(palette.width,visual.width,'actual and semantic-palette screenshots must share the same width');
     assert.equal(palette.height,visual.height,'actual and semantic-palette screenshots must share the same height');
-    assert.ok(palette.cyan>=100,'real WebGL calibration must visibly retain the inner ice-blue color family');
-    assert.ok(palette.trueBlue>=100,'real WebGL calibration must visibly retain the middle true-blue color family');
-    // The background contains a stable blue-violet field, so compare against the immediately preceding
-    // actual-scene frame: adding a real outer hypothesis node must measurably increase violet pixels.
-    assert.ok(palette.violet>=visual.violet+20,`real WebGL calibration must visibly add outer violet pixels (actual=${visual.violet}, palette=${palette.violet})`);
-    assert.ok(palette.white>=100,'real WebGL calibration must visibly retain structural white');
+    assert.ok(palette.regions[0].cyan>=control.regions[0].cyan+6,`inner calibration must add local ice-blue pixels (control=${control.regions[0].cyan}, palette=${palette.regions[0].cyan})`);
+    assert.ok(palette.regions[1].trueBlue>=control.regions[1].trueBlue+6,`middle calibration must add local true-blue pixels (control=${control.regions[1].trueBlue}, palette=${palette.regions[1].trueBlue})`);
+    assert.ok(palette.regions[2].violet>=control.regions[2].violet+6,`outer calibration must add local violet pixels (control=${control.regions[2].violet}, palette=${palette.regions[2].violet})`);
+    assert.ok(palette.regions[3].white>=20,'structural calibration must retain a visible local white core');
     assert.ok(palette.greenDominant<=5,'semantic calibration must not reintroduce green/teal contamination');
     await page.evaluate(original=>{for(const saved of original){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;}}window.__debug.scene.markDirty();window.__debug.scene.start();},originals);
     await page.waitForTimeout(100);
