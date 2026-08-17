@@ -42,6 +42,9 @@ try {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, savedAt: new Date().toISOString(), events }));
   }, { key: storageKey, events: fixtureEvents() });
   const page = await context.newPage();
+  page.on('console', message => {
+    if (message.text().startsWith('PANEL_PHASE ')) console.log(message.text());
+  });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
 
@@ -58,6 +61,39 @@ try {
   });
   assert.ok(removed >= 1, 'legacy .mastery-private rule must be removed for diagnostic');
 
+  await page.evaluate(() => {
+    const innerHTMLDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+    if (!innerHTMLDescriptor?.get || !innerHTMLDescriptor?.set) throw new Error('innerHTML descriptor unavailable');
+    Object.defineProperty(Element.prototype, 'innerHTML', {
+      configurable: innerHTMLDescriptor.configurable,
+      enumerable: innerHTMLDescriptor.enumerable,
+      get: innerHTMLDescriptor.get,
+      set(value) {
+        const tracked = this.id === 'panelBody' || this.id === 'panelActions';
+        if (tracked) console.log(`PANEL_PHASE before-${this.id} ${performance.now().toFixed(1)}`);
+        innerHTMLDescriptor.set.call(this, value);
+        if (tracked) console.log(`PANEL_PHASE after-${this.id} ${performance.now().toFixed(1)}`);
+      },
+    });
+
+    const querySelectorAll = Element.prototype.querySelectorAll;
+    Element.prototype.querySelectorAll = function(selector) {
+      const tracked = (this.id === 'panelBody' || this.id === 'panelActions') &&
+        (selector === '[data-jump]' || selector === '[data-mastery]');
+      if (tracked) console.log(`PANEL_PHASE before-queryAll-${this.id}-${selector} ${performance.now().toFixed(1)}`);
+      const result = querySelectorAll.call(this, selector);
+      if (tracked) console.log(`PANEL_PHASE after-queryAll-${this.id}-${selector} ${performance.now().toFixed(1)} count=${result.length}`);
+      return result;
+    };
+
+    const querySelector = Element.prototype.querySelector;
+    Element.prototype.querySelector = function(selector) {
+      const tracked = this.id === 'panelActions' && typeof selector === 'string' && selector.startsWith('#btn');
+      if (tracked) console.log(`PANEL_PHASE query-${selector} ${performance.now().toFixed(1)}`);
+      return querySelector.call(this, selector);
+    };
+  });
+
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
       const point = window.__debug.scene.screenPositionForNode(node.id);
@@ -70,6 +106,7 @@ try {
   const tapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
   const tapWall = performance.now() - tapStarted;
+  console.log(`PANEL_PHASE node-tap-returned wall=${tapWall.toFixed(1)}ms`);
   await deadline(page.waitForFunction(() => document.querySelector('#panel')?.classList.contains('open')), 1_000, 'full panel open');
 
   const bodyState = await deadline(page.evaluate(() => ({
