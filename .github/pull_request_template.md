@@ -55,10 +55,20 @@ Notes:
 - [ ] Migration added but **not yet applied** to hosted Supabase.
 - [ ] Migration applied and hosted schema/RPC/table verified.
 - [ ] Production database deployment was explicitly authorized.
+- [ ] Already-applied migrations were not rewritten; schema changes use a new forward migration.
+- [ ] Any production DDL is represented in the repository so hosted schema and Git do not drift.
+- [ ] Destructive/irreversible migration has an explicit approval + backup/rollback/recovery plan.
 
 Details:
 
 <!-- Never equate “migration exists in Git” with “production schema is live”. -->
+
+## Security / privacy
+
+- [ ] No service-role key, JWT, SMS-provider secret, recovery credential, or other production secret was committed/logged.
+- [ ] Tests/examples use redacted or synthetic credentials/data.
+- [ ] Sensitive identity/contact data is not exposed to layers that do not need it.
+- [ ] N/A.
 
 ## Interaction / performance invariants
 
@@ -71,6 +81,7 @@ For interaction or performance work, record the expected finite action chain.
 - [ ] No unexpected event/subscriber/render storm was observed.
 - [ ] No per-node timer was introduced for graph-scale repeated animation.
 - [ ] High-frequency complexity/frequency was considered where relevant.
+- [ ] Attention/motion effects avoid dangerous rapid flashing and consider reduced-motion behavior where relevant.
 - [ ] N/A.
 
 ## Validation
@@ -106,7 +117,7 @@ Not executed / blocked:
 
 Details:
 
-## Diff guard
+## Diff / diagnostic hygiene guard
 
 - [ ] Changed-file list matches the intended scope.
 - [ ] Additions/deletions were reviewed for accidental large rewrites/truncation.
@@ -114,6 +125,7 @@ Details:
 - [ ] No unexpected database/protocol files.
 - [ ] No unintended generated/binary artifacts.
 - [ ] Branch is based on the intended current `main`.
+- [ ] Temporary monkeypatches, runtime CSS removal, event interception, debug counters/log spam, and test-only runtime bypasses were removed unless deliberately retained as supported diagnostics/tests.
 
 ## Residual risk
 
