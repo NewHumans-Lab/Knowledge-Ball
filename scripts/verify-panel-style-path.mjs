@@ -36,14 +36,17 @@ try {
     try { if ((await fetch(origin)).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 100));
   }
+
   browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await context.addInitScript(({ key, events }) => {
     localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, savedAt: new Date().toISOString(), events }));
   }, { key: storageKey, events: fixtureEvents() });
+
   const page = await context.newPage();
   page.on('console', message => {
-    if (message.text().startsWith('OPEN_CALL ')) console.log(message.text());
+    const text = message.text();
+    if (text.startsWith('OPEN_CALL ') || text.startsWith('APPEND_CALL ')) console.log(text);
   });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
@@ -57,10 +60,6 @@ try {
         if (rules[i].selectorText === '.mastery-private') { sheet.deleteRule(i); count++; }
       }
     }
-    const style = document.createElement('style');
-    style.dataset.issue51MasteryIsolation = 'true';
-    style.textContent = '[data-mastery]{pointer-events:none!important}';
-    document.head.appendChild(style);
     return count;
   });
   assert.ok(removed >= 1, 'legacy .mastery-private rule must be removed for diagnostic');
@@ -68,13 +67,22 @@ try {
   await page.evaluate(() => {
     const panel = window.__debug.panel;
     const originalOpen = panel.openNodePanel.bind(panel);
-    let calls = 0;
+    let openCalls = 0;
     panel.openNodePanel = id => {
-      calls += 1;
-      console.log(`OPEN_CALL ${calls} id=${id} at=${performance.now().toFixed(1)}`);
+      openCalls += 1;
+      console.log(`OPEN_CALL ${openCalls} id=${id} at=${performance.now().toFixed(1)}`);
       return originalOpen(id);
     };
-    window.__issue51OpenCalls = () => calls;
+
+    const store = window.__debug.store;
+    const captured = [];
+    store.append = event => {
+      captured.push({ type: event.type, scope: event.scope, payload: event.payload });
+      console.log(`APPEND_CALL ${captured.length} type=${event.type} scope=${event.scope} at=${performance.now().toFixed(1)}`);
+      return true;
+    };
+
+    window.__issue51Diagnostic = () => ({ openCalls, captured: structuredClone(captured) });
   });
 
   const target = await page.evaluate(() => {
@@ -90,18 +98,16 @@ try {
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
   const tapWall = performance.now() - tapStarted;
   await new Promise(resolve => setTimeout(resolve, 120));
-  const result = await deadline(page.evaluate(() => ({
-    calls: window.__issue51OpenCalls(),
-    panelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
-    masteryControls: document.querySelectorAll('[data-mastery]').length,
-  })), 250, 'post-tap responsiveness');
+
+  const result = await deadline(page.evaluate(() => window.__issue51Diagnostic()), 250, 'post-tap diagnostic');
   console.log(JSON.stringify({ tapWall, result }, null, 2));
   assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
-  assert.ok(result.panelOpen, 'full panel must open');
-  assert.equal(result.masteryControls, 3, 'full mastery controls must still render');
-  assert.equal(result.calls, 1, `disabled mastery hit targets should prevent duplicate panel open; got ${result.calls}`);
+  assert.equal(result.openCalls, 1, `suppressing post-tap append should leave exactly one panel open, got ${result.openCalls}`);
+  assert.ok(result.captured.length >= 1, 'node tap path must reveal the appended event that previously caused the second panel open');
+
   await context.close();
 } finally {
   if (browser) await browser.close().catch(() => {});
-  server.kill('SIGKILL'); server.unref();
+  server.kill('SIGKILL');
+  server.unref();
 }
