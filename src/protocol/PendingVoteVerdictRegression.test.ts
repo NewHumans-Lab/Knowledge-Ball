@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { DomainEvent, KnowledgeVerdictFinalizedEvent } from '../event/Event';
-import { isCanonicalPublicKnowledgeEvent } from '../event/Event';
+import { isCanonicalPublicKnowledgeEvent, isPublicKnowledgeEvent } from '../event/Event';
 import { validateDomainEventAgainstState, validateDomainEventEnvelope } from '../event/EventValidation';
 import { GraphProjection } from '../projection/GraphProjection';
 
@@ -39,7 +39,8 @@ function verdictEvent(nodeId: string, verdict: 'CORRECT'|'INCORRECT'): Knowledge
 
 const correctProjection = pendingProjection('correct');
 const correct = verdictEvent('correct','CORRECT');
-assert.equal(isCanonicalPublicKnowledgeEvent(correct), true, 'server verdict must travel through the canonical public sync stream');
+assert.equal(isPublicKnowledgeEvent(correct), true, 'server verdict must be readable through the public event stream');
+assert.equal(isCanonicalPublicKnowledgeEvent(correct), false, 'server verdict must never enter the client upload queue');
 assert.deepEqual(validateDomainEventAgainstState(correct, correctProjection.state), []);
 correctProjection.apply(correct);
 assert.equal(correctProjection.state.nodesById.correct.status, 'verified');
