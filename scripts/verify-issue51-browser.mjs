@@ -72,8 +72,6 @@ try {
   }
   browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
   context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  // Screenshots force WebGL ReadPixels and distort the interaction being
-  // measured; DOM snapshots and sources retain actionable call boundaries.
   await context.tracing.start({ screenshots: false, snapshots: false, sources: true });
   let page = await context.newPage();
   await context.addInitScript(({ key, events }) => {
@@ -102,16 +100,37 @@ try {
   console.log(`issue51: baseline task-channel delay ${baselineTaskDelay.toFixed(1)}ms`);
   assert.ok(baselineTaskDelay <= 250, `baseline task-channel delay was ${baselineTaskDelay.toFixed(1)}ms`);
 
-  const target = await page.evaluate(() => {
-    for (const node of window.__debug.renderNodes) {
-      const point = window.__debug.scene.screenPositionForNode(node.id);
-      if (point && point.x > 40 && point.x < 350 && point.y > 100 && point.y < 700) return { ...point, id: node.id, title: node.title };
-    }
-    return null;
+  const { target, background } = await page.evaluate(() => {
+    const points = window.__debug.renderNodes
+      .map(node => ({ node, point: window.__debug.scene.screenPositionForNode(node.id) }))
+      .filter(entry => entry.point);
+    const targetEntry = points.find(({ point }) => point.x > 40 && point.x < 350 && point.y > 100 && point.y < 700);
+    const candidates = [
+      { x: 24, y: 180 }, { x: 366, y: 180 },
+      { x: 24, y: 420 }, { x: 366, y: 420 },
+      { x: 24, y: 660 }, { x: 366, y: 660 },
+      { x: 195, y: 700 },
+    ];
+    const backgroundPoint = candidates
+      .map(candidate => ({ candidate, nearest: Math.min(...points.map(({ point }) => Math.hypot(point.x - candidate.x, point.y - candidate.y))) }))
+      .sort((a, b) => b.nearest - a.nearest)[0];
+    return {
+      target: targetEntry ? { ...targetEntry.point, id: targetEntry.node.id, title: targetEntry.node.title } : null,
+      background: backgroundPoint?.nearest > 40 ? backgroundPoint.candidate : null,
+    };
   });
   assert.ok(target, 'production fixture must expose a tappable non-core node');
+  assert.ok(background, 'production fixture must expose a canvas background point away from nodes');
+
+  const backgroundTapStartedAt = performance.now();
+  await withDeadline(page.touchscreen.tap(background.x, background.y), 1_000, 'real background touchscreen tap');
+  const backgroundTapWall = performance.now() - backgroundTapStartedAt;
+  console.log(`issue51: background touchscreen tap ${backgroundTapWall.toFixed(1)}ms`);
+  assert.ok(backgroundTapWall <= 250, `background touchscreen tap took ${backgroundTapWall.toFixed(1)}ms`);
+  await new Promise(resolve => setTimeout(resolve, 350));
+
   await page.evaluate(() => { window.__issue51Metrics.longTasks = []; });
-  console.log('issue51: tapping with real Playwright touchscreen input');
+  console.log('issue51: tapping node with real Playwright touchscreen input');
   const panelSignal = new Promise(resolve => {
     const listener = message => {
       if (!message.text().startsWith('ISSUE51_PANEL ')) return;
@@ -136,7 +155,7 @@ try {
   const realTapWall = performance.now() - realTapStartedAt;
   const tapResult = await withDeadline(panelSignal, 1_000, 'node panel visibility');
   assert.ok(tapResult.open && tapResult.opacity === '1' && tapResult.width > 0 && tapResult.height > 0, 'node panel must be visibly laid out');
-  console.log(`issue51: panel visible; real tap wall ${realTapWall.toFixed(1)}ms`);
+  console.log(`issue51: panel visible; real node tap wall ${realTapWall.toFixed(1)}ms`);
   const tapDuration = tapResult.tapDuration;
   assert.ok(tapDuration <= 1_000, `node tap handler took ${tapDuration.toFixed(1)}ms`);
   const panelDuration = tapResult.panelDuration;
@@ -166,7 +185,7 @@ try {
   const selectedSubmitDuration = await submitFact(page, liveTitle);
 
   const maxLongTask = selectedSubmitDuration.maxLongTask;
-  console.log(JSON.stringify({ eventCount, baselineTaskDelay, realTapWall, tapDuration, panelDuration, tapToPanelDuration, postTapCommandDelay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
+  console.log(JSON.stringify({ eventCount, baselineTaskDelay, backgroundTapWall, realTapWall, tapDuration, panelDuration, tapToPanelDuration, postTapCommandDelay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
   assert.ok(maxLongTask <= 500, `longest main-thread task was ${maxLongTask.toFixed(1)}ms`);
   await context.tracing.stop({ path: tracePath });
   traceSaved = true;
