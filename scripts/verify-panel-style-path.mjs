@@ -43,7 +43,7 @@ try {
   }, { key: storageKey, events: fixtureEvents() });
   const page = await context.newPage();
   page.on('console', message => {
-    if (message.text().startsWith('OPEN_CALL ') || message.text().startsWith('POINTER_PHASE ')) console.log(message.text());
+    if (message.text().startsWith('OPEN_CALL ')) console.log(message.text());
   });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
@@ -57,26 +57,21 @@ try {
         if (rules[i].selectorText === '.mastery-private') { sheet.deleteRule(i); count++; }
       }
     }
+    const style = document.createElement('style');
+    style.dataset.issue51MasteryIsolation = 'true';
+    style.textContent = '[data-mastery]{pointer-events:none!important}';
+    document.head.appendChild(style);
     return count;
   });
   assert.ok(removed >= 1, 'legacy .mastery-private rule must be removed for diagnostic');
 
   await page.evaluate(() => {
-    const canvas = document.querySelector('#canvasHost canvas');
-    if (!canvas) throw new Error('scene canvas unavailable');
-    for (const type of ['pointerdown', 'pointerup', 'pointercancel']) {
-      canvas.addEventListener(type, event => {
-        console.log(`POINTER_PHASE ${type} id=${event.pointerId} ${performance.now().toFixed(1)}`);
-      }, { capture: true });
-    }
-
     const panel = window.__debug.panel;
     const originalOpen = panel.openNodePanel.bind(panel);
     let calls = 0;
     panel.openNodePanel = id => {
       calls += 1;
-      const stack = new Error(`open-${calls}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack';
-      console.log(`OPEN_CALL ${calls} id=${id} at=${performance.now().toFixed(1)} stack=${stack}`);
+      console.log(`OPEN_CALL ${calls} id=${id} at=${performance.now().toFixed(1)}`);
       return originalOpen(id);
     };
     window.__issue51OpenCalls = () => calls;
@@ -94,10 +89,17 @@ try {
   const tapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
   const tapWall = performance.now() - tapStarted;
-  await new Promise(resolve => setTimeout(resolve, 80));
-  const calls = await deadline(page.evaluate(() => window.__issue51OpenCalls()), 250, 'open-call count');
-  console.log(`OPEN_CALL_RESULT calls=${calls} tapWall=${tapWall.toFixed(1)}ms`);
-  assert.equal(calls, 1, `one touch must open the node panel exactly once, got ${calls}`);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const result = await deadline(page.evaluate(() => ({
+    calls: window.__issue51OpenCalls(),
+    panelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
+    masteryControls: document.querySelectorAll('[data-mastery]').length,
+  })), 250, 'post-tap responsiveness');
+  console.log(JSON.stringify({ tapWall, result }, null, 2));
+  assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
+  assert.ok(result.panelOpen, 'full panel must open');
+  assert.equal(result.masteryControls, 3, 'full mastery controls must still render');
+  assert.equal(result.calls, 1, `disabled mastery hit targets should prevent duplicate panel open; got ${result.calls}`);
   await context.close();
 } finally {
   if (browser) await browser.close().catch(() => {});
