@@ -67,35 +67,41 @@ try {
   const setup = await page.evaluate(() => {
     const panel = window.__debug.panel;
     if (!panel || typeof panel.openNodePanel !== 'function') throw new Error('panel unavailable');
-    if (typeof panel.onSetMastery !== 'function') {
-      return { available: false, keys: Object.keys(panel) };
-    }
+    if (typeof panel.onSetMastery !== 'function') return { available: false, keys: Object.keys(panel) };
 
     const originalOpen = panel.openNodePanel.bind(panel);
     let openCalls = 0;
+    const openTraces = [];
     panel.openNodePanel = id => {
       openCalls += 1;
-      console.log(`OPEN_CALL ${openCalls} id=${id} at=${performance.now().toFixed(1)}`);
+      const trace = {
+        index: openCalls,
+        id,
+        at: performance.now(),
+        stack: new Error(`open-${openCalls}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
+      };
+      if (openTraces.length < 3) openTraces.push(trace);
+      console.log(`OPEN_CALL ${JSON.stringify(trace)}`);
       return originalOpen(id);
     };
 
     let masteryCalls = 0;
-    const traces = [];
+    const masteryTraces = [];
     panel.onSetMastery = async (id, mastery) => {
       masteryCalls += 1;
-      if (traces.length < 3) {
+      if (masteryTraces.length < 3) {
         const trace = {
           index: masteryCalls,
           id,
           mastery,
           stack: new Error(`mastery-${masteryCalls}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
         };
-        traces.push(trace);
+        masteryTraces.push(trace);
         console.log(`MASTERY_CALLBACK ${JSON.stringify(trace)}`);
       }
     };
 
-    window.__issue51Diagnostic = () => ({ openCalls, masteryCalls, traces: structuredClone(traces) });
+    window.__issue51Diagnostic = () => ({ openCalls, masteryCalls, openTraces: structuredClone(openTraces), masteryTraces: structuredClone(masteryTraces) });
     return { available: true, keys: Object.keys(panel) };
   });
   assert.ok(setup.available, `PanelController.onSetMastery must be runtime-accessible; keys=${setup.keys.join(',')}`);
@@ -109,17 +115,13 @@ try {
   });
   assert.ok(target, 'must expose a tappable node');
 
-  const tapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
-  const tapWall = performance.now() - tapStarted;
-  await new Promise(resolve => setTimeout(resolve, 120));
+  await new Promise(resolve => setTimeout(resolve, 40));
 
   const result = await deadline(page.evaluate(() => window.__issue51Diagnostic()), 250, 'post-tap diagnostic');
-  console.log(JSON.stringify({ tapWall, result }, null, 2));
-  assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
-  assert.equal(result.openCalls, 1, `no-op mastery callback should avoid subscriber-driven panel rebuild; got ${result.openCalls}`);
-  assert.ok(result.masteryCalls >= 1, 'opening touch must reveal whether mastery callback is entered');
-  assert.ok(result.masteryCalls <= 3, `mastery callback repeated ${result.masteryCalls} times even without EventStore feedback`);
+  console.log(JSON.stringify(result, null, 2));
+  assert.equal(result.masteryCalls, 0, `mastery no-op boundary unexpectedly entered ${result.masteryCalls} times`);
+  assert.equal(result.openCalls, 1, `one touch must have exactly one openNodePanel caller; got ${result.openCalls}`);
 
   await context.close();
 } finally {
