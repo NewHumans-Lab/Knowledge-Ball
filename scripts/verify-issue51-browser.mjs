@@ -132,7 +132,17 @@ try {
   assert.ok(panelDuration <= 1_000, `node panel took ${panelDuration.toFixed(1)}ms`);
   const tapToPanelDuration = tapResult.tapToPanelDuration;
   assert.ok(tapToPanelDuration <= 1_000, `node tap-to-panel took ${tapToPanelDuration.toFixed(1)}ms`);
-  assert.ok(tapResult.heartbeat > heartbeatBeforeTap, 'heartbeat must continue through node tap');
+  // Panel visibility can be reported in the same event-loop turn as the tap.
+  // Give the 50ms heartbeat a bounded recovery window instead of requiring a
+  // timer tick to have happened before the MutationObserver fires. A genuine
+  // main-thread stall still fails because the heartbeat must advance promptly.
+  await page.waitForFunction(
+    before => window.__issue51Metrics.heartbeat > before,
+    heartbeatBeforeTap,
+    { polling: 10, timeout: 250 },
+  );
+  const heartbeatAfterTap = await page.evaluate(() => window.__issue51Metrics.heartbeat);
+  assert.ok(heartbeatAfterTap > heartbeatBeforeTap, 'heartbeat must recover promptly after node tap');
 
   void page.close({ runBeforeUnload: false }).catch(() => {});
   page = await context.newPage();
