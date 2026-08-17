@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
@@ -6,6 +7,7 @@ const origin = 'http://127.0.0.1:4173/Knowledge-Ball/';
 const eventCount = 343;
 const storageKey = 'knowledge-ball.events.v1';
 const exactText = 'PRIVATE STATE · 仅你可见';
+const artifactPath = 'artifacts/issue51-trace.zip';
 
 function fixtureEvents() {
   const timestamp = Date.now() - eventCount;
@@ -56,7 +58,9 @@ async function runCase(name, { prewarm = false, systemFont = false } = {}) {
     });
     assert.ok(target && background, `${name}: fixture must expose node and background points`);
 
+    const backgroundStarted = performance.now();
     await withDeadline(page.touchscreen.tap(background.x, background.y), 1_000, `${name}: background tap`);
+    const backgroundTap = performance.now() - backgroundStarted;
     await new Promise(resolve => setTimeout(resolve, 350));
 
     const panelSignal = new Promise(resolve => {
@@ -81,6 +85,8 @@ async function runCase(name, { prewarm = false, systemFont = false } = {}) {
     await withDeadline(panelSignal, 1_000, `${name}: panel open`);
     assert.ok(nodeTap <= 250, `${name}: node tap took ${nodeTap.toFixed(1)}ms`);
 
+    let warmWall = null;
+    let warmResponse = null;
     if (prewarm) {
       const warmStarted = performance.now();
       await withDeadline(page.evaluate(text => {
@@ -88,10 +94,10 @@ async function runCase(name, { prewarm = false, systemFont = false } = {}) {
         body.innerHTML = `<div style="font-size:14px">${text}</div>`;
         void body.offsetHeight;
       }, exactText), 1_000, `${name}: prewarm`);
-      const warmWall = performance.now() - warmStarted;
+      warmWall = performance.now() - warmStarted;
       const warmResponseStarted = performance.now();
       await withDeadline(page.evaluate(() => performance.now()), 250, `${name}: prewarm responsiveness`);
-      console.log(`cold-font: ${name} prewarm ${warmWall.toFixed(1)}ms, response ${(performance.now()-warmResponseStarted).toFixed(1)}ms`);
+      warmResponse = performance.now() - warmResponseStarted;
     }
 
     const html = systemFont
@@ -108,29 +114,41 @@ async function runCase(name, { prewarm = false, systemFont = false } = {}) {
     const responseStarted = performance.now();
     await withDeadline(page.evaluate(() => performance.now()), 250, `${name}: post-injection responsiveness`);
     const responseWall = performance.now() - responseStarted;
-    console.log(`cold-font: ${name} nodeTap ${nodeTap.toFixed(1)}ms, inject ${injectWall.toFixed(1)}ms, response ${responseWall.toFixed(1)}ms`);
     assert.ok(injectWall <= 250, `${name}: mastery-private injection took ${injectWall.toFixed(1)}ms`);
     assert.ok(responseWall <= 250, `${name}: post-injection response took ${responseWall.toFixed(1)}ms`);
 
     await context.close();
-    return { nodeTap, injectWall, responseWall };
+    return { backgroundTap, nodeTap, warmWall, warmResponse, injectWall, responseWall };
   } finally {
     await browser.close().catch(() => {});
   }
 }
 
+async function attempt(name, options) {
+  try {
+    const metrics = await runCase(name, options);
+    return { ok: true, metrics };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
+  }
+}
+
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1'], { stdio: 'ignore' });
 try {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attemptIndex = 0; attemptIndex < 100; attemptIndex++) {
     try { if ((await fetch(origin)).ok) break; } catch {}
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 
-  const coldDefault = await runCase('cold-default');
-  const coldSystemFont = await runCase('cold-system-font', { systemFont: true });
-  const warmedDefault = await runCase('warmed-default', { prewarm: true });
-  console.log(JSON.stringify({ coldDefault, coldSystemFont, warmedDefault }, null, 2));
-  console.log('Cold mastery font diagnostic passed all isolated cases');
+  const results = {
+    coldDefault: await attempt('cold-default'),
+    coldSystemFont: await attempt('cold-system-font', { systemFont: true }),
+    warmedDefault: await attempt('warmed-default', { prewarm: true }),
+  };
+  await mkdir('artifacts', { recursive: true });
+  await writeFile(artifactPath, JSON.stringify(results, null, 2));
+  console.log(`COLD_FONT_RESULTS ${JSON.stringify(results)}`);
+  assert.ok(results.coldDefault.ok && results.coldSystemFont.ok && results.warmedDefault.ok, 'one or more isolated cold-font cases failed; inspect uploaded diagnostic artifact');
 } finally {
   server.kill('SIGKILL'); server.unref();
 }
