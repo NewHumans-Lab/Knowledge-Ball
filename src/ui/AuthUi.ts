@@ -11,6 +11,7 @@ import { setMastery } from '../command/SetMastery';
 interface DebugState {
   store?: Parameters<typeof setMastery>[0];
   projection?: { state?: { nodesById?: Record<string, { id:string; title:string; mastery?:string; status?:string }> } };
+  syncEngine?: { sync: () => Promise<void> } | null;
 }
 declare global { interface Window { __debug?: DebugState; } }
 
@@ -20,8 +21,10 @@ let markingNode = false;
 let voteRenderToken = 0;
 let voteRefreshTimer: number | null = null;
 let expirySweepTimer: number | null = null;
+let graphSyncTimer: number | null = null;
 const VOTE_REFRESH_MS = 3_000;
 const EXPIRY_SWEEP_MS = 5 * 60_000;
+const REMOTE_GRAPH_SYNC_MS = 30_000;
 
 function start(): void {
   installStyles();
@@ -47,12 +50,23 @@ function start(): void {
     void renderPendingVoteControls();
   }).observe(panelTitle, { subtree:true, childList:true, characterData:true });
 
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      requestGraphSync();
+      void sweepExpiredVoteRounds();
+    }
+  });
+
   updateAvatar();
   if (account) void account.publicSession().then(async () => {
     await loadAccount();
     await sweepExpiredVoteRounds();
     scheduleExpirySweep();
-  }).catch(() => scheduleExpirySweep());
+    scheduleRemoteGraphSync();
+  }).catch(() => {
+    scheduleExpirySweep();
+    scheduleRemoteGraphSync();
+  });
 }
 
 function currentPanelNode(): { id:string; title:string; mastery?:string; status?:string } | null {
@@ -213,14 +227,32 @@ async function handleFinalizedVote(root: HTMLElement, snapshot: PendingKnowledge
   window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
     detail: { nodeId:snapshot.nodeId, verdict:snapshot.verdict },
   }));
+  requestGraphSync();
 }
 
 async function sweepExpiredVoteRounds(): Promise<void> {
   if (!account || document.visibilityState === 'hidden') return;
   try {
     const processed = await account.settleExpiredPendingKnowledgeVotes(50);
-    if (processed > 0) window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', { detail:{ sweep:true } }));
+    if (processed > 0) {
+      window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', { detail:{ sweep:true } }));
+      requestGraphSync();
+    }
   } catch { /* old schema/offline clients retry on the next low-frequency sweep */ }
+}
+
+function requestGraphSync(): void {
+  if (document.visibilityState === 'hidden') return;
+  void window.__debug?.syncEngine?.sync().catch(error => console.warn('[Knowledge-Ball] remote verdict sync deferred:', error));
+}
+
+function scheduleRemoteGraphSync(): void {
+  if (!account || graphSyncTimer !== null) return;
+  graphSyncTimer = window.setTimeout(() => {
+    graphSyncTimer = null;
+    requestGraphSync();
+    scheduleRemoteGraphSync();
+  }, REMOTE_GRAPH_SYNC_MS);
 }
 
 function scheduleExpirySweep(): void {
