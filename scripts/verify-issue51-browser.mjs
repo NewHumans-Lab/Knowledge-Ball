@@ -49,7 +49,7 @@ try {
   const page = await context.newPage();
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
-  console.log('dom-bisect: fixture ready');
+  console.log('basic-bisect: fixture ready');
 
   const { target, background } = await page.evaluate(() => {
     const points = window.__debug.renderNodes
@@ -62,14 +62,12 @@ try {
   });
   assert.ok(target && background, 'fixture must expose node and background points');
 
-  const bgStarted = performance.now();
   await withDeadline(page.touchscreen.tap(background.x, background.y), 1_000, 'background tap');
-  console.log(`dom-bisect: background tap ${(performance.now()-bgStarted).toFixed(1)}ms`);
   await new Promise(resolve => setTimeout(resolve, 350));
 
   const panelSignal = new Promise(resolve => {
     const listener = message => {
-      if (message.text() !== 'DOM_BISECT_PANEL_OPEN') return;
+      if (message.text() !== 'BASIC_BISECT_PANEL_OPEN') return;
       page.off('console', listener); resolve();
     };
     page.on('console', listener);
@@ -78,7 +76,7 @@ try {
     const panel = document.querySelector('#panel');
     const observer = new MutationObserver(() => {
       if (!panel.classList.contains('open')) return;
-      console.log('DOM_BISECT_PANEL_OPEN'); observer.disconnect();
+      console.log('BASIC_BISECT_PANEL_OPEN'); observer.disconnect();
     });
     observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
   });
@@ -87,8 +85,8 @@ try {
   await withDeadline(page.touchscreen.tap(target.x, target.y), 1_000, 'node tap');
   const nodeTap = performance.now() - nodeStarted;
   await withDeadline(panelSignal, 1_000, 'panel open');
+  console.log(`basic-bisect: node tap ${nodeTap.toFixed(1)}ms`);
   assert.ok(nodeTap <= 250, `node tap took ${nodeTap.toFixed(1)}ms`);
-  console.log(`dom-bisect: node tap ${nodeTap.toFixed(1)}ms`);
 
   async function injectStage(name, html) {
     const started = performance.now();
@@ -101,39 +99,38 @@ try {
     const responseStarted = performance.now();
     await withDeadline(page.evaluate(() => performance.now()), 250, `${name} responsiveness`);
     const response = performance.now() - responseStarted;
-    console.log(`dom-bisect: ${name} inject ${injectWall.toFixed(1)}ms, response ${response.toFixed(1)}ms, scroll ${layout.scrollHeight}/${layout.clientHeight}`);
+    console.log(`basic-bisect: ${name} inject ${injectWall.toFixed(1)}ms, response ${response.toFixed(1)}ms, scroll ${layout.scrollHeight}/${layout.clientHeight}`);
     assert.ok(injectWall <= 250, `${name} injection took ${injectWall.toFixed(1)}ms`);
     assert.ok(response <= 250, `${name} response took ${response.toFixed(1)}ms`);
   }
 
-  const plain = Array.from({ length: 100 }, (_, i) => `<div>Plain row ${i+1}</div>`).join('');
-  await injectStage('plain-overflow', plain);
+  await injectStage('badge-only', `
+    <div class="badge-row">
+      <div class="badge">THEOREM</div>
+      <div class="badge">VERIFIED</div>
+      <div class="badge">general</div>
+    </div>
+  `);
 
-  const basic = `
-    <div class="badge-row"><div class="badge">THEOREM</div><div class="badge">VERIFIED</div><div class="badge">general</div></div>
+  const oneField = `<div class="field"><label>Field 1</label><div class="val">Representative panel value 1</div></div>`;
+  await injectStage('one-field', oneField);
+
+  const manyFields = Array.from({ length: 18 }, (_, i) => `<div class="field"><label>Field ${i+1}</label><div class="val">Representative panel value ${i+1}</div></div>`).join('');
+  await injectStage('many-fields', manyFields);
+
+  await injectStage('mastery-display-only', `
+    <div class="field"><label>掌握程度</label><div class="mastery-display">接触过</div></div>
+  `);
+
+  await injectStage('mastery-private-only', `
+    <div class="field"><label>掌握程度</label><div class="mastery-private">PRIVATE STATE · 仅你可见</div></div>
+  `);
+
+  await injectStage('mastery-combined', `
     <div class="field"><label>掌握程度</label><div class="mastery-display">接触过</div><div class="mastery-private">PRIVATE STATE · 仅你可见</div></div>
-    ${Array.from({length:18},(_,i)=>`<div class="field"><label>Field ${i+1}</label><div class="val">Representative panel value ${i+1}</div></div>`).join('')}
-  `;
-  await injectStage('basic-fields', basic);
+  `);
 
-  const reasoning = `${basic}
-    <div class="field-reasoning-band"><div class="reasoning-stage">PREMISES<b>1</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">REASONING<b>已连接</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">CONCLUSION<b>当前节点</b></div></div>
-  `;
-  await injectStage('reasoning-band', reasoning);
-
-  const chips = `${reasoning}
-    <div class="field"><label>前置知识点</label><div class="chip-list">${Array.from({length:12},(_,i)=>`<div class="chip">Premise ${i}</div>`).join('')}</div></div>
-    <div class="field"><label>下游依赖节点</label><div class="chip-list">${Array.from({length:12},(_,i)=>`<div class="chip">Dependency ${i}</div>`).join('')}</div></div>
-    <div class="field"><label>孪生证明</label><div class="chip-list">${Array.from({length:8},(_,i)=>`<div class="chip">Twin ${i}</div>`).join('')}</div></div>
-  `;
-  await injectStage('chip-lists', chips);
-
-  const masteryControls = `${chips}
-    <div class="field"><label>Mastery controls</label><div class="mastery-demo-controls"><div class="chip">未接触</div><div class="chip active">接触过</div><div class="chip">完全掌握</div></div></div>
-  `;
-  await injectStage('mastery-controls', masteryControls);
-
-  console.log('Panel DOM structure bisection passed all stages');
+  console.log('Basic panel group bisection passed all stages');
   await context.close();
 } finally {
   if (browser) await browser.close().catch(() => {});
