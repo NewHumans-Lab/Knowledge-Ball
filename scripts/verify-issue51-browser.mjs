@@ -118,7 +118,14 @@ try {
   });
   const eventLoopProbe = page.evaluate(({ x, y }) => new Promise(resolve => {
     const scheduledAt = performance.now();
-    setTimeout(() => resolve({ delay: performance.now() - scheduledAt, longTasks: [...window.__issue51Metrics.longTasks] }), 0);
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      const result = { delay: performance.now() - scheduledAt, longTasks: [...window.__issue51Metrics.longTasks] };
+      channel.port1.close();
+      channel.port2.close();
+      resolve(result);
+    };
+    channel.port2.postMessage(null);
     const canvas = document.querySelector('#canvasHost canvas');
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x, clientY: y, pointerId: 71, pointerType: 'touch', isPrimary: true }));
     canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x, clientY: y, pointerId: 71, pointerType: 'touch', isPrimary: true }));
