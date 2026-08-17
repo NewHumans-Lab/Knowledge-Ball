@@ -37,14 +37,7 @@ async function deadline(promise, ms, label) {
   }
 }
 
-// Use Vite's dev transform only for this diagnostic so browser Error.stack
-// contains source module URLs instead of minified production function names.
-const server = spawn(process.execPath, [
-  'node_modules/vite/bin/vite.js',
-  '--host', '127.0.0.1',
-  '--port', '4173',
-  '--strictPort',
-], { stdio: 'ignore' });
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1'], { stdio: 'ignore' });
 let browser;
 try {
   for (let i = 0; i < 100; i += 1) {
@@ -59,42 +52,28 @@ try {
   }, { key: storageKey, events: fixtureEvents() });
 
   const page = await context.newPage();
-  page.on('console', message => {
-    if (message.text().startsWith('SOURCE_APPEND ')) console.log(message.text());
-  });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
 
-  await page.evaluate(() => {
+  // Keep the already-proven mastery-private selector defect neutralized so this
+  // run measures only the AuthUi observer fix with the real production store.
+  const removed = await page.evaluate(() => {
+    let count = 0;
     for (const sheet of [...document.styleSheets]) {
       let rules;
       try { rules = [...sheet.cssRules]; } catch { continue; }
       for (let i = rules.length - 1; i >= 0; i -= 1) {
-        if (rules[i].selectorText === '.mastery-private') sheet.deleteRule(i);
+        if (rules[i].selectorText === '.mastery-private') {
+          sheet.deleteRule(i);
+          count += 1;
+        }
       }
     }
-
-    const store = window.__debug.store;
-    const traces = [];
-    let appendCount = 0;
-    store.append = event => {
-      appendCount += 1;
-      if (traces.length < 3) {
-        const trace = {
-          index: appendCount,
-          type: event.type,
-          scope: event.scope,
-          payload: structuredClone(event.payload),
-          stack: new Error(`source-append-${appendCount}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
-        };
-        traces.push(trace);
-        console.log(`SOURCE_APPEND ${JSON.stringify(trace)}`);
-      }
-      return true;
-    };
-    window.__issue51Diagnostic = () => ({ appendCount, traces: structuredClone(traces) });
+    return count;
   });
+  assert.ok(removed >= 1, 'diagnostic must neutralize the independent mastery-private CSS defect');
 
+  const before = await page.evaluate(() => window.__debug.store.getAllEvents().length);
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
       const point = window.__debug.scene.screenPositionForNode(node.id);
@@ -104,12 +83,29 @@ try {
   });
   assert.ok(target, 'must expose a tappable node');
 
+  const tapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
-  await new Promise(resolve => setTimeout(resolve, 80));
-  const result = await deadline(page.evaluate(() => window.__issue51Diagnostic()), 250, 'source-stack diagnostic');
-  console.log(JSON.stringify(result, null, 2));
-  assert.ok(result.appendCount >= 1, 'tap path must expose at least one append caller');
-  assert.ok(result.traces[0]?.stack.includes('/src/'), `expected Vite source stack, got: ${result.traces[0]?.stack ?? 'none'}`);
+  const tapWall = performance.now() - tapStarted;
+  await deadline(page.waitForFunction(() => document.querySelector('#panel')?.classList.contains('open')), 1_000, 'panel open');
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  const state = await deadline(page.evaluate(({ beforeCount, nodeId }) => {
+    const events = window.__debug.store.getAllEvents();
+    const appended = events.slice(beforeCount);
+    return {
+      masteryEvents: appended.filter(event => event.type === 'NodeMasterySet'),
+      mastery: window.__debug.projection.state.nodesById[nodeId]?.mastery,
+      panelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
+    };
+  }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
+
+  console.log(JSON.stringify({ tapWall, state }, null, 2));
+  assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
+  assert.ok(state.panelOpen, 'panel must remain open and responsive');
+  assert.equal(state.mastery, 'touched', 'viewed node must be automatically marked touched');
+  assert.equal(state.masteryEvents.length, 1, `one view must append exactly one mastery event, got ${state.masteryEvents.length}`);
+  assert.equal(state.masteryEvents[0]?.payload?.nodeId, target.id, 'mastery event must target the viewed node');
+  assert.equal(state.masteryEvents[0]?.payload?.mastery, 'touched', 'viewed node must append touched mastery');
 
   await context.close();
 } finally {
