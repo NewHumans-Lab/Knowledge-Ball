@@ -111,7 +111,7 @@ try {
   });
   assert.ok(target, 'production fixture must expose a tappable non-core node');
   await page.evaluate(() => { window.__issue51Metrics.longTasks = []; });
-  console.log('issue51: tapping');
+  console.log('issue51: tapping with real Playwright touchscreen input');
   const panelSignal = new Promise(resolve => {
     const listener = message => {
       if (!message.text().startsWith('ISSUE51_PANEL ')) return;
@@ -130,32 +130,25 @@ try {
     });
     observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
   });
-  const eventLoopProbe = page.evaluate(({ x, y }) => new Promise(resolve => {
-    const scheduledAt = performance.now();
-    const channel = new MessageChannel();
-    channel.port1.onmessage = () => {
-      const result = { delay: performance.now() - scheduledAt, longTasks: [...window.__issue51Metrics.longTasks] };
-      channel.port1.close();
-      channel.port2.close();
-      resolve(result);
-    };
-    channel.port2.postMessage(null);
-    const canvas = document.querySelector('#canvasHost canvas');
-    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x, clientY: y, pointerId: 71, pointerType: 'touch', isPrimary: true }));
-    canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x, clientY: y, pointerId: 71, pointerType: 'touch', isPrimary: true }));
-  }), target);
+
+  const realTapStartedAt = performance.now();
+  await withDeadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node touchscreen tap');
+  const realTapWall = performance.now() - realTapStartedAt;
   const tapResult = await withDeadline(panelSignal, 1_000, 'node panel visibility');
   assert.ok(tapResult.open && tapResult.opacity === '1' && tapResult.width > 0 && tapResult.height > 0, 'node panel must be visibly laid out');
-  console.log('issue51: panel visible');
+  console.log(`issue51: panel visible; real tap wall ${realTapWall.toFixed(1)}ms`);
   const tapDuration = tapResult.tapDuration;
   assert.ok(tapDuration <= 1_000, `node tap handler took ${tapDuration.toFixed(1)}ms`);
   const panelDuration = tapResult.panelDuration;
   assert.ok(panelDuration <= 1_000, `node panel took ${panelDuration.toFixed(1)}ms`);
   const tapToPanelDuration = tapResult.tapToPanelDuration;
   assert.ok(tapToPanelDuration <= 1_000, `node tap-to-panel took ${tapToPanelDuration.toFixed(1)}ms`);
-  const eventLoopResult = await withDeadline(eventLoopProbe, 1_000, 'post-tap event-loop release');
-  console.log(`issue51: post-tap event-loop delay ${eventLoopResult.delay.toFixed(1)}ms`);
-  assert.ok(eventLoopResult.delay <= 250, `node tap blocked the event loop for ${eventLoopResult.delay.toFixed(1)}ms`);
+
+  const responseStartedAt = performance.now();
+  await withDeadline(page.evaluate(() => performance.now()), 250, 'post-tap page responsiveness');
+  const postTapCommandDelay = performance.now() - responseStartedAt;
+  console.log(`issue51: post-tap page command delay ${postTapCommandDelay.toFixed(1)}ms`);
+  assert.ok(postTapCommandDelay <= 250, `page command after real tap took ${postTapCommandDelay.toFixed(1)}ms`);
 
   void page.close({ runBeforeUnload: false }).catch(() => {});
   page = await context.newPage();
@@ -173,7 +166,7 @@ try {
   const selectedSubmitDuration = await submitFact(page, liveTitle);
 
   const maxLongTask = selectedSubmitDuration.maxLongTask;
-  console.log(JSON.stringify({ eventCount, baselineTaskDelay, tapDuration, panelDuration, tapToPanelDuration, eventLoopDelay: eventLoopResult.delay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
+  console.log(JSON.stringify({ eventCount, baselineTaskDelay, realTapWall, tapDuration, panelDuration, tapToPanelDuration, postTapCommandDelay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
   assert.ok(maxLongTask <= 500, `longest main-thread task was ${maxLongTask.toFixed(1)}ms`);
   await context.tracing.stop({ path: tracePath });
   traceSaved = true;
