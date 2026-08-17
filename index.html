@@ -1,411 +1,66 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="知识球">
-<link rel="manifest" href="./manifest.webmanifest">
-<title>Knowledge Ball · Living Knowledge Field</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#050b0f">
+<title>Knowledge Ball</title>
 <style>
-  :root{
-    --app-height: 100vh;
-    --bg:#0A0E1A; --bg-deep:#080C16; --panel:#10162A; --panel-border:#232B45;
-    --brass:#C9A227; --brass-dim:#8A7024; --ink:#E8E4D9; --ink-dim:#9AA1B8; --ink-faint:#5B6280;
-    --c-axiom:#E8E4D9; --c-definition:#7C93C9; --c-theorem:#C9A227; --c-hypothesis:#9B7EDE;
-    --c-prediction:#5FD1C9; --c-fact:#5BA88B; --c-opinion:#E8825B; --c-value:#D8748A;
-    --c-reasoning:#4DB6E5;
-    --c-logic-symbol:#A6E3A1;
-    --st-disputed:#E0A030; --st-falsified:#C85450; --st-suspended:#6B7290;
-    --label-size:11px; --label-color:#B8BFD4; --label-font:'Noto Sans SC','Inter',sans-serif;
-  }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
-  .native-app body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
-  .network-banner{position:fixed;top:calc(env(safe-area-inset-top) + 4px);left:50%;transform:translateX(-50%);z-index:300;background:#C9A227;color:#1A1508;padding:5px 12px;border-radius:16px;font-size:11px;font-weight:700;white-space:nowrap;}
-  .network-banner[hidden]{display:none;}
-  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC','Inter',sans-serif;overflow:hidden;overscroll-behavior:none;}
-  ::selection{background:var(--brass);color:#0A0E1A;}
-  .app{display:flex;flex-direction:column;height:var(--app-height);width:100vw;background:var(--bg-deep); position:relative; overflow:hidden;}
-  header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
-    border-bottom:1px solid var(--panel-border); background:linear-gradient(180deg, rgba(16,22,42,0.85), rgba(16,22,42,0.35));
-    position:relative; z-index:50; flex-shrink:0;}
-  .brand{display:flex;align-items:center;gap:10px;}
-  .avatar-btn{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#3A4570,#1E2440);
-    border:1.5px solid var(--brass-dim); display:flex;align-items:center;justify-content:center;cursor:pointer;
-    font-family:'Noto Serif SC',serif;font-weight:700;font-size:13px;color:var(--brass);flex-shrink:0;}
-  .avatar-btn:hover{border-color:var(--brass);}
-  .brand span{font-size:10px;color:var(--ink-faint);font-family:'Inter',sans-serif;letter-spacing:1px;}
-  .header-mid{display:flex;align-items:center;gap:8px;}
-  .btn{background:var(--panel);border:1px solid var(--panel-border);color:var(--ink);padding:7px 12px;
-    border-radius:6px;font-size:12.5px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s;white-space:nowrap;}
-  .btn:hover{border-color:var(--brass-dim);background:rgba(201,162,39,0.06);}
-  .btn.primary{background:var(--brass);color:#1A1508;border-color:var(--brass);font-weight:600;}
-  .btn.primary:hover{background:#DDB431;}
-  .btn.ghost{background:transparent;}
-  .btn.active{border-color:var(--brass); color:var(--brass); background:rgba(201,162,39,0.1);}
-  .btn:disabled{opacity:0.4; cursor:not-allowed;}
-  .main{flex:1; position:relative; min-height:0;}
-  #canvasHost{position:absolute; inset:0; z-index:1; cursor:grab; touch-action:none;}
-  #canvasHost.dragging{cursor:grabbing;}
-  #canvasHost canvas{display:block; width:100%; height:100%;}
-  #labelsLayer{position:absolute; inset:0; z-index:5; pointer-events:none; overflow:hidden;}
-  .node-label{position:absolute;transform:translate(-50%,10px);font-size:var(--label-size);color:var(--label-color);
-    font-family:var(--label-font); background:rgba(6,9,17,0.55); padding:1px 6px; border-radius:8px;
-    white-space:nowrap; pointer-events:none; max-width:150px; overflow:hidden;text-overflow:ellipsis;}
-  .twin-label{position:absolute;transform:translate(-50%,-50%);font-size:calc(var(--label-size) + 2px);
-    color:var(--brass); font-family:var(--label-font); font-weight:700; white-space:nowrap;
-    background:rgba(6,9,17,0.6); padding:2px 8px; border-radius:8px; pointer-events:none;}
-  .legend{position:absolute; left:14px; bottom:88px; background:rgba(16,22,42,0.82); border:1px solid var(--panel-border);
-    border-radius:8px; padding:9px 11px; font-size:10.5px; backdrop-filter:blur(6px); max-width:172px; z-index:20;}
-  .legend h4{margin:0 0 5px;font-size:9px;letter-spacing:1px;color:var(--ink-faint);text-transform:uppercase;font-weight:600;}
-  .legend-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
-  .legend-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
-  .legend-row span{color:var(--ink-dim);}
-  .legend-div{height:1px;background:var(--panel-border);margin:6px 0;}
-  .layer-note{font-size:9.5px; color:var(--ink-faint); line-height:1.5;}
-  .hint{position:absolute; right:14px; bottom:88px; font-size:10px; color:var(--ink-faint); text-align:right; line-height:1.7; z-index:20;}
-  .ai-bar-wrap{position:absolute; left:0; right:0; bottom:16px; display:flex; justify-content:center; z-index:40; padding:0 14px; pointer-events:none;}
-  .ai-bar-inner{position:relative; width:100%; max-width:560px; pointer-events:auto;}
-  .ai-bar{width:100%; background:rgba(16,22,42,0.94); border:1px solid var(--panel-border);
-    border-radius:26px; display:flex; align-items:center; gap:6px; padding:6px 8px; backdrop-filter:blur(10px);
-    box-shadow:0 12px 40px rgba(0,0,0,0.5);}
-  .ai-add{width:32px;height:32px;border-radius:50%;background:transparent;border:1px solid var(--panel-border);color:var(--brass);
-    display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:17px;line-height:1;}
-  .ai-add:hover{border-color:var(--brass-dim); background:rgba(201,162,39,0.08);}
-  .ai-bar input{flex:1; background:none; border:none; color:var(--ink); font-size:13.5px; font-family:inherit; padding:9px 4px; min-width:0;}
-  .ai-bar input:focus{outline:none;}
-  .ai-bar input::placeholder{color:var(--ink-faint);}
-  .ai-send{width:34px;height:34px;border-radius:50%;background:var(--brass);border:none;color:#1A1508;
-    display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:15px;}
-  .ai-send:hover{background:#DDB431;}
-  .ai-results{position:absolute; bottom:calc(100% + 8px); left:0; right:0; background:var(--panel);
-    border:1px solid var(--panel-border); border-radius:10px; max-height:200px; overflow-y:auto; display:none;
-    box-shadow:0 -10px 30px rgba(0,0,0,0.45);}
-  .ai-results.show{display:block;}
-  .search-item{padding:9px 14px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;gap:8px;}
-  .search-item:last-child{border-bottom:none;}
-  .search-item:hover{background:rgba(201,162,39,0.08);}
-  .search-item small{color:var(--ink-faint);font-size:10px;}
-  .panel{position:absolute; top:0; right:0; bottom:0; width:340px; background:var(--panel); border-left:1px solid var(--panel-border);
-    display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease; z-index:45;}
-  .panel.open{transform:translateX(0);}
-  .panel-header{padding:16px 18px 12px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
-  .panel-header h2{font-family:'Noto Serif SC',serif;font-size:15.5px;margin:0;line-height:1.4;font-weight:700;}
-  .panel-close{background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:16px;line-height:1;padding:2px;}
-  .panel-body{flex:1;overflow-y:auto;padding:14px 18px;}
-  .badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
-  .badge{font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid;font-weight:600;letter-spacing:0.3px;}
-  .field{margin-bottom:14px;}
-  .field label{display:block;font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:5px;font-weight:600;}
-  .field .val{font-size:13px;color:var(--ink);line-height:1.6;}
-  .field textarea, .field input[type=text], .field select{width:100%;background:var(--bg-deep);border:1px solid var(--panel-border);
-    color:var(--ink); padding:8px 9px; border-radius:6px; font-size:12.5px; font-family:inherit; resize:vertical;}
-  .field textarea{min-height:56px;}
-  .chip-list{display:flex;flex-wrap:wrap;gap:6px;}
-  .chip{font-size:11px;padding:5px 9px;background:rgba(255,255,255,0.03);border:1px solid var(--panel-border);border-radius:5px;cursor:pointer;color:var(--ink-dim);transition:border-color .15s;}
-  .chip:hover{border-color:var(--brass-dim);color:var(--ink);}
-  .chip.empty{color:var(--ink-faint);cursor:default;font-style:italic;}
-  .mastery-display{font-size:13px; padding:8px 10px; background:var(--bg-deep); border:1px solid var(--panel-border); border-radius:6px; margin-bottom:8px;}
-  .mastery-demo-controls{display:flex; gap:6px;}
-  .mastery-demo-controls .chip.active{border-color:var(--brass); color:var(--brass);}
-  .panel-actions{padding:12px 18px 18px;border-top:1px solid var(--panel-border);display:flex;flex-direction:column;gap:8px;}
-  .panel-actions .btn{width:100%;text-align:center;}
-  .btn.danger{border-color:rgba(200,84,80,0.4);color:#E8918E;}
-  .btn.danger:hover{background:rgba(200,84,80,0.1);border-color:#C85450;}
-  .btn.confirm{border-color:rgba(91,168,139,0.4);color:#8FCBB0;}
-  .btn.confirm:hover{background:rgba(91,168,139,0.1);border-color:#5BA88B;}
-  .action-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
-  .note-small{font-size:10px;color:var(--ink-faint);text-align:center;line-height:1.5;}
-  .toast{position:fixed;bottom:82px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
-    background:var(--panel);border:1px solid var(--brass-dim);color:var(--ink);padding:10px 18px;border-radius:8px;
-    font-size:12.5px;z-index:200;transition:all .3s;pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,0.5);
-    max-width:86%;text-align:center;}
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-  .modal-overlay{position:fixed;inset:0;background:rgba(6,9,17,0.92);z-index:100;
-    display:none;align-items:center;justify-content:center;padding:20px;}
-  .modal-overlay.show{display:flex;}
-  .modal{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;width:100%;max-width:460px;
-    max-height:85vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,0.6);}
-  .modal-header{padding:16px 20px;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;align-items:center;}
-  .modal-header h3{font-family:'Noto Serif SC',serif;font-size:15.5px;margin:0;}
-  .modal-body{padding:18px 20px;overflow-y:auto;}
-  .modal-footer{padding:14px 20px;border-top:1px solid var(--panel-border);display:flex;gap:10px;justify-content:flex-end;}
-  .form-field{margin-bottom:14px;}
-  .form-field label{display:block;font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;font-weight:600;}
-  .form-field input[type=text],.form-field textarea,.form-field select{width:100%;background:var(--bg-deep);border:1px solid var(--panel-border);
-    color:var(--ink);padding:9px 10px;border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;}
-  .form-field input:focus,.form-field textarea:focus,.form-field select:focus{outline:none;border-color:var(--brass-dim);}
-  .form-field textarea{min-height:58px;}
-  .form-hint{font-size:10.5px; color:var(--brass); margin-bottom:8px;}
-  .premise-list{max-height:130px;overflow-y:auto;border:1px solid var(--panel-border);border-radius:6px;padding:6px;}
-  .premise-item{display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:12px;border-radius:4px;}
-  .premise-item:hover{background:rgba(255,255,255,0.03);}
-  .checkbox-field label{display:flex; align-items:flex-start; gap:8px; font-size:12px; color:var(--ink-dim); text-transform:none; letter-spacing:0; font-weight:400; cursor:pointer;}
-  .checkbox-field input{margin-top:2px; flex-shrink:0;}
-  .account-stat{display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--panel-border); font-size:12.5px;}
-  .account-stat:last-child{border-bottom:none;}
-  .account-stat b{color:var(--brass); font-family:'Noto Serif SC',serif; font-size:15px;}
-  .settings-row{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px;}
-  .settings-row label{font-size:12px; color:var(--ink-dim); flex-shrink:0;}
-  .settings-row input[type=range]{flex:1; accent-color:var(--brass);}
-  .settings-row input[type=color]{width:40px;height:30px;border:none;background:none;padding:0;border-radius:6px;cursor:pointer;}
-  .settings-row select, .settings-row input[type=number]{background:var(--bg-deep);border:1px solid var(--panel-border);color:var(--ink);border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit;}
-  .settings-val{font-size:11px; color:var(--brass); width:44px; text-align:right; flex-shrink:0;}
-  .app-download{padding:14px;border:1px solid var(--panel-border);border-radius:8px;background:rgba(255,255,255,0.025);}
-  .app-download-title{font-size:13px;color:var(--ink);font-weight:600;margin-bottom:6px;}
-  .app-download-meta{font-size:11px;color:var(--ink-faint);line-height:1.65;margin-bottom:12px;}
-  .app-download .btn{display:flex;width:100%;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box;}
-  .native-app .web-download-action{display:none;}
-  [hidden]{display:none!important;}
-  .native-app.android .android-native-actions,.native-app.ios .ios-native-actions{display:grid;}
-  .native-app.android .ios-download-card,.native-app.ios .android-download-card{display:none;}
-  .native-app-actions{display:none;grid-template-columns:1fr 1fr;gap:10px;}
-  .app-download-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-  .native-app .app-download-grid{grid-template-columns:1fr;}
-  @media (max-width:780px){
-    header,.hint,.ai-bar,.legend,.node-label,.ai-results{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
-    #panel{position:fixed;inset:0;width:100%;border-radius:0;box-shadow:none;background:#051217}
-    .panel{width:min(340px,90vw);}
-    .legend{display:none;}
-    .hint{display:none;}
-    .brand span{display:none;}
-    header{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));}
-    .ai-bar-wrap{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));}
-    .btn,.avatar-btn,.ai-add,.ai-send,.panel-close{min-height:44px;min-width:44px;}
-  }
-  /* Living Knowledge Field — reference-calibrated colour and scale only. */
-  :root{--bg:#031015;--bg-deep:#02090d;--panel:rgba(7,22,27,.86);--panel-border:rgba(123,199,199,.18);--brass:#f0c66e;--brass-dim:#9b7e45;--ink:#e7f0f1;--ink-dim:#a7c1c4;--ink-faint:#607d82;--c-axiom:#b9d6d5;--c-definition:#69cfc7;--c-theorem:#f0c66e;--c-hypothesis:#a98ae8;--c-prediction:#8be9de;--c-fact:#75e0d3;--c-opinion:#9b7edb;--c-value:#e7b961;--c-reasoning:#b39af2;--c-logic-symbol:#8ccfca;--st-disputed:#ee7a68;--st-falsified:#ee675b;--st-suspended:#547277;--label-size:11.5px;--label-color:#c7dbdd;}
-  .app{background:radial-gradient(circle at 50% 48%,#0a2930 0,#06171d 40%,#02090d 80%)}
-  header{background:rgba(2,9,13,.8);backdrop-filter:blur(18px);border-color:var(--panel-border);padding:11px 16px}
-  .brand-copy{display:flex;flex-direction:column;gap:2px}.brand-title{font:600 13px/1 'Inter',sans-serif;color:var(--ink);letter-spacing:.08em}.brand-subtitle{font-size:9px!important;color:var(--ink-faint)!important;letter-spacing:.14em!important}
-  .avatar-btn{border-radius:10px;background:#0b2227;border-color:rgba(117,224,211,.3);color:var(--ink-dim)}
-  .ai-results{background:rgba(5,18,23,.86);backdrop-filter:blur(22px) saturate(110%);-webkit-backdrop-filter:blur(22px) saturate(110%)}
-  /* Do not backdrop-filter over the live WebGL canvas. On mobile GPUs this
-     forces an expensive canvas readback/composite and can freeze the page. */
-  .panel{top:12px;right:12px;bottom:72px;width:338px;background:rgb(5,18,23);border:1px solid var(--panel-border);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:none}
-  .modal{background:rgb(5,18,23)}
-  .panel.open{opacity:1;pointer-events:auto}
-  .ai-bar{max-width:552px;margin:auto;background:rgba(5,19,24,.84);border-color:var(--panel-border);box-shadow:0 16px 46px rgba(0,0,0,.38)}
-  .node-label{background:rgba(2,9,13,.52);border:1px solid rgba(117,224,211,.1);color:#c7dbdd;padding:2px 6px;border-radius:5px;text-shadow:0 1px 3px #000}
-  .node-label.selected{color:#fff;border-color:rgba(117,224,211,.58);box-shadow:0 0 0 2px rgba(117,224,211,.09)}
-  .legend{max-width:156px;padding:8px 10px;background:rgba(5,18,23,.76);border-color:var(--panel-border);backdrop-filter:blur(18px);border-radius:11px}
-  .legend-row{gap:5px;margin-bottom:2px;font-size:9px}.legend-dot{width:6px;height:6px}.layer-note{font-size:8.5px;line-height:1.4}
-  .field-reasoning-band{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:8px;align-items:center;margin:14px 0;padding:11px;border:1px solid rgba(147,132,181,.25);border-radius:10px;background:rgba(147,132,181,.06)}
-  .reasoning-stage{font-size:10px;color:var(--ink-dim);text-align:center}.reasoning-stage b{display:block;color:var(--ink);font-size:11px;margin-top:3px}.reasoning-arrow{color:#607d82}
-  .mastery-display{border-left:3px solid #607d82}.mastery-private{font-size:9px;color:var(--ink-faint);margin:5px 0 8px}.operation-progress{height:4px;background:#0b2227;border-radius:4px;overflow:hidden;margin:8px 0 14px}.operation-progress span{display:block;height:100%;background:#a98ae8}
-  .difference-card{padding:9px;border:1px solid rgba(240,198,110,.24);border-radius:8px;background:rgba(240,198,110,.06);margin-bottom:10px}
-  .counterexample-callout{border-left:3px solid #ee675b;padding:10px 12px;background:rgba(238,103,91,.08);color:#f0a49b;font-size:11px;line-height:1.6;margin-bottom:14px}
-  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500;600&display=swap');
+:root{
+  --bg:#050b0f;--panel:#071318;--panel-border:#17343a;--ink:#e5f0f1;--ink-dim:#8ca4a6;--ink-faint:#546b6f;
+  --teal:#75e0d3;--orange:#ef9b62;--green:#9bc779;--yellow:#f0c66e;--red:#e56f69;--purple:#9c87d9;
+  --app-height:100vh;
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:'Noto Sans SC',sans-serif;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit}
+button{color:inherit}
+#app{position:relative;width:100%;height:var(--app-height);overflow:hidden;background:radial-gradient(circle at 50% 48%,#0a1b20 0,#071217 38%,#050b0f 72%)}
+#canvasHost{position:absolute;inset:0;touch-action:none}
+#labelsLayer{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.node-label{position:absolute;white-space:nowrap;font-size:10px;color:#9cb1b4;transform:translate(-50%,-50%);text-shadow:0 1px 4px #000;opacity:.85;pointer-events:none;will-change:transform}
+.node-label.selected{color:#fff;font-weight:500}
+header{position:absolute;left:12px;top:12px;z-index:40;display:flex;align-items:center;gap:11px;padding:9px 12px;border:1px solid rgba(117,224,211,.12);border-radius:10px;background:rgba(4,14,18,.72);backdrop-filter:blur(12px)}
+.logo{width:28px;height:28px;border-radius:50%;border:1px solid rgba(117,224,211,.7);box-shadow:inset 0 0 10px rgba(117,224,211,.35),0 0 18px rgba(117,224,211,.12);position:relative}
+.logo:before,.logo:after{content:"";position:absolute;border:1px solid rgba(117,224,211,.28);border-radius:50%;inset:4px}.logo:after{inset:8px;border-color:rgba(240,198,110,.45)}
+.brand-title{font:500 12px/1.1 'JetBrains Mono',monospace;letter-spacing:.18em}.brand-subtitle{font-size:8px;color:var(--ink-faint);margin-top:3px;letter-spacing:.08em}
+header .avatar-btn{width:31px;height:31px;border-radius:50%;border:1px solid var(--panel-border);background:#0a171c;margin-left:3px;display:grid;place-items:center;cursor:pointer;color:var(--ink-dim)}
+.hint{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:30;font:10px 'JetBrains Mono',monospace;color:var(--ink-faint);letter-spacing:.08em;background:rgba(5,11,15,.58);padding:6px 10px;border-radius:8px;backdrop-filter:blur(8px)}
+.legend{position:absolute;left:14px;bottom:14px;z-index:30;display:flex;gap:11px;align-items:center;background:rgba(5,11,15,.58);border:1px solid rgba(117,224,211,.1);padding:7px 9px;border-radius:8px;backdrop-filter:blur(8px);font-size:9px;color:var(--ink-faint)}
+.legend-item{display:flex;align-items:center;gap:5px}.legend-dot{width:7px;height:7px;border-radius:50%}
+.ai-bar{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:45;width:min(620px,calc(100% - 28px));display:flex;align-items:center;gap:7px;padding:7px;border:1px solid var(--panel-border);border-radius:12px;background:rgba(5,17,22,.86);backdrop-filter:blur(15px);box-shadow:0 10px 34px rgba(0,0,0,.28)}
+.ai-input-wrap{flex:1;display:flex;align-items:center;background:#09161b;border:1px solid #18333a;border-radius:8px;padding:0 8px}.ai-input-wrap input{width:100%;height:34px;border:0;outline:0;background:transparent;color:var(--ink);font-size:12px}.ai-input-wrap input::placeholder{color:#4d6265}.ai-send,.ai-add{height:34px;min-width:38px;border-radius:8px;border:1px solid #204048;background:#0b2025;display:grid;place-items:center;cursor:pointer}.ai-add{font-size:20px;color:var(--teal);line-height:1}.ai-send{color:var(--ink-dim)}
+.ai-results{position:absolute;left:50%;bottom:67px;transform:translateX(-50%);z-index:44;width:min(620px,calc(100% - 28px));max-height:240px;overflow:auto;background:#071318;border:1px solid var(--panel-border);border-radius:10px;padding:8px;display:none;box-shadow:0 20px 45px rgba(0,0,0,.42)}.ai-results.show{display:block}.ai-result{padding:8px 9px;border-radius:7px;cursor:pointer;font-size:11px;color:var(--ink-dim)}.ai-result:hover{background:#0c2026;color:var(--ink)}
+.panel{position:absolute;right:12px;top:12px;bottom:70px;width:min(360px,calc(100% - 24px));z-index:60;border:1px solid var(--panel-border);border-radius:12px;background:rgba(5,18,23,.97);box-shadow:0 24px 70px rgba(0,0,0,.42);display:flex;flex-direction:column;opacity:0;pointer-events:none;transform:translateX(16px);transition:opacity .18s ease,transform .18s ease;overflow:hidden}.panel.open{opacity:1;pointer-events:auto;transform:none}.panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 13px;border-bottom:1px solid #153039}.panel-title{font-size:14px;font-weight:600}.panel-close{width:30px;height:30px;border:0;background:transparent;color:var(--ink-dim);font-size:20px;cursor:pointer}.panel-body{padding:12px 13px;overflow-y:auto;overscroll-behavior:contain;flex:1}.panel-actions{padding:10px 12px;border-top:1px solid #153039;display:flex;gap:7px;flex-wrap:wrap}.field{margin-bottom:12px}.field>label{display:block;font-size:9px;letter-spacing:.08em;color:var(--ink-faint);margin-bottom:5px;text-transform:uppercase}.field .val{font-size:12px;line-height:1.65;color:#c6d4d5;white-space:pre-wrap;overflow-wrap:anywhere}.badge-row,.chip-list{display:flex;flex-wrap:wrap;gap:6px}.badge,.chip{border:1px solid #1b3a42;border-radius:999px;padding:3px 7px;font-size:9px;color:#86a2a5;background:#0a1b20}.chip[data-jump],.chip[data-mastery]{cursor:pointer}.chip.active{border-color:rgba(117,224,211,.7);color:var(--teal);background:rgba(117,224,211,.08)}.mastery-display{font-size:13px;color:#d6e4e5}.mastery-demo-controls{display:flex;gap:5px;flex-wrap:wrap}.field-reasoning-band{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:6px;margin:9px 0 14px;padding:8px;border:1px solid rgba(117,224,211,.12);border-radius:8px;background:#07171b}.reasoning-stage{font-size:8px;color:var(--ink-faint);text-align:center}.reasoning-stage b{display:block;margin-top:3px;color:#9ec3c3;font-weight:500}.reasoning-arrow{color:var(--teal);font-size:12px}.btn{height:32px;border-radius:7px;border:1px solid #24474f;background:#0b2026;padding:0 10px;font-size:10px;cursor:pointer}.btn.primary{border-color:rgba(117,224,211,.55);color:var(--teal)}.btn.danger{border-color:rgba(229,111,105,.45);color:#ef928d}.btn.ghost{background:transparent;color:var(--ink-dim)}
+.modal-overlay{position:fixed;inset:0;background:rgba(6,9,17,0.92);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}.modal-overlay.show{display:flex}.modal{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;width:100%;max-width:460px;max-height:min(88vh,780px);overflow:auto;padding:17px}.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.modal-head h3{margin:0;font-size:15px}.modal-close{border:0;background:transparent;color:var(--ink-dim);font-size:20px;cursor:pointer}.modal .field input,.modal .field textarea,.modal .field select,.panel .field input,.panel .field textarea,.panel .field select{width:100%;border:1px solid #1b3b43;border-radius:7px;background:#08171c;color:var(--ink);outline:0;padding:8px 9px;font-size:11px}.modal .field textarea,.panel .field textarea{min-height:72px;resize:vertical}.premise-list{max-height:150px;overflow:auto;border:1px solid #15323a;border-radius:7px;padding:6px}.premise-item{display:flex;gap:7px;align-items:flex-start;padding:5px;font-size:10px;color:var(--ink-dim)}.premise-item input{width:auto!important;margin-top:2px}.note-small{font-size:9px;color:var(--ink-faint);line-height:1.55}.counterexample-callout,.difference-card{border:1px solid rgba(229,111,105,.24);background:rgba(229,111,105,.06);padding:8px;border-radius:7px;font-size:10px;color:#d0b2b0;margin-bottom:10px}.difference-card{border-color:rgba(240,198,110,.24);background:rgba(240,198,110,.06);color:#d9c79b}.operation-progress{height:3px;border-radius:99px;background:#11272d;overflow:hidden;margin:7px 0 12px}.operation-progress span{display:block;height:100%;background:var(--teal)}
+.account-card{width:min(420px,100%);padding:20px}.account-profile{display:flex;gap:12px;align-items:center;margin-bottom:16px}.account-avatar{width:48px;height:48px;border-radius:50%;background:#0c2329;border:1px solid #24515a;display:grid;place-items:center;color:var(--teal);font-size:18px}.account-name{font-size:14px}.account-id{font:9px 'JetBrains Mono';color:var(--ink-faint);margin-top:3px}.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.stat-card{background:#08191e;border:1px solid #15343c;border-radius:8px;padding:10px}.stat-num{font:500 16px 'JetBrains Mono';color:#d8e8e9}.stat-label{font-size:8px;color:var(--ink-faint);margin-top:4px}
+.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.settings-grid .full{grid-column:1/-1}.settings-grid input[type=range]{width:100%;accent-color:#75e0d3}.range-row{display:flex;align-items:center;gap:8px}.range-val{font:10px 'JetBrains Mono';color:var(--teal);width:52px;text-align:right}.color-row{display:flex;gap:8px}.color-row input[type=color]{width:45px;height:32px;padding:2px;border:1px solid #1b3b43;background:#08171c;border-radius:6px}.toast{position:fixed;left:50%;top:65px;transform:translateX(-50%) translateY(-6px);opacity:0;z-index:200;background:#0a1d22;border:1px solid #24505a;border-radius:8px;padding:8px 12px;color:#bbd2d4;font-size:11px;transition:.18s;pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:86%;text-align:center}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.app-download-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.native-app .app-download-grid{grid-template-columns:1fr}
+@media(max-width:780px){header,.hint,.ai-bar,.legend,.node-label,.ai-results{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}#panel{position:fixed;inset:0;width:100%;border-radius:0;box-shadow:none;background:#051217}.panel{width:min(340px,90vw)}.legend{display:none}.hint{display:none}.settings-grid{grid-template-columns:1fr}.ai-results{bottom:66px}.modal{max-height:calc(var(--app-height) - 28px)}}
+body{background:#050b0f}
+header{background:rgba(2,9,13,.8);backdrop-filter:blur(18px);border-color:var(--panel-border);padding:11px 16px}.brand-copy{display:flex;flex-direction:column;gap:2px}.brand-title{font:600 13px/1 'Inter',sans-serif;color:var(--ink);letter-spacing:.08em}.brand-subtitle{font-size:9px!important;color:var(--ink-faint)!important;letter-spacing:.14em!important}.avatar-btn{border-radius:10px;background:#0b2227;border-color:rgba(117,224,211,.3);color:var(--ink-dim)}.ai-results{background:rgba(5,18,23,.86);backdrop-filter:blur(22px) saturate(110%);-webkit-backdrop-filter:blur(22px) saturate(110%)}
+/* Do not backdrop-filter over the live WebGL canvas. On mobile GPUs this forces an expensive canvas readback/composite and can freeze the page. */
+.panel{top:12px;right:12px;bottom:72px;width:338px;background:rgb(5,18,23);border:1px solid var(--panel-border);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.42);opacity:0;pointer-events:none;transition:none}.modal{background:rgb(5,18,23)}.panel.open{opacity:1;pointer-events:auto}.ai-bar{max-width:552px;margin:auto;background:rgba(5,19,24,.84);border-color:var(--panel-border);box-shadow:0 16px 46px rgba(0,0,0,.38)}.node-label{background:rgba(2,9,13,.52);border:1px solid rgba(117,224,211,.1);color:#c7dbdd;padding:2px 6px;border-radius:5px;text-shadow:0 1px 3px #000}
 </style>
 </head>
 <body>
-<div class="app" id="app">
-  <header>
-    <div class="brand">
-      <div class="avatar-btn" id="avatarBtn" title="个人账户">RS</div>
-      <div class="brand-copy"><div class="brand-title">KNOWLEDGE BALL</div><span class="brand-subtitle">LIVING RELATIONAL FIELD</span></div>
-    </div>
-    <div class="header-mid">
-      <button class="btn" id="btnPersonal" title="隐藏/恢复未接触的知识节点">个人</button>
-      <button class="btn" id="btnSettings">⚙ 设置</button>
-    </div>
-  </header>
-  <div class="main">
-    <div id="canvasHost"></div>
-    <div id="labelsLayer"></div>
-    <div class="legend">
-      <h4>层级（内部坐标，无可见边界）</h4>
-      <div class="layer-note">内层空间：已验证事实/定义<br>中层空间：已验证公理/定理<br>外层空间：假说/预测/观点/悬置/争议</div>
-      <div class="legend-div"></div>
-      <h4>掌握程度</h4>
-      <div class="layer-note">强光＝完全掌握（辉光溢出球体）<br>荧光＝接触过（柔和光晕）<br>无光点＝未接触</div>
-      <div class="legend-div"></div>
-      <h4>节点类型</h4>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-axiom)"></div><span>公理</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-definition)"></div><span>定义</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-fact)"></div><span>事实</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-theorem)"></div><span>定理</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-hypothesis)"></div><span>假说</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-prediction)"></div><span>预测</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-opinion)"></div><span>观点</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-value)"></div><span>价值判断</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-reasoning)"></div><span>推理过程</span></div>
-      <div class="legend-row"><div class="legend-dot" style="background:var(--c-logic-symbol)"></div><span>逻辑符号</span></div>
-    </div>
-    <div class="hint">
-      拖空白：旋转整球<br>
-      单击空白：退一层视角<br>
-      双击空白：进一层视角<br>
-      滚轮/双指捏合：连续缩放
-    </div>
-    <div class="panel" id="panel">
-      <div class="panel-header">
-        <h2 id="panelTitle">—</h2>
-        <button class="panel-close" id="panelClose">✕</button>
-      </div>
-      <div class="panel-body" id="panelBody"></div>
-      <div class="panel-actions" id="panelActions"></div>
-    </div>
-    <div class="ai-bar-wrap">
-      <div class="ai-bar-inner">
-        <div class="ai-results" id="aiResults"></div>
-        <div class="ai-bar">
-          <button class="ai-add" id="aiAddBtn" title="新增知识节点">+</button>
-          <input id="aiInput" type="text" placeholder="输入问题，或搜索知识节点…" autocomplete="off">
-          <button class="ai-send" id="aiSend">➤</button>
-        </div>
-      </div>
-    </div>
-  </div>
+<div id="app">
+  <div id="canvasHost"></div>
+  <div id="labelsLayer"></div>
+  <header><div class="logo"></div><div class="brand-copy"><div class="brand-title">KNOWLEDGE BALL</div><div class="brand-subtitle">PUBLIC KNOWLEDGE GRAPH</div></div><button class="avatar-btn" id="accountBtn">◎</button></header>
+  <div class="hint">拖拽旋转 · 滚轮/双指缩放 · 点击节点查看</div>
+  <div class="legend"><div class="legend-item"><span class="legend-dot" style="background:#75e0d3"></span>定义</div><div class="legend-item"><span class="legend-dot" style="background:#ef9b62"></span>事实</div><div class="legend-item"><span class="legend-dot" style="background:#9bc779"></span>定理</div><div class="legend-item"><span class="legend-dot" style="background:#9c87d9"></span>逻辑</div></div>
+  <div class="ai-results" id="aiResults"></div>
+  <div class="ai-bar"><div class="ai-input-wrap"><input id="aiInput" placeholder="搜索知识节点…"></div><button class="ai-send" id="aiSend">⌕</button><button class="ai-add" id="aiAdd">＋</button></div>
+  <aside class="panel" id="panel"><div class="panel-head"><div class="panel-title" id="panelTitle">节点</div><button class="panel-close" id="panelClose">×</button></div><div class="panel-body" id="panelBody"></div><div class="panel-actions" id="panelActions"></div></aside>
 </div>
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="modalTitle">提交新知识节点</h3>
-      <button class="panel-close" id="modalClose">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-hint" id="modalHint" style="display:none;"></div>
-      <div class="form-field">
-        <label>Original / 原始表述</label>
-        <input type="text" id="fTitle" placeholder="例如：反证法证明…">
-      </div>
-      <div class="form-field" id="fCanonicalField">
-        <label>Canonical English / 规范英文</label>
-        <input type="text" id="fCanonical" placeholder="非英文输入必须在此确认规范英文">
-        <div class="form-hint">系统检测到非英文时，Original 与 Canonical English 对照确认后才可提交。</div>
-      </div>
-      <div class="form-field">
-        <label>节点类型</label>
-        <select id="fType">
-          <option value="fact">事实 Fact</option>
-          <option value="definition">定义 Definition</option>
-          <option value="axiom">公理 Axiom</option>
-          <option value="theorem">定理 Theorem</option>
-          <option value="hypothesis">假说 Hypothesis</option>
-          <option value="prediction">预测 Prediction</option>
-          <option value="opinion">观点 Opinion</option>
-          <option value="value">价值判断 Value</option>
-          <option value="logic-symbol">逻辑符号 Logic symbol</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label>知识描述</label>
-        <textarea id="fDescription" placeholder="定义、事实或结论本身的完整描述…"></textarea>
-      </div>
-      <div class="form-field" id="fReasoningField">
-        <label>推理过程</label>
-        <textarea id="fReasoning" placeholder="逐步说明如何从所选前提推出该结论…"></textarea>
-      </div>
-      <div class="form-field" id="fPremisesField">
-        <label>前置知识点（依赖边，可多选）</label>
-        <div class="premise-list" id="fPremises"></div>
-      </div>
-      <div class="form-field" id="fLogicRuleField">
-        <label>逻辑符号（推理分类）</label>
-        <select id="fLogicRule"></select>
-        <div class="form-hint">先在知识球中增加逻辑符号节点，之后才能在理论推理中选择。</div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" id="modalCancel">取消</button>
-      <button class="btn primary" id="modalSubmit">验证并提交</button>
-    </div>
-  </div>
-</div>
-<div class="modal-overlay" id="accountOverlay">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>个人账户</h3>
-      <button class="panel-close" id="accountClose">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="account-stat"><span>身份验证状态</span><b style="font-size:12px;color:#8FCBB0;">已验证 · 凭证式</b></div>
-      <div class="account-stat"><span>声誉积分</span><b id="statRep">—</b></div>
-      <div class="account-stat"><span>已点亮知识节点</span><b id="statLit">—</b></div>
-      <div class="account-stat"><span>本人贡献节点数</span><b id="statContrib">—</b></div>
-      <div class="account-stat"><span>贡献被接受率</span><b>91%</b></div>
-      <div class="account-stat"><span>预测准确率（历史）</span><b>68%</b></div>
-      <p class="note-small" style="text-align:left; margin-top:14px;">此面板为演示占位数据，实际协议中声誉应来自贡献质量、预测准确性、同行认可、长期稳定性与引用影响力的动态加权，而非固定数值。</p>
-    </div>
-  </div>
-</div>
-<div class="modal-overlay" id="settingsOverlay">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>设置</h3>
-      <button class="panel-close" id="settingsClose">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-hint" style="margin-bottom:16px;">知识节点球体</div>
-      <div class="settings-row">
-        <label>球体半径 (mm)</label>
-        <input type="range" id="setNodeRadius" min="0.1" max="30" step="0.1" value="7.2">
-        <div class="settings-val" id="setNodeRadiusVal">7.2mm</div>
-      </div>
-      <div class="form-hint" style="margin:18px 0 16px;">知识节点文字标签</div>
-      <div class="settings-row">
-        <label>字号</label>
-        <input type="range" id="setLabelSize" min="8" max="18" value="11">
-        <div class="settings-val" id="setLabelSizeVal">11px</div>
-      </div>
-      <div class="settings-row">
-        <label>颜色</label>
-        <input type="color" id="setLabelColor" value="#B8BFD4">
-        <div style="flex:1"></div>
-      </div>
-      <div class="settings-row">
-        <label>字体</label>
-        <select id="setLabelFont">
-          <option value="'Noto Sans SC','Inter',sans-serif">默认无衬线</option>
-          <option value="'Noto Serif SC',serif">衬线（宋体风格）</option>
-          <option value="'Inter',monospace">等宽</option>
-        </select>
-      </div>
-      <div class="settings-row">
-        <label>亮度</label>
-        <input type="range" id="setLabelBrightness" min="10" max="100" value="100">
-        <div class="settings-val" id="setLabelBrightnessVal">100%</div>
-      </div>
-      <div class="form-hint" style="margin:18px 0 16px;">视角与协议参数</div>
-      <div class="settings-row">
-        <label>单次点击移动层数</label>
-        <input type="number" id="setViewStep" value="1" min="1" max="1" disabled title="预留，暂未启用">
-      </div>
-      <div class="settings-row">
-        <label>级联悬置传播层级上限</label>
-        <input type="number" id="depthLimit" min="1" placeholder="∞" style="width:70px;">
-      </div>
-      <div class="form-hint" style="margin:18px 0 12px;">移动应用</div>
-      <div class="app-download-grid">
-      <div class="app-download android-download-card">
-        <div class="app-download-title">知识球 Android 应用</div>
-        <div class="app-download-meta">版本 0.2.0 · Android 7.0 及以上<br>安装时请允许浏览器安装来自此来源的应用。</div>
-        <a class="btn primary web-download-action" id="androidDownload" href="./downloads/knowledge-ball-android-v0.2.0.apk" download="knowledge-ball-android-v0.2.0.apk" type="application/vnd.android.package-archive">下载 Android 安装包（APK）</a>
-        <div class="native-app-actions android-native-actions" aria-label="Android 应用版本操作">
-          <button class="btn primary" id="androidUpdate" type="button">检查更新</button>
-          <button class="btn" id="androidShare" type="button">分享当前版本</button>
-        </div>
-        <div class="app-download-meta" id="androidActionStatus" role="status" aria-live="polite" style="margin:10px 0 0;"></div>
-      </div>
-      <div class="app-download ios-download-card">
-        <div class="app-download-title">知识球 iOS 应用</div>
-        <div class="app-download-meta">版本 0.2.0 · iOS 14 及以上<br>使用 Safari 安装，不依赖境外应用商店。</div>
-        <a class="btn primary web-download-action" id="iosDownload" href="./ios-install.html">安装 iOS 应用</a>
-        <div class="native-app-actions ios-native-actions" aria-label="iOS 应用版本操作">
-          <button class="btn primary" id="iosUpdate" type="button">检查更新</button>
-          <button class="btn" id="iosShare" type="button">分享当前版本</button>
-        </div>
-        <div class="app-download-meta" id="iosActionStatus" role="status" aria-live="polite" style="margin:10px 0 0;"></div>
-      </div>
-      </div>
-      <p class="note-small" style="text-align:left;">更多设置项（通知偏好、隐私范围、连接的第三方身份凭证等）预留，后续版本补充。</p>
-    </div>
-  </div>
-</div>
+
+<div class="modal-overlay" id="modalOverlay"><div class="modal"><div class="modal-head"><h3 id="modalTitle">提交新知识节点</h3><button class="modal-close" id="modalClose">×</button></div><p class="note-small" id="modalHint" style="display:none"></p><div class="field"><label>Original title</label><input id="fTitle"></div><div class="field"><label>Canonical English</label><input id="fCanonical"></div><div class="field"><label>Type</label><select id="fType"><option value="fact">事实</option><option value="definition">定义</option><option value="axiom">公理</option><option value="logic-symbol">逻辑符号</option><option value="theorem">定理</option><option value="hypothesis">假说</option><option value="prediction">预测</option><option value="opinion">观点</option><option value="value">价值判断</option></select></div><div class="field"><label>Description</label><textarea id="fDescription"></textarea></div><div class="field" id="fReasoningField"><label>Reasoning</label><textarea id="fReasoning"></textarea></div><div class="field" id="fPremisesField"><label>Premises</label><div class="premise-list" id="fPremises"></div></div><div class="field" id="fLogicRuleField"><label>Logic rule</label><select id="fLogicRule"></select></div><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="modalCancel">取消</button><button class="btn primary" id="modalSubmit">提交</button></div></div></div>
+
+<div class="modal-overlay" id="accountOverlay"><div class="modal account-card"><div class="modal-head"><h3>账户</h3><button class="modal-close" id="accountClose">×</button></div><div class="account-profile"><div class="account-avatar">KB</div><div><div class="account-name">Knowledge Ball User</div><div class="account-id">LOCAL / GUEST</div></div></div><div class="stat-grid"><div class="stat-card"><div class="stat-num" id="statRep">—</div><div class="stat-label">我的能量</div></div><div class="stat-card"><div class="stat-num" id="statLit">0</div><div class="stat-label">已接触节点</div></div><div class="stat-card"><div class="stat-num" id="statContrib">0</div><div class="stat-label">待验证贡献</div></div></div></div></div>
+
+<div class="modal-overlay" id="settingsOverlay"><div class="modal"><div class="modal-head"><h3>显示设置</h3><button class="modal-close" id="settingsClose">×</button></div><div class="settings-grid"><div class="field"><label>节点半径</label><div class="range-row"><input id="setNodeRadius" type="range" min="2" max="16" step="0.5"><span class="range-val" id="setNodeRadiusVal"></span></div></div><div class="field"><label>标签大小</label><div class="range-row"><input id="setLabelSize" type="range" min="7" max="18" step="1"><span class="range-val" id="setLabelSizeVal"></span></div></div><div class="field"><label>标签亮度</label><div class="range-row"><input id="setLabelBrightness" type="range" min="10" max="100" step="5"><span class="range-val" id="setLabelBrightnessVal"></span></div></div><div class="field"><label>标签颜色</label><div class="color-row"><input id="setLabelColor" type="color"><select id="setLabelFont"><option value="sans">Sans</option><option value="mono">Mono</option></select></div></div><div class="field full"><label>依赖深度限制</label><input id="depthLimit" type="number" min="0" max="20" placeholder="不限"></div></div></div></div>
 <div class="toast" id="toast"></div>
 <script type="module" src="/src/ui/app.ts"></script>
 </body>
