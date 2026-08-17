@@ -8,9 +8,20 @@ export const TWIN_META = { n6: { twinGroup: 'twinPrime', sharedTitle: '质数数
 export const TYPE_LABEL: Record<KnowledgeNodeType, string> = { axiom:'公理', definition:'定义', fact:'事实', theorem:'定理', hypothesis:'假说', prediction:'预测', opinion:'观点', value:'价值判断', reasoning:'推理过程', 'logic-symbol':'逻辑符号' };
 export const STATUS_LABEL: Record<KnowledgeNodeStatus, string> = { verified:'已验证', pending:'等待验证', suspended:'悬置', disputed:'争议中', falsified:'已证伪' };
 export const MASTERY_LABEL: Record<KnowledgeMastery, string> = { none:'未接触（无光点）', touched:'接触过（荧光）', mastered:'完全掌握（强光）' };
-// Relational-field palette: colour communicates epistemic role; status controls intensity.
-export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xB9D6D5, definition:0x69CFC7, fact:0x75E0D3, theorem:0xF0C66E, hypothesis:0xA98AE8, prediction:0x8BE9DE, opinion:0x9B7EDB, value:0xE7B961, reasoning:0xB39AF2, 'logic-symbol':0x8CCFCA };
-export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#B9D6D5', definition:'#69CFC7', fact:'#75E0D3', theorem:'#F0C66E', hypothesis:'#A98AE8', prediction:'#8BE9DE', opinion:'#9B7EDB', value:'#E7B961', reasoning:'#B39AF2', 'logic-symbol':'#8CCFCA' };
+// Deep-space palette: colour communicates epistemic role; status controls intensity.
+export const TYPE_COLOR: Record<KnowledgeNodeType, number> = { axiom:0xF7FBFF, definition:0x55ECFF, fact:0x72F4FF, theorem:0x16D9FF, hypothesis:0x7C6CFF, prediction:0x35E5FF, opinion:0x957BFF, value:0xB18CFF, reasoning:0x4B9DFF, 'logic-symbol':0x8AF5FF };
+export const TYPE_COLOR_HEX: Record<KnowledgeNodeType, string> = { axiom:'#F7FBFF', definition:'#55ECFF', fact:'#72F4FF', theorem:'#16D9FF', hypothesis:'#7C6CFF', prediction:'#35E5FF', opinion:'#957BFF', value:'#B18CFF', reasoning:'#4B9DFF', 'logic-symbol':'#8AF5FF' };
+export const KNOWLEDGE_BACKGROUND = 'radial-gradient(circle at 50% 46%, rgba(16,24,64,0.96) 0%, rgba(6,8,24,1) 34%, #02030a 74%, #000 100%)';
+
+// Visual-only theme application. Geometry, edge styling, layout, interaction and protocol settings remain untouched.
+if (typeof document !== 'undefined') {
+  const rootStyle = document.documentElement.style;
+  Object.entries(TYPE_COLOR_HEX).forEach(([type, color]) => rootStyle.setProperty(`--c-${type}`, color));
+  document.documentElement.style.background = '#000';
+  document.body?.style.setProperty('background', '#000');
+  document.querySelector<HTMLElement>('.app')?.style.setProperty('background', KNOWLEDGE_BACKGROUND);
+}
+
 export const STATUS_COLOR_HEX: Record<KnowledgeNodeStatus, string> = { verified:'#75E0D3', pending:'#A98AE8', suspended:'#547277', disputed:'#EE7A68', falsified:'#EE675B' };
 export const LAYER_BANDS = { inner:{rMin:0,rMax:95}, middle:{rMin:95,rMax:170}, outer:{rMin:170,rMax:260}, core:{rMin:0,rMax:16} } as const;
 export const LAYER_LABEL = { inner:'内层空间 · 基础', middle:'中层空间 · 高置信度', outer:'外层空间 · 待定/推测', core:'核心 · 三体系统' } as const;
