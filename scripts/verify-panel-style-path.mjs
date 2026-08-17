@@ -46,7 +46,7 @@ try {
   const page = await context.newPage();
   page.on('console', message => {
     const text = message.text();
-    if (text.startsWith('OPEN_CALL ') || text.startsWith('APPEND_CALL ')) console.log(text);
+    if (text.startsWith('OPEN_CALL ') || text.startsWith('APPEND_TRACE ')) console.log(text);
   });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
@@ -75,14 +75,25 @@ try {
     };
 
     const store = window.__debug.store;
-    const captured = [];
+    let appendCount = 0;
+    const traces = [];
     store.append = event => {
-      captured.push({ type: event.type, scope: event.scope, payload: event.payload });
-      console.log(`APPEND_CALL ${captured.length} type=${event.type} scope=${event.scope} at=${performance.now().toFixed(1)}`);
+      appendCount += 1;
+      if (traces.length < 3) {
+        const trace = {
+          index: appendCount,
+          type: event.type,
+          scope: event.scope,
+          payload: structuredClone(event.payload),
+          stack: new Error(`append-${appendCount}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
+        };
+        traces.push(trace);
+        console.log(`APPEND_TRACE ${JSON.stringify(trace)}`);
+      }
       return true;
     };
 
-    window.__issue51Diagnostic = () => ({ openCalls, captured: structuredClone(captured) });
+    window.__issue51Diagnostic = () => ({ openCalls, appendCount, traces: structuredClone(traces) });
   });
 
   const target = await page.evaluate(() => {
@@ -103,7 +114,8 @@ try {
   console.log(JSON.stringify({ tapWall, result }, null, 2));
   assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
   assert.equal(result.openCalls, 1, `suppressing post-tap append should leave exactly one panel open, got ${result.openCalls}`);
-  assert.ok(result.captured.length >= 1, 'node tap path must reveal the appended event that previously caused the second panel open');
+  assert.ok(result.appendCount >= 1, 'node tap path must reveal the appended event that previously caused the second panel open');
+  assert.ok(result.traces.length >= 1, 'at least one append stack must be captured');
 
   await context.close();
 } finally {
