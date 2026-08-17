@@ -30,6 +30,8 @@ assert(tapStart>=0&&tapEnd>tapStart,'node tap implementation must remain discove
 assert(overlayStart>=0&&overlayEnd>overlayStart,'overlay lifecycle implementation must remain discoverable');
 const tapSource=sceneSource.slice(tapStart,tapEnd);
 const overlaySource=sceneSource.slice(overlayStart,overlayEnd);
+assert(tapSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');
+assert(!tapSource.includes('queueMicrotask'),'node tap must not defer panel dispatch into the microtask queue');
 assert(!tapSource.includes('forceContextLoss'),'node tap must never force WebGL context loss');
 assert(!tapSource.includes('forceContextRestore'),'node tap must never force WebGL context restore');
 assert(!tapSource.includes('domElement.remove'),'node tap must keep the renderer canvas attached');
