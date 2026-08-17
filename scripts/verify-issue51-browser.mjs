@@ -78,8 +78,7 @@ try {
   let page = await context.newPage();
   await context.addInitScript(({ key, events }) => {
     if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, savedAt: new Date().toISOString(), events }));
-    window.__issue51Metrics = { heartbeat: 0, longTasks: [] };
-    setInterval(() => { window.__issue51Metrics.heartbeat++; }, 50);
+    window.__issue51Metrics = { longTasks: [] };
     new PerformanceObserver(list => {
       for (const entry of list.getEntries()) window.__issue51Metrics.longTasks.push(entry.duration);
     }).observe({ type: 'longtask', buffered: true });
@@ -98,7 +97,6 @@ try {
   });
   assert.ok(target, 'production fixture must expose a tappable non-core node');
   await page.evaluate(() => { window.__issue51Metrics.longTasks = []; });
-  const heartbeatBeforeTap = await page.evaluate(() => window.__issue51Metrics.heartbeat);
   console.log('issue51: tapping');
   const panelSignal = new Promise(resolve => {
     const listener = message => {
@@ -113,16 +111,18 @@ try {
     const observer = new MutationObserver(() => {
       if (!panel.classList.contains('open')) return;
       const rect = panel.getBoundingClientRect();
-      console.log(`ISSUE51_PANEL ${JSON.stringify({ open: true, opacity: getComputedStyle(panel).opacity, width: rect.width, height: rect.height, heartbeat: window.__issue51Metrics.heartbeat, tapDuration: performance.getEntriesByName('knowledge-node-tap').at(-1)?.duration ?? Infinity, panelDuration: performance.getEntriesByName('knowledge-panel-open').at(-1)?.duration ?? Infinity, tapToPanelDuration: performance.getEntriesByName('knowledge-tap-to-panel').at(-1)?.duration ?? Infinity })}`);
+      console.log(`ISSUE51_PANEL ${JSON.stringify({ open: true, opacity: getComputedStyle(panel).opacity, width: rect.width, height: rect.height, tapDuration: performance.getEntriesByName('knowledge-node-tap').at(-1)?.duration ?? Infinity, panelDuration: performance.getEntriesByName('knowledge-panel-open').at(-1)?.duration ?? Infinity, tapToPanelDuration: performance.getEntriesByName('knowledge-tap-to-panel').at(-1)?.duration ?? Infinity })}`);
       observer.disconnect();
     });
     observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
   });
-  void page.evaluate(({ x, y }) => {
+  const eventLoopProbe = page.evaluate(({ x, y }) => new Promise(resolve => {
+    const scheduledAt = performance.now();
+    setTimeout(() => resolve({ delay: performance.now() - scheduledAt, longTasks: [...window.__issue51Metrics.longTasks] }), 0);
     const canvas = document.querySelector('#canvasHost canvas');
     canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x, clientY: y, pointerId: 71, pointerType: 'touch', isPrimary: true }));
     canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x, clientY: y, pointerId: 71, pointerType: 'touch', isPrimary: true }));
-  }, target).catch(() => {});
+  }), target);
   const tapResult = await withDeadline(panelSignal, 1_000, 'node panel visibility');
   assert.ok(tapResult.open && tapResult.opacity === '1' && tapResult.width > 0 && tapResult.height > 0, 'node panel must be visibly laid out');
   console.log('issue51: panel visible');
@@ -132,17 +132,9 @@ try {
   assert.ok(panelDuration <= 1_000, `node panel took ${panelDuration.toFixed(1)}ms`);
   const tapToPanelDuration = tapResult.tapToPanelDuration;
   assert.ok(tapToPanelDuration <= 1_000, `node tap-to-panel took ${tapToPanelDuration.toFixed(1)}ms`);
-  // Panel visibility can be reported in the same event-loop turn as the tap.
-  // Give the 50ms heartbeat a bounded recovery window instead of requiring a
-  // timer tick to have happened before the MutationObserver fires. A genuine
-  // main-thread stall still fails because the heartbeat must advance promptly.
-  await page.waitForFunction(
-    before => window.__issue51Metrics.heartbeat > before,
-    heartbeatBeforeTap,
-    { polling: 10, timeout: 250 },
-  );
-  const heartbeatAfterTap = await page.evaluate(() => window.__issue51Metrics.heartbeat);
-  assert.ok(heartbeatAfterTap > heartbeatBeforeTap, 'heartbeat must recover promptly after node tap');
+  const eventLoopResult = await withDeadline(eventLoopProbe, 1_000, 'post-tap event-loop release');
+  console.log(`issue51: post-tap event-loop delay ${eventLoopResult.delay.toFixed(1)}ms`);
+  assert.ok(eventLoopResult.delay <= 250, `node tap blocked the event loop for ${eventLoopResult.delay.toFixed(1)}ms`);
 
   void page.close({ runBeforeUnload: false }).catch(() => {});
   page = await context.newPage();
@@ -160,7 +152,7 @@ try {
   const selectedSubmitDuration = await submitFact(page, liveTitle);
 
   const maxLongTask = selectedSubmitDuration.maxLongTask;
-  console.log(JSON.stringify({ eventCount, tapDuration, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
+  console.log(JSON.stringify({ eventCount, tapDuration, panelDuration, tapToPanelDuration, eventLoopDelay: eventLoopResult.delay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
   assert.ok(maxLongTask <= 500, `longest main-thread task was ${maxLongTask.toFixed(1)}ms`);
   await context.tracing.stop({ path: tracePath });
   traceSaved = true;
