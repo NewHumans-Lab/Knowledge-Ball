@@ -6,7 +6,10 @@ export const KNOWLEDGE_SCENE_THEME = {
     core: 0xFFFFFF,
     structural: 0xF7FBFF,
     falsified: 0xEE5B63,
-    shellOpacity: 0.72,
+    // The solid sphere body must fully occlude the page backdrop. Glow sprites remain
+    // transparent and may blend outside the silhouette, but the semantic base hue itself
+    // must never be darkened by the blue/violet background showing through the sphere.
+    shellOpacity: 1.00,
     pointOpacity: 0.90,
     selectedEmissiveIntensity: 0.30,
     baseEmissiveIntensity: 0.08,
