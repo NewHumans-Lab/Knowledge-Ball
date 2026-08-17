@@ -304,7 +304,9 @@ export class PanelController {
 
   openNodePanel(id: string): void {
     performance.mark?.('knowledge-panel-open-start');
-    const node = this.getNodeById(id);
+    const nodes = this.getNodes();
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const node = byId.get(id);
     if (!node) return;
 
     this.selectedId = id;
@@ -312,9 +314,110 @@ export class PanelController {
     this.onOverlayVisibilityChange?.(true);
     this.panel.classList.add('open');
     this.panelTitle.textContent = node.title;
-    this.panelBody.textContent = 'Diagnostic minimal panel';
-    this.panelActions.textContent = '';
 
+    const typeColor = TYPE_COLOR_HEX[node.type] ?? '#ffffff';
+    const statusColor = STATUS_COLOR_HEX[node.status] ?? '#ffffff';
+
+    const premisesHtml = node.premises.map(pid => {
+      const p = byId.get(pid);
+      if (!p) return '';
+      return `<div class="chip" data-jump="${escapeHtml(pid)}">${escapeHtml(shortText(p.title, 20))}</div>`;
+    }).join('') || '<div class="chip empty">无前置（公理层或独立节点）</div>';
+
+    const depsHtml = nodes
+      .filter(n => n.premises.includes(id) || n.logicRuleId === id)
+      .map(n => `<div class="chip" data-jump="${escapeHtml(n.id)}">${escapeHtml(shortText(n.title, 20))}</div>`)
+      .join('') || '<div class="chip empty">暂无下游依赖节点</div>';
+
+    const twinNodes = node.twinGroup
+      ? nodes.filter(n => n.twinGroup === node.twinGroup && n.id !== node.id)
+      : [];
+
+    const twinHtml = twinNodes.length
+      ? `
+        <div class="field">
+          <label>孪生证明</label>
+          <div class="chip-list">
+            ${twinNodes.map(t => `<div class="chip" data-jump="${escapeHtml(t.id)}">${escapeHtml(shortText(t.title, 18))}</div>`).join('')}
+          </div>
+        </div>
+      `
+      : '';
+
+    const logicRule = node.logicRuleId ? byId.get(node.logicRuleId) ?? null : null;
+    const logicRuleHtml = node.type === 'reasoning'
+      ? `
+        <div class="field">
+          <label>逻辑符号 / 推理分类</label>
+          <div class="chip-list">
+            ${logicRule
+              ? `<div class="chip" data-jump="${escapeHtml(logicRule.id)}">${escapeHtml(logicRule.title)}</div>`
+              : '<div class="chip empty">旧数据：尚未分类</div>'}
+          </div>
+        </div>
+      `
+      : '';
+
+    this.panelBody.innerHTML = `
+      <div class="badge-row">
+        <div class="badge" style="color:${typeColor};border-color:${typeColor}66;">${TYPE_LABEL[node.type]}</div>
+        <div class="badge" style="color:${statusColor};border-color:${statusColor}66;">${STATUS_LABEL[node.status]}</div>
+        <div class="badge" style="color:var(--brass);border-color:var(--brass-dim);">${safeText(node.domain) || 'general'}</div>
+      </div>
+
+      <div class="field">
+        <label>掌握程度</label>
+        <div class="mastery-display" id="masteryDisplay">${MASTERY_LABEL[node.mastery]}</div>
+        <div class="mastery-private">PRIVATE STATE · 仅你可见，不影响公共知识有效性</div>
+        <div class="mastery-demo-controls">
+          <div class="chip ${node.mastery === 'none' ? 'active' : ''}" data-mastery="none">未接触</div>
+          <div class="chip ${node.mastery === 'touched' ? 'active' : ''}" data-mastery="touched">接触过</div>
+          <div class="chip ${node.mastery === 'mastered' ? 'active' : ''}" data-mastery="mastered">完全掌握</div>
+        </div>
+      </div>
+
+      <div class="field-reasoning-band" aria-label="当前推理链">
+        <div class="reasoning-stage">PREMISES<b>${node.premises.length || '—'}</b></div><span class="reasoning-arrow">→</span>
+        <div class="reasoning-stage">REASONING<b>${node.type === 'reasoning' ? '当前节点' : (logicRule ? '已连接' : '—')}</b></div><span class="reasoning-arrow">→</span>
+        <div class="reasoning-stage">CONCLUSION<b>${node.type === 'reasoning' ? depsHtml === '' ? '—' : '下游' : '当前节点'}</b></div>
+      </div>
+
+      <div class="field">
+        <label>${node.type === 'reasoning' ? '推理过程' : '知识描述'}</label>
+        <div class="val">${escapeHtml(node.reasoning || '（未填写）')}</div>
+      </div>
+
+      ${logicRuleHtml}
+
+      <div class="field">
+        <label>前置知识点</label>
+        <div class="chip-list">${premisesHtml}</div>
+      </div>
+
+      <div class="field">
+        <label>下游依赖节点</label>
+        <div class="chip-list">${depsHtml}</div>
+      </div>
+
+      ${twinHtml}
+    `;
+
+    this.panelActions.innerHTML = `
+      <div class="action-grid">
+        <button class="btn ghost" id="btnEditNode">Edit · 编辑</button>
+        <button class="btn ghost" id="btnDeriveNode">Add · 新增</button>
+      </div>
+      <div class="action-grid">
+        ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">Decompose · 分解</button>' : ''}
+        ${this.canMerge(node, nodes, byId) ? '<button class="btn ghost" id="btnMerge">Merge · 合并</button>' : ''}
+      </div>
+      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Negate · 以 Counterexample 否定</button>` : ''}
+      ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
+      ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
+      <div class="note-small">节点会先保存在当前设备；共享服务可用时同步给其他用户。</div>
+    `;
+
+    this.bindPanelRuntimeEvents(id);
     performance.mark?.('knowledge-panel-open-end');
     performance.measure?.('knowledge-panel-open', 'knowledge-panel-open-start', 'knowledge-panel-open-end');
     if (performance.getEntriesByName?.('knowledge-node-tap-start').length) {
