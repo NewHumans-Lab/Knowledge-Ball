@@ -5,6 +5,15 @@ export interface AccountProfile {
   myBalance: string; totalEnergy: string; accuracy: number;
 }
 export interface ProfileChanges { username: string; displayName?: string; avatarUrl?: string; bio?: string; }
+export type PendingVoteSide = 'AGREE' | 'DISAGREE';
+export interface PendingKnowledgeVoteSnapshot {
+  nodeId: string;
+  agreeCount: number;
+  disagreeCount: number;
+  requiredVotes: number;
+  mySide: PendingVoteSide | null;
+  myBalance?: string;
+}
 
 export const GUEST_SESSION_KEY = 'knowledge-ball.supabase-guest-session.v1';
 const LEGACY_SESSION_KEY = 'knowledge-ball.supabase-session.v1';
@@ -49,6 +58,25 @@ export class KnowledgeBallAuthClient {
       body: JSON.stringify({ new_username: changes.username, new_display_name: changes.displayName ?? null, new_avatar_url: changes.avatarUrl ?? null, new_bio: changes.bio ?? null }),
     });
     return this.profileFrom(response);
+  }
+
+  async getPendingKnowledgeVote(nodeId: string): Promise<PendingKnowledgeVoteSnapshot> {
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/get_pending_knowledge_vote', current, {
+      method: 'POST', body: JSON.stringify({ target_node_id: nodeId }),
+    });
+    return parsePendingKnowledgeVote(response, nodeId);
+  }
+
+  async castPendingKnowledgeVote(nodeId: string, side: PendingVoteSide): Promise<PendingKnowledgeVoteSnapshot> {
+    if (side !== 'AGREE' && side !== 'DISAGREE') throw new Error('无效投票方向');
+    const current = await this.publicSession();
+    await this.restRequest('/rest/v1/rpc/ensure_anonymous_profile', current, { method: 'POST', body: '{}' });
+    const response = await this.restRequest('/rest/v1/rpc/cast_pending_knowledge_vote', current, {
+      method: 'POST',
+      body: JSON.stringify({ target_node_id: nodeId, vote_side: side, operation_key: `pending-vote:${nodeId}` }),
+    });
+    return parsePendingKnowledgeVote(response, nodeId);
   }
 
   private profileFrom(value: unknown): AccountProfile {
@@ -116,6 +144,29 @@ function exactEnergy(value: unknown): string {
   if (!/^-?\d+(?:\.\d{1,6})?$/.test(text)) throw new Error('服务端返回了无效能量精度');
   const [whole, fraction = ''] = text.split('.'); return `${whole}.${fraction.padEnd(6, '0')}`;
 }
+
+function countValue(value: unknown, field: string): number {
+  const number = typeof value === 'number' ? value : Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) throw new Error(`服务端返回了无效${field}`);
+  return number;
+}
+
+export function parsePendingKnowledgeVote(value: unknown, nodeId: string): PendingKnowledgeVoteSnapshot {
+  const response = value as Record<string, unknown>;
+  const side = response.my_side;
+  if (side !== null && side !== undefined && side !== 'AGREE' && side !== 'DISAGREE') throw new Error('服务端返回了无效投票状态');
+  const responseNodeId = typeof response.node_id === 'string' ? response.node_id : nodeId;
+  if (responseNodeId !== nodeId) throw new Error('投票响应节点不匹配');
+  return {
+    nodeId,
+    agreeCount: countValue(response.agree_count, '赞成票数'),
+    disagreeCount: countValue(response.disagree_count, '反对票数'),
+    requiredVotes: countValue(response.required_votes, '所需票数'),
+    mySide: side === 'AGREE' || side === 'DISAGREE' ? side : null,
+    myBalance: response.my_balance === null || response.my_balance === undefined ? undefined : exactEnergy(response.my_balance),
+  };
+}
+
 export function compactEnergy(value: string): string {
   if (!/^-?\d+\.\d{6}$/.test(value)) return '—';
   const whole = value.split('.')[0];
