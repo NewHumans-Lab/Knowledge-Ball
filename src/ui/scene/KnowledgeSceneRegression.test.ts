@@ -38,7 +38,11 @@ assert(!tapSource.includes('domElement.remove'),'node tap must keep the renderer
 assert(!overlaySource.includes('forceContextLoss'),'overlay open must not destroy the WebGL context');
 assert(!overlaySource.includes('forceContextRestore'),'overlay close must not force context restoration');
 assert(!overlaySource.includes('domElement.remove'),'overlay lifecycle must keep the renderer canvas attached');
+assert(!overlaySource.includes('pointerEvents'),'overlay lifecycle must not retarget the active pointer by mutating canvas hit testing');
 assert(sceneSource.includes('const pauseFrameLoop='),'scene must pause work without destroying GPU state');
 assert(sceneSource.includes('const resumeFrameLoop='),'scene must resume work without recreating GPU state');
-assert(overlaySource.includes("pointerEvents=visible?'none':''"),'overlay must suspend canvas interaction without detaching the canvas');
+assert(sceneSource.includes("const down=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointerdown must be gated by scene overlay state');
+assert(sceneSource.includes("const move=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointermove must be gated by scene overlay state');
+assert(sceneSource.includes("const up=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointerup/pointercancel must be gated by scene overlay state');
+assert(sceneSource.includes("const wheel=(e:WheelEvent)=>{if(overlayVisible)return;"),'wheel input must be gated by scene overlay state');
 console.log('Knowledge scene regression tests passed');
