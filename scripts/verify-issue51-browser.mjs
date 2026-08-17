@@ -88,6 +88,20 @@ try {
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
 
   console.log('issue51: fixture ready');
+  const baselineTaskDelay = await withDeadline(page.evaluate(() => new Promise(resolve => {
+    const scheduledAt = performance.now();
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      const delay = performance.now() - scheduledAt;
+      channel.port1.close();
+      channel.port2.close();
+      resolve(delay);
+    };
+    channel.port2.postMessage(null);
+  })), 1_000, 'baseline task-channel liveness');
+  console.log(`issue51: baseline task-channel delay ${baselineTaskDelay.toFixed(1)}ms`);
+  assert.ok(baselineTaskDelay <= 250, `baseline task-channel delay was ${baselineTaskDelay.toFixed(1)}ms`);
+
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
       const point = window.__debug.scene.screenPositionForNode(node.id);
@@ -159,7 +173,7 @@ try {
   const selectedSubmitDuration = await submitFact(page, liveTitle);
 
   const maxLongTask = selectedSubmitDuration.maxLongTask;
-  console.log(JSON.stringify({ eventCount, tapDuration, panelDuration, tapToPanelDuration, eventLoopDelay: eventLoopResult.delay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
+  console.log(JSON.stringify({ eventCount, baselineTaskDelay, tapDuration, panelDuration, tapToPanelDuration, eventLoopDelay: eventLoopResult.delay, stoppedSubmitDuration, selectedSubmitDuration, maxLongTask }, null, 2));
   assert.ok(maxLongTask <= 500, `longest main-thread task was ${maxLongTask.toFixed(1)}ms`);
   await context.tracing.stop({ path: tracePath });
   traceSaved = true;
