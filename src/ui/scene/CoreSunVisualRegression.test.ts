@@ -7,6 +7,7 @@ import {
   CORE_SUN_LIGHT_INTENSITY,
   CORE_SUN_RADIUS,
   CORE_SUN_SHADOW_FAR,
+  KNOWLEDGE_SCENE_THEME,
   LAYER_BANDS,
   MAX_GRAPH_ZOOM,
   SUN_ORBIT_RADIUS,
@@ -20,8 +21,10 @@ function assert(condition: unknown, message: string): asserts condition {
 
 assert(CORE_SUN_RADIUS === 18, 'central Sun radius must remain exactly 2x the default ordinary-node radius');
 assert(CORE_SUN_RADIUS > SUN_ORBIT_RADIUS + SUN_RADIUS_MM, 'Sun must fully enclose the core triad');
-assert(CORE_SUN_GLOW_SCALE >= 6, 'corona must remain visible at whole-graph scale');
-assert(CORE_SUN_COLOR === 0xFFFFFF, 'central Sun surface, corona and light must use neutral white');
+assert(CORE_SUN_GLOW_SCALE === KNOWLEDGE_SCENE_THEME.sun.coronaScale, 'runtime corona scale must come from the canonical scene theme');
+assert(CORE_SUN_GLOW_SCALE >= 3 && CORE_SUN_GLOW_SCALE <= 4.5, 'corona must remain visible without washing most of a phone viewport in cyan haze');
+assert(KNOWLEDGE_SCENE_THEME.sun.haloScale > CORE_SUN_GLOW_SCALE && KNOWLEDGE_SCENE_THEME.sun.haloScale <= 6, 'violet halo must extend beyond the corona but remain visually restrained');
+assert(CORE_SUN_COLOR === 0xFFFFFF, 'central Sun surface and point light must use neutral white');
 assert(CORE_SUN_LIGHT_INTENSITY >= 20, 'central light must be visually meaningful');
 // Three.js uses distance=0 + decay=2 for physically-correct inverse-square attenuation with no artificial cutoff.
 assert(CORE_SUN_LIGHT_DISTANCE === 0, 'PointLight distance must be zero so no artificial cutoff modifies inverse-square attenuation');
