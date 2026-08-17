@@ -43,7 +43,7 @@ try {
   }, { key: storageKey, events: fixtureEvents() });
   const page = await context.newPage();
   page.on('console', message => {
-    if (message.text().startsWith('PANEL_PHASE ')) console.log(message.text());
+    if (message.text().startsWith('PANEL_PHASE ') || message.text().startsWith('POINTER_PHASE ')) console.log(message.text());
   });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
@@ -62,6 +62,21 @@ try {
   assert.ok(removed >= 1, 'legacy .mastery-private rule must be removed for diagnostic');
 
   await page.evaluate(() => {
+    const canvas = document.querySelector('#canvasHost canvas');
+    if (!canvas) throw new Error('scene canvas unavailable');
+    window.__issue51PointerEvents = [];
+    for (const type of ['pointerdown', 'pointerup']) {
+      canvas.addEventListener(type, event => {
+        window.__issue51PointerEvents.push(type);
+        console.log(`POINTER_PHASE ${type} id=${event.pointerId} ${performance.now().toFixed(1)}`);
+      }, { capture: true });
+    }
+    canvas.addEventListener('pointercancel', event => {
+      window.__issue51PointerEvents.push('pointercancel');
+      console.log(`POINTER_PHASE pointercancel-suppressed id=${event.pointerId} ${performance.now().toFixed(1)}`);
+      event.stopImmediatePropagation();
+    }, { capture: true });
+
     const innerHTMLDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
     if (!innerHTMLDescriptor?.get || !innerHTMLDescriptor?.set) throw new Error('innerHTML descriptor unavailable');
     Object.defineProperty(Element.prototype, 'innerHTML', {
@@ -85,13 +100,6 @@ try {
       if (tracked) console.log(`PANEL_PHASE after-queryAll-${this.id}-${selector} ${performance.now().toFixed(1)} count=${result.length}`);
       return result;
     };
-
-    const querySelector = Element.prototype.querySelector;
-    Element.prototype.querySelector = function(selector) {
-      const tracked = this.id === 'panelActions' && typeof selector === 'string' && selector.startsWith('#btn');
-      if (tracked) console.log(`PANEL_PHASE query-${selector} ${performance.now().toFixed(1)}`);
-      return querySelector.call(this, selector);
-    };
   });
 
   const target = await page.evaluate(() => {
@@ -113,6 +121,7 @@ try {
     textLength: document.querySelector('#panelBody')?.textContent?.length ?? 0,
     hasLegacyNote: Boolean(document.querySelector('#panelBody .mastery-private')),
     childCount: document.querySelector('#panelBody')?.children.length ?? 0,
+    pointerEvents: [...window.__issue51PointerEvents],
   })), 250, 'full panel responsiveness');
   assert.ok(bodyState.hasLegacyNote, 'full panel must contain original mastery-private markup');
   assert.ok(bodyState.textLength > 40 && bodyState.childCount > 2, 'full panel content must be restored, not diagnostic minimal content');
