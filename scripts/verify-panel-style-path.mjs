@@ -46,7 +46,7 @@ try {
   const page = await context.newPage();
   page.on('console', message => {
     const text = message.text();
-    if (text.startsWith('OPEN_CALL ') || text.startsWith('APPEND_TRACE ')) console.log(text);
+    if (text.startsWith('MASTERY_CALLBACK ') || text.startsWith('OPEN_CALL ')) console.log(text);
   });
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
@@ -64,8 +64,13 @@ try {
   });
   assert.ok(removed >= 1, 'legacy .mastery-private rule must be removed for diagnostic');
 
-  await page.evaluate(() => {
+  const setup = await page.evaluate(() => {
     const panel = window.__debug.panel;
+    if (!panel || typeof panel.openNodePanel !== 'function') throw new Error('panel unavailable');
+    if (typeof panel.onSetMastery !== 'function') {
+      return { available: false, keys: Object.keys(panel) };
+    }
+
     const originalOpen = panel.openNodePanel.bind(panel);
     let openCalls = 0;
     panel.openNodePanel = id => {
@@ -74,27 +79,26 @@ try {
       return originalOpen(id);
     };
 
-    const store = window.__debug.store;
-    let appendCount = 0;
+    let masteryCalls = 0;
     const traces = [];
-    store.append = event => {
-      appendCount += 1;
+    panel.onSetMastery = async (id, mastery) => {
+      masteryCalls += 1;
       if (traces.length < 3) {
         const trace = {
-          index: appendCount,
-          type: event.type,
-          scope: event.scope,
-          payload: structuredClone(event.payload),
-          stack: new Error(`append-${appendCount}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
+          index: masteryCalls,
+          id,
+          mastery,
+          stack: new Error(`mastery-${masteryCalls}`).stack?.replaceAll('\n', ' | ') ?? 'no-stack',
         };
         traces.push(trace);
-        console.log(`APPEND_TRACE ${JSON.stringify(trace)}`);
+        console.log(`MASTERY_CALLBACK ${JSON.stringify(trace)}`);
       }
-      return true;
     };
 
-    window.__issue51Diagnostic = () => ({ openCalls, appendCount, traces: structuredClone(traces) });
+    window.__issue51Diagnostic = () => ({ openCalls, masteryCalls, traces: structuredClone(traces) });
+    return { available: true, keys: Object.keys(panel) };
   });
+  assert.ok(setup.available, `PanelController.onSetMastery must be runtime-accessible; keys=${setup.keys.join(',')}`);
 
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
@@ -113,9 +117,9 @@ try {
   const result = await deadline(page.evaluate(() => window.__issue51Diagnostic()), 250, 'post-tap diagnostic');
   console.log(JSON.stringify({ tapWall, result }, null, 2));
   assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
-  assert.equal(result.openCalls, 1, `suppressing post-tap append should leave exactly one panel open, got ${result.openCalls}`);
-  assert.ok(result.appendCount >= 1, 'node tap path must reveal the appended event that previously caused the second panel open');
-  assert.ok(result.traces.length >= 1, 'at least one append stack must be captured');
+  assert.equal(result.openCalls, 1, `no-op mastery callback should avoid subscriber-driven panel rebuild; got ${result.openCalls}`);
+  assert.ok(result.masteryCalls >= 1, 'opening touch must reveal whether mastery callback is entered');
+  assert.ok(result.masteryCalls <= 3, `mastery callback repeated ${result.masteryCalls} times even without EventStore feedback`);
 
   await context.close();
 } finally {
