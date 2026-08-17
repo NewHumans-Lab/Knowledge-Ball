@@ -41,7 +41,7 @@ export const KNOWLEDGE_SCENE_THEME = {
     coronaOpacity: 0.22,
     haloOpacity: 0.12,
     innerGlowScale: 2.4,
-    coronaScale: 5.8,
+    coronaScale: 6.0,
     haloScale: 9.0,
   },
 } as const;
