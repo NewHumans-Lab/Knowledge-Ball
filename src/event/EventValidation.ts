@@ -34,7 +34,7 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
     if (!p.roundId?.trim() || !p.nodeId?.trim()) errors.push('投票结算事件缺少轮次或节点 ID');
     if (p.verdict !== 'CORRECT' && p.verdict !== 'INCORRECT') errors.push('投票结算事件 verdict 无效');
     if (p.closeReason !== 'THRESHOLD' && p.closeReason !== 'TIMEOUT') errors.push('投票结算事件 closeReason 无效');
-    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1') errors.push('投票结算事件 policyVersion 无效');
+    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1' && p.policyVersion !== 'ORIGINAL_DESIGN_V2') errors.push('投票结算事件 policyVersion 无效');
     for (const [label, value, allowZero] of [
       ['赞成票', p.agreeCount, true],
       ['反对票', p.disagreeCount, true],
