@@ -74,6 +74,18 @@ try {
   });
   assert.equal(oldSelectorPresent, false, 'unstable .mastery-private CSS selector must not return');
 
+  // Projection materialization and Three.js materialization are separate phases.
+  // With the full mobile graph no longer truncated, wait for a real scene frame to
+  // create at least one in-viewport fixture node before starting tap timing.
+  await page.waitForFunction(() => {
+    for (const node of window.__debug?.renderNodes ?? []) {
+      if (!node.id.startsWith('panel-style-node-')) continue;
+      const point = window.__debug?.scene?.screenPositionForNode(node.id);
+      if (point && point.x > 40 && point.x < 350 && point.y > 100 && point.y < 700) return true;
+    }
+    return false;
+  }, null, { timeout: 20_000 });
+
   const before = await page.evaluate(() => window.__debug.store.allEvents().length);
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
