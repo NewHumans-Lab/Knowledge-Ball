@@ -130,6 +130,37 @@ try{
     await page.waitForTimeout(100);
     await page.evaluate(()=>window.__debug.scene.stop());
 
+    // Gate C: the real Personal control must hide both untouched nodes and every
+    // edge incident to them, then restore exactly the same edge set when disabled.
+    const personalFixture=await page.evaluate(()=>{
+      const sceneNodes=window.__debug.renderNodes.slice(0,48);
+      const ids=new Set(sceneNodes.map(node=>node.id));
+      const connected=sceneNodes.find(node=>!['n1','n2','n16'].includes(node.id)&&node.premises?.some(id=>ids.has(id)&&!['n1','n2','n16'].includes(id)));
+      if(!connected)return null;
+      const hiddenEndpointId=connected.premises.find(id=>ids.has(id)&&!['n1','n2','n16'].includes(id));
+      if(!hiddenEndpointId)return null;
+      const originalMastery=sceneNodes.map(node=>({id:node.id,mastery:node.mastery}));
+      sceneNodes.forEach(node=>{if(!['n1','n2','n16'].includes(node.id))node.mastery='touched';});
+      const hiddenEndpoint=sceneNodes.find(node=>node.id===hiddenEndpointId);
+      if(!hiddenEndpoint)return null;
+      hiddenEndpoint.mastery='none';
+      window.__debug.scene.markDirty();window.__debug.scene.start();
+      return{hiddenEndpointId,originalMastery};
+    });
+    assert.ok(personalFixture,'mobile scene must contain a non-core connected relation for Personal-mode visibility testing');
+    await page.waitForTimeout(120);
+    const fullEdgeCount=await page.evaluate(()=>{window.__debug.scene.stop();return window.__debug.scene.getVisibleEdgeCount();});
+    assert.ok(fullEdgeCount>0,'full graph mode must render at least one relation line before Personal filtering');
+    await page.locator('#btnPersonal').click();
+    const personalEdgeCount=await page.evaluate(()=>window.__debug.scene.getVisibleEdgeCount());
+    assert.ok(personalEdgeCount<fullEdgeCount,`Personal mode must hide lines incident to hidden nodes (full=${fullEdgeCount}, personal=${personalEdgeCount})`);
+    await page.locator('#btnPersonal').click();
+    const restoredEdgeCount=await page.evaluate(()=>window.__debug.scene.getVisibleEdgeCount());
+    assert.equal(restoredEdgeCount,fullEdgeCount,'leaving Personal mode must restore exactly the prior visible relation-line count');
+    await page.evaluate(saved=>{for(const item of saved){const node=window.__debug.renderNodes.find(candidate=>candidate.id===item.id);if(node)node.mastery=item.mastery;}window.__debug.scene.markDirty();window.__debug.scene.start();},personalFixture.originalMastery);
+    await page.waitForTimeout(100);
+    await page.evaluate(()=>window.__debug.scene.stop());
+
     await page.locator('.ai-add').click();
     await page.locator('#modalOverlay.show').waitFor({state:'visible'});
     await assertExit(page.locator('#modalClose'),'create modal exit');
@@ -171,5 +202,5 @@ try{
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, bright semantic colors, actual scene pixels, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}
