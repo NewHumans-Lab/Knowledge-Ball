@@ -7,17 +7,19 @@ export const KNOWLEDGE_SCENE_THEME = {
     structural: 0xF7FBFF,
     falsified: 0xEE5B63,
     // Semantic node bodies remain opaque presentation colors. Surface depth comes
-    // from a neutral grayscale matcap, never from the central sun or page backdrop.
+    // from one shared neutral grayscale matcap, never from the central sun or page
+    // backdrop, so every ordinary node receives the same relative 3D modulation.
     shellOpacity: 1.00,
     pointOpacity: 0.52,
     sphereWidthSegments: 24,
     sphereHeightSegments: 16,
     matcapLight: 255,
-    // Most visible pixels on these small phone-scale spheres sample the middle of
-    // the matcap. Keep that midtone clearly below the highlight while preserving
-    // the same safe dark floor, so depth reads without muddying semantic hues.
-    matcapMid: 220,
-    matcapDark: 214,
+    // PR #76's first calibration (255/205/180) rendered at only ~8% regional
+    // contrast on the real 390px mobile WebGL artifact. This stronger neutral ramp
+    // is calibrated against that same artifact toward the requested 15-20% visible
+    // light/dark difference while preserving semantic hue.
+    matcapMid: 160,
+    matcapDark: 120,
     selectedEmissiveIntensity: 0.30,
     baseEmissiveIntensity: 0.08,
   },
