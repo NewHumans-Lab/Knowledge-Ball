@@ -1,4 +1,5 @@
 import type { DomainEvent, Mastery } from '../event/Event';
+import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
 import type { GraphState } from '../state/GraphState';
 import { emptyGraphState, nodeList } from '../state/GraphState';
 import type { Projection } from './Projection';
@@ -34,7 +35,10 @@ export class GraphProjection implements Projection<GraphState> {
     return mastery;
   }
 
-  private applyKnowledgeEdit(edit: KnowledgeEdit): void {
+  private applyKnowledgeEdit(
+    edit: KnowledgeEdit,
+    declaredLayers?: Readonly<Record<string, UserKnowledgeLayer>>,
+  ): void {
     // Adds were validated at the command/event boundary and only append one or
     // two nodes. Do not clone and rebuild the entire graph for this hot path.
     if (edit.kind === 'add') {
@@ -47,6 +51,7 @@ export class GraphProjection implements Projection<GraphState> {
           mastery: this.takePendingMastery(draft.id),
           reasoning: draft.reasoning.trim(),
           premises: [...new Set(premises)],
+          declaredLayer: declaredLayers?.[draft.id],
           hidden: false,
           logicRuleId: draft.logicRuleId,
         };
@@ -59,6 +64,7 @@ export class GraphProjection implements Projection<GraphState> {
       return;
     }
     const masteryById = new Map(nodeList(this.state).map(node => [node.id, node.mastery]));
+    const declaredLayerById = new Map(nodeList(this.state).map(node => [node.id, node.declaredLayer]));
     const protocolNodes: ProtocolNode[] = nodeList(this.state).map(node => ({
       id: node.id,
       title: node.title,
@@ -83,6 +89,7 @@ export class GraphProjection implements Projection<GraphState> {
       {
         ...node,
         mastery: masteryById.get(node.id) ?? 'none',
+        declaredLayer: declaredLayerById.get(node.id),
         premises: [...node.premises],
       },
     ]));
@@ -101,6 +108,7 @@ export class GraphProjection implements Projection<GraphState> {
           mastery: this.takePendingMastery(p.nodeId),
           reasoning: p.reasoning,
           premises: [...p.premises],
+          declaredLayer: p.declaredLayer,
           hidden: p.hidden ?? false,
           aliases: p.aliases ? [...p.aliases] : undefined,
           supersededBy: p.supersededBy,
@@ -151,7 +159,10 @@ export class GraphProjection implements Projection<GraphState> {
         else this.pendingMasteryByNodeId.set(event.payload.nodeId, event.payload.mastery);
         break;
       }
-      case 'KnowledgeAdded':
+      case 'KnowledgeAdded': {
+        this.applyKnowledgeEdit(event.payload.edit, event.payload.declaredLayers);
+        break;
+      }
       case 'KnowledgeNegated':
       case 'KnowledgeDecomposed':
       case 'KnowledgeMerged': {
