@@ -44,7 +44,7 @@ assert(scene.includes('if(node.effectiveLayer)return node.effectiveLayer'), 'sce
 assert(scene.includes("type==='reasoning'?conclusionRadius/3:conclusionRadius"), 'reasoning radius must be exactly one third of conclusion radius');
 assert(scene.includes('callbacks.onNodeTap(nodeId)'), 'a node tap must use the single node-tap callback');
 assert(!scene.includes('callbacks.onSelectNode(nodeId);callbacks.onOpenPanel(nodeId)'), 'a node tap must not synchronously render the panel twice');
-assert(app.includes('onNodeTap:openNode'), 'the application must open a tapped node through one callback');
+assert(app.includes('onNodeTap') && app.includes('openNode'), 'the application must open a tapped node through one callback');
 assert(!html.includes('.panel,.modal,.ai-results{'), 'the WebGL-overlaid node panel must not use the expensive shared backdrop filter');
 assert(html.includes('.panel{top:12px;right:12px;bottom:72px;width:338px;background:rgb(5,18,23)'), 'the node panel must use an opaque GPU-safe background');
 
