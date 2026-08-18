@@ -1,4 +1,5 @@
 import type { Mastery, NodeType } from '../domain/KnowledgeModel';
+import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
 export type { Mastery, NodeType } from '../domain/KnowledgeModel';
 
 export type NodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
@@ -16,7 +17,7 @@ interface EventEnvelope<TType extends string, TPayload, TScope extends 'public' 
 
 export type NodeCreatedEvent = EventEnvelope<'NodeCreated', {
   nodeId: string; title: string; nodeType: NodeType; reasoning: string; premises: string[];
-  initialStatus?: NodeStatus; source?: 'import';
+  initialStatus?: NodeStatus; source?: 'import'; declaredLayer?: UserKnowledgeLayer;
   hidden?: boolean; aliases?: string[]; supersededBy?: string; logicRuleId?: string;
   negatedBy?: string[]; semanticKey?: string;
 }>;
@@ -36,7 +37,11 @@ import type {
   NegateEdit,
 } from '../protocol/KnowledgeEditingProtocol';
 
-export type KnowledgeAddedEvent = EventEnvelope<'KnowledgeAdded', { edit: AddEdit }>;
+export type KnowledgeAddedEvent = EventEnvelope<'KnowledgeAdded', {
+  edit: AddEdit;
+  /** Explicit layer declarations for nodes created by this event. Missing entries are legacy-compatible. */
+  declaredLayers?: Record<string, UserKnowledgeLayer>;
+}>;
 export type KnowledgeNegatedEvent = EventEnvelope<'KnowledgeNegated', { edit: NegateEdit }>;
 export type KnowledgeDecomposedEvent = EventEnvelope<'KnowledgeDecomposed', { edit: DecomposeEdit }>;
 export type KnowledgeMergedEvent = EventEnvelope<'KnowledgeMerged', { edit: MergeEdit }>;

@@ -1,4 +1,11 @@
 import {
+  KNOWLEDGE_LAYER_HELP,
+  KNOWLEDGE_LAYER_LABEL,
+  isUserKnowledgeLayer,
+  type KnowledgeLayer,
+  type UserKnowledgeLayer,
+} from '../../domain/KnowledgeLayerPolicy';
+import {
   MASTERY_LABEL,
   STATUS_COLOR_HEX,
   STATUS_LABEL,
@@ -17,6 +24,8 @@ export interface PanelNodeSummary {
   mastery: KnowledgeMastery;
   reasoning: string;
   premises: string[];
+  declaredLayer?: KnowledgeLayer;
+  effectiveLayer?: KnowledgeLayer;
   twinGroup?: string;
   sharedTitle?: string;
   domain?: string;
@@ -28,7 +37,7 @@ export interface PanelNodeSummary {
 export interface CreateNodePayload {
   title: string;
   canonicalTitle?: string;
-  type: KnowledgeNodeType;
+  layer: UserKnowledgeLayer;
   description: string;
   reasoning?: string;
   premises: string[];
@@ -71,6 +80,7 @@ export interface EditNodePayload {
   title: string;
   type: KnowledgeNodeType;
   reasoning: string;
+  premises?: string[];
 }
 
 export interface PanelControllerCallbacks {
@@ -286,7 +296,33 @@ export class PanelController {
 
     this.toast = options.toast;
 
+    this.configureLayerSubmission();
     this.bind();
+  }
+
+  private configureLayerSubmission(): void {
+    this.fType.innerHTML = `
+      <option value="inner">第一层 · 基础起点</option>
+      <option value="middle">第二层 · 关系与严谨推理</option>
+      <option value="outer">第三层 · 不确定与争议</option>
+    `;
+    const field = this.fType.closest('.form-field');
+    const label = field?.querySelector('label');
+    if (label) label.textContent = '知识层级';
+    let layerHelp = field?.querySelector<HTMLElement>('[data-layer-help]');
+    if (!layerHelp && field) {
+      layerHelp = document.createElement('div');
+      layerHelp.className = 'form-hint';
+      layerHelp.dataset.layerHelp = 'true';
+      field.appendChild(layerHelp);
+    }
+    if (layerHelp) {
+      layerHelp.innerHTML = `第一层：${KNOWLEDGE_LAYER_HELP.inner}<br><br>第二层：${KNOWLEDGE_LAYER_HELP.middle}<br><br>第三层：${KNOWLEDGE_LAYER_HELP.outer}`;
+    }
+    const logicLabel = this.fLogicRuleField.querySelector('label');
+    if (logicLabel) logicLabel.textContent = '逻辑 / 推理规则（可选）';
+    const logicHint = this.fLogicRuleField.querySelector<HTMLElement>('.form-hint');
+    if (logicHint) logicHint.textContent = '若该推理使用已有正式规则，可在这里标记；不作为提交门槛。';
   }
 
   destroy(): void {
@@ -317,12 +353,15 @@ export class PanelController {
 
     const typeColor = TYPE_COLOR_HEX[node.type] ?? '#ffffff';
     const statusColor = STATUS_COLOR_HEX[node.status] ?? '#ffffff';
+    const effectiveLayerLabel = node.effectiveLayer ? KNOWLEDGE_LAYER_LABEL[node.effectiveLayer] : '层级未计算';
+    const declaredLayerLabel = node.declaredLayer ? KNOWLEDGE_LAYER_LABEL[node.declaredLayer] : '历史兼容';
+    const layerAdjusted = Boolean(node.declaredLayer && node.effectiveLayer && node.declaredLayer !== node.effectiveLayer);
 
     const premisesHtml = node.premises.map(pid => {
       const p = byId.get(pid);
       if (!p) return '';
       return `<div class="chip" data-jump="${escapeHtml(pid)}">${escapeHtml(shortText(p.title, 20))}</div>`;
-    }).join('') || '<div class="chip empty">无前置（公理层或独立节点）</div>';
+    }).join('') || '<div class="chip empty">无已记录前置知识</div>';
 
     const depsHtml = nodes
       .filter(n => n.premises.includes(id) || n.logicRuleId === id)
@@ -352,18 +391,24 @@ export class PanelController {
           <div class="chip-list">
             ${logicRule
               ? `<div class="chip" data-jump="${escapeHtml(logicRule.id)}">${escapeHtml(logicRule.title)}</div>`
-              : '<div class="chip empty">旧数据：尚未分类</div>'}
+              : '<div class="chip empty">未指定正式规则</div>'}
           </div>
         </div>
       `
       : '';
 
+    const layerAdjustmentHtml = layerAdjusted
+      ? `<div class="difference-card"><b>系统层级调整</b><br>提交时：${escapeHtml(declaredLayerLabel)}<br>当前：${escapeHtml(effectiveLayerLabel)}<br>${node.declaredLayer === 'inner' && node.effectiveLayer === 'middle' ? '原因：第一层节点现在存在已验证前提，因此按协议自动进入第二层。' : '当前状态或协议约束覆盖了提交时层级。'}</div>`
+      : '';
+
     this.panelBody.innerHTML = `
       <div class="badge-row">
-        <div class="badge" style="color:${typeColor};border-color:${typeColor}66;">${TYPE_LABEL[node.type]}</div>
+        <div class="badge">${escapeHtml(effectiveLayerLabel)}</div>
         <div class="badge" style="color:${statusColor};border-color:${statusColor}66;">${STATUS_LABEL[node.status]}</div>
-        <div class="badge" style="color:var(--brass);border-color:var(--brass-dim);">${safeText(node.domain) || 'general'}</div>
+        <div class="badge" style="color:${typeColor};border-color:${typeColor}66;">${TYPE_LABEL[node.type]} · 内部细分类</div>
       </div>
+
+      ${layerAdjustmentHtml}
 
       <div class="field">
         <label>掌握程度</label>
@@ -414,7 +459,7 @@ export class PanelController {
       ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Negate · 以 Counterexample 否定</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
       ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
-      <div class="note-small">节点会先保存在当前设备；共享服务可用时同步给其他用户。</div>
+      <div class="note-small">公共知识由服务器确认后进入共享事件流；浏览器只渲染当前内存投影。</div>
     `;
 
     this.bindPanelRuntimeEvents(id);
@@ -435,15 +480,17 @@ export class PanelController {
   openCreateModal(prefillPremiseId: string | null = null): void {
     this.prefillPremise = prefillPremiseId;
     this.editMode = false;
-    this.modalTitle.textContent = prefillPremiseId ? '推理新节点' : '提交新知识节点';
-    this.modalHint.style.display = prefillPremiseId ? 'block' : 'none';
+    this.modalTitle.textContent = prefillPremiseId ? '基于现有知识提交新节点' : '提交新知识节点';
+    this.modalHint.style.display = 'block';
     if (prefillPremiseId) {
       const src = this.getNodeById(prefillPremiseId);
-      this.modalHint.textContent = src ? `将默认以「${src.title}」作为前置知识点` : '将默认以所选节点作为前置知识点';
+      this.modalHint.textContent = src ? `已预选「${src.title}」作为前提；因此默认进入第二层。` : '已预选一个前提；因此默认进入第二层。';
+    } else {
+      this.modalHint.textContent = '只需判断：它是基础起点、关系/严谨推理，还是不确定/争议知识。';
     }
     this.fTitle.value = '';
     this.fCanonical.value = '';
-    this.fType.value = prefillPremiseId ? 'theorem' : 'fact';
+    this.fType.value = prefillPremiseId ? 'middle' : 'inner';
     this.fDescription.value = '';
     this.fReasoning.value = '';
     this.modalSubmit.disabled = false;
@@ -561,11 +608,15 @@ export class PanelController {
       const canonicalTitle = this.fCanonical.value.trim();
       const description = this.fDescription.value.trim();
       const reasoning = this.fReasoning.value.trim();
-      const type = this.fType.value as KnowledgeNodeType;
+      const layerValue = this.fType.value;
+      if (!isUserKnowledgeLayer(layerValue)) {
+        this.showToast('请选择三个知识层级之一。');
+        return;
+      }
+      const layer = layerValue;
       const premises = Array.from(this.fPremises.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))
         .map(el => el.value);
       const logicRuleId = this.fLogicRule.value;
-      const derived = this.isDerivedType(type);
 
       if (!title) {
         this.showToast('请填写节点标题。');
@@ -586,16 +637,12 @@ export class PanelController {
         this.showToast('请填写知识描述。');
         return;
       }
-      if (derived && premises.length === 0) {
-        this.showToast('理论必须选择至少一个已有知识前提。');
+      if (layer === 'inner' && premises.length > 0) {
+        this.showToast('第一层只能作为知识链起点，不能带前提。请改选第二层。');
         return;
       }
-      if (derived && !reasoning) {
-        this.showToast('理论必须填写完整推理过程。');
-        return;
-      }
-      if (derived && !logicRuleId) {
-        this.showToast('理论必须选择一个已有逻辑符号；如列表为空，请先增加逻辑符号节点。');
+      if (premises.length > 0 && !reasoning) {
+        this.showToast('选择前提后必须填写它们如何推出当前知识。');
         return;
       }
 
@@ -604,14 +651,14 @@ export class PanelController {
         await this.onCreateNode({
           title,
           canonicalTitle: canonicalTitle || undefined,
-          type,
+          layer,
           description,
-          reasoning: derived ? reasoning : undefined,
-          premises: derived ? premises : [],
-          logicRuleId: derived ? logicRuleId : undefined,
+          reasoning: reasoning || undefined,
+          premises: layer === 'inner' ? [] : premises,
+          logicRuleId: logicRuleId || undefined,
         });
         this.closeCreateModal();
-        this.showToast(`节点已保存：${title}`);
+        this.showToast(`节点已提交：${title}`);
       } catch (error) {
         console.error('[Knowledge-Ball] node submission failed:', error);
         this.showToast(error instanceof Error ? `提交失败：${error.message}` : '提交失败');
@@ -637,13 +684,19 @@ export class PanelController {
       if (!node) return;
       this.editMode = true;
       this.panelTitle.textContent = '编辑节点';
+      const premiseCandidates = this.getNodes().filter(candidate =>
+        candidate.id !== id &&
+        candidate.type !== 'reasoning' &&
+        candidate.type !== 'logic-symbol' &&
+        candidate.status !== 'falsified'
+      );
       this.panelBody.innerHTML = `
         <div class="field">
           <label>结论（标题）</label>
           <input type="text" id="editTitle" value="${escapeHtml(node.title)}">
         </div>
         <div class="field">
-          <label>类型（结构类型不可直接变更）</label>
+          <label>内部细分类（不可直接更改）</label>
           <select id="editType" disabled>
             <option value="${escapeHtml(node.type)}" selected>${TYPE_LABEL[node.type]}</option>
           </select>
@@ -651,6 +704,18 @@ export class PanelController {
         <div class="field">
           <label>${node.type === 'reasoning' ? '推理过程' : '知识描述'}</label>
           <textarea id="editReasoning">${escapeHtml(node.reasoning || '')}</textarea>
+        </div>
+        <div class="field">
+          <label>已记录前提</label>
+          <div class="premise-list">
+            ${premiseCandidates.map(candidate => `
+              <label class="premise-item">
+                <input type="checkbox" data-edit-premise value="${escapeHtml(candidate.id)}" ${node.premises.includes(candidate.id) ? 'checked' : ''}>
+                ${escapeHtml(shortText(candidate.title, 32))}
+              </label>
+            `).join('')}
+          </div>
+          <div class="form-hint">第一层节点新增前提后，只有当前提本身验证通过，系统实际层级才会自动进入第二层。</div>
         </div>
       `;
 
@@ -663,10 +728,11 @@ export class PanelController {
         const title = (this.panelBody.querySelector<HTMLInputElement>('#editTitle')?.value ?? '').trim() || node.title;
         const type = (this.panelBody.querySelector<HTMLSelectElement>('#editType')?.value ?? node.type) as KnowledgeNodeType;
         const reasoning = (this.panelBody.querySelector<HTMLTextAreaElement>('#editReasoning')?.value ?? '').trim();
+        const premises = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-edit-premise]:checked')).map(input => input.value);
         try {
-          await this.onEditNode(id, { title, type, reasoning });
+          await this.onEditNode(id, { title, type, reasoning, premises });
           this.editMode = false;
-          this.showToast('节点已更新');
+          this.showToast('节点已更新；层级将按有效前提自动重算');
           this.openNodePanel(id);
         } catch (error) {
           this.showOperationError(error);
@@ -692,8 +758,7 @@ export class PanelController {
       this.showToast('节点已标记为争议中');
     });
 
-
-this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
+    this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
       el.addEventListener('click', () => {
         const jumpId = el.dataset.jump;
         if (!jumpId) return;
@@ -717,16 +782,22 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
   }
 
   private updateCreateMode(): void {
-    const derived = this.isDerivedType(this.fType.value as KnowledgeNodeType);
-    this.fReasoningField.hidden = !derived;
-    this.fPremisesField.hidden = !derived;
-    this.fLogicRuleField.hidden = !derived;
+    const layer = isUserKnowledgeLayer(this.fType.value) ? this.fType.value : 'inner';
+    const allowsPremises = layer !== 'inner';
+    this.fReasoningField.hidden = !allowsPremises;
+    this.fPremisesField.hidden = !allowsPremises;
+    this.fLogicRuleField.hidden = !allowsPremises;
+    if (!allowsPremises) {
+      this.fPremises.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked').forEach(input => {
+        input.checked = false;
+      });
+    }
   }
 
   private renderLogicRuleList(): void {
     const rules = this.getNodes().filter(node => node.type === 'logic-symbol' && node.status !== 'falsified');
     this.fLogicRule.innerHTML = [
-      '<option value="">请选择逻辑符号</option>',
+      '<option value="">不指定正式规则</option>',
       ...rules.map(rule => `<option value="${escapeHtml(rule.id)}">${escapeHtml(rule.title)}</option>`),
     ].join('');
   }
@@ -1028,7 +1099,7 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
   }
 
   private renderPremiseList(): void {
-    const nodes = this.getNodes().filter(node => node.type !== 'reasoning' && node.type !== 'logic-symbol');
+    const nodes = this.getNodes().filter(node => node.type !== 'reasoning' && node.type !== 'logic-symbol' && node.status !== 'falsified');
     this.fPremises.innerHTML = nodes.map(n => {
       const checked = this.prefillPremise === n.id ? 'checked' : '';
       return `
@@ -1042,7 +1113,11 @@ this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
 
   private bindPremiseChecks(): void {
     this.fPremises.addEventListener('change', () => {
-      // keep hook for future validation
+      if (this.fType.value === 'inner' && this.fPremises.querySelector('input:checked')) {
+        this.fType.value = 'middle';
+        this.updateCreateMode();
+        this.showToast('选择前提后已切换到第二层；第一层只能作为知识链起点。');
+      }
     });
   }
 

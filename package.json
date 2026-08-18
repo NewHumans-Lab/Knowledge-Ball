@@ -7,9 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "npm run test:domain && npm run test:protocol && npm run test:protocol-adversarial && npm run test:knowledge-edits && npm run test:vote-verdict && npm run test:demo && npm run test:bootstrap && npm run test:edit-ui && npm run test:persistence && npm run test:sync && npm run test:architecture && npm run test:auth && npm run test:scene && npm run test:core-sun && npm run test:mobile",
-    "test:domain": "npx esbuild src/domain/KnowledgeModel.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-model.mjs && node .test-dist/knowledge-model.mjs && npx esbuild src/domain/KnowledgeMigration.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-migration.mjs && node .test-dist/knowledge-migration.mjs",
+    "test:domain": "npx esbuild src/domain/KnowledgeModel.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-model.mjs && node .test-dist/knowledge-model.mjs && npx esbuild src/domain/KnowledgeMigration.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-migration.mjs && node .test-dist/knowledge-migration.mjs && npx esbuild src/domain/KnowledgeLayerPolicy.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-layer-policy.mjs && node .test-dist/knowledge-layer-policy.mjs",
     "test:persistence": "rm -rf .test-dist && tsc -p tsconfig.test.json --noEmit && npx esbuild src/persistence/PersistenceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/persistence-regression.mjs && node .test-dist/persistence-regression.mjs",
-    "test:scene": "npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/scene-regression.mjs && node .test-dist/scene-regression.mjs",
+    "test:scene": "npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/scene-regression.mjs && node .test-dist/scene-regression.mjs && npx esbuild src/ui/scene/KnowledgeLayerSceneRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-layer-scene.mjs && node .test-dist/knowledge-layer-scene.mjs",
     "test:core-sun": "npx esbuild src/ui/scene/CoreSunVisualRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/core-sun-regression.mjs && node .test-dist/core-sun-regression.mjs",
     "test:mobile": "npx esbuild src/mobile/MobileShellRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/mobile-shell-regression.mjs && node .test-dist/mobile-shell-regression.mjs",
     "test:download": "node scripts/verify-android-download.mjs",
@@ -30,8 +30,8 @@
     "test:demo": "npx esbuild src/demo/seedDemoKnowledge.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/demo-knowledge-regression.mjs && node .test-dist/demo-knowledge-regression.mjs",
     "test:sync": "npx esbuild src/sync/SyncRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/sync-regression.mjs && node .test-dist/sync-regression.mjs",
     "test:architecture": "node scripts/verify-scheme7-architecture.mjs && node scripts/verify-energy-migration.mjs && node scripts/verify-account-ui.mjs && node scripts/verify-issue45-regressions.mjs",
-    "test:auth": "npx esbuild src/auth/AuthClientRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/auth-regression.mjs && node .test-dist/auth-regression.mjs"
-    ,"test:browser-mobile": "node scripts/verify-mobile-browser.mjs",
+    "test:auth": "npx esbuild src/auth/AuthClientRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/auth-regression.mjs && node .test-dist/auth-regression.mjs",
+    "test:browser-mobile": "node scripts/verify-mobile-browser.mjs",
     "test:issue51-browser": "node scripts/verify-issue51-browser.mjs",
     "test:bootstrap": "npx esbuild src/bootstrap/RemoteFirstBootstrap.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/remote-first-bootstrap.mjs && node .test-dist/remote-first-bootstrap.mjs"
   },

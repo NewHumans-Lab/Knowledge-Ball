@@ -83,10 +83,12 @@ try{
 
     // Gate B: calibrate semantic colors around four real on-screen nodes. The local peak checks are
     // deliberate: hue alone is insufficient because a correctly-hued node can still be visually too dark.
+    // Layer color is now controlled by effectiveLayer, not by NodeType, so the calibration must exercise
+    // the same canonical layer input consumed by the production scene.
     const calibrationIds=targets.slice(0,4).map(target=>target.id);
     const originals=await page.evaluate(ids=>{
       const original=[];
-      ids.forEach(id=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;original.push({id,type:node.type,status:node.status,mastery:node.mastery});node.type='reasoning';node.status='verified';node.mastery='none';});
+      ids.forEach(id=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;original.push({id,type:node.type,status:node.status,mastery:node.mastery,effectiveLayer:node.effectiveLayer});node.type='reasoning';node.status='verified';node.mastery='none';});
       window.__debug.scene.markDirty();window.__debug.scene.start();return original;
     },calibrationIds);
     await page.waitForTimeout(180);
@@ -97,8 +99,8 @@ try{
     const control=await analyzeScreenshot(page,controlScreenshot,toLocalRegions(controlPoints));
 
     await page.evaluate(ids=>{
-      const specs=[['definition','verified'],['theorem','verified'],['hypothesis','verified'],['reasoning','verified']];
-      ids.forEach((id,index)=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;node.type=specs[index][0];node.status=specs[index][1];node.mastery='none';});
+      const specs=[['definition','verified','inner'],['theorem','verified','middle'],['hypothesis','verified','outer'],['reasoning','verified','middle']];
+      ids.forEach((id,index)=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;node.type=specs[index][0];node.status=specs[index][1];node.effectiveLayer=specs[index][2];node.mastery='none';});
       window.__debug.scene.markDirty();window.__debug.scene.start();
     },calibrationIds);
     await page.waitForTimeout(180);
@@ -124,7 +126,7 @@ try{
     assert.ok(palette.regions[2].violetPeak>=.55,`outer violet must stay bright in the real composite (peak=${palette.regions[2].violetPeak})`);
     assert.ok(palette.white>=100,'semantic calibration must retain the whole-frame structural white language');
     assert.ok(palette.greenDominant<=5,'semantic calibration must not reintroduce green/teal contamination');
-    await page.evaluate(original=>{for(const saved of original){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;}}window.__debug.scene.markDirty();window.__debug.scene.start();},originals);
+    await page.evaluate(original=>{for(const saved of original){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;node.effectiveLayer=saved.effectiveLayer;}}window.__debug.scene.markDirty();window.__debug.scene.start();},originals);
     await page.waitForTimeout(100);
     await page.evaluate(()=>window.__debug.scene.stop());
 

@@ -1,4 +1,5 @@
 import type { NodeType, NodeStatus, Mastery } from '../event/Event';
+import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
 
 export interface GraphNode {
   id: string;
@@ -8,6 +9,8 @@ export interface GraphNode {
   mastery: Mastery;
   reasoning: string;
   premises: string[];
+  /** User-declared semantic layer. Historical nodes may omit this and use compatibility inference. */
+  declaredLayer?: UserKnowledgeLayer;
   hidden?: boolean;
   aliases?: string[];
   supersededBy?: string;

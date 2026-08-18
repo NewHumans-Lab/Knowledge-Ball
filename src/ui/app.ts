@@ -3,13 +3,16 @@ import { validateDomainEventAgainstState } from '../event/EventValidation';
 import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjection';
 import { nodeList } from '../state/GraphState';
 import type { GraphNode } from '../graph/Node';
+import {
+  declaredLayerForNode,
+  effectiveLayerForNode,
+  type UserKnowledgeLayer,
+} from '../domain/KnowledgeLayerPolicy';
 
-import { createNode as cmdCreateNode } from '../command/CreateNode';
 import { editNode as cmdEditNode } from '../command/EditNode';
 import { resolveNode as cmdResolveNode } from '../command/ResolveNode';
 import { setMastery as cmdSetMastery } from '../command/SetMastery';
 import { disputeNode as cmdDisputeNode } from '../command/DisputeNode';
-import { suspendNode as cmdSuspendNode } from '../command/SuspendNode';
 import { executeKnowledgeEdit } from '../command/KnowledgeEdit';
 import {
   canonicalKnowledgeText,
@@ -25,7 +28,6 @@ import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
 
 import {
   TWIN_META,
-  type KnowledgeMastery,
   type KnowledgeNodeType,
 } from './config/KnowledgeUiConfig';
 
@@ -122,6 +124,9 @@ function syncNodesFromProjection(): void {
 
 function renderNodeFromDomain(dn: GraphNode, prev?: KnowledgeSceneNode): KnowledgeSceneNode {
   const meta = (TWIN_META as Record<string, { twinGroup: string; sharedTitle: string }>)[dn.id] ?? {};
+  const declaredLayer = declaredLayerForNode(dn);
+  const effectiveLayer = effectiveLayerForNode(dn, projection.state.nodesById);
+  const keepPlacement = (prev?.effectiveLayer ?? prev?.layer) === effectiveLayer;
   return {
       id: dn.id,
       title: dn.title,
@@ -130,14 +135,16 @@ function renderNodeFromDomain(dn: GraphNode, prev?: KnowledgeSceneNode): Knowled
       mastery: dn.mastery,
       reasoning: dn.reasoning,
       premises: dn.premises,
+      declaredLayer,
+      effectiveLayer,
       logicRuleId: dn.logicRuleId,
       aliases: dn.aliases,
       semanticKey: dn.semanticKey,
       ...meta,
-      pos: prev?.pos,
-      vel: prev?.vel,
-      homePos: prev?.homePos,
-      layer: prev?.layer,
+      pos: keepPlacement ? prev?.pos : undefined,
+      vel: keepPlacement ? prev?.vel : undefined,
+      homePos: keepPlacement ? prev?.homePos : undefined,
+      layer: keepPlacement ? prev?.layer : undefined,
   };
 }
 
@@ -147,7 +154,9 @@ function syncAddedRenderNodes(event: Extract<PublicKnowledgeEvent, { type: 'Know
     : [event.payload.edit.reasoning.id, event.payload.edit.conclusion.id];
   for (const id of ids) {
     const node = projection.state.nodesById[id];
-    if (node && !node.hidden) renderNodes.push(renderNodeFromDomain(node));
+    if (node && !node.hidden && !renderNodes.some(existing => existing.id === id)) {
+      renderNodes.push(renderNodeFromDomain(node));
+    }
   }
 }
 
@@ -167,6 +176,8 @@ function getPanelNodeById(id: string): PanelNodeSummary | null {
     mastery: n.mastery,
     reasoning: n.reasoning,
     premises: n.premises,
+    declaredLayer: n.declaredLayer,
+    effectiveLayer: n.effectiveLayer,
     twinGroup: n.twinGroup,
     sharedTitle: n.sharedTitle,
     logicRuleId: n.logicRuleId,
@@ -184,6 +195,8 @@ function getPanelNodes(): PanelNodeSummary[] {
     mastery: n.mastery,
     reasoning: n.reasoning,
     premises: n.premises,
+    declaredLayer: n.declaredLayer,
+    effectiveLayer: n.effectiveLayer,
     twinGroup: n.twinGroup,
     sharedTitle: n.sharedTitle,
     logicRuleId: n.logicRuleId,
@@ -215,48 +228,70 @@ function updateSceneOverlayState(visible: boolean): void {
   scene.setOverlayVisible(visible);
 }
 
-async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
-  const conclusionId = generateNodeId();
-  const atomic = ['axiom', 'definition', 'fact', 'logic-symbol'].includes(payload.type);
-  const edit: AddEdit = atomic
-    ? {
-        kind: 'add',
-        mode: 'atomic',
-        node: {
-          id: conclusionId,
-          title: payload.title,
-          type: payload.type,
-          reasoning: payload.description,
-        },
-      }
-    : {
-        kind: 'add',
-        mode: 'theory',
-        requiredPremiseIds: payload.premises,
-        reasoning: {
-          id: generateNodeId(),
-          title: `推理：${payload.title} · ${conclusionId.slice(-6)}`,
-          type: 'reasoning',
-          reasoning: payload.reasoning ?? '',
-          logicRuleId: payload.logicRuleId,
-        },
-        conclusion: {
-          id: conclusionId,
-          title: payload.title,
-          type: payload.type,
-          reasoning: payload.description,
-        },
-      };
-  currentPanelId = null;
-  try {
-    await applyKnowledgeEdit(edit);
-  } catch (error) {
-    throw error;
-  }
+function internalAtomicTypeForLayer(layer: UserKnowledgeLayer): KnowledgeNodeType {
+  return layer === 'middle' ? 'axiom' : 'fact';
 }
 
-async function applyKnowledgeEdit(edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit): Promise<void> {
-  await executeKnowledgeEdit(store, projection, edit, commitPublicEvent);
+function internalConclusionTypeForLayer(layer: Exclude<UserKnowledgeLayer, 'inner'>): KnowledgeNodeType {
+  return layer === 'middle' ? 'theorem' : 'hypothesis';
+}
+
+async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
+  if (payload.layer === 'inner' && payload.premises.length > 0) {
+    throw new Error('第一层只能作为知识链起点，不能直接带前提');
+  }
+  const conclusionId = generateNodeId();
+  const hasPremises = payload.premises.length > 0;
+  let edit: AddEdit;
+  let declaredLayers: Record<string, UserKnowledgeLayer>;
+
+  if (!hasPremises) {
+    edit = {
+      kind: 'add',
+      mode: 'atomic',
+      node: {
+        id: conclusionId,
+        title: payload.title,
+        type: internalAtomicTypeForLayer(payload.layer),
+        reasoning: payload.description,
+      },
+    };
+    declaredLayers = { [conclusionId]: payload.layer };
+  } else {
+    if (payload.layer === 'inner') throw new Error('第一层不能建立派生链');
+    const reasoningId = generateNodeId();
+    edit = {
+      kind: 'add',
+      mode: 'theory',
+      requiredPremiseIds: payload.premises,
+      reasoning: {
+        id: reasoningId,
+        title: `推理：${payload.title} · ${conclusionId.slice(-6)}`,
+        type: 'reasoning',
+        reasoning: payload.reasoning ?? '',
+        logicRuleId: payload.logicRuleId,
+      },
+      conclusion: {
+        id: conclusionId,
+        title: payload.title,
+        type: internalConclusionTypeForLayer(payload.layer),
+        reasoning: payload.description,
+      },
+    };
+    declaredLayers = {
+      [reasoningId]: payload.layer,
+      [conclusionId]: payload.layer,
+    };
+  }
+  currentPanelId = null;
+  await applyKnowledgeEdit(edit, declaredLayers);
+}
+
+async function applyKnowledgeEdit(
+  edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit,
+  declaredLayers?: Readonly<Record<string, UserKnowledgeLayer>>,
+): Promise<void> {
+  await executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers);
 }
 
 async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<void> {
@@ -269,11 +304,17 @@ async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<
   const duplicateDescription = nodeList(projection.state).find(node => node.id !== id && canonicalKnowledgeText(node.reasoning) === description);
   if (duplicateTitle) throw new Error(`节点标题已被“${duplicateTitle.title}”占用，包括隐藏历史节点`);
   if (duplicateDescription) throw new Error(`节点描述已被“${duplicateDescription.title}”占用，包括隐藏历史节点`);
+  const premises = payload.premises ? [...new Set(payload.premises)] : [...current.premises];
+  if (premises.includes(id)) throw new Error('知识节点不能把自己作为前提');
+  for (const premiseId of premises) {
+    if (!projection.state.nodesById[premiseId]) throw new Error(`前提不存在: ${premiseId}`);
+  }
   await cmdEditNode(store, {
     nodeId: id,
     title: payload.title,
     nodeType: payload.type,
     reasoning: payload.reasoning,
+    premises,
   }, commitPublicEvent);
 }
 
@@ -503,6 +544,10 @@ store.subscribe((event) => {
   projection.apply(event);
   if (event.type === 'KnowledgeAdded') syncAddedRenderNodes(event);
   else syncNodesFromProjection();
+  // A premise status change can alter another node's effective layer, so all
+  // render metadata is recomputed after every event. Positions survive only
+  // when the canonical effective layer is unchanged.
+  syncNodesFromProjection();
   scene.markDirty();
 
   if (currentPanelId) panel.openNodePanel(currentPanelId);
@@ -542,6 +587,11 @@ if (depthLimitInput) {
 
    depthLimitInput.addEventListener('input', applyDepthLimit);
   applyDepthLimit();
+}
+
+const layerNote = qOpt<HTMLElement>('.legend .layer-note');
+if (layerNote) {
+  layerNote.innerHTML = '第一层：基础起点（有已验证前提后自动进入第二层）<br>第二层：语义关系与严谨推理<br>第三层：不确定、概率、预测、观点、价值与争议';
 }
 
 const accountButton = qOpt<HTMLButtonElement>('.avatar-btn');
