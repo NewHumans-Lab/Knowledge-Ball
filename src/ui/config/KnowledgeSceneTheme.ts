@@ -14,12 +14,12 @@ export const KNOWLEDGE_SCENE_THEME = {
     sphereWidthSegments: 24,
     sphereHeightSegments: 16,
     matcapLight: 255,
-    // The previous 255/220/214 ramp rendered at only ~5% regional contrast on the
-    // phone screenshot. Widen the neutral luminance ramp so the rendered spheres
-    // can be calibrated into the requested 15-20% visible light/dark difference
-    // without shifting semantic hue.
-    matcapMid: 205,
-    matcapDark: 180,
+    // PR #76's first calibration (255/205/180) rendered at only ~8% regional
+    // contrast on the real 390px mobile WebGL artifact. This stronger neutral ramp
+    // is calibrated against that same artifact toward the requested 15-20% visible
+    // light/dark difference while preserving semantic hue.
+    matcapMid: 160,
+    matcapDark: 120,
     selectedEmissiveIntensity: 0.30,
     baseEmissiveIntensity: 0.08,
   },
