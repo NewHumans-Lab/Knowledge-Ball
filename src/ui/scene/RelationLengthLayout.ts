@@ -29,7 +29,6 @@ const DEFAULT_PASSES = 4;
 const GRID_SCALE = 1.6;
 const LOCAL_CELL_RADIUS = 2;
 const MAX_BUCKET_SCAN = 16;
-const CURVE_SEGMENTS = 18;
 const IMPROVEMENT_EPSILON = 1e-6;
 
 function layerOf(node: RelationLayoutNode): KnowledgeLayer {
@@ -92,44 +91,10 @@ export function collectRelationLayoutEdges(nodes: RelationLayoutNode[]): Relatio
   return edges;
 }
 
-/** Matches the 18-segment quadratic Bézier used by KnowledgeScene.updateLine. */
+/** Matches the straight 3D segment rendered by KnowledgeScene.updateLine. */
 export function displayedRelationLength(a: THREE.Vector3, b: THREE.Vector3): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const dz = b.z - a.z;
-  const direct = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  if (!Number.isFinite(direct)) return Number.POSITIVE_INFINITY;
-
-  const midpointX = (a.x + b.x) * 0.5;
-  const midpointY = (a.y + b.y) * 0.5;
-  const midpointZ = (a.z + b.z) * 0.5;
-  const xy = Math.sqrt(dx * dx + dy * dy);
-  const bend = Math.min(direct * 0.07, 8);
-  const controlX = xy > 1e-12 ? midpointX + (-dy / xy) * bend : midpointX;
-  const controlY = xy > 1e-12 ? midpointY + (dx / xy) * bend : midpointY;
-  const controlZ = midpointZ;
-
-  let previousX = a.x;
-  let previousY = a.y;
-  let previousZ = a.z;
-  let total = 0;
-
-  for (let segment = 1; segment <= CURVE_SEGMENTS; segment++) {
-    const t = segment / CURVE_SEGMENTS;
-    const u = 1 - t;
-    const x = u * u * a.x + 2 * u * t * controlX + t * t * b.x;
-    const y = u * u * a.y + 2 * u * t * controlY + t * t * b.y;
-    const z = u * u * a.z + 2 * u * t * controlZ + t * t * b.z;
-    const sx = x - previousX;
-    const sy = y - previousY;
-    const sz = z - previousZ;
-    total += Math.sqrt(sx * sx + sy * sy + sz * sz);
-    previousX = x;
-    previousY = y;
-    previousZ = z;
-  }
-
-  return total;
+  const distance = a.distanceTo(b);
+  return Number.isFinite(distance) ? distance : Number.POSITIVE_INFINITY;
 }
 
 function positionMap(nodes: RelationLayoutNode[]): Map<string, THREE.Vector3> {
@@ -382,8 +347,8 @@ function candidateTraversalAssignment(
  * this deliberately avoids O(n²) pair swaps. Each pass traverses the complete
  * historical relation graph once, grows high-degree-connected regions through
  * BFS, and assigns each node to a nearby free slot using a bounded spatial hash.
- * A candidate pass is committed only when the actual displayed Bézier total gets
- * smaller. With a fixed small pass count, expected work is O(k(n + m)).
+ * A candidate pass is committed only when the actual displayed straight 3D line
+ * total gets smaller. With a fixed small pass count, expected work is O(k(n + m)).
  */
 export function optimizeRelationLengthLayout(
   nodes: RelationLayoutNode[],
