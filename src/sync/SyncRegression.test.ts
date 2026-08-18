@@ -112,7 +112,7 @@ remote.online = true;
 await a.engine.sync();
 
 const refreshed = client(remote);
-assert.equal(refreshed.projection.state.nodesById.shared, undefined, 'fresh runtime starts without persisted public knowledge');
+assert.equal(Object.prototype.hasOwnProperty.call(refreshed.projection.state.nodesById, 'shared'), false, 'fresh runtime starts without persisted public knowledge');
 assert.equal(refreshed.engine.currentCursor(), '0', 'fresh runtime cursor is memory-only and starts at zero');
 await refreshed.engine.sync();
 assert.equal(refreshed.projection.state.nodesById.shared?.title, 'B edited', 'refresh reconstructs public state from the server');
@@ -140,7 +140,7 @@ const racingRemote = new ConflictOnceStream();
 const racingClient = client(racingRemote);
 await assert.rejects(addAtomic(racingClient, 'loser', 'Loser'), RemoteHeadConflictError);
 assert.equal(racingClient.projection.state.nodesById.winner?.title, 'Winner', 'conflict recovery pulls the actual remote winner');
-assert.equal(racingClient.projection.state.nodesById.loser, undefined, 'conflicted local proposal is never applied as truth');
+assert.equal(Object.prototype.hasOwnProperty.call(racingClient.projection.state.nodesById, 'loser'), false, 'conflicted local proposal is never applied as truth');
 await addAtomic(racingClient, 'loser', 'Loser');
 assert.equal(racingClient.projection.state.nodesById.loser?.title, 'Loser', 'explicit retry can commit against refreshed server state');
 
@@ -226,7 +226,7 @@ const restoredMastery: DomainEvent = {
   payload: { nodeId: 'private-test', mastery: 'touched' },
 };
 const other = client(privacyRemote, new MemoryPersistence([restoredMastery]));
-assert.equal(other.projection.state.nodesById['private-test'], undefined, 'personal mastery can restore before remote public graph exists');
+assert.equal(Object.prototype.hasOwnProperty.call(other.projection.state.nodesById, 'private-test'), false, 'personal mastery can restore before remote public graph exists');
 await other.engine.sync();
 assert.equal(other.projection.state.nodesById['private-test']?.mastery, 'touched', 'remote node hydration reapplies previously restored personal mastery');
 
