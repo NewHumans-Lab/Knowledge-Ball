@@ -14,7 +14,7 @@ assert(/edgeMap\[key\]\.userData\.edgeEndpoints\s*=\s*\[n\.id,\s*twin\.id\]/.tes
 assert(/const\s+visibleIds\s*=\s*new Set<string>\(\)/.test(sceneSource), 'personal visibility must derive one canonical visible-node set');
 assert(/\.userData\.geometryVisible\s*=\s*true/.test(sceneSource), 'edge geometry validity must be stored independently from Personal visibility');
 assert(/edge\.visible\s*=\s*edge\.userData\.geometryVisible\s*===\s*true\s*&&\s*visibleIds\.has\(endpoints\[0\]\)\s*&&\s*visibleIds\.has\(endpoints\[1\]\)/.test(sceneSource), 'a rendered edge must require valid geometry and two visible endpoints');
-assert(/setHideUntouched:\s*enabled\s*=>\s*\{\s*hideUntouched\s*=\s*enabled;\s*largeGraphDirty\s*=\s*true;\s*\}/.test(sceneSource), 'Personal toggles must invalidate the scene without synchronous all-edge reconstruction');
+assert(/setHideUntouched:\s*enabled\s*=>\s*\{\s*hideUntouched\s*=\s*enabled;\s*applyVisibility\(\);\s*largeGraphDirty\s*=\s*true;\s*\}/.test(sceneSource), 'Personal toggles must apply endpoint visibility immediately and then invalidate LOD membership');
 assert(!/setHideUntouched:[^}]*syncEdges\(/s.test(sceneSource), 'Personal toggles must never synchronously rebuild all edges');
 
 const visibilityMatch = /const\s+applyVisibility\s*=/.exec(sceneSource);
