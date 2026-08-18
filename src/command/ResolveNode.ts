@@ -1,11 +1,13 @@
 import { fingerprint } from '../event/Command';
 import { CURRENT_SCHEMA_VERSION, type KnowledgeStatusChangedEvent } from '../event/Event';
+import type { EventCommitter } from '../event/EventCommitter';
 import type { EventStore } from '../event/EventStore';
 import type { GraphState } from '../state/GraphState';
 
 export async function resolveNode(
   store: EventStore<GraphState>,
-  payload: { nodeId: string }
+  payload: { nodeId: string },
+  committer?: EventCommitter,
 ): Promise<KnowledgeStatusChangedEvent> {
   const edit = { kind: 'status' as const, nodeId: payload.nodeId, status: 'verified' as const };
   const id = await fingerprint('KnowledgeStatusChanged', { edit });
@@ -17,6 +19,7 @@ export async function resolveNode(
     timestamp: Date.now(),
     payload: { edit },
   };
-  store.append(event);
+  const accepted = committer ? await committer(event) : store.append(event);
+  if (!accepted) throw new Error(`Duplicate knowledge status event: ${id}`);
   return event;
 }

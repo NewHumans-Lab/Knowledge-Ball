@@ -1,4 +1,4 @@
-import type { DomainEvent } from '../event/Event';
+import type { DomainEvent, Mastery } from '../event/Event';
 import type { GraphState } from '../state/GraphState';
 import { emptyGraphState, nodeList } from '../state/GraphState';
 import type { Projection } from './Projection';
@@ -15,12 +15,23 @@ export function setCascadeDepthLimit(n: number | null) { cascadeDepthLimit = n ?
 
 export class GraphProjection implements Projection<GraphState> {
   state: GraphState = emptyGraphState();
+  private readonly pendingMasteryByNodeId = new Map<string, Mastery>();
 
-  reset(seed: GraphState): void { this.state = seed; }
+  reset(seed: GraphState): void {
+    this.pendingMasteryByNodeId.clear();
+    this.state = seed;
+  }
 
   hydrate(snapshotState: GraphState | null, eventsSinceSnapshot: DomainEvent[]): void {
+    this.pendingMasteryByNodeId.clear();
     this.state = snapshotState ? structuredClone(snapshotState) : emptyGraphState();
     eventsSinceSnapshot.forEach(event => this.apply(event));
+  }
+
+  private takePendingMastery(nodeId: string): Mastery {
+    const mastery = this.pendingMasteryByNodeId.get(nodeId) ?? 'none';
+    this.pendingMasteryByNodeId.delete(nodeId);
+    return mastery;
   }
 
   private applyKnowledgeEdit(edit: KnowledgeEdit): void {
@@ -33,7 +44,7 @@ export class GraphProjection implements Projection<GraphState> {
           title: draft.title.trim(),
           type: draft.type,
           status: 'pending',
-          mastery: 'none',
+          mastery: this.takePendingMastery(draft.id),
           reasoning: draft.reasoning.trim(),
           premises: [...new Set(premises)],
           hidden: false,
@@ -87,7 +98,7 @@ export class GraphProjection implements Projection<GraphState> {
           title: p.title,
           type: p.nodeType,
           status: p.initialStatus ?? 'pending',
-          mastery: 'none',
+          mastery: this.takePendingMastery(p.nodeId),
           reasoning: p.reasoning,
           premises: [...p.premises],
           hidden: p.hidden ?? false,
@@ -134,7 +145,12 @@ export class GraphProjection implements Projection<GraphState> {
         break;
       }
       case 'KnowledgeNodeEdited': { const n = this.state.nodesById[event.payload.edit.nodeId]; if(n){const p=event.payload.edit;if(p.title!==undefined)n.title=p.title;if(p.nodeType!==undefined)n.type=p.nodeType;if(p.reasoning!==undefined)n.reasoning=p.reasoning;if(p.premises!==undefined)n.premises=[...p.premises];}break; }
-      case 'NodeMasterySet': { const n = this.state.nodesById[event.payload.nodeId]; if (n) n.mastery = event.payload.mastery; break; }
+      case 'NodeMasterySet': {
+        const n = this.state.nodesById[event.payload.nodeId];
+        if (n) n.mastery = event.payload.mastery;
+        else this.pendingMasteryByNodeId.set(event.payload.nodeId, event.payload.mastery);
+        break;
+      }
       case 'KnowledgeAdded':
       case 'KnowledgeNegated':
       case 'KnowledgeDecomposed':

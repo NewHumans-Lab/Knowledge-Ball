@@ -11,6 +11,11 @@ export interface KnowledgePersistenceOptions {
   storage?: StorageLike | null;
 }
 
+export interface FilteredKnowledgePersistenceOptions<TEvent extends KnowledgeEvent> extends KnowledgePersistenceOptions {
+  legacyStorageKey?: string;
+  retain: (event: TEvent) => boolean;
+}
+
 interface PersistedEnvelope<TEvent> {
   schemaVersion: 1;
   savedAt: string;
@@ -118,5 +123,45 @@ export class KnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent
     } catch {
       return;
     }
+  }
+}
+
+/**
+ * Persists only the caller-selected event scope. The optional legacy key is
+ * read only as a compatibility source; it is never cleared or rewritten.
+ * This lets production stop trusting the historical mixed public/local event
+ * cache without destroying personal state that used to live beside it.
+ */
+export class FilteredKnowledgePersistence<TEvent extends KnowledgeEvent = KnowledgeEvent> {
+  private readonly current: KnowledgePersistence<TEvent>;
+  private readonly legacy: KnowledgePersistence<TEvent> | null;
+  private readonly retain: (event: TEvent) => boolean;
+
+  constructor(options: FilteredKnowledgePersistenceOptions<TEvent>) {
+    this.retain = options.retain;
+    this.current = new KnowledgePersistence<TEvent>({ storageKey: options.storageKey, storage: options.storage });
+    this.legacy = options.legacyStorageKey
+      ? new KnowledgePersistence<TEvent>({ storageKey: options.legacyStorageKey, storage: options.storage })
+      : null;
+  }
+
+  loadLocal(): TEvent[] {
+    const current = this.current.loadLocal().filter(this.retain);
+    if (current.length) return current;
+    const legacy = this.legacy?.loadLocal().filter(this.retain) ?? [];
+    if (legacy.length) this.current.saveLocal(legacy);
+    return legacy;
+  }
+
+  saveLocal(events: TEvent[]): void {
+    this.current.saveLocal(events.filter(this.retain));
+  }
+
+  shouldPersist(event: TEvent): boolean {
+    return this.retain(event);
+  }
+
+  clearLocal(): void {
+    this.current.clearLocal();
   }
 }

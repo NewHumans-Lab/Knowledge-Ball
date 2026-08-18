@@ -24,8 +24,11 @@ export class SupabaseSyncAdapter implements SyncAdapter {
       const params = new URLSearchParams({ select: 'sequence,envelope', sequence: `gt.${head}`, order: 'sequence.asc', limit: String(this.pageSize) });
       const rows = await this.api<EventRow[]>(`/rest/v1/public_knowledge_events?${params}`);
       for (const row of rows) {
+        if (!isPublicKnowledgeEvent(row.envelope)) {
+          throw new Error(`public_knowledge_events contains non-public event at sequence ${row.sequence}`);
+        }
         head = Math.max(head, row.sequence);
-        if (isPublicKnowledgeEvent(row.envelope)) events.push(row.envelope);
+        events.push(row.envelope);
       }
       if (rows.length < this.pageSize) break;
     }

@@ -1,5 +1,6 @@
 import { fingerprint } from '../event/Command';
 import { CURRENT_SCHEMA_VERSION, type KnowledgeNodeEditedEvent, type NodeType } from '../event/Event';
+import type { EventCommitter } from '../event/EventCommitter';
 import type { EventStore } from '../event/EventStore';
 import type { GraphState } from '../state/GraphState';
 
@@ -11,7 +12,11 @@ export interface EditNodePayload {
   premises?: string[];
 }
 
-export async function editNode(store: EventStore<GraphState>, payload: EditNodePayload): Promise<KnowledgeNodeEditedEvent> {
+export async function editNode(
+  store: EventStore<GraphState>,
+  payload: EditNodePayload,
+  committer?: EventCommitter,
+): Promise<KnowledgeNodeEditedEvent> {
   const edit = { kind: 'update' as const, ...payload };
   const id = await fingerprint('KnowledgeNodeEdited', { edit });
   const event: KnowledgeNodeEditedEvent = {
@@ -22,6 +27,7 @@ export async function editNode(store: EventStore<GraphState>, payload: EditNodeP
     timestamp: Date.now(),
     payload: { edit },
   };
-  store.append(event);
+  const accepted = committer ? await committer(event) : store.append(event);
+  if (!accepted) throw new Error(`Duplicate knowledge edit event: ${id}`);
   return event;
 }

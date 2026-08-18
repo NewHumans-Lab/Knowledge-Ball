@@ -4,7 +4,11 @@ import { DomainEventValidationError, validateDomainEventEnvelope } from './Event
 
 export interface Snapshot<TState> { upToSeq: number; schemaVersion: number; state: TState; takenAt: number; }
 export interface StoreListener { (event: DomainEvent): void; }
-export interface EventPersistence { loadLocal(): DomainEvent[]; saveLocal(events: DomainEvent[]): void; }
+export interface EventPersistence {
+  loadLocal(): DomainEvent[];
+  saveLocal(events: DomainEvent[]): void;
+  shouldPersist?(event: DomainEvent): boolean;
+}
 const SNAPSHOT_EVERY_N_EVENTS = 5000;
 const DEFAULT_STORAGE_KEY = 'knowledge-ball.events.v1';
 
@@ -45,7 +49,7 @@ export class EventStore<TState> {
     return this.appendInternal(event, true);
   }
 
-  /** Append an event whose state-dependent validation was already completed by its command. */
+  /** Append an event whose state-dependent validation was already completed by its command or authoritative server. */
   appendValidated(event: DomainEvent): boolean {
     return this.appendInternal(event, false);
   }
@@ -61,7 +65,7 @@ export class EventStore<TState> {
     this.events.push(stamped);
     this.idIndex.add(event.id);
     this.listeners.forEach(listener => listener(stamped));
-    this.persistence.saveLocal(this.events);
+    if (this.persistence.shouldPersist?.(stamped) ?? true) this.persistence.saveLocal(this.events);
     if (this.events.length % SNAPSHOT_EVERY_N_EVENTS === 0) this.takeSnapshot();
     return true;
   }
