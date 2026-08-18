@@ -61,8 +61,6 @@ for (const [layer, count] of [['inner', 7], ['middle', 14], ['outer', 37]] as co
   assert(nearestNeighbourCv(layer, count) < 0.16, `${layer} nearest-neighbour spacing is too uneven`);
 }
 
-// Hidden/falsified history is part of the occupancy set. Merely toggling visibility
-// must not move any node because the hidden node still owns the same slot.
 const visibleHistory = fixture('outer', 9, -1);
 const hiddenHistory = fixture('outer', 9, 4);
 applyUniformLayerLayout(visibleHistory);
@@ -79,11 +77,11 @@ applyUniformLayerLayout(cores);
 assert(cores.every(node => node.pos && Number.isFinite(node.pos.length())), 'core nodes must remain finite');
 
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
-const physicsStart = sceneSource.indexOf('const physics=');
-const labelsStart = sceneSource.indexOf('const labels=');
-assert(physicsStart >= 0 && labelsStart > physicsStart, 'scene physics implementation must remain discoverable');
-const physicsSource = sceneSource.slice(physicsStart, labelsStart);
-assert(physicsSource.includes('n.pos!.copy(n.homePos!)'), 'ordinary nodes must return to their fixed uniform slot');
+const physicsMatch = /const\s+physics\s*=/.exec(sceneSource);
+const labelsMatch = /const\s+labels\s*=/.exec(sceneSource);
+assert(physicsMatch && labelsMatch && labelsMatch.index > physicsMatch.index, 'scene physics implementation must remain discoverable');
+const physicsSource = sceneSource.slice(physicsMatch.index, labelsMatch.index);
+assert(/n\.pos!\.copy\(n\.homePos!\)/.test(physicsSource), 'ordinary nodes must return to their fixed uniform slot');
 assert(!physicsSource.includes('neighborCount'), 'uniform layout must not be deformed by neighbour repulsion');
 assert(!physicsSource.includes('n.premises'), 'uniform layout must not yet optimize relation-line length');
 assert(!physicsSource.includes('twinGroup'), 'uniform layout must not yet optimize twin-line length');
