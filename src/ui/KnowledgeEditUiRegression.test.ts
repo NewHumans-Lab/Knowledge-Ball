@@ -15,7 +15,12 @@ for (const id of ['fDescription', 'fReasoning', 'fPremises', 'fLogicRule', 'fTyp
 assert(panel.includes('<option value="inner">第一层 · 基础起点</option>'), 'submission UI must offer the first layer');
 assert(panel.includes('<option value="middle">第二层 · 关系与严谨推理</option>'), 'submission UI must offer the second layer');
 assert(panel.includes('<option value="outer">第三层 · 不确定与争议</option>'), 'submission UI must offer the third layer');
-assert(panel.includes("if(layer==='inner'&&premises.length>0)"), 'first-layer submission must reject premises');
+assert(
+  panel.includes("layer === 'inner'") &&
+  panel.includes('premises.length > 0') &&
+  panel.includes('第一层只能作为知识链起点，不能带前提'),
+  'first-layer submission must reject premises',
+);
 assert(panel.includes('选择前提后已切换到第二层'), 'adding a premise in the create UI must move the declaration away from first layer');
 assert(!panel.includes('理论必须选择一个已有逻辑符号'), 'logic symbols must not remain a mandatory submission gate');
 
@@ -28,7 +33,10 @@ assert(panel.includes('推理过程语义等价标识（先验证）'), 'theory 
 
 assert(app.includes('executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers)'), 'new knowledge writes must carry layer declarations through the unified server-first boundary');
 assert(app.includes('effectiveLayerForNode(dn, projection.state.nodesById)'), 'application must calculate scene layer from the canonical domain policy');
-assert(app.includes('previousEffectiveLayer === effectiveLayer'), 'scene coordinates may only be retained while the effective layer is unchanged');
+assert(
+  app.includes('prev?.effectiveLayer ?? prev?.layer') && app.includes('=== effectiveLayer'),
+  'scene coordinates may only be retained while the effective layer is unchanged',
+);
 assert(app.includes('domainNodes.filter(dn => !dn.hidden)'), 'superseded and negated history must be hidden by default');
 assert(!app.includes('onFalsifyNode:'), 'UI must not expose the old evidence-free falsification callback');
 
