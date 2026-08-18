@@ -18,7 +18,8 @@ import {
   type MergeEdit,
   type NegateEdit,
 } from '../protocol/KnowledgeEditingProtocol';
-import type { PublicKnowledgeEvent } from '../event/Event';
+import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
+import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
 import { SyncEngine } from '../sync/SyncEngine';
 import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
 
@@ -50,14 +51,18 @@ import {
   type PanelNodeSummary,
 } from './panels/PanelController';
 import { setupMobileShell } from '../mobile/MobileShell';
-import { isDemoSeedEvent, seedDemoKnowledge } from '../demo/seedDemoKnowledge';
-import { isCanonicalPublicKnowledgeEvent } from '../event/Event';
+import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
 
 const projection = new GraphProjection();
+const personalEventPersistence = new FilteredKnowledgePersistence<DomainEvent>({
+  storageKey: 'knowledge-ball.personal-events.v1',
+  legacyStorageKey: 'knowledge-ball.events.v1',
+  retain: event => event.type === 'NodeMasterySet',
+});
 const store = new EventStore(
   () => structuredClone(projection.state),
-  undefined,
+  personalEventPersistence,
   event => validateDomainEventAgainstState(event, projection.state),
 );
 let renderNodes: KnowledgeSceneNode[] = [];
@@ -66,7 +71,12 @@ let panel: PanelController;
 let interaction: InteractionController;
 let currentPanelId: string | null = null;
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
-let backgroundSyncTimer:number|null=null;
+
+async function commitPublicEvent(event: DomainEvent): Promise<boolean> {
+  if (!syncEngine) throw new Error('公共知识远程通道尚未初始化');
+  return syncEngine.commit(event);
+}
+
 const mobileSceneNodeLimit = window.matchMedia('(max-width: 640px)').matches ? 48 : Infinity;
 function getSceneNodes(): KnowledgeSceneNode[] {
   if (renderNodes.length <= mobileSceneNodeLimit) return renderNodes;
@@ -76,10 +86,6 @@ function getSceneNodes(): KnowledgeSceneNode[] {
     if (selected) visible[visible.length - 1] = selected;
   }
   return visible;
-}
-function scheduleBackgroundSync():void {
-  if(backgroundSyncTimer!==null)return;
-  backgroundSyncTimer=window.setTimeout(()=>{backgroundSyncTimer=null;void syncEngine?.sync().catch(error=>console.warn('[Knowledge-Ball] background sync deferred:',error));},0);
 }
 
 function must<T extends HTMLElement>(id: string): T {
@@ -250,7 +256,7 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
 }
 
 async function applyKnowledgeEdit(edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit): Promise<void> {
-  await executeKnowledgeEdit(store, projection, edit);
+  await executeKnowledgeEdit(store, projection, edit, commitPublicEvent);
 }
 
 async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<void> {
@@ -268,7 +274,7 @@ async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<
     title: payload.title,
     nodeType: payload.type,
     reasoning: payload.reasoning,
-  });
+  }, commitPublicEvent);
 }
 
 async function negateKnowledgeNode(id: string, payload: NegateNodePayload): Promise<void> {
@@ -377,11 +383,11 @@ async function mergeTheories(payload: MergeTheoryPayload): Promise<void> {
 }
 
 async function resolveKnowledgeNode(id: string): Promise<void> {
-  await cmdResolveNode(store, { nodeId: id });
+  await cmdResolveNode(store, { nodeId: id }, commitPublicEvent);
 }
 
 async function disputeKnowledgeNode(id: string): Promise<void> {
-  await cmdDisputeNode(store, { nodeId: id });
+  await cmdDisputeNode(store, { nodeId: id }, commitPublicEvent);
 }
 
 async function setKnowledgeMastery(id: string, mastery: 'none' | 'touched' | 'mastered'): Promise<void> {
@@ -500,10 +506,6 @@ store.subscribe((event) => {
   scene.markDirty();
 
   if (currentPanelId) panel.openNodePanel(currentPanelId);
-  // Never begin network/rebase work inside the submit click stack. The modal
-  // closes immediately after the local append; one deferred sync handles any
-  // events appended in the same task.
-  if (syncEngine && event.scope === 'public') scheduleBackgroundSync();
   performance.mark?.('knowledge-subscriber-end');
   performance.measure?.('knowledge-subscriber', 'knowledge-subscriber-start', 'knowledge-subscriber-end');
 });
@@ -562,27 +564,22 @@ sendButton?.addEventListener('click', () => {
 
 interaction.setHideUntouched(false);
 
-function validateRemoteEvent(event: PublicKnowledgeEvent, rebaseBase?: readonly import('../event/Event').DomainEvent[]): string | null {
-  let state = projection.state;
-  if (rebaseBase) {
-    const rebasedProjection = new GraphProjection();
-    for (const baseEvent of rebaseBase) rebasedProjection.apply(baseEvent);
-    state = rebasedProjection.state;
-  }
-  const errors = validateDomainEventAgainstState(event, state);
+function validateProposedPublicEvent(event: PublicKnowledgeEvent): string | null {
+  const errors = validateDomainEventAgainstState(event, projection.state);
   return errors[0] ?? null;
 }
 
 const productionSyncAdapter = createProductionSyncAdapter();
 function initializeSyncEngine(): void {
-  syncEngine = new SyncEngine(store, productionSyncAdapter, undefined, validateRemoteEvent,
-    event => isCanonicalPublicKnowledgeEvent(event) && !(productionSyncAdapter && isDemoSeedEvent(event)));
-  syncEngine.subscribe((status, failures) => {
+  syncEngine = new SyncEngine(store, productionSyncAdapter, validateProposedPublicEvent);
+  syncEngine.subscribe((status) => {
     document.documentElement.dataset.syncStatus = status;
     const settingsButton = opt<HTMLButtonElement>('btnSettings');
-    if (settingsButton) settingsButton.title = status === 'unavailable' ? '同步未配置 · 当前为本地模式' : `同步状态：${status}`;
-    if (status === 'unavailable') panel.showToast('未配置远程同步，当前为本地模式');
-    if (status === 'conflict' && failures.length) panel.showToast(`同步冲突：${failures.length} 个本地事件需要处理`);
+    if (settingsButton) settingsButton.title = status === 'unavailable'
+      ? '远程数据库未配置 · 公共数据仅保留在本次会话'
+      : `同步状态：${status}`;
+    if (status === 'unavailable') panel.showToast('未配置远程数据库；公共数据不会保存在浏览器');
+    if (status === 'conflict') panel.showToast('服务器数据已变化，请重试刚才的公共操作');
   });
 }
 

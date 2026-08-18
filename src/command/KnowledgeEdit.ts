@@ -3,6 +3,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   type DomainEvent,
 } from '../event/Event';
+import type { EventCommitter } from '../event/EventCommitter';
 import type { EventStore } from '../event/EventStore';
 import type { GraphState } from '../state/GraphState';
 import type { GraphProjection } from '../projection/GraphProjection';
@@ -46,12 +47,15 @@ function eventTypeFor(edit: KnowledgeEdit): DomainEvent['type'] {
 /**
  * The only write boundary for add/negate/decompose/merge. Validation runs against
  * the complete projection, including default-hidden historical nodes, before a
- * single atomic event is appended.
+ * single atomic event is committed. Hosted callers may inject a server-first
+ * committer; tests and unconfigured local sessions retain the direct EventStore
+ * path.
  */
 export async function executeKnowledgeEdit(
   store: EventStore<GraphState>,
   projection: GraphProjection,
   edit: KnowledgeEdit,
+  committer?: EventCommitter,
 ): Promise<DomainEvent> {
   performance.mark?.('knowledge-edit-validate-start');
   const errors = validateKnowledgeEdit(protocolNodesFromState(projection.state), edit);
@@ -73,7 +77,8 @@ export async function executeKnowledgeEdit(
   } as DomainEvent;
 
   performance.mark?.('knowledge-edit-append-start');
-  if (!store.appendValidated(event)) {
+  const accepted = committer ? await committer(event) : store.appendValidated(event);
+  if (!accepted) {
     throw new Error(`Duplicate knowledge edit event: ${id}`);
   }
   performance.mark?.('knowledge-edit-append-end');
