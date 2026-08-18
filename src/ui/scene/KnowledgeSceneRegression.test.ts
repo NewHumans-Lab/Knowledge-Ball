@@ -40,7 +40,10 @@ assert(KNOWLEDGE_SCENE_THEME.node.shellOpacity===1,'ordinary semantic shell must
 assert(KNOWLEDGE_SCENE_THEME.node.pointOpacity<=.6,'semantic aura must remain secondary to the opaque node body');
 assert(KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments>=24&&KNOWLEDGE_SCENE_THEME.node.sphereHeightSegments>=16,'ordinary spheres need enough shared geometry segments to avoid visible polygonal silhouettes');
 assert(KNOWLEDGE_SCENE_THEME.node.matcapLight===255,'matcap highlight must be able to reach the canonical semantic color');
-assert(KNOWLEDGE_SCENE_THEME.node.matcapDark/255>=.82,'matcap dark side must preserve at least 82% of semantic base intensity');
+const matcapSourceSpan=(KNOWLEDGE_SCENE_THEME.node.matcapLight-KNOWLEDGE_SCENE_THEME.node.matcapDark)/KNOWLEDGE_SCENE_THEME.node.matcapLight;
+assert(matcapSourceSpan>=.27&&matcapSourceSpan<=.31,'matcap source luminance span must stay calibrated for the requested 15-20% rendered regional sphere contrast');
+const matcapMidPosition=(KNOWLEDGE_SCENE_THEME.node.matcapLight-KNOWLEDGE_SCENE_THEME.node.matcapMid)/(KNOWLEDGE_SCENE_THEME.node.matcapLight-KNOWLEDGE_SCENE_THEME.node.matcapDark);
+assert(matcapMidPosition>=.55&&matcapMidPosition<=.75,'matcap midtone must remain inside the calibrated sphere-depth ramp instead of collapsing toward either endpoint');
 assert(KNOWLEDGE_SCENE_THEME.node.matcapDark<KNOWLEDGE_SCENE_THEME.node.matcapMid&&KNOWLEDGE_SCENE_THEME.node.matcapMid<KNOWLEDGE_SCENE_THEME.node.matcapLight,'matcap must encode a real but bounded light-to-dark gradient');
 assert(KNOWLEDGE_SCENE_THEME.renderer.antialias,'WebGL antialiasing must stay enabled for small node silhouettes');
 assert(KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio>=1&&KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio<=1.5,'mobile pixel ratio must improve edge sampling without returning to an expensive full device DPR');
@@ -107,6 +110,8 @@ assert(pulseSource.includes('r.baseDotOpacity*pulse.opacityFactor'),'pending pul
 assert(sceneSource.includes("pending=!core&&n.status==='pending'"),'only non-core pending nodes may receive the pending pulse');
 assert(sceneSource.includes('new THREE.MeshMatcapMaterial'),'ordinary semantic node bodies must use unlit matcap shading so surface depth cannot reintroduce sun-distance darkening');
 assert(sceneSource.includes('const nodeMatcap=()=>'),'semantic sphere depth must come from one shared neutral runtime matcap');
+assert(sceneSource.includes('nodeMatcapTex=nodeMatcap()'),'ordinary nodes must allocate exactly one shared neutral matcap texture per scene');
+assert(sceneSource.includes('matcap:nodeMatcapTex'),'every ordinary semantic shell must consume the same shared matcap so 3D depth stays consistent across node colors');
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments'),'ordinary sphere geometry must use centralized smoothness settings');
 assert(sceneSource.includes('antialias:KNOWLEDGE_SCENE_THEME.renderer.antialias'),'renderer antialiasing must be governed by the scene theme');
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'),'mobile renderer must use the bounded higher-resolution sampling path');
