@@ -36,6 +36,7 @@ import {
   type KnowledgeSceneNode,
   type KnowledgeSceneRuntime,
 } from './scene/KnowledgeScene';
+import { applyUniformLayerLayout } from './scene/UniformLayerLayout';
 
 import {
   InteractionController,
@@ -67,6 +68,7 @@ const store = new EventStore(
   personalEventPersistence,
   event => validateDomainEventAgainstState(event, projection.state),
 );
+let layoutNodes: KnowledgeSceneNode[] = [];
 let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
 let panel: PanelController;
@@ -110,23 +112,19 @@ function generateNodeId(): string {
 
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
+  const hiddenIds = new Set(domainNodes.filter(dn => dn.hidden).map(dn => dn.id));
 
-  const prevById: Record<string, KnowledgeSceneNode> = {};
-  renderNodes.forEach(n => {
-    prevById[n.id] = n;
-  });
-
-  renderNodes = domainNodes.filter(dn => !dn.hidden).map(dn => {
-    const prev = prevById[dn.id];
-    return renderNodeFromDomain(dn, prev);
-  });
+  // Every projected node receives a real slot before render visibility is applied.
+  // Hidden/falsified/superseded history therefore continues to occupy space.
+  layoutNodes = domainNodes.map(dn => renderNodeFromDomain(dn));
+  applyUniformLayerLayout(layoutNodes);
+  renderNodes = layoutNodes.filter(node => !hiddenIds.has(node.id));
 }
 
-function renderNodeFromDomain(dn: GraphNode, prev?: KnowledgeSceneNode): KnowledgeSceneNode {
+function renderNodeFromDomain(dn: GraphNode): KnowledgeSceneNode {
   const meta = (TWIN_META as Record<string, { twinGroup: string; sharedTitle: string }>)[dn.id] ?? {};
   const declaredLayer = declaredLayerForNode(dn);
   const effectiveLayer = effectiveLayerForNode(dn, projection.state.nodesById);
-  const keepPlacement = (prev?.effectiveLayer ?? prev?.layer) === effectiveLayer;
   return {
       id: dn.id,
       title: dn.title,
@@ -141,23 +139,7 @@ function renderNodeFromDomain(dn: GraphNode, prev?: KnowledgeSceneNode): Knowled
       aliases: dn.aliases,
       semanticKey: dn.semanticKey,
       ...meta,
-      pos: keepPlacement ? prev?.pos : undefined,
-      vel: keepPlacement ? prev?.vel : undefined,
-      homePos: keepPlacement ? prev?.homePos : undefined,
-      layer: keepPlacement ? prev?.layer : undefined,
   };
-}
-
-function syncAddedRenderNodes(event: Extract<PublicKnowledgeEvent, { type: 'KnowledgeAdded' }>): void {
-  const ids = event.payload.edit.mode === 'atomic'
-    ? [event.payload.edit.node.id]
-    : [event.payload.edit.reasoning.id, event.payload.edit.conclusion.id];
-  for (const id of ids) {
-    const node = projection.state.nodesById[id];
-    if (node && !node.hidden && !renderNodes.some(existing => existing.id === id)) {
-      renderNodes.push(renderNodeFromDomain(node));
-    }
-  }
 }
 
 function getNodeById(id: string): KnowledgeSceneNode | null {
@@ -542,11 +524,8 @@ interaction = new InteractionController({
 store.subscribe((event) => {
   performance.mark?.('knowledge-subscriber-start');
   projection.apply(event);
-  if (event.type === 'KnowledgeAdded') syncAddedRenderNodes(event);
-  else syncNodesFromProjection();
-  // A premise status change can alter another node's effective layer, so all
-  // render metadata is recomputed after every event. Positions survive only
-  // when the canonical effective layer is unchanged.
+  // Layer occupancy is global: every event can alter layer membership or visibility,
+  // so rebuild the complete slot assignment from the authoritative projection.
   syncNodesFromProjection();
   scene.markDirty();
 
@@ -664,6 +643,9 @@ void setupMobileShell();
 (window as unknown as { __debug?: unknown }).__debug = {
   store,
   projection,
+  get layoutNodes() {
+    return layoutNodes;
+  },
   get renderNodes() {
     return renderNodes;
   },
