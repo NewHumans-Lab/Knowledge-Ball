@@ -858,6 +858,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     },
     setHideUntouched: enabled => {
       hideUntouched = enabled;
+      applyVisibility();
       largeGraphDirty = true;
     },
     setCascadeDepthLimit: () => {},
