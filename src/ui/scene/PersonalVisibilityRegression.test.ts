@@ -9,20 +9,20 @@ assert(nodeVisibleInPersonalMode({ id: 'ordinary-mastered', mastery: 'mastered' 
 assert(nodeVisibleInPersonalMode({ id: 'n1', mastery: 'none' }, true), 'system core must remain visible in personal mode');
 
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
-assert(sceneSource.includes('edgeMap[k].userData.edgeEndpoints=[p,n.id]'), 'premise/logic edges must retain endpoint identity for visibility filtering');
-assert(sceneSource.includes('edgeMap[k].userData.edgeEndpoints=[n.id,t.id]'), 'twin edges must retain endpoint identity for visibility filtering');
-assert(sceneSource.includes('visibleIds=new Set<string>()'), 'personal visibility must derive one canonical visible-node set');
-assert(sceneSource.includes('l.userData.geometryVisible=true'), 'edge geometry validity must be stored independently from Personal visibility');
-assert(sceneSource.includes('edge.visible=edge.userData.geometryVisible===true&&visibleIds.has(endpoints[0])&&visibleIds.has(endpoints[1])'), 'a rendered edge must require valid geometry and two visible endpoints');
-assert(sceneSource.includes('setHideUntouched:e=>{hideUntouched=e;applyVisibility();largeGraphDirty=true;}'), 'Personal toggles must be visibility-only and avoid edge reconstruction');
-assert(!sceneSource.includes('setHideUntouched:e=>{hideUntouched=e;syncEdges(getNodes())'), 'Personal toggles must never synchronously rebuild all edges');
+assert(/edgeMap\[key\]\.userData\.edgeEndpoints\s*=\s*\[p,\s*n\.id\]/.test(sceneSource), 'premise/logic edges must retain endpoint identity for visibility filtering');
+assert(/edgeMap\[key\]\.userData\.edgeEndpoints\s*=\s*\[n\.id,\s*twin\.id\]/.test(sceneSource), 'twin edges must retain endpoint identity for visibility filtering');
+assert(/const\s+visibleIds\s*=\s*new Set<string>\(\)/.test(sceneSource), 'personal visibility must derive one canonical visible-node set');
+assert(/\.userData\.geometryVisible\s*=\s*true/.test(sceneSource), 'edge geometry validity must be stored independently from Personal visibility');
+assert(/edge\.visible\s*=\s*edge\.userData\.geometryVisible\s*===\s*true\s*&&\s*visibleIds\.has\(endpoints\[0\]\)\s*&&\s*visibleIds\.has\(endpoints\[1\]\)/.test(sceneSource), 'a rendered edge must require valid geometry and two visible endpoints');
+assert(/setHideUntouched:\s*enabled\s*=>\s*\{\s*hideUntouched\s*=\s*enabled;\s*largeGraphDirty\s*=\s*true;\s*\}/.test(sceneSource), 'Personal toggles must invalidate the scene without synchronous all-edge reconstruction');
+assert(!/setHideUntouched:[^}]*syncEdges\(/s.test(sceneSource), 'Personal toggles must never synchronously rebuild all edges');
 
-const visibilityStart = sceneSource.indexOf('const applyVisibility=');
-const syncStart = sceneSource.indexOf('const sync=');
-assert(visibilityStart >= 0 && syncStart > visibilityStart, 'personal visibility implementation must remain discoverable');
-const visibilitySource = sceneSource.slice(visibilityStart, syncStart);
+const visibilityMatch = /const\s+applyVisibility\s*=/.exec(sceneSource);
+const syncMatch = /const\s+sync\s*=/.exec(sceneSource);
+assert(visibilityMatch && syncMatch && syncMatch.index > visibilityMatch.index, 'personal visibility implementation must remain discoverable');
+const visibilitySource = sceneSource.slice(visibilityMatch.index, syncMatch.index);
 assert(!visibilitySource.includes('homePos'), 'personal visibility must never alter fixed layout slots');
 assert(!visibilitySource.includes('optimizeRelationLengthLayout'), 'personal visibility must never rerun relation-length optimization');
-assert(!visibilitySource.includes('syncEdges('), 'personal visibility must never rebuild relation geometry');
+assert(!visibilitySource.includes('syncEdges('), 'personal visibility must never rebuild relation geometry itself');
 
 console.log('Personal node/edge visibility regression tests passed.');
