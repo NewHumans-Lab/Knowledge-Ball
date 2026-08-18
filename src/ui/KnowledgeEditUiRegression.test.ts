@@ -20,7 +20,7 @@ assert(panel.includes('反例知识节点（至少一个）'), 'negation UI must
 assert(panel.includes('原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论'), 'decomposition UI must show the complete chain contract');
 assert(panel.includes('推理过程语义等价标识（先验证）'), 'theory merge must validate reasoning identity before conclusion identity');
 
-assert(app.includes('executeKnowledgeEdit(store, projection, edit)'), 'UI writes must pass through the unified command/event boundary');
+assert(app.includes('executeKnowledgeEdit(store, projection, edit, commitPublicEvent)'), 'UI writes must pass through the unified server-first command/event boundary');
 assert(app.includes('domainNodes.filter(dn => !dn.hidden)'), 'superseded and negated history must be hidden by default');
 assert(!app.includes('onFalsifyNode:'), 'UI must not expose the old evidence-free falsification callback');
 
