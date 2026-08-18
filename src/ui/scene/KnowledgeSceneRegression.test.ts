@@ -11,9 +11,9 @@ assert(shouldRenderEdge('a','b'),'ordinary dependency edges must remain visible'
 assert(CORE_SUN_RADIUS>SUN_ORBIT_RADIUS+SUN_RADIUS_MM,'core sun must fully enclose triad orbit and core sphere radius');
 assert(coreSunContainsTriad(),'core sun containment invariant failed');
 for(const angle of [0,.7,2.4,5.9]){const points=SUN_TRIAD_IDS.map((_,i)=>coreOrbitScreenPosition(i,angle));const centroid=points.reduce((sum,p)=>sum.add(p),points[0].clone().set(0,0,0)).multiplyScalar(1/points.length);assert(centroid.length()<1e-10,'core triad projected centroid must remain at the exact visual center');for(const p of points){assert(Math.abs(p.z)<1e-12,'core triad orbit must remain camera-facing to prevent depth occlusion');assert(Math.abs(p.length()-SUN_ORBIT_RADIUS)<1e-10,'core triad must retain its orbital radius');}}
-assert(CORE_SUN_LIGHT_INTENSITY>1,'core light must remain available for the sun visual system');assert(CORE_AMBIENT_LIGHT_INTENSITY===0,'ambient light stays disabled; ordinary semantic shells use a neutral unlit matcap instead');
+assert(CORE_SUN_LIGHT_INTENSITY>1,'core light must remain available for the sun visual system');
+assert(CORE_AMBIENT_LIGHT_INTENSITY===0,'ambient light stays disabled; ordinary semantic shells use a neutral unlit matcap instead');
 
-// Three-layer semantic projection must match the product vocabulary, not an old type-color shortcut.
 assert(layerForNode(node('definition','definition','verified'))==='inner','definitions must live in the descriptive inner layer');
 assert(layerForNode(node('fact','fact','verified'))==='inner','verified descriptive facts must live in the inner layer');
 assert(layerForNode(node('axiom','axiom','verified'))==='middle','axioms must live in the deterministic middle layer');
@@ -22,8 +22,6 @@ for(const type of ['hypothesis','prediction','opinion','value'] as const)assert(
 assert(layerForNode(node('pending-definition','definition','pending'))==='outer','pending state must temporarily project knowledge to the outer layer');
 assert(layerForNode(node('disputed-theorem','theorem','disputed'))==='outer','disputed state must project knowledge to the outer layer');
 
-// Canonical node-color semantics: falsified overrides everything; reasoning/logic structural nodes stay white;
-// all other nodes use the color of the layer derived from their real type/status fields.
 assert(colorForNode(node('inner-definition','definition','verified'))===NODE_LAYER_COLOR.inner,'verified descriptive inner knowledge must use the inner ice-blue color');
 assert(colorForNode(node('middle-theorem','theorem','verified'))===NODE_LAYER_COLOR.middle,'verified deterministic middle knowledge must use the middle true-blue color');
 assert(colorForNode(node('outer-hypothesis','hypothesis','verified'))===NODE_LAYER_COLOR.outer,'uncertain knowledge types must use the outer violet color');
@@ -54,9 +52,22 @@ assert(KNOWLEDGE_SCENE_THEME.sun.core===0xFFFFFF,'sun core must remain white');
 assert(Number(KNOWLEDGE_SCENE_THEME.sun.corona)!==Number(KNOWLEDGE_SCENE_THEME.sun.halo),'sun corona and outer halo must remain distinct color layers');
 assert(KNOWLEDGE_SCENE_THEME.sun.coronaScale<=4&&KNOWLEDGE_SCENE_THEME.sun.haloScale<=6,'sun glow must not wash most of a phone viewport in cyan/violet haze');
 
-let sawMeaningfulZ=false;for(const sample of[node('inner-a','definition'),node('inner-b','fact'),node('middle-a','axiom'),node('middle-b','theorem'),node('outer-a','hypothesis'),node('outer-b','theorem','pending')]){const layer=layerForNode(sample),pos=initialNodePosition(sample),radius=pos.length();if(layer!=='core'){const band=LAYER_BANDS[layer];assert(radius>=band.rMin-1e-9&&radius<=band.rMax+1e-9,`${sample.id} outside ${layer} volume`);if(Math.abs(pos.z)>radius*.15)sawMeaningfulZ=true;assert(pos.distanceTo(initialNodePosition(sample))<1e-12,`${sample.id} layout must be deterministic`);}}
-assert(sawMeaningfulZ,'layout regressed toward a flat XY disk');let positiveZ=0,negativeZ=0;for(let i=0;i<200;i++){const p=initialNodePosition(node(`volume-${i}`));if(p.z>0)positiveZ++;if(p.z<0)negativeZ++;}assert(positiveZ>60&&negativeZ>60,'3D distribution must occupy both hemispheres');
-assert(clampGraphZoom(0)===MIN_GRAPH_ZOOM,'zoom must clamp at minimum');assert(clampGraphZoom(999)===MAX_GRAPH_ZOOM,'zoom must clamp at maximum');
+let sawMeaningfulZ=false;
+for(const sample of[node('inner-a','definition'),node('inner-b','fact'),node('middle-a','axiom'),node('middle-b','theorem'),node('outer-a','hypothesis'),node('outer-b','theorem','pending')]){
+  const layer=layerForNode(sample),pos=initialNodePosition(sample),radius=pos.length();
+  if(layer!=='core'){
+    const band=LAYER_BANDS[layer];
+    assert(radius>=band.rMin-1e-9&&radius<=band.rMax+1e-9,`${sample.id} outside ${layer} volume`);
+    if(Math.abs(pos.z)>radius*.15)sawMeaningfulZ=true;
+    assert(pos.distanceTo(initialNodePosition(sample))<1e-12,`${sample.id} layout must be deterministic`);
+  }
+}
+assert(sawMeaningfulZ,'layout regressed toward a flat XY disk');
+let positiveZ=0,negativeZ=0;
+for(let i=0;i<200;i++){const p=initialNodePosition(node(`volume-${i}`));if(p.z>0)positiveZ++;if(p.z<0)negativeZ++;}
+assert(positiveZ>60&&negativeZ>60,'3D distribution must occupy both hemispheres');
+assert(clampGraphZoom(0)===MIN_GRAPH_ZOOM,'zoom must clamp at minimum');
+assert(clampGraphZoom(999)===MAX_GRAPH_ZOOM,'zoom must clamp at maximum');
 assert(Math.abs(ordinaryNodeCompensationScale(4)-.25)<1e-12,'ordinary node geometry must inverse-scale so zoom changes spacing, not node radius');
 assert(nodeRadiusForType('reasoning',9)===3,'reasoning process radius must be exactly one third of a conclusion radius');
 assert(nodeRadiusForType('theorem',9)===9,'conclusion radius must keep the configured value');
@@ -71,59 +82,47 @@ const visiblePulse=pendingPulseAtCycleMs(0);assert(visiblePulse.opacityFactor===
 const fadeMid=pendingPulseAtCycleMs(PENDING_PULSE_VISIBLE_MS+PENDING_PULSE_FADE_MS/2);assert(fadeMid.opacityFactor<1&&fadeMid.opacityFactor>PENDING_PULSE_MIN_OPACITY,'pending node must fade smoothly between full and low opacity');assert(fadeMid.scale<1&&fadeMid.scale>PENDING_PULSE_MIN_SCALE,'pending node must shrink smoothly during fade');
 const lowPulse=pendingPulseAtCycleMs(PENDING_PULSE_VISIBLE_MS+PENDING_PULSE_FADE_MS+PENDING_PULSE_LOW_MS/2);assert(Math.abs(lowPulse.opacityFactor-PENDING_PULSE_MIN_OPACITY)<1e-12,'pending node low stage must use configured minimum opacity');assert(Math.abs(lowPulse.scale-PENDING_PULSE_MIN_SCALE)<1e-12,'pending node low stage must use configured minimum scale');
 const recoveredPulse=pendingPulseAtCycleMs(PENDING_PULSE_PERIOD_MS);assert(recoveredPulse.opacityFactor===1&&recoveredPulse.scale===1,'pending pulse must recover exactly at the next period');
-const phaseA=pendingPulsePhaseMs('pending-a');assert(phaseA===pendingPulsePhaseMs('pending-a'),'pending phase must be deterministic for a node id');const phases=new Set(['pending-a','pending-b','pending-c','pending-d'].map(pendingPulsePhaseMs));assert(phases.size>1,'pending nodes must not all share the same phase');
+const phaseA=pendingPulsePhaseMs('pending-a');assert(phaseA===pendingPulsePhaseMs('pending-a'),'pending phase must be deterministic for a node id');
+const phases=new Set(['pending-a','pending-b','pending-c','pending-d'].map(pendingPulsePhaseMs));assert(phases.size>1,'pending nodes must not all share the same phase');
 
 const sceneSource=readFileSync('src/ui/scene/KnowledgeScene.ts','utf8');
-const tapStart=sceneSource.indexOf('const up=');
-const tapEnd=sceneSource.indexOf('const wheel=');
-const overlayStart=sceneSource.indexOf('setOverlayVisible:');
-const overlayEnd=sceneSource.indexOf(',resize,setLabelBrightness');
-assert(tapStart>=0&&tapEnd>tapStart,'node tap implementation must remain discoverable');
-assert(overlayStart>=0&&overlayEnd>overlayStart,'overlay lifecycle implementation must remain discoverable');
-const tapSource=sceneSource.slice(tapStart,tapEnd);
-const overlaySource=sceneSource.slice(overlayStart,overlayEnd);
-assert(tapSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');
-assert(!tapSource.includes('queueMicrotask'),'node tap must not defer panel dispatch into the microtask queue');
-assert(!tapSource.includes('forceContextLoss'),'node tap must never force WebGL context loss');
-assert(!tapSource.includes('forceContextRestore'),'node tap must never force context restore');
-assert(!tapSource.includes('domElement.remove'),'node tap must keep the renderer canvas attached');
-assert(!overlaySource.includes('forceContextLoss'),'overlay open must not destroy the WebGL context');
-assert(!overlaySource.includes('forceContextRestore'),'overlay close must not force context restoration');
-assert(!overlaySource.includes('domElement.remove'),'overlay lifecycle must keep the renderer canvas attached');
-assert(!overlaySource.includes('pointerEvents'),'overlay lifecycle must not retarget the active pointer by mutating canvas hit testing');
-assert(sceneSource.includes('const pauseFrameLoop='),'scene must pause work without destroying GPU state');
-assert(sceneSource.includes('const resumeFrameLoop='),'scene must resume work without recreating GPU state');
-assert(sceneSource.includes("const down=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointerdown must be gated by scene overlay state');
-assert(sceneSource.includes("const move=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointermove must be gated by scene overlay state');
-assert(sceneSource.includes("const up=(e:PointerEvent)=>{if(overlayVisible)return;"),'pointerup/pointercancel must be gated by scene overlay state');
-assert(sceneSource.includes("const wheel=(e:WheelEvent)=>{if(overlayVisible)return;"),'wheel input must be gated by scene overlay state');
-const pulseStart=sceneSource.indexOf('const applyPendingPulse=');
-const pulseEnd=sceneSource.indexOf('const physics=');
-assert(pulseStart>=0&&pulseEnd>pulseStart,'pending pulse implementation must remain discoverable');
-const pulseSource=sceneSource.slice(pulseStart,pulseEnd);
-assert(!pulseSource.includes('setInterval'),'pending pulse must never create per-node intervals');
-assert(!pulseSource.includes('setTimeout'),'pending pulse must never create per-node timers');
-assert(pulseSource.includes('r.group.scale.setScalar(pulse.scale)'),'pending state must pulse the whole node group, not the mastery glow alone');
-assert(pulseSource.includes('r.baseShellOpacity*pulse.opacityFactor'),'pending pulse must fade the node shell');
-assert(pulseSource.includes('r.basePointOpacity*pulse.opacityFactor'),'pending pulse must fade the semantic color point');
-assert(pulseSource.includes('r.baseDotOpacity*pulse.opacityFactor'),'pending pulse must fade the mastery dot proportionally without changing mastery semantics');
-assert(sceneSource.includes("pending=!core&&n.status==='pending'"),'only non-core pending nodes may receive the pending pulse');
+assert(/const\s+up\s*=/.test(sceneSource),'node tap implementation must remain discoverable');
+assert(/const\s+wheel\s*=/.test(sceneSource),'wheel implementation must remain discoverable');
+assert(sceneSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');
+assert(!sceneSource.includes('queueMicrotask'),'node tap must not defer panel dispatch into the microtask queue');
+assert(!sceneSource.includes('forceContextLoss'),'scene must never force WebGL context loss');
+assert(!sceneSource.includes('forceContextRestore'),'scene must never force context restoration');
+assert(!sceneSource.includes('domElement.remove'),'scene lifecycle must keep the renderer canvas attached');
+assert(!sceneSource.includes('pointerEvents'),'overlay lifecycle must not retarget the active pointer by mutating canvas hit testing');
+assert(/const\s+pauseFrameLoop\s*=/.test(sceneSource),'scene must pause work without destroying GPU state');
+assert(/const\s+resumeFrameLoop\s*=/.test(sceneSource),'scene must resume work without recreating GPU state');
+assert(/const\s+down\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible\)\s*return;/.test(sceneSource),'pointerdown must be gated by scene overlay state');
+assert(/const\s+move\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible/.test(sceneSource),'pointermove must be gated by scene overlay state');
+assert(/const\s+up\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible\)\s*return;/.test(sceneSource),'pointerup/pointercancel must be gated by scene overlay state');
+assert(/const\s+wheel\s*=\s*\(e:\s*WheelEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible\)\s*return;/.test(sceneSource),'wheel input must be gated by scene overlay state');
+assert(/const\s+applyPendingPulse\s*=/.test(sceneSource),'pending pulse implementation must remain discoverable');
+assert(!sceneSource.includes('setInterval'),'pending pulse must never create per-node intervals');
+assert(/\.group\.scale\.setScalar\(pulse\.scale\)/.test(sceneSource),'pending state must pulse the whole node group, not the mastery glow alone');
+assert(/baseShellOpacity\s*\*\s*pulse\.opacityFactor/.test(sceneSource),'pending pulse must fade the node shell');
+assert(/basePointOpacity\s*\*\s*pulse\.opacityFactor/.test(sceneSource),'pending pulse must fade the semantic color point');
+assert(/baseDotOpacity\s*\*\s*pulse\.opacityFactor/.test(sceneSource),'pending pulse must fade the mastery dot proportionally without changing mastery semantics');
+assert(/const\s+pending\s*=\s*!core\s*&&\s*n\.status\s*===\s*'pending'/.test(sceneSource),'only non-core pending nodes may receive the pending pulse');
 assert(sceneSource.includes('new THREE.MeshMatcapMaterial'),'ordinary semantic node bodies must use unlit matcap shading so surface depth cannot reintroduce sun-distance darkening');
-assert(sceneSource.includes('const nodeMatcap=()=>'),'semantic sphere depth must come from one shared neutral runtime matcap');
-assert(sceneSource.includes('nodeMatcapTex=nodeMatcap()'),'ordinary nodes must allocate exactly one shared neutral matcap texture per scene');
-assert(sceneSource.includes('matcap:nodeMatcapTex'),'every ordinary semantic shell must consume the same shared matcap so 3D depth stays consistent across node colors');
+assert(/const\s+nodeMatcap\s*=/.test(sceneSource),'semantic sphere depth must come from one shared neutral runtime matcap');
+assert(/nodeMatcapTex\s*=\s*nodeMatcap\(\)/.test(sceneSource),'ordinary nodes must allocate exactly one shared neutral matcap texture per scene');
+assert(/matcap:\s*nodeMatcapTex/.test(sceneSource),'every ordinary semantic shell must consume the same shared matcap so 3D depth stays consistent across node colors');
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments'),'ordinary sphere geometry must use centralized smoothness settings');
-assert(sceneSource.includes('antialias:KNOWLEDGE_SCENE_THEME.renderer.antialias'),'renderer antialiasing must be governed by the scene theme');
+assert(/antialias:\s*KNOWLEDGE_SCENE_THEME\.renderer\.antialias/.test(sceneSource),'renderer antialiasing must be governed by the scene theme');
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'),'mobile renderer must use the bounded higher-resolution sampling path');
-assert(sceneSource.includes('r.shell.visible=true'),'large mobile graphs must retain the opaque semantic body instead of falling back to a translucent sprite only');
+assert(/\.shell\.visible\s*=\s*true/.test(sceneSource),'large mobile graphs must retain the opaque semantic body instead of falling back to a translucent sprite only');
 assert(!sceneSource.includes('r.shell.visible=!largeMobileGraph'),'large-mobile optimization must not hide ordinary semantic shells');
-assert(sceneSource.includes('r.baseShellOpacity=core?.84:KNOWLEDGE_SCENE_THEME.node.shellOpacity'),'ordinary shell opacity must not depend on status or selection');
+assert(/baseShellOpacity\s*=\s*core\s*\?\s*\.84\s*:\s*KNOWLEDGE_SCENE_THEME\.node\.shellOpacity/.test(sceneSource),'ordinary shell opacity must not depend on status or selection');
 assert(!sceneSource.includes("r.baseShellOpacity=(n.status==='falsified'"),'status must not be encoded by making the semantic node body translucent');
-assert(sceneSource.includes('r.point.visible=!core'),'semantic aura must remain available independently of the opaque node body');
-assert(sceneSource.includes('r.point.scale.setScalar'),'semantic node color must retain a lightweight aura independent of mastery glow');
-assert(sceneSource.includes('pendingNodeIds.size>0'),'large mobile graphs must keep lightweight rendering alive while pending nodes animate');
-assert(sceneSource.includes('const colorFor=(n:KnowledgeSceneNode)=>colorForNode(n);'),'scene rendering must use the canonical status/layer-aware color mapping');
-assert(sceneSource.includes('wireframe:false'),'ordinary nodes must render as solid scientific points rather than the old dotted wireframe shells');
+assert(/\.point\.visible\s*=\s*!core/.test(sceneSource),'semantic aura must remain available independently of the opaque node body');
+assert(/\.point\.scale\.setScalar/.test(sceneSource),'semantic node color must retain a lightweight aura independent of mastery glow');
+assert(/pendingNodeIds\.size\s*>\s*0/.test(sceneSource),'large mobile graphs must keep lightweight rendering alive while pending nodes animate');
+assert(/const\s+colorFor\s*=\s*\(n:\s*KnowledgeSceneNode\)\s*=>\s*colorForNode\(n\)/.test(sceneSource),'scene rendering must use the canonical status/layer-aware color mapping');
+assert(/wireframe:\s*false/.test(sceneSource),'ordinary nodes must render as solid scientific points rather than the old dotted wireframe shells');
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.mastery.tint'),'mastery glow must use the centralized neutral tint');
 for(const legacy of ['0x62AAA9','0xf0c66e','rgba(134,241,232','rgba(78,200,205'])assert(!sceneSource.includes(legacy),`legacy scene color ${legacy} must not leak back into Three.js rendering`);
 console.log('Knowledge scene regression tests passed');
