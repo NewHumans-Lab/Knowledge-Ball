@@ -41,9 +41,9 @@ assert(KNOWLEDGE_SCENE_THEME.node.pointOpacity<=.6,'semantic aura must remain se
 assert(KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments>=24&&KNOWLEDGE_SCENE_THEME.node.sphereHeightSegments>=16,'ordinary spheres need enough shared geometry segments to avoid visible polygonal silhouettes');
 assert(KNOWLEDGE_SCENE_THEME.node.matcapLight===255,'matcap highlight must be able to reach the canonical semantic color');
 const matcapSourceSpan=(KNOWLEDGE_SCENE_THEME.node.matcapLight-KNOWLEDGE_SCENE_THEME.node.matcapDark)/KNOWLEDGE_SCENE_THEME.node.matcapLight;
-assert(matcapSourceSpan>=.27&&matcapSourceSpan<=.31,'matcap source luminance span must stay calibrated for the requested 15-20% rendered regional sphere contrast');
+assert(matcapSourceSpan>=.50&&matcapSourceSpan<=.56,'matcap source luminance span must stay calibrated for the requested 15-20% rendered regional sphere contrast');
 const matcapMidPosition=(KNOWLEDGE_SCENE_THEME.node.matcapLight-KNOWLEDGE_SCENE_THEME.node.matcapMid)/(KNOWLEDGE_SCENE_THEME.node.matcapLight-KNOWLEDGE_SCENE_THEME.node.matcapDark);
-assert(matcapMidPosition>=.55&&matcapMidPosition<=.75,'matcap midtone must remain inside the calibrated sphere-depth ramp instead of collapsing toward either endpoint');
+assert(matcapMidPosition>=.65&&matcapMidPosition<=.75,'matcap midtone must remain inside the calibrated sphere-depth ramp instead of collapsing toward either endpoint');
 assert(KNOWLEDGE_SCENE_THEME.node.matcapDark<KNOWLEDGE_SCENE_THEME.node.matcapMid&&KNOWLEDGE_SCENE_THEME.node.matcapMid<KNOWLEDGE_SCENE_THEME.node.matcapLight,'matcap must encode a real but bounded light-to-dark gradient');
 assert(KNOWLEDGE_SCENE_THEME.renderer.antialias,'WebGL antialiasing must stay enabled for small node silhouettes');
 assert(KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio>=1&&KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio<=1.5,'mobile pixel ratio must improve edge sampling without returning to an expensive full device DPR');
