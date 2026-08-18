@@ -39,8 +39,8 @@ assert(app.includes('renderNodes = layoutNodes.filter'), 'render visibility must
 assert(app.includes('!hiddenIds.has(node.id)'), 'hidden history must stay out of rendering while remaining in layout occupancy');
 assert(!app.includes('onFalsifyNode:'), 'UI must not expose the old evidence-free falsification callback');
 
-assert(scene.includes('if(node.effectiveLayer)return node.effectiveLayer'), 'scene must consume the application-computed effective layer');
-assert(scene.includes("type==='reasoning'?conclusionRadius/3:conclusionRadius"), 'reasoning radius must be exactly one third of conclusion radius');
+assert(/if\s*\(node\.effectiveLayer\)\s*return\s+node\.effectiveLayer/.test(scene), 'scene must consume the application-computed effective layer');
+assert(/type\s*===\s*'reasoning'\s*\?\s*conclusionRadius\s*\/\s*3\s*:\s*conclusionRadius/.test(scene), 'reasoning radius must be exactly one third of conclusion radius');
 assert(scene.includes('callbacks.onNodeTap(nodeId)'), 'a node tap must use the single node-tap callback');
 assert(!scene.includes('callbacks.onSelectNode(nodeId);callbacks.onOpenPanel(nodeId)'), 'a node tap must not synchronously render the panel twice');
 assert(app.includes('onNodeTap') && app.includes('openNode'), 'the application must open a tapped node through one callback');
