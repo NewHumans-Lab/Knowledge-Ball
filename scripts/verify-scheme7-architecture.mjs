@@ -22,8 +22,9 @@ assert.doesNotMatch(app, /scheduleBackgroundSync|backgroundSyncTimer/, 'public w
 
 assert.match(syncEngine, /private cursor = '0'/, 'public cursor must be memory-only per page lifetime');
 assert.match(syncEngine, /this\.store\.appendValidated\(event\)/, 'server-accepted public events must enter the in-memory store as authoritative events');
-assert.doesNotMatch(syncEngine, /SyncMetadataStore|pendingEventIds|acknowledgedEventIds/, 'public sync must not persist local pending/acknowledgement truth');
+assert.doesNotMatch(syncEngine, /SyncMetadataStore|pendingEventIds|metadataStore|private readonly metadata/, 'public sync must not persist local pending/acknowledgement truth');
 assert.doesNotMatch(syncEngine, /localStorage/, 'public sync engine must not persist its cursor or queue in browser storage');
+assert.match(syncEngine, /result\.acknowledgedEventIds\.includes\(event\.id\)/, 'server acknowledgement may be checked only as the immediate RPC response contract');
 assert.match(supabaseAdapter, /public_knowledge_events contains non-public event/, 'public stream paging must fail closed instead of silently skipping an invalid row');
 
 assert.doesNotMatch(app, /saveNode|KnowledgeNodeRecord|KnowledgeRepository/, 'app must not persist node snapshots');
