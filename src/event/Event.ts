@@ -2,6 +2,7 @@ import type { Mastery, NodeType } from '../domain/KnowledgeModel';
 export type { Mastery, NodeType } from '../domain/KnowledgeModel';
 
 export type NodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
+export type KnowledgeVerdictPolicyVersion = 'ORIGINAL_DESIGN_V1' | 'ORIGINAL_DESIGN_V2';
 
 interface EventEnvelope<TType extends string, TPayload, TScope extends 'public' | 'personal' = 'public'> {
   id: string;
@@ -53,7 +54,7 @@ export type KnowledgeVerdictFinalizedEvent = EventEnvelope<'KnowledgeVerdictFina
   agreeCount: number;
   disagreeCount: number;
   requiredVotes: number;
-  policyVersion: 'ORIGINAL_DESIGN_V1';
+  policyVersion: KnowledgeVerdictPolicyVersion;
 }>;
 
 export type PublicKnowledgeEvent = NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent | NodeResolvedEvent | NodeDisputedEvent | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent;

@@ -1,6 +1,6 @@
--- A client-triggered sweep must handle both deadline expiry and historical/live
--- rounds that have already reached their snapshotted threshold. This is a single
--- low-frequency global sweep, never one timer per node.
+-- Transitional readiness sweep. The final public grant is deliberately deferred
+-- to 202608180004, which upgrades the still-unpublished first-round policy to
+-- ORIGINAL_DESIGN_V2 before any historical timeout repair is allowed to run.
 
 create or replace function public.settle_expired_pending_knowledge_votes(max_rounds integer default 50) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -26,13 +26,17 @@ begin
   return processed;
 end $$;
 
+-- Safety gate for staged hosted deployment: the V1 finalizer created by the two
+-- preceding repository migrations must not be reachable by browser clients in
+-- the interval before 202608180004 replaces it with V2 semantics.
 revoke all on function public.settle_expired_pending_knowledge_votes(integer) from public,anon,authenticated;
-grant execute on function public.settle_expired_pending_knowledge_votes(integer) to authenticated;
+revoke execute on function public.get_pending_knowledge_vote(text) from authenticated;
+revoke execute on function public.cast_pending_knowledge_vote(text,text,text) from authenticated;
 comment on function public.settle_expired_pending_knowledge_votes(integer) is
-  'Low-frequency readiness sweep: finalizes threshold-ready or 720-hour-expired ORIGINAL_DESIGN_V1 rounds.';
+  'Transitional internal sweep; browser execution is enabled only after ORIGINAL_DESIGN_V2 is installed.';
 
 -- Historical settlement is intentionally deferred to 202608180004, which first
--- identifies and refunds ballots that arrived after the round should have closed.
+-- installs V2, normalizes impossible historical ballots, and then repairs rounds.
 
 create or replace function public.knowledge_ball_schema_version() returns text
 language sql security definer stable set search_path=public,pg_temp
