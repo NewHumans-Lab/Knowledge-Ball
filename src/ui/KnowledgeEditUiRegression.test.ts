@@ -33,11 +33,10 @@ assert(panel.includes('推理过程语义等价标识（先验证）'), 'theory 
 
 assert(app.includes('executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers)'), 'new knowledge writes must carry layer declarations through the unified server-first boundary');
 assert(app.includes('effectiveLayerForNode(dn, projection.state.nodesById)'), 'application must calculate scene layer from the canonical domain policy');
-assert(
-  app.includes('prev?.effectiveLayer ?? prev?.layer') && app.includes('=== effectiveLayer'),
-  'scene coordinates may only be retained while the effective layer is unchanged',
-);
-assert(app.includes('domainNodes.filter(dn => !dn.hidden)'), 'superseded and negated history must be hidden by default');
+assert(app.includes('layoutNodes = domainNodes.map'), 'all projected nodes must receive layout slots before visibility filtering');
+assert(app.includes('applyUniformLayerLayout(layoutNodes)'), 'application must use the canonical uniform layer layout');
+assert(app.includes('renderNodes = layoutNodes.filter'), 'render visibility must be separated from layout occupancy');
+assert(app.includes('!hiddenIds.has(node.id)'), 'hidden history must stay out of rendering while remaining in layout occupancy');
 assert(!app.includes('onFalsifyNode:'), 'UI must not expose the old evidence-free falsification callback');
 
 assert(scene.includes('if(node.effectiveLayer)return node.effectiveLayer'), 'scene must consume the application-computed effective layer');
