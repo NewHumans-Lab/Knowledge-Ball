@@ -1,6 +1,5 @@
 import {
   isCanonicalPublicKnowledgeEvent,
-  isPublicKnowledgeEvent,
   type DomainEvent,
   type PublicKnowledgeEvent,
 } from '../event/Event';
@@ -143,9 +142,9 @@ export class SyncEngine<TState> {
   private async pullAndApply(): Promise<void> {
     const batch = await this.adapter!.pull(this.cursor);
     for (const event of batch.events) {
-      if (!isPublicKnowledgeEvent(event)) {
-        throw new Error(`Non-public event returned by public stream: ${event.id}`);
-      }
+      // SyncAdapter.pull() returns PublicKnowledgeEvent by contract. Concrete
+      // adapters must fail closed while decoding rows rather than silently
+      // skipping invalid/non-public rows and advancing the remote cursor.
       // The public stream is the server's accepted history. Re-running
       // client-side state validation here can reject a valid authoritative
       // verdict when local state has diverged. Envelope validation still runs
