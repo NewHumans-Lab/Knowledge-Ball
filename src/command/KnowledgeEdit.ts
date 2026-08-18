@@ -3,6 +3,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   type DomainEvent,
 } from '../event/Event';
+import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
 import type { EventCommitter } from '../event/EventCommitter';
 import type { EventStore } from '../event/EventStore';
 import type { GraphState } from '../state/GraphState';
@@ -56,6 +57,7 @@ export async function executeKnowledgeEdit(
   projection: GraphProjection,
   edit: KnowledgeEdit,
   committer?: EventCommitter,
+  declaredLayers?: Readonly<Record<string, UserKnowledgeLayer>>,
 ): Promise<DomainEvent> {
   performance.mark?.('knowledge-edit-validate-start');
   const errors = validateKnowledgeEdit(protocolNodesFromState(projection.state), edit);
@@ -65,7 +67,9 @@ export async function executeKnowledgeEdit(
 
   const type = eventTypeFor(edit);
   const timestamp = Date.now();
-  const payload = { edit };
+  const payload = type === 'KnowledgeAdded' && declaredLayers
+    ? { edit, declaredLayers: { ...declaredLayers } }
+    : { edit };
   const id = await fingerprint(type, payload, timestamp);
   const event = {
     id,
