@@ -7,6 +7,7 @@ import {
   SUN_ORBIT_RADIUS,
   SUN_TRIAD_IDS,
 } from '../config/KnowledgeUiConfig';
+import { optimizeRelationLengthLayout } from './RelationLengthLayout';
 
 export interface UniformLayoutNode {
   id: string;
@@ -84,12 +85,9 @@ function coreSlot(id: string): THREE.Vector3 {
 }
 
 /**
- * Applies one global layout pass to every current node, including hidden or
- * falsified history. Visibility is deliberately ignored: a hidden node owns a
- * real slot and therefore leaves a real gap in the visible graph.
- *
- * Node order is the authoritative projection event order, avoiding any sorting
- * step in the layout path.
+ * Generates the hard uniform slot set for every node, including hidden history,
+ * then only changes which same-layer node owns which slot to shorten the complete
+ * historical relation graph. The slot set itself never moves.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   const groups: Record<NonCoreLayer, T[]> = {
@@ -127,5 +125,6 @@ export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[])
     });
   });
 
+  optimizeRelationLengthLayout(nodes);
   return nodes;
 }
