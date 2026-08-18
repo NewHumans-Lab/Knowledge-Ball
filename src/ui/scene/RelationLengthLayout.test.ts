@@ -28,14 +28,12 @@ function node(
   };
 }
 
-// The objective is true Euclidean distance in 3D, not projected 2D distance or a rendered curve length.
 const diagonal3d = displayedRelationLength(
   new THREE.Vector3(0, 0, 0),
   new THREE.Vector3(3, 4, 12),
 );
 assert(Math.abs(diagonal3d - 13) < 1e-12, '3D relation length must equal Euclidean endpoint distance');
 
-// Hidden history remains a first-class part of the geometry objective.
 const historical = [
   node('visible-a', -100),
   node('hidden-b', 100, ['visible-a'], true),
@@ -49,8 +47,6 @@ assert(historicalEdges.some(edge => edge.fromId === 'hidden-b' && edge.toId === 
 assert(historicalEdges.some(edge => edge.fromId === 'hidden-c' && edge.toId === 'visible-d'), 'hidden -> visible line must remain in the objective');
 assert(historicalEdges.some(edge => edge.kind === 'logic' && edge.fromId === 'visible-a' && edge.toId === 'visible-d'), 'logic relation must remain in the objective');
 
-// Deliberately bad chain assignment: every relation initially jumps across the
-// slot set. The optimizer may only permute these exact slots within the layer.
 const chain = [
   node('a', -100),
   node('b', 100, ['a']),
@@ -72,8 +68,6 @@ assert.equal(result.edgeCount, 5, 'hidden historical chain edges must be counted
 assert(result.acceptedPasses > 0, 'the bad chain should accept at least one improving pass');
 assert(Math.abs(result.before - lengthBefore) < 1e-6 && Math.abs(result.after - lengthAfter) < 1e-6, 'reported objective must match the actual straight 3D line total');
 
-// Complexity guard: runtime layout code must not regress to all-pairs node swaps
-// or sorting-based assignment. Tests may use sorting only to compare slot sets.
 const relationSource = readFileSync('src/ui/scene/RelationLengthLayout.ts', 'utf8');
 const uniformSource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
@@ -86,6 +80,6 @@ assert(relationSource.includes('DEFAULT_PASSES = 4'), 'optimization pass count m
 assert(!relationSource.includes('CURVE_SEGMENTS'), 'layout objective must not approximate a curved render path');
 assert(!relationSource.includes('QuadraticBezierCurve3'), 'layout objective must remain straight-line Euclidean distance');
 assert(!sceneSource.includes('QuadraticBezierCurve3'), 'scene renderer must not curve knowledge relations');
-assert(sceneSource.includes('l.geometry.setFromPoints([a!.clone(),b!.clone()])'), 'scene relation geometry must contain exactly the two 3D endpoints');
+assert(/\.geometry\.setFromPoints\(\[a!\.clone\(\),\s*b!\.clone\(\)\]\)/.test(sceneSource), 'scene relation geometry must contain exactly the two 3D endpoints');
 
 console.log('Complete historical straight-3D relation-length layout regression tests passed.');
