@@ -29,6 +29,20 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
       errors.push(`${event.type} 必须携带 ${expected} 编辑载荷`);
     }
   }
+  if (event.type === 'KnowledgeVerdictFinalized') {
+    const p = event.payload;
+    if (!p.roundId?.trim() || !p.nodeId?.trim()) errors.push('投票结算事件缺少轮次或节点 ID');
+    if (p.verdict !== 'CORRECT' && p.verdict !== 'INCORRECT') errors.push('投票结算事件 verdict 无效');
+    if (p.closeReason !== 'THRESHOLD' && p.closeReason !== 'TIMEOUT') errors.push('投票结算事件 closeReason 无效');
+    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1') errors.push('投票结算事件 policyVersion 无效');
+    for (const [label, value, allowZero] of [
+      ['赞成票', p.agreeCount, true],
+      ['反对票', p.disagreeCount, true],
+      ['门槛', p.requiredVotes, false],
+    ] as const) {
+      if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) errors.push(`投票结算事件${label}无效`);
+    }
+  }
   return errors;
 }
 
@@ -64,6 +78,12 @@ export function validateDomainEventAgainstState(event: DomainEvent, state: Graph
       if (target.status === 'falsified') return ['已证伪节点不能通过普通状态命令恢复'];
       if (event.payload.edit.status === 'suspended' && !event.payload.edit.causeNodeId) return ['悬置必须记录原因节点'];
       if (event.payload.edit.causeNodeId && !state.nodesById[event.payload.edit.causeNodeId]) return [`原因节点不存在: ${event.payload.edit.causeNodeId}`];
+      return [];
+    }
+    case 'KnowledgeVerdictFinalized': {
+      const target = state.nodesById[event.payload.nodeId];
+      if (!target) return [`投票结算目标不存在: ${event.payload.nodeId}`];
+      if (target.status !== 'pending') return [`只有待验证节点可以接收首轮投票结算: ${event.payload.nodeId}`];
       return [];
     }
     case 'KnowledgeNodeEdited':

@@ -45,20 +45,35 @@ export type KnowledgeStatusChangedEvent = EventEnvelope<'KnowledgeStatusChanged'
 export type KnowledgeNodeEditedEvent = EventEnvelope<'KnowledgeNodeEdited', {
   edit: { kind: 'update'; nodeId: string; title?: string; nodeType?: NodeType; reasoning?: string; premises?: string[] };
 }>;
+export type KnowledgeVerdictFinalizedEvent = EventEnvelope<'KnowledgeVerdictFinalized', {
+  roundId: string;
+  nodeId: string;
+  verdict: 'CORRECT' | 'INCORRECT';
+  closeReason: 'THRESHOLD' | 'TIMEOUT';
+  agreeCount: number;
+  disagreeCount: number;
+  requiredVotes: number;
+  policyVersion: 'ORIGINAL_DESIGN_V1';
+}>;
 
-export type PublicKnowledgeEvent = NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent | NodeResolvedEvent | NodeDisputedEvent | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent;
+export type PublicKnowledgeEvent = NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent | NodeResolvedEvent | NodeDisputedEvent | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent;
 export type PersonalKnowledgeEvent = NodeMasterySetEvent;
 
 export type DomainEvent =
   | NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent
   | NodeResolvedEvent | NodeMasterySetEvent | NodeDisputedEvent
-  | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent;
+  | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent
+  | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent;
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
 export function isPublicKnowledgeEvent(event: DomainEvent): event is PublicKnowledgeEvent {
   return event.type !== 'NodeMasterySet' && (event.scope === undefined || event.scope === 'public');
 }
+
+// This guard is intentionally the client-writable canonical command family.
+// Server-authored KnowledgeVerdictFinalized is public and sync-readable, but it
+// must never be queued or pushed back through append_public_knowledge_events.
 export function isCanonicalPublicKnowledgeEvent(event: DomainEvent): event is KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent {
   return event.scope === 'public' && ['KnowledgeAdded','KnowledgeNegated','KnowledgeDecomposed','KnowledgeMerged','KnowledgeStatusChanged','KnowledgeNodeEdited'].includes(event.type);
 }

@@ -6,6 +6,8 @@ export interface AccountProfile {
 }
 export interface ProfileChanges { username: string; displayName?: string; avatarUrl?: string; bio?: string; }
 export type PendingVoteSide = 'AGREE' | 'DISAGREE';
+export type PendingVoteVerdict = 'PENDING' | 'CORRECT' | 'INCORRECT';
+export type PendingVoteCloseReason = 'THRESHOLD' | 'TIMEOUT';
 export interface PendingKnowledgeVoteSnapshot {
   nodeId: string;
   agreeCount: number;
@@ -13,6 +15,12 @@ export interface PendingKnowledgeVoteSnapshot {
   requiredVotes: number;
   mySide: PendingVoteSide | null;
   myBalance?: string;
+  roundId?: string;
+  verdict: PendingVoteVerdict;
+  closeReason: PendingVoteCloseReason | null;
+  deadline?: string;
+  closedAt?: string;
+  policyVersion?: string;
 }
 
 export const GUEST_SESSION_KEY = 'knowledge-ball.supabase-guest-session.v1';
@@ -79,6 +87,17 @@ export class KnowledgeBallAuthClient {
     return parsePendingKnowledgeVote(response, nodeId);
   }
 
+  async settleExpiredPendingKnowledgeVotes(maxRounds = 50): Promise<number> {
+    if (!Number.isSafeInteger(maxRounds) || maxRounds < 1 || maxRounds > 200) throw new Error('无效结算批量大小');
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/settle_expired_pending_knowledge_votes', current, {
+      method: 'POST', body: JSON.stringify({ max_rounds: maxRounds }),
+    });
+    const processed = Number(response);
+    if (!Number.isSafeInteger(processed) || processed < 0) throw new Error('服务端返回了无效结算数量');
+    return processed;
+  }
+
   private profileFrom(value: unknown): AccountProfile {
     const response = value as Record<string, unknown>;
     return {
@@ -123,7 +142,8 @@ export class KnowledgeBallAuthClient {
   }
 
   private async authRequest(path: string, init: RequestInit): Promise<Record<string, unknown>> {
-    return parseResponse(await this.request(`${this.baseUrl()}${path}`, { ...init, headers: { apikey: this.config.publishableKey, 'Content-Type': 'application/json', ...init.headers } }));
+    const response = await parseResponse(await this.request(`${this.baseUrl()}${path}`, { ...init, headers: { apikey: this.config.publishableKey, 'Content-Type': 'application/json', ...init.headers } }));
+    return response as Record<string, unknown>;
   }
 
   private async restRequest(path: string, session: AuthSession, init: RequestInit): Promise<unknown> {
@@ -133,9 +153,12 @@ export class KnowledgeBallAuthClient {
   private baseUrl(): string { return this.config.url.replace(/\/$/, ''); }
 }
 
-async function parseResponse(response: Response): Promise<Record<string, unknown>> {
-  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) throw new Error(typeof body.message === 'string' ? body.message : `请求失败 (${response.status})`);
+async function parseResponse(response: Response): Promise<unknown> {
+  const body = await response.json().catch(() => ({})) as unknown;
+  if (!response.ok) {
+    const record = body as Record<string, unknown>;
+    throw new Error(typeof record.message === 'string' ? record.message : `请求失败 (${response.status})`);
+  }
   return body;
 }
 
@@ -151,12 +174,20 @@ function countValue(value: unknown, field: string): number {
   return number;
 }
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
 export function parsePendingKnowledgeVote(value: unknown, nodeId: string): PendingKnowledgeVoteSnapshot {
   const response = value as Record<string, unknown>;
   const side = response.my_side;
   if (side !== null && side !== undefined && side !== 'AGREE' && side !== 'DISAGREE') throw new Error('服务端返回了无效投票状态');
   const responseNodeId = typeof response.node_id === 'string' ? response.node_id : nodeId;
   if (responseNodeId !== nodeId) throw new Error('投票响应节点不匹配');
+  const verdict = response.verdict ?? 'PENDING';
+  if (verdict !== 'PENDING' && verdict !== 'CORRECT' && verdict !== 'INCORRECT') throw new Error('服务端返回了无效结算状态');
+  const closeReason = response.close_reason;
+  if (closeReason !== null && closeReason !== undefined && closeReason !== 'THRESHOLD' && closeReason !== 'TIMEOUT') throw new Error('服务端返回了无效结算原因');
   return {
     nodeId,
     agreeCount: countValue(response.agree_count, '赞成票数'),
@@ -164,6 +195,12 @@ export function parsePendingKnowledgeVote(value: unknown, nodeId: string): Pendi
     requiredVotes: countValue(response.required_votes, '所需票数'),
     mySide: side === 'AGREE' || side === 'DISAGREE' ? side : null,
     myBalance: response.my_balance === null || response.my_balance === undefined ? undefined : exactEnergy(response.my_balance),
+    roundId: optionalString(response.round_id),
+    verdict,
+    closeReason: closeReason === 'THRESHOLD' || closeReason === 'TIMEOUT' ? closeReason : null,
+    deadline: optionalString(response.deadline),
+    closedAt: optionalString(response.closed_at),
+    policyVersion: optionalString(response.policy_version),
   };
 }
 
