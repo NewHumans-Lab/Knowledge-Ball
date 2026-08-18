@@ -77,12 +77,13 @@ try {
   const before = await page.evaluate(() => window.__debug.store.allEvents().length);
   const target = await page.evaluate(() => {
     for (const node of window.__debug.renderNodes) {
+      if (!node.id.startsWith('panel-style-node-')) continue;
       const point = window.__debug.scene.screenPositionForNode(node.id);
       if (point && point.x > 40 && point.x < 350 && point.y > 100 && point.y < 700) return { ...point, id: node.id };
     }
     return null;
   });
-  assert.ok(target, 'must expose a tappable node');
+  assert.ok(target, 'must expose a tappable production-scale fixture node');
 
   const tapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
