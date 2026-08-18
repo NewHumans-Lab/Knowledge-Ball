@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 
 const origin = 'http://127.0.0.1:4173/Knowledge-Ball/';
 const eventCount = 343;
+const mobileActiveNodeTarget = 49;
 
 function fixtureEvents() {
   const timestamp = Date.now() - eventCount;
@@ -63,6 +64,14 @@ try {
   }, fixtureEvents());
   assert.equal(injected, eventCount, 'production-scale fixture must inject every authoritative public event exactly once');
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
+  await page.waitForFunction(() => (window.__debug?.scene?.getActiveNodeCount?.() ?? 0) > 0, null, { timeout: 20_000 });
+
+  const lodState = await page.evaluate(() => ({
+    renderCount: window.__debug.renderNodes.length,
+    activeCount: window.__debug.scene.getActiveNodeCount(),
+  }));
+  assert.ok(lodState.renderCount >= eventCount, `authoritative render graph must retain all fixture nodes, got ${lodState.renderCount}`);
+  assert.ok(lodState.activeCount <= mobileActiveNodeTarget, `mobile high-detail working set must stay <= ${mobileActiveNodeTarget}, got ${lodState.activeCount}`);
 
   const oldSelectorPresent = await page.evaluate(() => {
     for (const sheet of [...document.styleSheets]) {
@@ -73,6 +82,17 @@ try {
     return false;
   });
   assert.equal(oldSelectorPresent, false, 'unstable .mastery-private CSS selector must not return');
+
+  // Full graph truth and Three.js high-detail materialization are separate layers.
+  // Wait for one real active fixture node before starting tap timing.
+  await page.waitForFunction(() => {
+    for (const node of window.__debug?.renderNodes ?? []) {
+      if (!node.id.startsWith('panel-style-node-')) continue;
+      const point = window.__debug?.scene?.screenPositionForNode(node.id);
+      if (point && point.x > 40 && point.x < 350 && point.y > 100 && point.y < 700) return true;
+    }
+    return false;
+  }, null, { timeout: 20_000 });
 
   const before = await page.evaluate(() => window.__debug.store.allEvents().length);
   const target = await page.evaluate(() => {
@@ -103,11 +123,13 @@ try {
       privacyText: privacy?.textContent ?? '',
       privacyFontSize: privacyStyle?.fontSize ?? '',
       privacyMarginTop: privacyStyle?.marginTop ?? '',
+      activeCount: window.__debug.scene.getActiveNodeCount(),
     };
   }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
 
-  console.log(JSON.stringify({ tapWall, state }, null, 2));
+  console.log(JSON.stringify({ tapWall, lodState, state }, null, 2));
   assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
+  assert.ok(state.activeCount <= mobileActiveNodeTarget, `selected-node relation retention must remain within the ${mobileActiveNodeTarget}-node working set`);
   assert.ok(state.panelOpen, 'panel must remain open and responsive');
   assert.equal(state.mastery, 'touched', 'viewed node must be automatically marked touched');
   assert.equal(state.masteryEvents.length, 1, `one view must append exactly one mastery event, got ${state.masteryEvents.length}`);

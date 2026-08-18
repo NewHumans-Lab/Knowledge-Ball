@@ -81,15 +81,8 @@ async function commitPublicEvent(event: DomainEvent): Promise<boolean> {
   return syncEngine.commit(event);
 }
 
-const mobileSceneNodeLimit = window.matchMedia('(max-width: 640px)').matches ? 48 : Infinity;
 function getSceneNodes(): KnowledgeSceneNode[] {
-  if (renderNodes.length <= mobileSceneNodeLimit) return renderNodes;
-  const visible = renderNodes.slice(0, mobileSceneNodeLimit);
-  if (currentPanelId && !visible.some(node => node.id === currentPanelId)) {
-    const selected = getNodeById(currentPanelId);
-    if (selected) visible[visible.length - 1] = selected;
-  }
-  return visible;
+  return renderNodes;
 }
 
 function must<T extends HTMLElement>(id: string): T {
