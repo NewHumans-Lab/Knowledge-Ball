@@ -4,7 +4,6 @@ import { chromium } from 'playwright';
 
 const origin = 'http://127.0.0.1:4173/Knowledge-Ball/';
 const eventCount = 343;
-const storageKey = 'knowledge-ball.events.v1';
 
 function fixtureEvents() {
   const timestamp = Date.now() - eventCount;
@@ -47,12 +46,22 @@ try {
 
   browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  await context.addInitScript(({ key, events }) => {
-    localStorage.setItem(key, JSON.stringify({ schemaVersion: 1, savedAt: new Date().toISOString(), events }));
-  }, { key: storageKey, events: fixtureEvents() });
-
   const page = await context.newPage();
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => Boolean(window.__debug?.store && window.__debug?.projection && window.__debug?.scene), null, { timeout: 20_000 });
+
+  // Public knowledge is no longer restored from browser localStorage. Seed this
+  // production-scale fixture through the same in-memory boundary used after the
+  // server has accepted authoritative public events. This keeps the interaction
+  // benchmark at 343 public events without reintroducing local public truth.
+  const injected = await page.evaluate(events => {
+    let appended = 0;
+    for (const event of events) {
+      if (window.__debug.store.appendValidated(event)) appended += 1;
+    }
+    return appended;
+  }, fixtureEvents());
+  assert.equal(injected, eventCount, 'production-scale fixture must inject every authoritative public event exactly once');
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
 
   const oldSelectorPresent = await page.evaluate(() => {
