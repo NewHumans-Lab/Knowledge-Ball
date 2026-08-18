@@ -12,6 +12,9 @@ const renderFilterIndex = appSource.indexOf('renderNodes = layoutNodes.filter');
 assert(allNodesIndex >= 0, 'user app must build layout from every projected node');
 assert(layoutCallIndex > allNodesIndex, 'uniform layout must run after the full projected graph is materialized');
 assert(renderFilterIndex > layoutCallIndex, 'hidden rendering filter must run only after full-graph layout optimization');
+assert(appSource.includes('function getSceneNodes(): KnowledgeSceneNode[] {\n  return renderNodes;\n}'), 'the live scene must receive the complete visible render-node set on mobile and desktop');
+assert(!appSource.includes('mobileSceneNodeLimit'), 'mobile rendering must not restore a fixed scene-node cap');
+assert(!appSource.includes('renderNodes.slice('), 'the live scene must not truncate the visible graph before Three.js receives it');
 
 assert(uniformSource.includes("import { optimizeRelationLengthLayout } from './RelationLengthLayout';"), 'uniform layout must import the relation-length optimizer used by the user page');
 const slotAssignmentIndex = uniformSource.indexOf('ordered.forEach((node, index) =>');
