@@ -7,6 +7,7 @@ import {
   SUN_ORBIT_RADIUS,
   SUN_TRIAD_IDS,
 } from '../config/KnowledgeUiConfig';
+import { optimizeRelationLengthLayout } from './RelationLengthLayout';
 
 export interface UniformLayoutNode {
   id: string;
@@ -27,11 +28,6 @@ const LAYER_PHASE: Record<NonCoreLayer, number> = {
   outer: 3.43,
 };
 
-/**
- * Ordinary inner-layer nodes should not occupy the core Sun itself. The value is
- * still inside the canonical inner band; it only removes the visually unusable
- * central volume already owned by the core system.
- */
 export const INNER_LAYOUT_MIN_RADIUS = Math.min(
   LAYER_BANDS.inner.rMax - 1,
   CORE_SUN_RADIUS + 9,
@@ -45,119 +41,34 @@ export function layoutBandForLayer(layer: NonCoreLayer): { rMin: number; rMax: n
   };
 }
 
-function radicalInverse(index: number, base: number): number {
-  let i = index;
-  let factor = 1 / base;
-  let result = 0;
-  while (i > 0) {
-    result += factor * (i % base);
-    i = Math.floor(i / base);
-    factor /= base;
-  }
-  return result;
-}
-
-function stableHash32(input: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  h ^= h >>> 16;
-  h = Math.imul(h, 2246822507);
-  h ^= h >>> 13;
-  return h >>> 0;
-}
-
-function stableNodeOrder<T extends Pick<UniformLayoutNode, 'id'>>(nodes: T[]): T[] {
-  return [...nodes].sort((a, b) => {
-    const ah = stableHash32(a.id);
-    const bh = stableHash32(b.id);
-    return ah === bh ? a.id.localeCompare(b.id) : ah - bh;
-  });
-}
-
-function radialPermutation(count: number): number[] {
-  return Array.from({ length: count }, (_, index) => index)
-    .sort((a, b) => radicalInverse(a + 1, 2) - radicalInverse(b + 1, 2));
-}
-
-function relaxationIterations(count: number): number {
-  if (count <= 1) return 0;
-  if (count <= 128) return 24;
-  if (count <= 512) return 12;
-  if (count <= 1024) return 6;
-  return 0;
-}
-
 /**
- * Generates a deterministic, equal-volume, blue-noise-like point set inside one
- * layer. Radial ranks are hard-stratified by shell volume. Angular directions
- * start from a Fibonacci sphere and are relaxed tangentially, so relaxation can
- * improve nearest-neighbour spacing without changing any node's radial quantile.
+ * Generates a deterministic equal-volume low-discrepancy point set in O(n).
+ * Angular directions use a Fibonacci sphere. Radial ranks use step (n - 1),
+ * which is always coprime with n, so every radial stratum is visited exactly
+ * once without sorting or all-pairs relaxation.
  */
 export function uniformLayerSlots(layer: NonCoreLayer, count: number): THREE.Vector3[] {
   if (count <= 0) return [];
 
   const { rMin, rMax } = layoutBandForLayer(layer);
-  const radialRanks = radialPermutation(count);
   const points: THREE.Vector3[] = [];
-  const radii: number[] = [];
+  const radialStep = count <= 1 ? 1 : count - 1;
 
   for (let index = 0; index < count; index++) {
     const z = 1 - 2 * ((index + 0.5) / count);
     const phi = index * GOLDEN_ANGLE + LAYER_PHASE[layer];
     const xy = Math.sqrt(Math.max(0, 1 - z * z));
-    const radialQuantile = (radialRanks[index] + 0.5) / count;
+    const radialRank = count <= 1 ? 0 : (index * radialStep) % count;
+    const radialQuantile = (radialRank + 0.5) / count;
     const radius = Math.cbrt(
       rMin ** 3 + radialQuantile * (rMax ** 3 - rMin ** 3),
     );
-    radii.push(radius);
+
     points.push(new THREE.Vector3(
       radius * xy * Math.cos(phi),
       radius * xy * Math.sin(phi),
       radius * z,
     ));
-  }
-
-  const iterations = relaxationIterations(count);
-  if (iterations === 0) return points;
-
-  const forces = Array.from({ length: count }, () => new THREE.Vector3());
-  const delta = new THREE.Vector3();
-  const unit = new THREE.Vector3();
-  const tangent = new THREE.Vector3();
-
-  for (let iteration = 0; iteration < iterations; iteration++) {
-    for (const force of forces) force.set(0, 0, 0);
-
-    for (let i = 0; i < count; i++) {
-      for (let j = i + 1; j < count; j++) {
-        delta.copy(points[i]).sub(points[j]);
-        const distanceSq = Math.max(delta.lengthSq(), 1e-6);
-        const inverseCube = 1 / (distanceSq * Math.sqrt(distanceSq));
-        delta.multiplyScalar(inverseCube);
-        forces[i].add(delta);
-        forces[j].sub(delta);
-      }
-    }
-
-    const anneal = 0.12 * (1 - iteration / iterations);
-    for (let i = 0; i < count; i++) {
-      const radius = radii[i];
-      unit.copy(points[i]).multiplyScalar(1 / radius);
-      tangent.copy(forces[i]).addScaledVector(unit, -forces[i].dot(unit));
-      const tangentMagnitude = tangent.length();
-      if (tangentMagnitude <= 1e-12) continue;
-
-      const angularStep = Math.min(
-        0.08,
-        anneal * tangentMagnitude * radius * radius,
-      );
-      tangent.multiplyScalar(angularStep / tangentMagnitude);
-      unit.add(tangent).normalize();
-      points[i].copy(unit).multiplyScalar(radius);
-    }
   }
 
   return points;
@@ -174,9 +85,9 @@ function coreSlot(id: string): THREE.Vector3 {
 }
 
 /**
- * Applies one global layout pass to every current node, including hidden or
- * falsified history. Visibility is deliberately ignored: a hidden node owns a
- * real slot and therefore leaves a real gap in the visible graph.
+ * Generates the hard uniform slot set for every node, including hidden history,
+ * then only changes which same-layer node owns which slot to shorten the complete
+ * historical relation graph. The slot set itself never moves.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   const groups: Record<NonCoreLayer, T[]> = {
@@ -203,7 +114,7 @@ export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[])
   }
 
   (Object.keys(groups) as NonCoreLayer[]).forEach(layer => {
-    const ordered = stableNodeOrder(groups[layer]);
+    const ordered = groups[layer];
     const slots = uniformLayerSlots(layer, ordered.length);
     ordered.forEach((node, index) => {
       const position = slots[index];
@@ -214,5 +125,6 @@ export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[])
     });
   });
 
+  optimizeRelationLengthLayout(nodes);
   return nodes;
 }
