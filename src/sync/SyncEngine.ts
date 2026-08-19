@@ -112,7 +112,7 @@ export class SyncEngine<TState> {
 
     const expectedCursor = this.cursor;
     try {
-      const result = await this.adapter.push([event], expectedCursor);
+      const result = await this.adapter!.push([event], expectedCursor);
       if (!result.acknowledgedEventIds.includes(event.id)) {
         throw new Error(`Server did not acknowledge public event ${event.id}`);
       }
