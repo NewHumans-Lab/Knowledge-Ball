@@ -70,39 +70,55 @@ try {
   assert.ok(tappable, 'scene did not expose a finite tappable node position');
   assert.ok(Number.isFinite(tappable.x) && Number.isFinite(tappable.y), 'mobile raycast target coordinates must be finite');
 
-  const marker = `E2E ${new URL(target).searchParams.get('e2e') ?? Date.now()} ${crypto.randomUUID()}`;
-  await page.locator('.ai-add').click();
-  await page.locator('#fTitle').fill(marker);
-  await page.locator('#fType').selectOption('inner');
-  await page.locator('#fDescription').fill(`Public synchronization probe for ${marker}`);
-  await page.locator('#modalSubmit').click();
-  await page.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'), null, { timeout: 5_000 });
-  await page.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).some(node => node.title === title), marker);
-  const created = await page.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).find(node => node.title === title), marker);
-  assert.equal(created?.declaredLayer, 'inner', 'public create event must preserve the user-declared first layer');
-  await page.waitForFunction(() => window.__debug?.syncEngine?.pendingCount?.() === 0 && window.__debug?.syncEngine?.currentStatus?.() === 'idle', null, { timeout: 20_000 });
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length === 1, marker);
-  assert.equal(await page.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length, marker), 1);
+  // Open the second independent client BEFORE the write. It must converge while
+  // already open; startup hydration after the write is not sufficient proof.
   const secondContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   try {
     const secondPage = await secondContext.newPage();
     await secondPage.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await secondPage.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length === 1, marker, { timeout: 20_000 });
+    await secondPage.waitForFunction(() => window.__debug?.syncEngine?.currentStatus?.() === 'idle', null, { timeout: 20_000 });
+    const secondCursorBeforeWrite = await secondPage.evaluate(() => window.__debug?.syncEngine?.currentCursor?.() ?? null);
+
+    const marker = `E2E ${new URL(target).searchParams.get('e2e') ?? Date.now()} ${crypto.randomUUID()}`;
+    await page.locator('.ai-add').click();
+    await page.locator('#fTitle').fill(marker);
+    await page.locator('#fType').selectOption('inner');
+    await page.locator('#fDescription').fill(`Public synchronization probe for ${marker}`);
+    await page.locator('#modalSubmit').click();
+    await page.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'), null, { timeout: 5_000 });
+    await page.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).some(node => node.title === title), marker);
+    const created = await page.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).find(node => node.title === title), marker);
+    assert.equal(created?.declaredLayer, 'inner', 'public create event must preserve the user-declared first layer');
+    await page.waitForFunction(() => window.__debug?.syncEngine?.pendingCount?.() === 0 && window.__debug?.syncEngine?.currentStatus?.() === 'idle', null, { timeout: 20_000 });
+
+    // Do not reload secondPage and do not call its debug sync method.
+    await secondPage.waitForFunction(
+      title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length === 1,
+      marker,
+      { timeout: 25_000 },
+    );
     const remoteCreated = await secondPage.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).find(node => node.title === title), marker);
-    assert.equal(remoteCreated?.declaredLayer, 'inner', 'second client must replay the same declared layer from the authoritative event stream');
+    assert.equal(remoteCreated?.id, created?.id, 'already-open second client must receive the same authoritative node identity');
+    assert.equal(remoteCreated?.declaredLayer, 'inner', 'already-open second client must receive the same declared layer automatically');
+    const secondCursorAfterWrite = await secondPage.evaluate(() => window.__debug?.syncEngine?.currentCursor?.() ?? null);
+    assert.notEqual(secondCursorAfterWrite, secondCursorBeforeWrite, 'already-open second client cursor must advance automatically after the remote write');
+
+    // Refresh reconstructs from cloud and must not duplicate the authoritative event.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length === 1, marker);
+    assert.equal(await page.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).filter(node => node.title === title).length, marker), 1);
+
+    await page.locator('.ai-add').click();
+    await page.locator('#modalOverlay.show').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#modalCancel').click();
+    await page.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'));
+
+    const personal = page.locator('#btnPersonal');
+    if (await personal.count()) { await personal.click(); await personal.click(); }
+
+    console.log(`Production browser smoke test passed: ${target}`);
+    console.log(`Supabase signup: ${signupStatus}; public event pull: ${publicEventsStatus}; real UI create + already-open second-client convergence: passed`);
   } finally { await secondContext.close(); }
-
-  await page.locator('.ai-add').click();
-  await page.locator('#modalOverlay.show').waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('#modalCancel').click();
-  await page.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'));
-
-  const personal = page.locator('#btnPersonal');
-  if (await personal.count()) { await personal.click(); await personal.click(); }
-
-  console.log(`Production browser smoke test passed: ${target}`);
-  console.log(`Supabase signup: ${signupStatus}; public event pull: ${publicEventsStatus}; layer-first UI clicks: passed`);
 } finally {
   await browser.close();
 }

@@ -6,6 +6,7 @@ import {
 import type { EventStore } from '../event/EventStore';
 import { RemoteHeadConflictError, type SyncAdapter } from './SyncAdapter';
 import type { FailedSyncEvent } from './SyncMetadata';
+import { PublicKnowledgeSyncCoordinator } from './PublicKnowledgeSyncCoordinator';
 
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'unavailable' | 'conflict';
 export type EventValidator = (event: PublicKnowledgeEvent) => string | null;
@@ -16,27 +17,46 @@ export type EventValidator = (event: PublicKnowledgeEvent) => string | null;
  * The engine keeps only an in-memory cursor for the current page lifetime. A
  * refresh starts from cursor 0 and rebuilds public knowledge from Supabase;
  * there is no durable pending queue, acknowledged-ID cache, or local rebase
- * state. Public commands may use commit() so the server accepts the event
- * before it is applied to the in-memory EventStore.
+ * state. Public commands use commit() so the server accepts the event before it
+ * is applied to the in-memory EventStore.
  */
 export class SyncEngine<TState> {
   private cursor = '0';
   private status: SyncStatus = 'idle';
   private readonly listeners = new Set<(status: SyncStatus, failures: FailedSyncEvent[]) => void>();
   private operationTail: Promise<void> = Promise.resolve();
+  private readonly browserCoordinator: PublicKnowledgeSyncCoordinator | null;
 
   constructor(
     private readonly store: EventStore<TState>,
     private readonly adapter: SyncAdapter | null,
     private readonly validate: EventValidator = () => null,
   ) {
-    if (!adapter) this.setStatus('unavailable');
+    if (!adapter) {
+      this.browserCoordinator = null;
+      this.setStatus('unavailable');
+      return;
+    }
+
+    this.browserCoordinator = typeof window !== 'undefined' && typeof document !== 'undefined'
+      ? new PublicKnowledgeSyncCoordinator(
+          () => this.sync(),
+          {
+            onError: (error, reason) => console.warn(`[Knowledge-Ball] public sync ${reason} deferred:`, error),
+          },
+        )
+      : null;
+    this.browserCoordinator?.start();
   }
 
   currentStatus(): SyncStatus { return this.status; }
   currentCursor(): string { return this.cursor; }
   pendingCount(): number { return 0; }
   failures(): FailedSyncEvent[] { return []; }
+
+  dispose(): void {
+    this.browserCoordinator?.stop();
+  }
 
   subscribe(listener: (status: SyncStatus, failures: FailedSyncEvent[]) => void): () => void {
     this.listeners.add(listener);
@@ -66,9 +86,8 @@ export class SyncEngine<TState> {
       return Promise.reject(new Error('Only canonical public knowledge events can be committed by the client'));
     }
     if (!this.adapter) {
-      const invalid = this.validate(event);
-      if (invalid) return Promise.reject(new Error(invalid));
-      return Promise.resolve(this.store.append(event));
+      this.setStatus('unavailable');
+      return Promise.reject(new Error('公共知识只认云端确认；远程数据库未配置，不能创建本地公共事实'));
     }
     return this.enqueue(() => this.performCommit(event));
   }
@@ -93,7 +112,7 @@ export class SyncEngine<TState> {
 
     const expectedCursor = this.cursor;
     try {
-      const result = await this.adapter!.push([event], expectedCursor);
+      const result = await this.adapter.push([event], expectedCursor);
       if (!result.acknowledgedEventIds.includes(event.id)) {
         throw new Error(`Server did not acknowledge public event ${event.id}`);
       }

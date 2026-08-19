@@ -23,8 +23,10 @@ jobs:
       - run: npm run test:pages
       - run: npm test
       - run: npm run test:download
-      - name: Install Chromium for mobile browser regression
+      - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
+      - name: Verify cloud-only public state with two already-open real pages
+        run: npm run test:browser-cloud
       - run: npm run test:browser-mobile
       - name: Upload mobile scene visual evidence
         if: always()

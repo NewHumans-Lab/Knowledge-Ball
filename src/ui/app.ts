@@ -598,9 +598,9 @@ function initializeSyncEngine(): void {
     document.documentElement.dataset.syncStatus = status;
     const settingsButton = opt<HTMLButtonElement>('btnSettings');
     if (settingsButton) settingsButton.title = status === 'unavailable'
-      ? '远程数据库未配置 · 公共数据仅保留在本次会话'
+      ? '远程数据库未配置 · 公共知识只读，本地公共数据不被承认'
       : `同步状态：${status}`;
-    if (status === 'unavailable') panel.showToast('未配置远程数据库；公共数据不会保存在浏览器');
+    if (status === 'unavailable') panel.showToast('远程数据库未配置；公共知识只认云端，当前页面不能提交公共修改');
     if (status === 'conflict') panel.showToast('服务器数据已变化，请重试刚才的公共操作');
   });
 }
@@ -622,10 +622,6 @@ void bootstrapRemoteFirst({
     console.error('[Knowledge-Ball] remote-first bootstrap failed:', error);
     scene.start();
   });
-
-window.addEventListener('online', () => {
-  void syncEngine?.sync().catch(error => console.warn('[Knowledge-Ball] reconnect sync deferred:', error));
-});
 
 window.addEventListener('resize', () => {
   scene.resize();
