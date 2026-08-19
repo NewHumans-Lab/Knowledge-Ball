@@ -44,6 +44,8 @@ assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count:0, disagree_count:0, required_votes:1, my_side:null, close_reason:'MANUAL' }, 'pending-1'), /无效结算原因/);
 
 const authUi = readFileSync('src/ui/AuthUi.ts', 'utf8');
+const syncEngine = readFileSync('src/sync/SyncEngine.ts', 'utf8');
+const publicSyncCoordinator = readFileSync('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
 assert.match(authUi, /panelClose\.textContent = '❌'/, 'node detail must expose an explicit top-right return/close affordance');
 assert.match(authUi, /node\.status !== 'pending'/, 'vote controls must be pending-only');
 assert.match(authUi, /data-vote-side=\"AGREE\"/, 'pending detail must expose an agree action');
@@ -52,12 +54,15 @@ assert.match(authUi, /−1 能量/g, 'both vote buttons must label the one-energ
 assert.match(authUi, /account\.castPendingKnowledgeVote/, 'vote UI must call the real account vote RPC rather than fake a local decrement');
 assert.match(authUi, /await refreshCachedAccount\(\)/, 'successful votes/settlements must refresh account energy display');
 assert.match(authUi, /VOTE_REFRESH_MS = 3_000/, 'the one active vote card must refresh its global tally promptly');
-assert.match(authUi, /REMOTE_GRAPH_SYNC_MS = 30_000/, 'open clients must periodically pull server verdict events without per-node timers');
 assert.match(authUi, /account\.getPendingKnowledgeVote\(nodeId\)/, 'active pending detail must re-read the authoritative all-network tally');
 assert.match(authUi, /account\.settleExpiredPendingKnowledgeVotes\(50\)/, 'clients must trigger a low-frequency threshold\/deadline readiness sweep');
-assert.match(authUi, /syncEngine\?\.sync\(\)/, 'a finalized server verdict must trigger graph-event synchronization');
+assert.match(authUi, /knowledge-ball:verdict-finalized/, 'finalized server verdicts must publish a graph-change signal');
+assert.match(syncEngine, /PublicKnowledgeSyncCoordinator/, 'the sync engine, not account UI, must own public graph convergence');
+assert.match(publicSyncCoordinator, /DEFAULT_PUBLIC_KNOWLEDGE_SYNC_INTERVAL_MS = 10_000/, 'already-open clients must periodically reconcile server events');
+assert.match(publicSyncCoordinator, /knowledge-ball:verdict-finalized/, 'server verdict signal must trigger prompt public graph reconciliation');
+assert.doesNotMatch(authUi, /REMOTE_GRAPH_SYNC_MS|scheduleRemoteGraphSync|requestGraphSync|syncEngine/, 'account UI must not own or reach through debug state to synchronize the public graph');
 assert.match(authUi, /snapshot\.verdict === 'PENDING'/, 'closed rounds must stop accepting or polling ordinary votes');
 assert.match(authUi, /observe\(panelTitle/, 'panel enhancements must keep the safe title-only observer boundary');
 assert.doesNotMatch(authUi, /observe\(panel,\s*\{\s*subtree:true/, 'vote UI must not recreate the old panel-subtree MutationObserver feedback loop');
 assert.doesNotMatch(authUi, /setInterval\(/, 'vote synchronization must not add permanent or per-node intervals');
-console.log('Account formatting and pending vote regression checks passed');
+console.log('Account formatting, pending vote, and public-sync ownership regression checks passed');

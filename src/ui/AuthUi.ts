@@ -11,7 +11,6 @@ import { setMastery } from '../command/SetMastery';
 interface DebugState {
   store?: Parameters<typeof setMastery>[0];
   projection?: { state?: { nodesById?: Record<string, { id:string; title:string; mastery?:string; status?:string }> } };
-  syncEngine?: { sync: () => Promise<void> } | null;
 }
 declare global { interface Window { __debug?: DebugState; } }
 
@@ -21,10 +20,8 @@ let markingNode = false;
 let voteRenderToken = 0;
 let voteRefreshTimer: number | null = null;
 let expirySweepTimer: number | null = null;
-let graphSyncTimer: number | null = null;
 const VOTE_REFRESH_MS = 3_000;
 const EXPIRY_SWEEP_MS = 5 * 60_000;
-const REMOTE_GRAPH_SYNC_MS = 30_000;
 
 function start(): void {
   installStyles();
@@ -51,10 +48,7 @@ function start(): void {
   }).observe(panelTitle, { subtree:true, childList:true, characterData:true });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      requestGraphSync();
-      void sweepExpiredVoteRounds();
-    }
+    if (document.visibilityState === 'visible') void sweepExpiredVoteRounds();
   });
 
   updateAvatar();
@@ -62,10 +56,8 @@ function start(): void {
     await loadAccount();
     await sweepExpiredVoteRounds();
     scheduleExpirySweep();
-    scheduleRemoteGraphSync();
   }).catch(() => {
     scheduleExpirySweep();
-    scheduleRemoteGraphSync();
   });
 }
 
@@ -227,7 +219,6 @@ async function handleFinalizedVote(root: HTMLElement, snapshot: PendingKnowledge
   window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
     detail: { nodeId:snapshot.nodeId, verdict:snapshot.verdict },
   }));
-  requestGraphSync();
 }
 
 async function sweepExpiredVoteRounds(): Promise<void> {
@@ -236,23 +227,8 @@ async function sweepExpiredVoteRounds(): Promise<void> {
     const processed = await account.settleExpiredPendingKnowledgeVotes(50);
     if (processed > 0) {
       window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', { detail:{ sweep:true } }));
-      requestGraphSync();
     }
   } catch { /* old schema/offline clients retry on the next low-frequency sweep */ }
-}
-
-function requestGraphSync(): void {
-  if (document.visibilityState === 'hidden') return;
-  void window.__debug?.syncEngine?.sync().catch(error => console.warn('[Knowledge-Ball] remote verdict sync deferred:', error));
-}
-
-function scheduleRemoteGraphSync(): void {
-  if (!account || graphSyncTimer !== null) return;
-  graphSyncTimer = window.setTimeout(() => {
-    graphSyncTimer = null;
-    requestGraphSync();
-    scheduleRemoteGraphSync();
-  }, REMOTE_GRAPH_SYNC_MS);
 }
 
 function scheduleExpirySweep(): void {
@@ -310,7 +286,7 @@ function renderProfile(body:HTMLElement, profile:AccountProfile|null):void {
   const set=(selector:string,value:string)=>{const element=body.querySelector<HTMLElement>(selector);if(element)element.textContent=value;};
   set('#kbProfileName',name(profile));set('#kbProfileUsername',`@${profile?.username??'设置用户名'}`);
   set('#kbProfileBio',profile?.bio??'匿名参与者也可以编辑知识、投票并设置公开资料。');
-  set('#kbAccountStatus',account?'正在自动同步账户数据…':'远程服务未配置，本地知识功能仍可使用。');
+  set('#kbAccountStatus',account?'正在自动同步账户数据…':'远程服务未配置；公共知识不可本地提交，个人本地状态仍可使用。');
 }
 function updateAvatar(): void { const avatar=document.querySelector<HTMLElement>('.avatar-btn');if(!avatar)return;avatar.replaceChildren();const src=safeAvatarUrl(cached?.avatarUrl);if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(cached);},{once:true});avatar.append(image);}else avatar.textContent=initial(cached);avatar.title='个人空间 · 匿名参与';avatar.dataset.authState='anonymous'; }
 function name(profile:AccountProfile|null):string{return profile?.displayName||profile?.username||'匿名探索者';}
