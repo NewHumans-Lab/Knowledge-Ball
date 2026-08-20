@@ -237,7 +237,7 @@ async function refreshPendingVote(nodeId: string, root: HTMLElement, token: numb
     const snapshot = await account.getPendingKnowledgeVote(nodeId);
     if (token !== voteRenderToken || !root.isConnected || currentPanelNode()?.id !== nodeId) return;
     applyVoteSnapshot(root, snapshot);
-    if (snapshot.verdict === 'PENDING') scheduleVoteRefresh(node.id, root, token);
+    if (snapshot.verdict === 'PENDING') scheduleVoteRefresh(nodeId, root, token);
     else await handleFinalizedVote(root, snapshot);
   } catch (error) {
     const status = root.querySelector<HTMLElement>('.kb-vote-status');
