@@ -1,4 +1,4 @@
-const expected = process.env.EXPECTED_SCHEMA_VERSION ?? '202608170001';
+const expected = process.env.EXPECTED_SCHEMA_VERSION ?? '202608200001';
 const base = (process.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
 const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? '';
 if (!base || !key) throw new Error('Supabase release preflight requires VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY');

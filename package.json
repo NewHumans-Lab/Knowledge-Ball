@@ -29,7 +29,7 @@
     "test:edit-ui": "npx esbuild src/ui/KnowledgeEditUiRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-edit-ui-regression.mjs && node .test-dist/knowledge-edit-ui-regression.mjs",
     "test:demo": "npx esbuild src/demo/seedDemoKnowledge.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/demo-knowledge-regression.mjs && node .test-dist/demo-knowledge-regression.mjs",
     "test:sync": "npx esbuild src/sync/SyncRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/sync-regression.mjs && node .test-dist/sync-regression.mjs && npx esbuild src/sync/CloudAuthorityRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/cloud-authority-regression.mjs && node .test-dist/cloud-authority-regression.mjs",
-    "test:architecture": "node scripts/verify-scheme7-architecture.mjs && node scripts/verify-energy-migration.mjs && node scripts/verify-total-energy.mjs && node scripts/verify-account-ui.mjs && node scripts/verify-issue45-regressions.mjs",
+    "test:architecture": "node scripts/verify-scheme7-architecture.mjs && node scripts/verify-energy-migration.mjs && node scripts/verify-total-energy.mjs && node scripts/verify-account-ui.mjs && node scripts/verify-issue45-regressions.mjs && node scripts/verify-personal-account-state.mjs",
     "test:auth": "npx esbuild src/auth/AuthClientRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/auth-regression.mjs && node .test-dist/auth-regression.mjs",
     "test:browser-cloud": "node scripts/verify-cloud-authority-browser.mjs",
     "test:browser-mobile": "node scripts/verify-mobile-browser.mjs",

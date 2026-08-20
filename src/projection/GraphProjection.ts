@@ -29,6 +29,22 @@ export class GraphProjection implements Projection<GraphState> {
     eventsSinceSnapshot.forEach(event => this.apply(event));
   }
 
+  /**
+   * Cloud personal state is authoritative for hosted sessions. Reset every known
+   * node to none, apply the server snapshot, and retain states for public nodes
+   * that have not hydrated yet. This prevents stale browser-local mastery from
+   * winning merely because it replayed earlier during startup.
+   */
+  replacePersonalMastery(states: Readonly<Record<string, Mastery>>): void {
+    this.pendingMasteryByNodeId.clear();
+    for (const node of Object.values(this.state.nodesById)) node.mastery = 'none';
+    for (const [nodeId, mastery] of Object.entries(states)) {
+      const node = this.state.nodesById[nodeId];
+      if (node) node.mastery = mastery;
+      else this.pendingMasteryByNodeId.set(nodeId, mastery);
+    }
+  }
+
   private takePendingMastery(nodeId: string): Mastery {
     const mastery = this.pendingMasteryByNodeId.get(nodeId) ?? 'none';
     this.pendingMasteryByNodeId.delete(nodeId);
