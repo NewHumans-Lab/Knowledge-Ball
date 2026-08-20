@@ -29,10 +29,14 @@ let markingNode = false;
 let voteRenderToken = 0;
 let voteRefreshTimer: number | null = null;
 let expirySweepTimer: number | null = null;
+let loginRequiredTimer: number | null = null;
 const VOTE_REFRESH_MS = 3_000;
 const EXPIRY_SWEEP_MS = 5 * 60_000;
+const LOGIN_REQUIRED_MS = 2_000;
 const LOCAL_PERSONAL_OWNER_KEY = 'knowledge-ball.personal-local-owner.v1';
 const PERSONAL_CLOUD_MIGRATION_PREFIX = 'knowledge-ball.personal-cloud-migrated.v1:';
+
+type AuthMode = 'login' | 'register';
 
 function start(): void {
   installStyles();
@@ -341,7 +345,8 @@ async function refreshCachedAccount(): Promise<void> {
 }
 
 function openAccount(shouldLoad = true): void {
-  const overlay = document.getElementById('accountOverlay'); const body = overlay?.querySelector<HTMLElement>('.modal-body');
+  const overlay = document.getElementById('accountOverlay');
+  const body = overlay?.querySelector<HTMLElement>('.modal-body');
   if (!overlay || !body) return;
   body.innerHTML = `
     <div class="kb-profile-head"><div class="kb-profile-avatar" id="kbProfileAvatar"></div><div><strong id="kbProfileName"></strong><small id="kbProfileUsername"></small></div></div>
@@ -349,13 +354,11 @@ function openAccount(shouldLoad = true): void {
     <div class="account-stat"><span>我的能量</span><b id="kbMyBalance">${cached ? compactEnergy(cached.myBalance) : '—'}</b></div>
     <div class="account-stat"><span>总能量</span><b id="kbTotalEnergy">${cached ? compactEnergy(cached.totalEnergy) : '—'}</b></div>
     <div class="account-stat"><span>准确率</span><b>${cached?.accuracy ?? 0}%</b></div>
-    <button class="btn primary kb-account-main-action" id="kbClaimLogin" type="button">设置 / 修改用户名和密码</button>
-    <button class="btn ghost kb-account-main-action" id="kbLoginExisting" type="button">用户名 + 密码登录</button>
-    <button class="btn ghost kb-account-main-action" id="kbEditProfile" type="button">编辑资料</button>
+    <button class="btn primary kb-account-main-action" id="kbAuthEntry" type="button">注册 / 登录</button>
+    <button class="btn ghost kb-account-main-action" id="kbEditProfile" type="button">修改资料</button>
     <div class="form-hint kb-auth-status" id="kbAccountStatus"></div>`;
   renderProfile(body, cached);
-  body.querySelector('#kbClaimLogin')?.addEventListener('click', () => claimUsernamePassword(body));
-  body.querySelector('#kbLoginExisting')?.addEventListener('click', () => loginUsernamePassword(body));
+  body.querySelector('#kbAuthEntry')?.addEventListener('click', () => renderAuthForm(body, 'login'));
   body.querySelector('#kbEditProfile')?.addEventListener('click', () => editProfile(body));
   overlay.classList.add('show');
   if (account && shouldLoad) void loadAccount(body);
@@ -363,8 +366,14 @@ function openAccount(shouldLoad = true): void {
 
 async function loadAccount(body?: HTMLElement): Promise<void> {
   if (!account) return;
-  try { cached = await account.getAccount(); updateAvatar(); if (body) openAccount(false); }
-  catch (error) { const status=body?.querySelector<HTMLElement>('#kbAccountStatus'); if(status) status.textContent=error instanceof Error?error.message:'账户读取失败'; }
+  try {
+    cached = await account.getAccount();
+    updateAvatar();
+    if (body) openAccount(false);
+  } catch (error) {
+    const status = body?.querySelector<HTMLElement>('#kbAccountStatus');
+    if (status) status.textContent = error instanceof Error ? error.message : '账户读取失败';
+  }
 }
 
 function accountStatus(body: HTMLElement, value: string): void {
@@ -372,58 +381,132 @@ function accountStatus(body: HTMLElement, value: string): void {
   if (status) status.textContent = value;
 }
 
-function claimUsernamePassword(body: HTMLElement): void {
-  if (!account) return;
-  const username = prompt('设置唯一用户名（3-24 位小写字母、数字或下划线）', cached?.username?.startsWith('guest_') ? '' : cached?.username ?? '');
-  if (username === null) return;
-  const password = prompt('设置密码（由你自己决定；需满足当前 Supabase 最低安全要求）', '');
-  if (password === null || password.length === 0) return;
-  accountStatus(body, '正在把当前账户升级为可跨浏览器登录的永久账户…');
-  void account.claimUsernamePassword(username, password).then(async profile => {
-    cached = profile;
-    await syncPersonalKnowledgeCloud();
-    updateAvatar();
-    openAccount(false);
-    const nextBody = document.getElementById('accountOverlay')?.querySelector<HTMLElement>('.modal-body');
-    if (nextBody) accountStatus(nextBody, '设置成功：以后可在其他浏览器用用户名 + 密码恢复同一账户和个人知识记录。');
-  }).catch(error => accountStatus(body, error instanceof Error ? error.message : '账户设置失败'));
+function renderAuthForm(body: HTMLElement, mode: AuthMode = 'login'): void {
+  const registering = mode === 'register';
+  const suggestedUsername = cached?.username?.startsWith('guest_') ? '' : cached?.username ?? '';
+  body.innerHTML = `
+    <section class="kb-auth-card" aria-label="账户注册登录">
+      <div class="kb-auth-tabs" role="tablist" aria-label="注册或登录">
+        <button class="kb-auth-tab ${!registering ? 'active' : ''}" type="button" data-auth-mode="login" role="tab" aria-selected="${!registering}">登录</button>
+        <button class="kb-auth-tab ${registering ? 'active' : ''}" type="button" data-auth-mode="register" role="tab" aria-selected="${registering}">注册</button>
+      </div>
+      <form class="kb-auth-form" id="kbAuthForm" novalidate>
+        <label>用户名
+          <input name="username" type="text" inputmode="text" autocomplete="username" minlength="3" maxlength="24" pattern="[a-z0-9_]{3,24}" value="${escapeHtml(registering ? suggestedUsername : '')}" placeholder="3-24 位小写字母、数字或下划线" required>
+        </label>
+        <label>密码
+          <input name="password" type="password" autocomplete="${registering ? 'new-password' : 'current-password'}" maxlength="256" placeholder="请输入密码" required>
+        </label>
+        ${registering ? `<label>确认密码
+          <input name="passwordConfirm" type="password" autocomplete="new-password" maxlength="256" placeholder="再次输入密码" required>
+        </label>` : ''}
+        <button class="btn primary kb-auth-submit" type="submit">${registering ? '注册' : '登录'}</button>
+      </form>
+      <button class="btn ghost kb-auth-back" id="kbAuthBack" type="button">返回账户</button>
+      <div class="form-hint kb-auth-status" id="kbAccountStatus">${registering ? '注册后即可修改个人资料，并可在其他浏览器登录同一账户。' : '使用已经注册的用户名和密码登录。'}</div>
+    </section>`;
+
+  for (const tab of body.querySelectorAll<HTMLButtonElement>('[data-auth-mode]')) {
+    tab.addEventListener('click', () => renderAuthForm(body, tab.dataset.authMode === 'register' ? 'register' : 'login'));
+  }
+  body.querySelector('#kbAuthBack')?.addEventListener('click', () => openAccount(false));
+  body.querySelector<HTMLFormElement>('#kbAuthForm')?.addEventListener('submit', event => {
+    event.preventDefault();
+    void submitAuthForm(body, mode, event.currentTarget as HTMLFormElement);
+  });
 }
 
-function loginUsernamePassword(body: HTMLElement): void {
+async function submitAuthForm(body: HTMLElement, mode: AuthMode, form: HTMLFormElement): Promise<void> {
   if (!account) return;
-  const username = prompt('用户名', '');
-  if (username === null) return;
-  const password = prompt('密码', '');
-  if (password === null || password.length === 0) return;
-  accountStatus(body, '正在恢复账户和个人知识记录…');
-  void account.loginUsernamePassword(username, password).then(async profile => {
-    cached = profile;
+  const username = formValue(form, 'username').trim().toLowerCase();
+  const password = formValue(form, 'password');
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) {
+    accountStatus(body, '用户名必须是 3-24 位小写字母、数字或下划线');
+    return;
+  }
+  if (!password) {
+    accountStatus(body, '请输入密码');
+    return;
+  }
+  if (mode === 'register' && password !== formValue(form, 'passwordConfirm')) {
+    accountStatus(body, '两次输入的密码不一致');
+    return;
+  }
+
+  const submit = form.querySelector<HTMLButtonElement>('.kb-auth-submit');
+  if (submit) submit.disabled = true;
+  accountStatus(body, mode === 'register' ? '正在注册账户…' : '正在登录…');
+
+  try {
+    cached = mode === 'register'
+      ? await account.claimUsernamePassword(username, password)
+      : await account.loginUsernamePassword(username, password);
     await syncPersonalKnowledgeCloud();
     updateAvatar();
     openAccount(false);
     const nextBody = document.getElementById('accountOverlay')?.querySelector<HTMLElement>('.modal-body');
-    if (nextBody) accountStatus(nextBody, '登录成功：已恢复该 user_id 对应的个人资料、账户和知识节点状态。');
-  }).catch(error => accountStatus(body, error instanceof Error ? error.message : '用户名或密码错误'));
+    if (nextBody) accountStatus(nextBody, mode === 'register' ? '注册成功' : '登录成功');
+  } catch (error) {
+    accountStatus(body, error instanceof Error ? error.message : mode === 'register' ? '注册失败' : '用户名或密码错误');
+    if (submit) submit.disabled = false;
+  }
+}
+
+function formValue(form: HTMLFormElement, name: string): string {
+  const field = form.elements.namedItem(name);
+  return field instanceof HTMLInputElement ? field.value : '';
 }
 
 function editProfile(body: HTMLElement): void {
   if (!account) return;
-  const username=prompt('用户名（3-24 位小写字母、数字或下划线）',cached?.username??''); if(username===null)return;
-  const displayName=prompt('显示名称',cached?.displayName??'')??''; const avatarUrl=prompt('头像 HTTPS 地址（可选）',cached?.avatarUrl??'')??''; const bio=prompt('个人简介（最多 280 字）',cached?.bio??'')??'';
-  void account.updateProfile({username,displayName,avatarUrl,bio}).then(profile=>{cached=profile;openAccount(false);}).catch(error=>{const status=body.querySelector<HTMLElement>('#kbAccountStatus');if(status)status.textContent=error instanceof Error?error.message:'资料保存失败';});
+  if (!cached?.passwordLoginEnabled) {
+    flashLoginRequired();
+    return;
+  }
+  const username = prompt('用户名（3-24 位小写字母、数字或下划线）', cached.username ?? '');
+  if (username === null) return;
+  const displayName = prompt('显示名称', cached.displayName ?? '') ?? '';
+  const avatarUrl = prompt('头像 HTTPS 地址（可选）', cached.avatarUrl ?? '') ?? '';
+  const bio = prompt('个人简介（最多 280 字）', cached.bio ?? '') ?? '';
+  void account.updateProfile({ username, displayName, avatarUrl, bio })
+    .then(profile => { cached = profile; openAccount(false); })
+    .catch(error => accountStatus(body, error instanceof Error ? error.message : '资料保存失败'));
+}
+
+function flashLoginRequired(): void {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  if (loginRequiredTimer !== null) window.clearTimeout(loginRequiredTimer);
+  toast.textContent = '请先登录账户';
+  toast.classList.add('show');
+  loginRequiredTimer = window.setTimeout(() => {
+    toast.classList.remove('show');
+    loginRequiredTimer = null;
+  }, LOGIN_REQUIRED_MS);
 }
 
 function renderProfile(body:HTMLElement, profile:AccountProfile|null):void {
   const avatar=body.querySelector<HTMLElement>('#kbProfileAvatar');
   if(avatar){avatar.replaceChildren();const src=safeAvatarUrl(profile?.avatarUrl);if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(profile);},{once:true});avatar.append(image);}else avatar.textContent=initial(profile);}
   const set=(selector:string,value:string)=>{const element=body.querySelector<HTMLElement>(selector);if(element)element.textContent=value;};
-  set('#kbProfileName',name(profile));set('#kbProfileUsername',`@${profile?.username??'设置用户名'}`);
+  set('#kbProfileName',name(profile));set('#kbProfileUsername',`@${profile?.username??'游客'}`);
   set('#kbProfileBio',profile?.bio??'个人资料、账户和知识节点掌握状态均绑定到唯一 user_id。');
-  set('#kbAccountStatus',account?'个人知识状态会同步到当前账户；换浏览器可用用户名 + 密码恢复。':'远程服务未配置；个人状态只能留在当前设备。');
+  set('#kbAccountStatus',account
+    ? profile?.passwordLoginEnabled ? '已登录账户' : '游客模式 · 修改资料前请先注册或登录'
+    : '远程服务未配置；个人状态只能留在当前设备。');
 }
-function updateAvatar(): void { const avatar=document.querySelector<HTMLElement>('.avatar-btn');if(!avatar)return;avatar.replaceChildren();const src=safeAvatarUrl(cached?.avatarUrl);if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(cached);},{once:true});avatar.append(image);}else avatar.textContent=initial(cached);avatar.title='个人空间 · 账户与知识记录';avatar.dataset.authState='account'; }
+
+function updateAvatar(): void {
+  const avatar=document.querySelector<HTMLElement>('.avatar-btn');if(!avatar)return;
+  avatar.replaceChildren();
+  const src=safeAvatarUrl(cached?.avatarUrl);
+  if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(cached);},{once:true});avatar.append(image);}else avatar.textContent=initial(cached);
+  avatar.title='个人空间 · 账户与知识记录';
+  avatar.dataset.authState=cached?.passwordLoginEnabled?'registered':'guest';
+}
 function name(profile:AccountProfile|null):string{return profile?.displayName||profile?.username||'匿名探索者';}
 function initial(profile:AccountProfile|null):string{return name(profile).slice(0,1).toUpperCase();}
-function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:8px}#panelClose{min-width:38px;min-height:38px;display:grid;place-items:center;font-size:19px}.kb-pending-vote{padding:10px;border:1px solid rgba(169,138,232,.34);border-radius:10px;background:rgba(169,138,232,.07)}.kb-vote-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.kb-vote-heading b{font-size:12px;color:var(--ink)}.kb-vote-heading span{font-size:10px;color:#c8b9ed}.kb-vote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kb-vote-button{display:flex!important;flex-direction:column;align-items:center;gap:2px}.kb-vote-button span{font-size:13px}.kb-vote-button small{font-size:9px;opacity:.78}.kb-vote-button.active{box-shadow:inset 0 0 0 1px currentColor}.kb-vote-status{margin-top:7px;font-size:9.5px;line-height:1.45;color:var(--ink-faint);text-align:center}`;document.head.appendChild(style);}
+function escapeHtml(value:string):string{return value.replace(/[&<>'"]/g,char=>({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[char]??char));}
+function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:8px}.kb-auth-card{width:100%}.kb-auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--bg-deep);border:1px solid var(--panel-border);border-radius:9px;margin-bottom:18px}.kb-auth-tab{appearance:none;border:0;border-radius:6px;padding:9px;background:transparent;color:var(--ink-faint);font:600 13px inherit;cursor:pointer}.kb-auth-tab.active{background:var(--panel);color:var(--ink);box-shadow:0 1px 8px rgba(0,0,0,.3)}.kb-auth-form{display:flex;flex-direction:column;gap:13px}.kb-auth-form label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-dim)}.kb-auth-form input{width:100%;background:var(--bg-deep);border:1px solid var(--panel-border);color:var(--ink);padding:11px 12px;border-radius:7px;font:13px inherit;outline:none}.kb-auth-form input:focus{border-color:var(--brass-dim)}.kb-auth-submit{width:100%;margin-top:4px;padding:10px 12px}.kb-auth-back{width:100%;margin-top:8px}.kb-auth-status{margin-top:10px;min-height:18px;text-align:center}#panelClose{min-width:38px;min-height:38px;display:grid;place-items:center;font-size:19px}.kb-pending-vote{padding:10px;border:1px solid rgba(169,138,232,.34);border-radius:10px;background:rgba(169,138,232,.07)}.kb-vote-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.kb-vote-heading b{font-size:12px;color:var(--ink)}.kb-vote-heading span{font-size:10px;color:#c8b9ed}.kb-vote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kb-vote-button{display:flex!important;flex-direction:column;align-items:center;gap:2px}.kb-vote-button span{font-size:13px}.kb-vote-button small{font-size:9px;opacity:.78}.kb-vote-button.active{box-shadow:inset 0 0 0 1px currentColor}.kb-vote-status{margin-top:7px;font-size:9.5px;line-height:1.45;color:var(--ink-faint);text-align:center}`;document.head.appendChild(style);}
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();

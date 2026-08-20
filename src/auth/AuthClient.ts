@@ -2,6 +2,7 @@ export interface AuthSession { access_token: string; refresh_token?: string; exp
 export interface AuthConfig { url: string; publishableKey: string; storage?: Storage | null; fetch?: typeof fetch; }
 export interface AccountProfile {
   username: string | null; displayName: string | null; avatarUrl: string | null; bio: string | null;
+  passwordLoginEnabled: boolean;
   myBalance: string; totalEnergy: string; accuracy: number;
 }
 export interface ProfileChanges { username: string; displayName?: string; avatarUrl?: string; bio?: string; }
@@ -74,7 +75,6 @@ export class KnowledgeBallAuthClient {
 
   async updateProfile(changes: ProfileChanges): Promise<AccountProfile> {
     const current = await this.publicSession();
-    await this.restRequest('/rest/v1/rpc/ensure_anonymous_profile', current, { method: 'POST', body: '{}' });
     const response = await this.restRequest('/rest/v1/rpc/update_my_profile', current, {
       method: 'POST',
       body: JSON.stringify({ new_username: changes.username, new_display_name: changes.displayName ?? null, new_avatar_url: changes.avatarUrl ?? null, new_bio: changes.bio ?? null }),
@@ -176,6 +176,7 @@ export class KnowledgeBallAuthClient {
       displayName: typeof response.display_name === 'string' ? response.display_name : null,
       avatarUrl: typeof response.avatar_url === 'string' ? response.avatar_url : null,
       bio: typeof response.bio === 'string' ? response.bio : null,
+      passwordLoginEnabled: response.password_login_enabled === true,
       myBalance: exactEnergy(response.my_balance), totalEnergy: exactEnergy(response.total_energy),
       accuracy: typeof response.accuracy === 'number' ? response.accuracy : 0,
     };
