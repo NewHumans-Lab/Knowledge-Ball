@@ -5,6 +5,7 @@ import {
   collectRelationLayoutEdges,
   displayedRelationLength,
   optimizeRelationLengthLayout,
+  scoreRelationComponentMorphology,
   totalRelationLineLength,
   type RelationLayoutNode,
 } from './RelationLengthLayout';
@@ -14,18 +15,26 @@ function node(
   x: number,
   premises: string[] = [],
   hidden = false,
+  layer: 'inner' | 'middle' | 'outer' = 'outer',
 ): RelationLayoutNode {
   const position = new THREE.Vector3(x, 0, 0);
   return {
     id,
-    effectiveLayer: 'outer',
-    layer: 'outer',
+    effectiveLayer: layer,
+    layer,
     pos: position.clone(),
     homePos: position.clone(),
     vel: new THREE.Vector3(),
     premises,
     hidden,
   };
+}
+
+function slotXsByLayer(nodes: RelationLayoutNode[]) {
+  return Object.fromEntries((['inner', 'middle', 'outer'] as const).map(layer => [
+    layer,
+    nodes.filter(item => item.layer === layer).map(item => item.pos!.x).sort((a, b) => a - b),
+  ]));
 }
 
 const diagonal3d = displayedRelationLength(
@@ -63,10 +72,47 @@ const slotsAfter = chain.map(item => item.pos!.x).sort((a, b) => a - b);
 
 assert.deepEqual(slotsAfter, slotsBefore, 'optimizer must preserve the exact fixed slot set');
 assert(lengthAfter <= lengthBefore + 1e-6, 'accepted optimization must never increase total straight 3D line length');
-assert(lengthAfter < lengthBefore * 0.5, 'optimizer should materially shorten an obviously bad connected assignment');
+assert(lengthAfter < lengthBefore * 0.5, 'adaptive branch layout should materially shorten an obviously bad chain');
 assert.equal(result.edgeCount, 5, 'hidden historical chain edges must be counted');
 assert(result.acceptedPasses > 0, 'the bad chain should accept at least one improving pass');
 assert(Math.abs(result.before - lengthBefore) < 1e-6 && Math.abs(result.after - lengthAfter) < 1e-6, 'reported objective must match the actual straight 3D line total');
+
+const longChainShape = scoreRelationComponentMorphology(12, 11, 11, 0);
+const branchingTreeShape = scoreRelationComponentMorphology(15, 14, 6, 4);
+const denseMeshShape = scoreRelationComponentMorphology(12, 30, 3, 8);
+assert(longChainShape.branchWeight > branchingTreeShape.branchWeight, 'long sparse chains must lean more strongly toward branch continuation');
+assert(branchingTreeShape.branchWeight > denseMeshShape.branchWeight, 'branching trees must remain between long chains and compact meshes');
+assert(longChainShape.branchWeight > 0.9, 'a pure long chain should strongly prefer elongated placement');
+assert(denseMeshShape.branchWeight < 0.2, 'a short redundant mesh should strongly prefer compact placement');
+const nearShapeA = scoreRelationComponentMorphology(20, 22, 8, 3).branchWeight;
+const nearShapeB = scoreRelationComponentMorphology(20, 22, 9, 3).branchWeight;
+assert(Math.abs(nearShapeA - nearShapeB) < 0.1, 'shape selection must change continuously rather than jump at a hard threshold');
+
+const crossLayer = [
+  node('i1', 30, [], false, 'inner'),
+  node('i2', -30, ['i1'], false, 'inner'),
+  node('m1', 120, ['i2'], false, 'middle'),
+  node('m2', -120, ['m1'], false, 'middle'),
+  node('o1', 220, ['m2'], false, 'outer'),
+  node('o2', -220, ['o1'], false, 'outer'),
+];
+const crossSlotsBefore = slotXsByLayer(crossLayer);
+const crossLengthBefore = totalRelationLineLength(crossLayer);
+optimizeRelationLengthLayout(crossLayer);
+const crossSlotsAfter = slotXsByLayer(crossLayer);
+const crossLengthAfter = totalRelationLineLength(crossLayer);
+assert.deepEqual(crossSlotsAfter, crossSlotsBefore, 'cross-layer branch assignment must preserve every layer-specific slot set exactly');
+assert(crossLengthAfter <= crossLengthBefore + 1e-6, 'cross-layer branch assignment must never increase total line length');
+
+const deterministicA = chain.map(item => ({ ...item, pos: item.pos!.clone(), homePos: item.homePos!.clone(), vel: item.vel!.clone() }));
+const deterministicB = chain.map(item => ({ ...item, pos: item.pos!.clone(), homePos: item.homePos!.clone(), vel: item.vel!.clone() }));
+optimizeRelationLengthLayout(deterministicA);
+optimizeRelationLengthLayout(deterministicB);
+assert.deepEqual(
+  deterministicA.map(item => [item.id, item.pos!.x, item.pos!.y, item.pos!.z]),
+  deterministicB.map(item => [item.id, item.pos!.x, item.pos!.y, item.pos!.z]),
+  'adaptive branch assignment must be deterministic for identical input',
+);
 
 const relationSource = readFileSync('src/ui/scene/RelationLengthLayout.ts', 'utf8');
 const uniformSource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
@@ -77,9 +123,11 @@ assert(!uniformSource.includes('for (let j = i + 1'), 'uniform slot generation m
 assert(!uniformSource.includes('.sort('), 'uniform slot generation must stay linear and sorting-free');
 assert(relationSource.includes('LOCAL_CELL_RADIUS = 2'), 'nearest-slot search must stay bounded to a fixed spatial neighborhood');
 assert(relationSource.includes('DEFAULT_PASSES = 4'), 'optimization pass count must remain a fixed constant');
+assert(relationSource.includes('approximateDiameterPath'), 'adaptive layout must inspect component extent without exact longest-path search');
+assert(relationSource.includes('scoreRelationComponentMorphology'), 'adaptive layout must blend branch and compact placement continuously');
 assert(!relationSource.includes('CURVE_SEGMENTS'), 'layout objective must not approximate a curved render path');
 assert(!relationSource.includes('QuadraticBezierCurve3'), 'layout objective must remain straight-line Euclidean distance');
 assert(!sceneSource.includes('QuadraticBezierCurve3'), 'scene renderer must not curve knowledge relations');
 assert(/\.geometry\.setFromPoints\(\[a!\.clone\(\),\s*b!\.clone\(\)\]\)/.test(sceneSource), 'scene relation geometry must contain exactly the two 3D endpoints');
 
-console.log('Complete historical straight-3D relation-length layout regression tests passed.');
+console.log('Adaptive uniform branch relation-layout regression tests passed.');
