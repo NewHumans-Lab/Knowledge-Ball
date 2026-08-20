@@ -213,7 +213,7 @@ function internalConclusionTypeForLayer(layer: Exclude<UserKnowledgeLayer, 'inne
 
 async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
   if (payload.layer === 'inner' && payload.premises.length > 0) {
-    throw new Error('第一层只能作为知识链起点，不能直接带前提');
+    throw new Error('第一层是非推导性的语义 / 基础事实层，不能直接带推理前提');
   }
   const conclusionId = generateNodeId();
   const hasPremises = payload.premises.length > 0;
@@ -465,7 +465,6 @@ panel = new PanelController({
   modalSubmit: must<HTMLButtonElement>('modalSubmit'),
 
   fTitle: must<HTMLInputElement>('fTitle'),
-  fCanonical: must<HTMLInputElement>('fCanonical'),
   fType: must<HTMLSelectElement>('fType'),
   fDescription: must<HTMLTextAreaElement>('fDescription'),
   fReasoning: must<HTMLTextAreaElement>('fReasoning'),
@@ -561,9 +560,16 @@ if (depthLimitInput) {
   applyDepthLimit();
 }
 
-const layerNote = qOpt<HTMLElement>('.legend .layer-note');
-if (layerNote) {
-  layerNote.innerHTML = '第一层：基础起点（有已验证前提后自动进入第二层）<br>第二层：语义关系与严谨推理<br>第三层：不确定、概率、预测、观点、价值与争议';
+const legend = qOpt<HTMLElement>('.legend');
+if (legend) {
+  legend.innerHTML = `
+    <h4>Knowledge Layers</h4>
+    <div class="legend-row"><div class="legend-dot" style="background:var(--node-inner)"></div><span>第一层 · 语义与基础事实</span></div>
+    <div class="legend-row"><div class="legend-dot" style="background:var(--node-middle)"></div><span>第二层 · 严谨推理</span></div>
+    <div class="legend-row"><div class="legend-dot" style="background:var(--node-outer)"></div><span>第三层 · 概率与争议</span></div>
+    <div class="legend-div"></div>
+    <div class="layer-note">第一层包括静态语义关系；第二层只表达推理结构；第三层表达争议或提交时明确声明的不确定 / 概率知识。</div>
+  `;
 }
 
 const accountButton = qOpt<HTMLButtonElement>('.avatar-btn');

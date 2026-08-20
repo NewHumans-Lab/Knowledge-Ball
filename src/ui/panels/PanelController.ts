@@ -36,7 +36,6 @@ export interface PanelNodeSummary {
 
 export interface CreateNodePayload {
   title: string;
-  canonicalTitle?: string;
   layer: UserKnowledgeLayer;
   description: string;
   reasoning?: string;
@@ -118,7 +117,6 @@ export interface PanelControllerElements {
   modalSubmit: HTMLButtonElement;
 
   fTitle: HTMLInputElement;
-  fCanonical: HTMLInputElement;
   fType: HTMLSelectElement;
   fDescription: HTMLTextAreaElement;
   fReasoning: HTMLTextAreaElement;
@@ -199,7 +197,6 @@ export class PanelController {
   private readonly modalSubmit: HTMLButtonElement;
 
   private readonly fTitle: HTMLInputElement;
-  private readonly fCanonical: HTMLInputElement;
   private readonly fType: HTMLSelectElement;
   private readonly fDescription: HTMLTextAreaElement;
   private readonly fReasoning: HTMLTextAreaElement;
@@ -266,7 +263,6 @@ export class PanelController {
     this.modalSubmit = options.modalSubmit;
 
     this.fTitle = options.fTitle;
-    this.fCanonical = options.fCanonical;
     this.fType = options.fType;
     this.fDescription = options.fDescription;
     this.fReasoning = options.fReasoning;
@@ -302,9 +298,9 @@ export class PanelController {
 
   private configureLayerSubmission(): void {
     this.fType.innerHTML = `
-      <option value="inner">第一层 · 基础起点</option>
-      <option value="middle">第二层 · 关系与严谨推理</option>
-      <option value="outer">第三层 · 不确定与争议</option>
+      <option value="inner">第一层 · 语义与基础事实</option>
+      <option value="middle">第二层 · 严谨推理</option>
+      <option value="outer">第三层 · 概率与争议</option>
     `;
     const field = this.fType.closest('.form-field');
     const label = field?.querySelector('label');
@@ -398,7 +394,7 @@ export class PanelController {
       : '';
 
     const layerAdjustmentHtml = layerAdjusted
-      ? `<div class="difference-card"><b>系统层级调整</b><br>提交时：${escapeHtml(declaredLayerLabel)}<br>当前：${escapeHtml(effectiveLayerLabel)}<br>${node.declaredLayer === 'inner' && node.effectiveLayer === 'middle' ? '原因：第一层节点现在存在已验证前提，因此按协议自动进入第二层。' : '当前状态或协议约束覆盖了提交时层级。'}</div>`
+      ? `<div class="difference-card"><b>当前显示层级调整</b><br>提交时：${escapeHtml(declaredLayerLabel)}<br>当前：${escapeHtml(effectiveLayerLabel)}<br>${node.status === 'disputed' && node.effectiveLayer === 'outer' ? '原因：该知识当前处于争议状态，因此显示在第三层；原始声明分类仍被保留。' : '当前状态触发了显示层级规则；原始声明分类不会被静默改写。'}</div>`
       : '';
 
     this.panelBody.innerHTML = `
@@ -484,12 +480,11 @@ export class PanelController {
     this.modalHint.style.display = 'block';
     if (prefillPremiseId) {
       const src = this.getNodeById(prefillPremiseId);
-      this.modalHint.textContent = src ? `已预选「${src.title}」作为前提；因此默认进入第二层。` : '已预选一个前提；因此默认进入第二层。';
+      this.modalHint.textContent = src ? `已预选「${src.title}」作为推理前提；因此默认进入第二层。` : '已预选一个推理前提；因此默认进入第二层。';
     } else {
-      this.modalHint.textContent = '只需判断：它是基础起点、关系/严谨推理，还是不确定/争议知识。';
+      this.modalHint.textContent = '选择统一三层分类：第一层是语义/基础事实，第二层是严谨推理，第三层是概率/不确定/争议知识。';
     }
     this.fTitle.value = '';
-    this.fCanonical.value = '';
     this.fType.value = prefillPremiseId ? 'middle' : 'inner';
     this.fDescription.value = '';
     this.fReasoning.value = '';
@@ -605,7 +600,6 @@ export class PanelController {
 
     this.modalSubmit.addEventListener('click', async () => {
       const title = this.fTitle.value.trim();
-      const canonicalTitle = this.fCanonical.value.trim();
       const description = this.fDescription.value.trim();
       const reasoning = this.fReasoning.value.trim();
       const layerValue = this.fType.value;
@@ -622,23 +616,12 @@ export class PanelController {
         this.showToast('请填写节点标题。');
         return;
       }
-      const containsNonEnglish = /[^\x00-\x7F]/.test(title);
-      if (containsNonEnglish && !canonicalTitle) {
-        this.showToast('非英文 Original 必须填写 Canonical English 后才能提交。');
-        this.fCanonical.focus();
-        return;
-      }
-      if (canonicalTitle && /[^\x00-\x7F]/.test(canonicalTitle)) {
-        this.showToast('Canonical English 必须使用英文字符。');
-        this.fCanonical.focus();
-        return;
-      }
       if (!description) {
         this.showToast('请填写知识描述。');
         return;
       }
       if (layer === 'inner' && premises.length > 0) {
-        this.showToast('第一层只能作为知识链起点，不能带前提。请改选第二层。');
+        this.showToast('第一层是非推导性的语义 / 基础事实层，不能带推理前提。请改选第二层。');
         return;
       }
       if (premises.length > 0 && !reasoning) {
@@ -650,7 +633,6 @@ export class PanelController {
       try {
         await this.onCreateNode({
           title,
-          canonicalTitle: canonicalTitle || undefined,
           layer,
           description,
           reasoning: reasoning || undefined,
@@ -696,12 +678,6 @@ export class PanelController {
           <input type="text" id="editTitle" value="${escapeHtml(node.title)}">
         </div>
         <div class="field">
-          <label>内部细分类（不可直接更改）</label>
-          <select id="editType" disabled>
-            <option value="${escapeHtml(node.type)}" selected>${TYPE_LABEL[node.type]}</option>
-          </select>
-        </div>
-        <div class="field">
           <label>${node.type === 'reasoning' ? '推理过程' : '知识描述'}</label>
           <textarea id="editReasoning">${escapeHtml(node.reasoning || '')}</textarea>
         </div>
@@ -715,7 +691,7 @@ export class PanelController {
               </label>
             `).join('')}
           </div>
-          <div class="form-hint">第一层节点新增前提后，只有当前提本身验证通过，系统实际层级才会自动进入第二层。</div>
+          <div class="form-hint">第一层是非推导性的语义 / 基础事实层，不能通过编辑直接添加推理前提；需要推导时请新增第二层知识。</div>
         </div>
       `;
 
@@ -726,13 +702,16 @@ export class PanelController {
 
       this.panelActions.querySelector<HTMLButtonElement>('#saveEdit')?.addEventListener('click', async () => {
         const title = (this.panelBody.querySelector<HTMLInputElement>('#editTitle')?.value ?? '').trim() || node.title;
-        const type = (this.panelBody.querySelector<HTMLSelectElement>('#editType')?.value ?? node.type) as KnowledgeNodeType;
         const reasoning = (this.panelBody.querySelector<HTMLTextAreaElement>('#editReasoning')?.value ?? '').trim();
         const premises = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-edit-premise]:checked')).map(input => input.value);
+        if (node.declaredLayer === 'inner' && premises.length > 0) {
+          this.showToast('第一层不能添加推理前提；请保留为静态语义 / 基础事实，或通过新增建立第二层推理。');
+          return;
+        }
         try {
-          await this.onEditNode(id, { title, type, reasoning, premises });
+          await this.onEditNode(id, { title, type: node.type, reasoning, premises });
           this.editMode = false;
-          this.showToast('节点已更新；层级将按有效前提自动重算');
+          this.showToast('节点已更新；声明层级保持不变');
           this.openNodePanel(id);
         } catch (error) {
           this.showOperationError(error);
@@ -830,7 +809,7 @@ export class PanelController {
     if (!reasoning) return false;
     return nodes.some(candidate => {
       if (candidate.id === node.id || candidate.type !== node.type) return false;
-      const otherReasoning = this.reasoningParent(candidate, byId);
+      const otherReasoning = this.reasoningParent(candidate);
       return Boolean(
         otherReasoning &&
         otherReasoning.id !== reasoning.id &&
@@ -936,35 +915,34 @@ export class PanelController {
       <div class="field"><label>步骤一逻辑符号</label><select id="stepOneLogic">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
       <div class="field"><label>中间结论标题</label><input type="text" id="middleTitle"></div>
       <div class="field"><label>中间结论描述</label><textarea id="middleDescription"></textarea></div>
-      <div class="field">
-        <label>中间结论类型</label>
-        <select id="middleType">
-          <option value="theorem">定理</option><option value="hypothesis">假说</option>
-          <option value="prediction">预测</option><option value="opinion">观点</option><option value="value">价值判断</option>
-        </select>
-      </div>
       <div class="field"><label>步骤二标题</label><input type="text" id="stepTwoTitle"></div>
       <div class="field"><label>步骤二推理过程</label><textarea id="stepTwoReasoning"></textarea></div>
       <div class="field"><label>步骤二逻辑符号</label><select id="stepTwoLogic">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
-      <p class="note-small" style="text-align:left;">只有完整形成“原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论”后，系统才写入一个原子分解事件。</p>
+      <p class="note-small" style="text-align:left;">只有完整形成“原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论”后，系统才写入一个原子分解事件。内部细分类由系统沿用原结论结构，不要求用户选择。</p>
     `;
     this.panelActions.innerHTML = `
-      <button class="btn primary" id="submitDecompose">验证完整链并分解</button>
+      <button class="btn primary" id="submitDecompose">检查完整链并分解</button>
       <button class="btn ghost" id="cancelOperation">取消</button>
     `;
     this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitDecompose')?.addEventListener('click', async () => {
       const value = <T extends HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector: string) =>
         safeText(this.panelBody.querySelector<T>(selector)?.value);
+      const conclusionId = value<HTMLSelectElement>('#decomposeConclusion');
+      const conclusionType = this.getNodeById(conclusionId)?.type;
+      if (!conclusionType || !this.isDerivedType(conclusionType)) {
+        this.showToast('原结论的内部结构无法用于分解，请先检查该知识链。');
+        return;
+      }
       const payload: DecomposeNodePayload = {
-        conclusionId: value<HTMLSelectElement>('#decomposeConclusion'),
+        conclusionId,
         reasoningSteps: [
           { title: value<HTMLInputElement>('#stepOneTitle'), reasoning: value<HTMLTextAreaElement>('#stepOneReasoning'), logicRuleId: value<HTMLSelectElement>('#stepOneLogic') },
           { title: value<HTMLInputElement>('#stepTwoTitle'), reasoning: value<HTMLTextAreaElement>('#stepTwoReasoning'), logicRuleId: value<HTMLSelectElement>('#stepTwoLogic') },
         ],
         intermediateConclusions: [{
           title: value<HTMLInputElement>('#middleTitle'),
-          type: value<HTMLSelectElement>('#middleType') as KnowledgeNodeType,
+          type: conclusionType,
           description: value<HTMLTextAreaElement>('#middleDescription'),
         }],
       };
@@ -999,7 +977,7 @@ export class PanelController {
     const candidates = this.getNodes().filter(candidate => candidate.id !== node.id && candidate.type === 'definition');
     this.panelTitle.textContent = `合并定义：${node.title}`;
     this.panelBody.innerHTML = `
-      <div class="difference-card"><b>DIFFERENCE REVIEW</b><br>选择待合并定义，逐项比较 Original 表述、语义标识与统一定义；差异确认前不会重连关系。</div>
+      <div class="difference-card"><b>DIFFERENCE REVIEW</b><br>选择待合并定义，逐项比较原始表述、语义标识与统一定义；差异确认前不会重连关系。</div>
       <div class="field"><label>同一定义的其他语言描述</label><div class="premise-list">
         ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
       </div></div>
@@ -1008,7 +986,7 @@ export class PanelController {
       <div class="field"><label>统一定义描述</label><textarea id="mergeDefinitionDescription"></textarea></div>
       <p class="note-small" style="text-align:left;">来源定义必须文字不同但语义相同；原定义保留为别名并默认隐藏。</p>
     `;
-    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">验证并合并定义</button><button class="btn ghost" id="cancelOperation">取消</button>`;
+    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">检查并合并定义</button><button class="btn ghost" id="cancelOperation">取消</button>`;
     this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
       const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
@@ -1050,19 +1028,16 @@ export class PanelController {
       <div class="field"><label>具有相同前提、推理过程和逻辑符号的结论</label><div class="premise-list">
         ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
       </div></div>
-      <div class="field"><label>推理过程语义等价标识（先验证）</label><input type="text" id="mergeReasoningSemanticKey"></div>
+      <div class="field"><label>推理过程语义等价标识（先检查）</label><input type="text" id="mergeReasoningSemanticKey"></div>
       <div class="field"><label>结论语义等价标识</label><input type="text" id="mergeSemanticKey"></div>
       <div class="field"><label>统一推理标题</label><input type="text" id="mergeReasoningTitle"></div>
       <div class="field"><label>统一推理过程</label><textarea id="mergeReasoningText"></textarea></div>
       <div class="field"><label>统一推理逻辑符号</label><select id="mergeLogicRule">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
       <div class="field"><label>统一结论标题</label><input type="text" id="mergeConclusionTitle"></div>
       <div class="field"><label>统一结论描述</label><textarea id="mergeConclusionDescription"></textarea></div>
-      <div class="field"><label>统一结论类型（保持来源类型）</label><select id="mergeConclusionType" disabled>
-        <option value="${escapeHtml(node.type)}">${TYPE_LABEL[node.type]}</option>
-      </select></div>
-      <p class="note-small" style="text-align:left;">系统先验证并建立统一推理过程，再建立依赖它的统一结论；两步作为一个事件同时提交。</p>
+      <p class="note-small" style="text-align:left;">系统先检查并建立统一推理过程，再建立依赖它的统一结论；内部细分类沿用来源结构，不要求用户填写。</p>
     `;
-    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">验证推理后合并结论</button><button class="btn ghost" id="cancelOperation">取消</button>`;
+    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">检查推理后合并结论</button><button class="btn ghost" id="cancelOperation">取消</button>`;
     this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
       const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
@@ -1077,7 +1052,7 @@ export class PanelController {
         },
         mergedConclusion: {
           title: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeConclusionTitle')?.value),
-          type: (this.panelBody.querySelector<HTMLSelectElement>('#mergeConclusionType')?.value ?? node.type) as KnowledgeNodeType,
+          type: node.type,
           description: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#mergeConclusionDescription')?.value),
         },
       };
@@ -1116,7 +1091,7 @@ export class PanelController {
       if (this.fType.value === 'inner' && this.fPremises.querySelector('input:checked')) {
         this.fType.value = 'middle';
         this.updateCreateMode();
-        this.showToast('选择前提后已切换到第二层；第一层只能作为知识链起点。');
+        this.showToast('选择推理前提后已切换到第二层；第一层只表达非推导性的语义 / 基础事实。');
       }
     });
   }

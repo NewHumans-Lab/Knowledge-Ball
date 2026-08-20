@@ -270,31 +270,20 @@
     <div class="modal-body">
       <div class="form-hint" id="modalHint" style="display:none;"></div>
       <div class="form-field">
-        <label>Original / 原始表述</label>
-        <input type="text" id="fTitle" placeholder="例如：反证法证明…">
-      </div>
-      <div class="form-field" id="fCanonicalField">
-        <label>Canonical English / 规范英文</label>
-        <input type="text" id="fCanonical" placeholder="非英文输入必须在此确认规范英文">
-        <div class="form-hint">系统检测到非英文时，Original 与 Canonical English 对照确认后才可提交。</div>
+        <label>知识标题</label>
+        <input type="text" id="fTitle" placeholder="填写知识标题">
       </div>
       <div class="form-field">
-        <label>节点类型</label>
+        <label>知识层级</label>
         <select id="fType">
-          <option value="fact">事实 Fact</option>
-          <option value="definition">定义 Definition</option>
-          <option value="axiom">公理 Axiom</option>
-          <option value="theorem">定理 Theorem</option>
-          <option value="hypothesis">假说 Hypothesis</option>
-          <option value="prediction">预测 Prediction</option>
-          <option value="opinion">观点 Opinion</option>
-          <option value="value">价值判断 Value</option>
-          <option value="logic-symbol">逻辑符号 Logic symbol</option>
+          <option value="inner">第一层 · 语义与基础事实</option>
+          <option value="middle">第二层 · 严谨推理</option>
+          <option value="outer">第三层 · 概率与争议</option>
         </select>
       </div>
       <div class="form-field">
         <label>知识描述</label>
-        <textarea id="fDescription" placeholder="定义、事实或结论本身的完整描述…"></textarea>
+        <textarea id="fDescription" placeholder="填写知识本身的完整描述…"></textarea>
       </div>
       <div class="form-field" id="fReasoningField">
         <label>推理过程</label>
@@ -307,12 +296,12 @@
       <div class="form-field" id="fLogicRuleField">
         <label>逻辑符号（推理分类）</label>
         <select id="fLogicRule"></select>
-        <div class="form-hint">先在知识球中增加逻辑符号节点，之后才能在理论推理中选择。</div>
+        <div class="form-hint">若该推理使用已有正式规则，可在这里标记；不作为提交门槛。</div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn" id="modalCancel">取消</button>
-      <button class="btn primary" id="modalSubmit">验证并提交</button>
+      <button class="btn primary" id="modalSubmit">提交知识</button>
     </div>
   </div>
 </div>
