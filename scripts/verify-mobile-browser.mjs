@@ -161,7 +161,8 @@ try{
     await page.waitForTimeout(100);
     await page.evaluate(()=>window.__debug.scene.stop());
 
-    await page.locator('.ai-add').click();
+    assert.equal(await page.locator('.ai-add').count(),0,'search bar must not expose the old add-node button');
+    await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true})));
     await page.locator('#modalOverlay.show').waitFor({state:'visible'});
     await assertExit(page.locator('#modalClose'),'create modal exit');
     await page.locator('#modalClose').click();
@@ -180,7 +181,14 @@ try{
     await page.locator('#accountOverlay').waitFor({state:'hidden'});
 
     const target=targets[0];
+    await page.evaluate(()=>window.__debug.scene.start());
     await page.touchscreen.tap(target.x,target.y);
+    await page.waitForTimeout(900);
+    assert.equal(await page.locator('#panel.open').count(),0,'first node tap must focus the node without opening details');
+    const centered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
+    assert.ok(centered,'focused node must remain renderable');
+    assert.ok(Math.hypot(centered.x-(hostBox.x+hostBox.width/2),centered.y-(hostBox.y+hostBox.height/2))<4,'first node tap must rotate the whole graph until the node reaches screen center');
+    await page.touchscreen.tap(centered.x,centered.y);
     await page.locator('#panel.open').waitFor({state:'visible'});
     await assertExit(page.locator('#panelClose'),'node detail exit');
     const originalTitle=(await page.locator('#panelTitle').textContent())?.trim();
@@ -196,11 +204,27 @@ try{
     await page.locator('#panelClose').click();
     await page.waitForFunction(()=>!document.getElementById('panel')?.classList.contains('open'));
 
+    const searchTarget=targets[1];
+    await page.evaluate(()=>window.__debug.scene.start());
+    await page.locator('#aiInput').fill(searchTarget.title);
+    const searchResult=page.locator(`[data-node-id="${searchTarget.id}"]`).first();
+    await searchResult.waitFor({state:'visible'});
+    await searchResult.click();
+    await page.waitForTimeout(900);
+    assert.equal(await page.locator('#panel.open').count(),0,'search selection must focus without opening details');
+    const searchCentered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),searchTarget.id);
+    assert.ok(searchCentered,'search-focused node must remain renderable');
+    assert.ok(Math.hypot(searchCentered.x-(hostBox.x+hostBox.width/2),searchCentered.y-(hostBox.y+hostBox.height/2))<4,'search selection must use the same center-focus behavior as a node tap');
+    await page.touchscreen.tap(searchCentered.x,searchCentered.y);
+    await page.locator('#panel.open').waitFor({state:'visible'});
+    await page.locator('#panelClose').click();
+    await page.waitForFunction(()=>!document.getElementById('panel')?.classList.contains('open'));
+
     await page.goto(new URL('ios-install.html',origin).href,{waitUntil:'domcontentloaded'});
     await assertExit(page.locator('.exit'),'iOS install exit');
 
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, focus-before-details, search focus, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}

@@ -167,7 +167,7 @@ async function preparePage(context) {
 }
 
 async function createThroughRealUi(page, title, description) {
-  await page.locator('.ai-add').click();
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true })));
   await page.locator('#modalOverlay.show').waitFor({ state: 'visible' });
   await page.locator('#fTitle').fill(title);
   await page.locator('#fType').selectOption('inner');
