@@ -46,6 +46,10 @@ assert(KNOWLEDGE_SCENE_THEME.node.matcapDark<KNOWLEDGE_SCENE_THEME.node.matcapMi
 assert(KNOWLEDGE_SCENE_THEME.renderer.antialias,'WebGL antialiasing must stay enabled for small node silhouettes');
 assert(KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio>=1&&KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio<=1.5,'mobile pixel ratio must improve edge sampling without returning to an expensive full device DPR');
 assert(KNOWLEDGE_SCENE_THEME.mastery.tint===0xFFFFFF,'mastery glow tint must stay neutral white so it cannot recolor semantic node hues');
+assert(KNOWLEDGE_SCENE_THEME.edge.normal===0xB9D8F5,'ordinary relation lines must use the approved light blue');
+assert(KNOWLEDGE_SCENE_THEME.edge.active===0xD9ECFF,'relations incident to the clicked node must use the approved highlight color');
+assert(KNOWLEDGE_SCENE_THEME.edge.logic===KNOWLEDGE_SCENE_THEME.edge.normal,'logic relations must share the ordinary line color');
+assert(KNOWLEDGE_SCENE_THEME.edge.twin===KNOWLEDGE_SCENE_THEME.edge.normal,'bidirectional/twin relations must share the ordinary line color when not selected');
 assert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity<=.16,'ordinary relation lines must stay visually quiet');
 assert(KNOWLEDGE_SCENE_THEME.edge.activeOpacity>=.4,'selected relation paths must remain visibly distinguishable');
 assert(KNOWLEDGE_SCENE_THEME.sun.core===0xFFFFFF,'sun core must remain white');
@@ -114,6 +118,9 @@ assert(/matcap:\s*nodeMatcapTex/.test(sceneSource),'every ordinary semantic shel
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments'),'ordinary sphere geometry must use centralized smoothness settings');
 assert(/antialias:\s*KNOWLEDGE_SCENE_THEME\.renderer\.antialias/.test(sceneSource),'renderer antialiasing must be governed by the scene theme');
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'),'mobile renderer must use the bounded higher-resolution sampling path');
+assert(sceneSource.includes('const relationActive = hasSelection && (selectedId === p || selectedId === n.id);'),'only edges directly incident to the clicked node may receive the active relation color');
+assert(!sceneSource.includes('n.premises.includes(selectedId!)'),'selecting one premise must not recolor sibling premise edges that do not touch the clicked node');
+assert(sceneSource.includes('material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);'),'edge color must switch between the approved ordinary and clicked-node colors');
 assert(/\.shell\.visible\s*=\s*true/.test(sceneSource),'large mobile graphs must retain the opaque semantic body instead of falling back to a translucent sprite only');
 assert(!sceneSource.includes('r.shell.visible=!largeMobileGraph'),'large-mobile optimization must not hide ordinary semantic shells');
 assert(/baseShellOpacity\s*=\s*core\s*\?\s*\.84\s*:\s*KNOWLEDGE_SCENE_THEME\.node\.shellOpacity/.test(sceneSource),'ordinary shell opacity must not depend on status or selection');

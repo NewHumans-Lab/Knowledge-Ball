@@ -521,16 +521,15 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     nodes.forEach(n => [...n.premises, ...(n.logicRuleId ? [n.logicRuleId] : [])].forEach(p => {
       if (!ids.has(p) || !shouldRenderEdge(p, n.id)) return;
       const key = `${p}->${n.id}`;
-      const logic = n.logicRuleId === p;
       wanted.add(key);
       if (!edgeMap[key]) {
-        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: logic ? KNOWLEDGE_SCENE_THEME.edge.logic : KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.normalOpacity }));
+        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.normalOpacity }));
         edgesGroup.add(edgeMap[key]);
       }
       edgeMap[key].userData.edgeEndpoints = [p, n.id];
       const material = edgeMap[key].material as THREE.LineBasicMaterial;
-      material.color.setHex(logic ? KNOWLEDGE_SCENE_THEME.edge.logic : KNOWLEDGE_SCENE_THEME.edge.normal);
-      const relationActive = hasSelection && (selectedId === p || selectedId === n.id || n.premises.includes(selectedId!));
+      const relationActive = hasSelection && (selectedId === p || selectedId === n.id);
+      material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);
       const stateOpacity = n.status === 'falsified'
         ? KNOWLEDGE_SCENE_THEME.edge.falsifiedOpacity
         : n.status === 'suspended'
@@ -548,13 +547,14 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const key = [n.id, twin.id].sort().join('<->');
       wanted.add(key);
       if (!edgeMap[key]) {
-        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.twin, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.twinOpacity, dashSize: 4, gapSize: 3 }));
+        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.twinOpacity, dashSize: 4, gapSize: 3 }));
         edgesGroup.add(edgeMap[key]);
       }
       edgeMap[key].userData.edgeEndpoints = [n.id, twin.id];
       const material = edgeMap[key].material as THREE.LineDashedMaterial;
-      material.color.setHex(KNOWLEDGE_SCENE_THEME.edge.twin);
-      material.opacity = KNOWLEDGE_SCENE_THEME.edge.twinOpacity;
+      const relationActive = hasSelection && (selectedId === n.id || selectedId === twin.id);
+      material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);
+      material.opacity = relationActive ? KNOWLEDGE_SCENE_THEME.edge.activeOpacity : KNOWLEDGE_SCENE_THEME.edge.twinOpacity;
       updateLineGeometry(edgeMap[key], n.pos, twin.pos);
     });
 
