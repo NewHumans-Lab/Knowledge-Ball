@@ -68,7 +68,6 @@ export function openSystemCoreCard(id: string, onReturn: () => void): boolean {
     'justify-content:center',
     'padding:22px',
     'background:rgba(6,9,17,.94)',
-    'backdrop-filter:blur(10px)',
   ].join(';');
 
   const card = document.createElement('section');

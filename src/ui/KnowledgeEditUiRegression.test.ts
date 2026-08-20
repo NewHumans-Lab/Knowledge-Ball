@@ -5,6 +5,7 @@ const html = readFileSync('index.html', 'utf8');
 const panel = readFileSync('src/ui/panels/PanelController.ts', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
 const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
+const systemCore = readFileSync('src/ui/systemCore/SystemCoreContent.ts', 'utf8');
 const layerPolicy = readFileSync('src/domain/KnowledgeLayerPolicy.ts', 'utf8');
 const classificationMigration = readFileSync('supabase/migrations/202608200002_three_layer_classification_contract.sql', 'utf8');
 
@@ -86,6 +87,10 @@ assert(scene.includes('callbacks.onNodeTap(nodeId)'), 'a node tap must use the s
 assert(!scene.includes('callbacks.onSelectNode(nodeId);callbacks.onOpenPanel(nodeId)'), 'a node tap must not synchronously render the panel twice');
 assert(app.includes('onNodeTap') && app.includes('openNode'), 'the application must open a tapped node through one callback');
 assert(!html.includes('.panel,.modal,.ai-results{'), 'the WebGL-overlaid node panel must not use the expensive shared backdrop filter');
-assert(html.includes('.panel{top:12px;right:12px;bottom:72px;width:338px;background:rgb(5,18,23)'), 'the node panel must use an opaque GPU-safe background');
+assert(html.includes('.panel{top:12px;right:12px;bottom:72px;width:338px;background:#080D20'), 'the node panel must use an opaque GPU-safe deep-navy background');
+assert(html.includes('--accent-primary:#55ECFF') && html.includes('--accent-secondary:#7C6CFF'), 'page chrome must use the shared promo-derived cyan and violet tokens');
+assert(!html.includes('--brass:') && !html.includes('--brass-dim:'), 'legacy brass tokens must not remain authoritative for page chrome');
+assert(!html.includes('backdrop-filter:blur'), 'page chrome must not backdrop-filter the live WebGL canvas');
+assert(!systemCore.includes('backdrop-filter'), 'the system-core overlay must not backdrop-filter the live WebGL canvas');
 
 console.log('Knowledge edit UI regression tests passed');
