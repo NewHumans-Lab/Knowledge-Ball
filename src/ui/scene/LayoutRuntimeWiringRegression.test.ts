@@ -40,7 +40,8 @@ assert.equal(next.size, MOBILE_ACTIVE_NODE_TARGET, 'hysteresis must keep a bound
 assert(sceneSource.includes('selectMobileActiveNodeIds'), 'scene must dynamically select its mobile high-detail working set');
 assert(sceneSource.includes('largeGraphDirty = true;') && sceneSource.includes("mode === 'rotate'"), 'rotation must invalidate the mobile working set so near/far membership updates while rotating');
 assert(sceneSource.includes('const nodeId = !moved && !pinchOccurred ? draggedNodeId : null;'), 'pointerup must reuse the pointerdown hit instead of rescanning the whole working set');
-assert(sceneSource.includes('syncEdges(activeNodes)'), 'relations must be rendered for the active working set');
+assert(sceneSource.includes('syncEdges(allNodes)'), 'relation lifecycle must follow the complete graph rather than the mobile high-detail working set');
+assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD membership must not create, remove, or restore relations');
 assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs must not globally hide all relations');
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale regression checks');
 
@@ -51,4 +52,4 @@ assert(slotAssignmentIndex >= 0 && relationOptimizeIndex > slotAssignmentIndex, 
 assert(relationSource.includes('collectRelationLayoutEdges'), 'relation optimizer implementation must retain the complete graph edge collector');
 assert(!relationSource.includes('filter(node => !node.hidden)'), 'relation optimizer must not drop hidden historical nodes from its objective');
 
-console.log('User-page full-graph layout and dynamic mobile LOD wiring regression tests passed.');
+console.log('User-page full-graph layout, relation authority, and dynamic mobile LOD wiring regression tests passed.');
