@@ -25,11 +25,26 @@ export interface RelationLayoutResult {
   acceptedPasses: number;
 }
 
+export interface RelationComponentMorphology {
+  nodeCount: number;
+  edgeCount: number;
+  approximateDiameter: number;
+  elongation: number;
+  redundancy: number;
+  forkRatio: number;
+  branchWeight: number;
+}
+
 const DEFAULT_PASSES = 4;
 const GRID_SCALE = 1.6;
 const LOCAL_CELL_RADIUS = 2;
 const MAX_BUCKET_SCAN = 16;
 const IMPROVEMENT_EPSILON = 1e-6;
+const POSITION_EPSILON_SQ = 1e-12;
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
 
 function layerOf(node: RelationLayoutNode): KnowledgeLayer {
   const layer = node.effectiveLayer
@@ -45,14 +60,6 @@ function lineEligible(fromId: string, toId: string): boolean {
     && !isSystemCoreNodeId(toId);
 }
 
-/**
- * Builds the complete historical relation graph from every layout node. Hidden,
- * falsified and superseded nodes are deliberately NOT filtered here: invisibility
- * changes rendering only, never spatial ownership or historical line cost.
- *
- * Premise + logic edges use the same directed-key de-duplication as the scene.
- * Twin groups use the scene's effective star topology for groups larger than 2.
- */
 export function collectRelationLayoutEdges(nodes: RelationLayoutNode[]): RelationLayoutEdge[] {
   const ids = new Set(nodes.map(node => node.id));
   const seenDirected = new Set<string>();
@@ -91,7 +98,6 @@ export function collectRelationLayoutEdges(nodes: RelationLayoutNode[]): Relatio
   return edges;
 }
 
-/** Matches the straight 3D segment rendered by KnowledgeScene.updateLine. */
 export function displayedRelationLength(a: THREE.Vector3, b: THREE.Vector3): number {
   const distance = a.distanceTo(b);
   return Number.isFinite(distance) ? distance : Number.POSITIVE_INFINITY;
@@ -254,7 +260,255 @@ function takeNearestLocalSlot(pool: SlotPool, target: THREE.Vector3): number {
   return fallback;
 }
 
-function candidateTraversalAssignment(
+type BfsResult = {
+  farthest: string;
+  parent: Map<string, string | null>;
+  distance: Map<string, number>;
+};
+
+function bfsWithin(
+  start: string,
+  allowed: ReadonlySet<string>,
+  adjacency: ReadonlyMap<string, string[]>,
+): BfsResult {
+  const parent = new Map<string, string | null>([[start, null]]);
+  const distance = new Map<string, number>([[start, 0]]);
+  const queue = [start];
+  let head = 0;
+  let farthest = start;
+
+  while (head < queue.length) {
+    const id = queue[head++];
+    const nextDistance = (distance.get(id) ?? 0) + 1;
+    for (const neighbourId of adjacency.get(id) ?? []) {
+      if (!allowed.has(neighbourId) || distance.has(neighbourId)) continue;
+      parent.set(neighbourId, id);
+      distance.set(neighbourId, nextDistance);
+      queue.push(neighbourId);
+      if (nextDistance > (distance.get(farthest) ?? 0)) farthest = neighbourId;
+    }
+  }
+
+  return { farthest, parent, distance };
+}
+
+function approximateDiameterPath(
+  component: readonly string[],
+  adjacency: ReadonlyMap<string, string[]>,
+): string[] {
+  if (component.length <= 1) return [...component];
+  const allowed = new Set(component);
+  const firstSweep = bfsWithin(component[0], allowed, adjacency);
+  const secondSweep = bfsWithin(firstSweep.farthest, allowed, adjacency);
+  const path: string[] = [];
+  let cursor: string | null | undefined = secondSweep.farthest;
+
+  while (cursor) {
+    path.push(cursor);
+    if (cursor === firstSweep.farthest) break;
+    cursor = secondSweep.parent.get(cursor);
+  }
+
+  return path.reverse();
+}
+
+export function scoreRelationComponentMorphology(
+  nodeCount: number,
+  edgeCount: number,
+  approximateDiameter: number,
+  forkNodeCount: number,
+): RelationComponentMorphology {
+  const safeNodes = Math.max(0, nodeCount);
+  const elongation = safeNodes <= 1
+    ? 0
+    : clamp01(approximateDiameter / Math.max(1, safeNodes - 1));
+  const excessEdges = Math.max(0, edgeCount - Math.max(0, safeNodes - 1));
+  const redundancyRaw = safeNodes === 0 ? 0 : excessEdges / safeNodes;
+  const redundancy = redundancyRaw / (1 + redundancyRaw);
+  const forkRatio = safeNodes === 0 ? 0 : clamp01(forkNodeCount / safeNodes);
+  const branchWeight = clamp01(
+    0.10
+      + 0.90 * elongation
+      - 0.55 * redundancy
+      - 0.20 * clamp01(forkRatio * 1.5),
+  );
+
+  return {
+    nodeCount: safeNodes,
+    edgeCount: Math.max(0, edgeCount),
+    approximateDiameter: Math.max(0, approximateDiameter),
+    elongation,
+    redundancy,
+    forkRatio,
+    branchWeight,
+  };
+}
+
+function morphologyForComponent(
+  component: readonly string[],
+  diameterPath: readonly string[],
+  adjacency: ReadonlyMap<string, string[]>,
+): RelationComponentMorphology {
+  let degreeTotal = 0;
+  let forkNodeCount = 0;
+  for (const id of component) {
+    const degree = adjacency.get(id)?.length ?? 0;
+    degreeTotal += degree;
+    if (degree >= 3) forkNodeCount++;
+  }
+  return scoreRelationComponentMorphology(
+    component.length,
+    Math.floor(degreeTotal / 2),
+    Math.max(0, diameterPath.length - 1),
+    forkNodeCount,
+  );
+}
+
+function connectedComponents(
+  nodes: readonly RelationLayoutNode[],
+  adjacency: ReadonlyMap<string, string[]>,
+): string[][] {
+  const nonCoreIds = nodes
+    .filter(node => layerOf(node) !== 'core')
+    .map(node => node.id);
+  const allowed = new Set(nonCoreIds);
+  const visited = new Set<string>();
+  const components: string[][] = [];
+
+  for (const seed of nonCoreIds) {
+    if (visited.has(seed)) continue;
+    const component: string[] = [];
+    const queue = [seed];
+    let head = 0;
+    visited.add(seed);
+
+    while (head < queue.length) {
+      const id = queue[head++];
+      component.push(id);
+      for (const neighbourId of adjacency.get(id) ?? []) {
+        if (!allowed.has(neighbourId) || visited.has(neighbourId)) continue;
+        visited.add(neighbourId);
+        queue.push(neighbourId);
+      }
+    }
+
+    components.push(component);
+  }
+
+  return components;
+}
+
+type ComponentSchedule = {
+  order: string[];
+  parentById: Map<string, string>;
+  spineIds: Set<string>;
+};
+
+function scheduleComponent(
+  component: readonly string[],
+  diameterPath: readonly string[],
+  adjacency: ReadonlyMap<string, string[]>,
+): ComponentSchedule {
+  const allowed = new Set(component);
+  const scheduled = new Set<string>();
+  const parentById = new Map<string, string>();
+  const spineIds = new Set(diameterPath);
+  const order: string[] = [];
+  const queue: string[] = [];
+  let head = 0;
+
+  diameterPath.forEach((id, index) => {
+    if (scheduled.has(id)) return;
+    scheduled.add(id);
+    order.push(id);
+    queue.push(id);
+    if (index > 0) parentById.set(id, diameterPath[index - 1]);
+  });
+
+  while (head < queue.length) {
+    const id = queue[head++];
+    for (const neighbourId of adjacency.get(id) ?? []) {
+      if (!allowed.has(neighbourId) || scheduled.has(neighbourId)) continue;
+      scheduled.add(neighbourId);
+      parentById.set(neighbourId, id);
+      order.push(neighbourId);
+      queue.push(neighbourId);
+    }
+  }
+
+  for (const id of component) {
+    if (scheduled.has(id)) continue;
+    scheduled.add(id);
+    order.push(id);
+  }
+
+  return { order, parentById, spineIds };
+}
+
+function assignedNeighbourCentroid(
+  id: string,
+  adjacency: ReadonlyMap<string, string[]>,
+  assigned: ReadonlyMap<string, THREE.Vector3>,
+  fallback: THREE.Vector3,
+): THREE.Vector3 {
+  const target = new THREE.Vector3();
+  let count = 0;
+  for (const neighbourId of adjacency.get(id) ?? []) {
+    const position = assigned.get(neighbourId);
+    if (!position) continue;
+    target.add(position);
+    count++;
+  }
+  return count > 0 ? target.multiplyScalar(1 / count) : fallback.clone();
+}
+
+function branchContinuationTarget(
+  id: string,
+  parentById: ReadonlyMap<string, string>,
+  spineIds: ReadonlySet<string>,
+  assigned: ReadonlyMap<string, THREE.Vector3>,
+  fallback: THREE.Vector3,
+): THREE.Vector3 {
+  const parentId = parentById.get(id);
+  if (!parentId) return fallback.clone();
+  const parentPosition = assigned.get(parentId);
+  if (!parentPosition) return fallback.clone();
+
+  if (!spineIds.has(id) && spineIds.has(parentId)) return parentPosition.clone();
+
+  const grandParentId = parentById.get(parentId);
+  if (!grandParentId) return parentPosition.clone();
+  const grandParentPosition = assigned.get(grandParentId);
+  if (!grandParentPosition) return parentPosition.clone();
+
+  const direction = parentPosition.clone().sub(grandParentPosition);
+  if (direction.lengthSq() <= POSITION_EPSILON_SQ) return parentPosition.clone();
+  return parentPosition.clone().add(direction);
+}
+
+function blendedPlacementTarget(
+  id: string,
+  morphology: RelationComponentMorphology,
+  schedule: ComponentSchedule,
+  adjacency: ReadonlyMap<string, string[]>,
+  assigned: ReadonlyMap<string, THREE.Vector3>,
+  fallback: THREE.Vector3,
+): THREE.Vector3 {
+  const compactTarget = assignedNeighbourCentroid(id, adjacency, assigned, fallback);
+  const branchTarget = branchContinuationTarget(
+    id,
+    schedule.parentById,
+    schedule.spineIds,
+    assigned,
+    fallback,
+  );
+  const branchWeight = morphology.branchWeight;
+  return compactTarget
+    .multiplyScalar(1 - branchWeight)
+    .add(branchTarget.multiplyScalar(branchWeight));
+}
+
+function candidateAdaptiveBranchAssignment(
   nodes: RelationLayoutNode[],
   adjacency: ReadonlyMap<string, string[]>,
 ): Map<string, THREE.Vector3> {
@@ -277,79 +531,44 @@ function candidateTraversalAssignment(
     if (layerOf(node) === 'core') assigned.set(node.id, node.pos!.clone());
   }
 
-  let maxDegree = 0;
-  const degreeById = new Map<string, number>();
-  for (const node of nodes) {
-    const degree = adjacency.get(node.id)?.length ?? 0;
-    degreeById.set(node.id, degree);
-    maxDegree = Math.max(maxDegree, degree);
-  }
-  const degreeBuckets: RelationLayoutNode[][] = Array.from({ length: maxDegree + 1 }, () => []);
-  for (const node of nodes) {
-    if (layerOf(node) !== 'core') degreeBuckets[degreeById.get(node.id) ?? 0].push(node);
-  }
+  const components = connectedComponents(nodes, adjacency);
 
-  const scheduled = new Set<string>();
-  const queue: string[] = [];
-  let queueHead = 0;
+  const assignComponent = (component: readonly string[]) => {
+    const diameterPath = approximateDiameterPath(component, adjacency);
+    const morphology = morphologyForComponent(component, diameterPath, adjacency);
+    const schedule = scheduleComponent(component, diameterPath, adjacency);
 
-  const assignNode = (node: RelationLayoutNode): void => {
-    if (assigned.has(node.id)) return;
-    const layer = layerOf(node);
-    if (layer === 'core') return;
-    const neighbours = adjacency.get(node.id) ?? [];
-    const target = new THREE.Vector3();
-    let targetCount = 0;
-    for (const neighbourId of neighbours) {
-      const neighbourPosition = assigned.get(neighbourId);
-      if (!neighbourPosition) continue;
-      target.add(neighbourPosition);
-      targetCount++;
+    for (const id of schedule.order) {
+      if (assigned.has(id)) continue;
+      const node = byId.get(id);
+      const fallback = positions.get(id);
+      if (!node || !fallback) continue;
+      const layer = layerOf(node);
+      if (layer === 'core') continue;
+      const target = blendedPlacementTarget(
+        id,
+        morphology,
+        schedule,
+        adjacency,
+        assigned,
+        fallback,
+      );
+      const pool = pools.get(layer)!;
+      const slotIndex = takeNearestLocalSlot(pool, target);
+      assigned.set(id, pool.slots[slotIndex].clone());
     }
-    if (targetCount > 0) target.multiplyScalar(1 / targetCount);
-    else target.copy(positions.get(node.id)!);
-
-    const pool = pools.get(layer)!;
-    const slotIndex = takeNearestLocalSlot(pool, target);
-    assigned.set(node.id, pool.slots[slotIndex].clone());
   };
 
-  for (let degree = maxDegree; degree >= 0; degree--) {
-    for (const seed of degreeBuckets[degree]) {
-      if (assigned.has(seed.id) || scheduled.has(seed.id)) continue;
-      scheduled.add(seed.id);
-      queue.push(seed.id);
-
-      while (queueHead < queue.length) {
-        const id = queue[queueHead++];
-        const node = byId.get(id);
-        if (!node) continue;
-        assignNode(node);
-
-        for (const neighbourId of adjacency.get(id) ?? []) {
-          if (assigned.has(neighbourId) || scheduled.has(neighbourId)) continue;
-          const neighbour = byId.get(neighbourId);
-          if (!neighbour || layerOf(neighbour) === 'core') continue;
-          scheduled.add(neighbourId);
-          queue.push(neighbourId);
-        }
-      }
-    }
+  for (const component of components) {
+    if (component.length > 1) assignComponent(component);
+  }
+  for (const component of components) {
+    if (component.length === 1) assignComponent(component);
   }
 
   return assigned;
 }
 
-/**
- * Near-linear fixed-slot optimizer.
- *
- * The globally exact fixed-slot minimum is a quadratic-assignment problem, so
- * this deliberately avoids O(n²) pair swaps. Each pass traverses the complete
- * historical relation graph once, grows high-degree-connected regions through
- * BFS, and assigns each node to a nearby free slot using a bounded spatial hash.
- * A candidate pass is committed only when the actual displayed straight 3D line
- * total gets smaller. With a fixed small pass count, expected work is O(k(n + m)).
- */
 export function optimizeRelationLengthLayout(
   nodes: RelationLayoutNode[],
   passes = DEFAULT_PASSES,
@@ -366,7 +585,7 @@ export function optimizeRelationLengthLayout(
   let acceptedPasses = 0;
 
   for (let pass = 0; pass < Math.max(1, passes); pass++) {
-    const candidate = candidateTraversalAssignment(nodes, adjacency);
+    const candidate = candidateAdaptiveBranchAssignment(nodes, adjacency);
     const candidateLength = lineLengthFromPositions(candidate, edges);
     if (!(candidateLength + IMPROVEMENT_EPSILON < current)) break;
 
