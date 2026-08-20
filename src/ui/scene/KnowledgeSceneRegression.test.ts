@@ -119,6 +119,9 @@ assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.node.sphereWidthSegments'),'o
 assert(/antialias:\s*KNOWLEDGE_SCENE_THEME\.renderer\.antialias/.test(sceneSource),'renderer antialiasing must be governed by the scene theme');
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'),'mobile renderer must use the bounded higher-resolution sampling path');
 assert(sceneSource.includes('const relationActive = hasSelection && (selectedId === p || selectedId === n.id);'),'only edges directly incident to the clicked node may receive the active relation color');
+assert(sceneSource.includes('const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;'),'completed focused-node state must own second-tap hit priority');
+assert(sceneSource.includes('if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;'),'mobile second tap must prefer the focused node inside its existing 24px touch radius');
+assert(sceneSource.includes('raycaster.intersectObject(focusedRecord.shell, false).length > 0'),'desktop second tap must prefer the focused node when its existing sphere hit geometry is intersected');
 assert(!sceneSource.includes('n.premises.includes(selectedId!)'),'selecting one premise must not recolor sibling premise edges that do not touch the clicked node');
 assert(sceneSource.includes('material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);'),'edge color must switch between the approved ordinary and clicked-node colors');
 assert(/\.shell\.visible\s*=\s*true/.test(sceneSource),'large mobile graphs must retain the opaque semantic body instead of falling back to a translucent sprite only');
