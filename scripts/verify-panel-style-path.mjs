@@ -124,7 +124,7 @@ try {
 
   await deadline(page.waitForFunction(({ nodeId, centerX, centerY }) => {
     const point = window.__debug?.scene?.screenPositionForNode?.(nodeId);
-    return Boolean(point && Math.hypot(point.x - centerX, point.y - centerY) < 4);
+    return Boolean(point && Math.hypot(point.x - centerX, point.y - centerY) < 0.25);
   }, { nodeId: target.id, centerX: center.x, centerY: center.y }), 1_000, 'node focus');
 
   const centered = await page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), target.id);
