@@ -32,6 +32,10 @@ import {
   TYPE_COLOR,
 } from '../config/KnowledgeUiConfig';
 import {
+  createSystemCoreSceneNodes,
+  openSystemCoreCard,
+} from '../systemCore/SystemCoreContent';
+import {
   MOBILE_ACTIVE_NODE_TARGET,
   selectMobileActiveNodeIds,
   type MobileSceneCandidate,
@@ -255,6 +259,12 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
   const mobilePerformance = window.matchMedia('(max-width: 640px)').matches;
+  const publicGetNodes = getNodes;
+  const systemCoreNodes: KnowledgeSceneNode[] = createSystemCoreSceneNodes();
+  getNodes = () => [
+    ...systemCoreNodes,
+    ...publicGetNodes().filter(node => !isCoreNodeId(node.id)),
+  ];
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, host.clientWidth / Math.max(host.clientHeight, 1), .5, 8000);
@@ -745,7 +755,23 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     if (nodeId) {
       selectedId = nodeId;
       largeGraphDirty = true;
-      window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
+      if (isCoreNodeId(nodeId)) {
+        overlayVisible = true;
+        labelsLayer.style.display = 'none';
+        pauseFrameLoop();
+        const opened = openSystemCoreCard(nodeId, () => {
+          overlayVisible = false;
+          labelsLayer.style.display = 'block';
+          resumeFrameLoop();
+        });
+        if (!opened) {
+          overlayVisible = false;
+          labelsLayer.style.display = 'block';
+          resumeFrameLoop();
+        }
+      } else {
+        window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
+      }
     } else if (!moved && !pinchOccurred) {
       const now = performance.now();
       if (now - lastBgTapTime < 280) {
