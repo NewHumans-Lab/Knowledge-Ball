@@ -5,6 +5,13 @@ export interface AccountProfile {
   myBalance: string; totalEnergy: string; accuracy: number;
 }
 export interface ProfileChanges { username: string; displayName?: string; avatarUrl?: string; bio?: string; }
+export type PersonalMastery = 'none' | 'touched' | 'mastered';
+export interface PersonalKnowledgeStateSnapshot {
+  nodeId: string;
+  mastery: PersonalMastery;
+  version: number;
+  updatedAt?: string;
+}
 export type PendingVoteSide = 'AGREE' | 'DISAGREE';
 export type PendingVoteVerdict = 'PENDING' | 'CORRECT' | 'INCORRECT';
 export type PendingVoteCloseReason = 'THRESHOLD' | 'TIMEOUT';
@@ -52,6 +59,13 @@ export class KnowledgeBallAuthClient {
     return this.createSession();
   }
 
+  async currentUserId(): Promise<string> {
+    const current = await this.publicSession();
+    const response = await this.restRequest('/auth/v1/user', current, { method: 'GET' }) as Record<string, unknown>;
+    if (typeof response.id !== 'string' || !response.id) throw new Error('服务端返回了无效用户身份');
+    return response.id;
+  }
+
   async getAccount(): Promise<AccountProfile> {
     const current = await this.publicSession();
     await this.restRequest('/rest/v1/rpc/ensure_anonymous_profile', current, { method: 'POST', body: '{}' });
@@ -66,6 +80,63 @@ export class KnowledgeBallAuthClient {
       body: JSON.stringify({ new_username: changes.username, new_display_name: changes.displayName ?? null, new_avatar_url: changes.avatarUrl ?? null, new_bio: changes.bio ?? null }),
     });
     return this.profileFrom(response);
+  }
+
+  /**
+   * Upgrade the current anonymous Supabase user in place. The Edge Function keeps
+   * the same auth.users.id, reserves the globally unique username, attaches the
+   * password identity server-side, and returns a fresh permanent-user session.
+   */
+  async claimUsernamePassword(username: string, password: string): Promise<AccountProfile> {
+    const current = await this.publicSession();
+    const response = await this.functionRequest('username-password-auth', {
+      action: 'claim', username, password,
+    }, current);
+    this.saveSession(sessionFromFunction(response));
+    return this.getAccount();
+  }
+
+  /** Sign into an existing account from a different browser using only username + password. */
+  async loginUsernamePassword(username: string, password: string): Promise<AccountProfile> {
+    const response = await this.functionRequest('username-password-auth', {
+      action: 'login', username, password,
+    });
+    this.saveSession(sessionFromFunction(response));
+    return this.getAccount();
+  }
+
+  async getPersonalKnowledgeStates(): Promise<PersonalKnowledgeStateSnapshot[]> {
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/get_my_personal_knowledge_states', current, {
+      method: 'POST', body: '{}',
+    });
+    if (!Array.isArray(response)) throw new Error('服务端返回了无效个人知识状态');
+    return response.map(parsePersonalKnowledgeState);
+  }
+
+  async markKnowledgeTouched(nodeId: string): Promise<PersonalKnowledgeStateSnapshot> {
+    const current = await this.publicSession();
+    return parsePersonalKnowledgeState(await this.restRequest('/rest/v1/rpc/mark_my_knowledge_touched', current, {
+      method: 'POST', body: JSON.stringify({ target_node_id: nodeId }),
+    }));
+  }
+
+  async setPersonalKnowledgeState(nodeId: string, mastery: PersonalMastery): Promise<PersonalKnowledgeStateSnapshot> {
+    const current = await this.publicSession();
+    return parsePersonalKnowledgeState(await this.restRequest('/rest/v1/rpc/set_my_personal_knowledge_state', current, {
+      method: 'POST', body: JSON.stringify({ target_node_id: nodeId, new_mastery: mastery }),
+    }));
+  }
+
+  async mergePersonalKnowledgeStates(states: Array<Pick<PersonalKnowledgeStateSnapshot, 'nodeId' | 'mastery'>>): Promise<number> {
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/merge_my_personal_knowledge_states', current, {
+      method: 'POST',
+      body: JSON.stringify({ state_batch: states.map(state => ({ node_id: state.nodeId, mastery: state.mastery })) }),
+    }) as Record<string, unknown>;
+    const processed = Number(response.processed ?? 0);
+    if (!Number.isSafeInteger(processed) || processed < 0) throw new Error('服务端返回了无效个人状态迁移数量');
+    return processed;
   }
 
   async getPendingKnowledgeVote(nodeId: string): Promise<PendingKnowledgeVoteSnapshot> {
@@ -134,7 +205,7 @@ export class KnowledgeBallAuthClient {
 
   private saveSession(raw: Record<string, unknown>): AuthSession {
     const access_token = typeof raw.access_token === 'string' ? raw.access_token : '';
-    if (!access_token) throw new Error('匿名参与会话创建失败');
+    if (!access_token) throw new Error('账户会话创建失败');
     const session = { access_token, refresh_token: typeof raw.refresh_token === 'string' ? raw.refresh_token : undefined,
       expires_at: Math.floor(Date.now() / 1000) + (typeof raw.expires_in === 'number' ? raw.expires_in : 3600) };
     try { this.storage?.setItem(GUEST_SESSION_KEY, JSON.stringify(session)); } catch { /* ephemeral session */ }
@@ -143,6 +214,19 @@ export class KnowledgeBallAuthClient {
 
   private async authRequest(path: string, init: RequestInit): Promise<Record<string, unknown>> {
     const response = await parseResponse(await this.request(`${this.baseUrl()}${path}`, { ...init, headers: { apikey: this.config.publishableKey, 'Content-Type': 'application/json', ...init.headers } }));
+    return response as Record<string, unknown>;
+  }
+
+  private async functionRequest(name: string, body: Record<string, unknown>, session?: AuthSession): Promise<Record<string, unknown>> {
+    const response = await parseResponse(await this.request(`${this.baseUrl()}/functions/v1/${name}`, {
+      method: 'POST',
+      headers: {
+        apikey: this.config.publishableKey,
+        'Content-Type': 'application/json',
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    }));
     return response as Record<string, unknown>;
   }
 
@@ -157,9 +241,34 @@ async function parseResponse(response: Response): Promise<unknown> {
   const body = await response.json().catch(() => ({})) as unknown;
   if (!response.ok) {
     const record = body as Record<string, unknown>;
-    throw new Error(typeof record.message === 'string' ? record.message : `请求失败 (${response.status})`);
+    const message = typeof record.error === 'string' ? record.error
+      : typeof record.message === 'string' ? record.message
+      : `请求失败 (${response.status})`;
+    throw new Error(message);
   }
   return body;
+}
+
+function sessionFromFunction(value: Record<string, unknown>): Record<string, unknown> {
+  const session = value.session;
+  if (!session || typeof session !== 'object') throw new Error('服务端返回了无效账户会话');
+  return session as Record<string, unknown>;
+}
+
+function parsePersonalKnowledgeState(value: unknown): PersonalKnowledgeStateSnapshot {
+  const response = value as Record<string, unknown>;
+  const nodeId = typeof response.node_id === 'string' ? response.node_id : '';
+  const mastery = response.mastery;
+  const version = Number(response.version);
+  if (!nodeId || (mastery !== 'none' && mastery !== 'touched' && mastery !== 'mastered') || !Number.isSafeInteger(version) || version < 1) {
+    throw new Error('服务端返回了无效个人知识状态');
+  }
+  return {
+    nodeId,
+    mastery,
+    version,
+    updatedAt: optionalString(response.updated_at),
+  };
 }
 
 function exactEnergy(value: unknown): string {
