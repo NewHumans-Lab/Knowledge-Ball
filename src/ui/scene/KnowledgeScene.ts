@@ -878,7 +878,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       return;
     }
     lastFrameAt = time;
-    if (largeMobileGraph && !largeGraphDirty && returningNodeId === null) {
+    if (largeMobileGraph && !largeGraphDirty) {
       updateCoreOrbit(time);
       if (pendingNodeIds.size > 0) applyPendingPulse(time);
       labels();
