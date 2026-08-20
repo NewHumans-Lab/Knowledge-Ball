@@ -386,6 +386,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     point.renderOrder = core ? 21 : 1;
     const dotMaterial = new THREE.SpriteMaterial({ map: n.mastery === 'mastered' ? strongTex : fluorTex, color: KNOWLEDGE_SCENE_THEME.mastery.tint, transparent: true, opacity: masteryOpacity(n), depthTest: !core, depthWrite: false });
     const dot = new THREE.Sprite(dotMaterial);
+    dot.visible = !core;
     dot.renderOrder = core ? 22 : 2;
     group.add(shell, point, dot);
     nodesGroup.add(group);
