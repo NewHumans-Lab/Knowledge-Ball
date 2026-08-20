@@ -1,21 +1,26 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [auth, ui, sync, migration, profileGate] = await Promise.all([
+const [auth, ui, sync, migration, profileGate, publicWriteGate, productionBrowser, deploy] = await Promise.all([
   readFile('src/auth/AuthClient.ts','utf8'),
   readFile('src/ui/AuthUi.ts','utf8'),
   readFile('src/sync/SupabaseSyncAdapter.ts','utf8'),
   readFile('supabase/migrations/202608140001_remove_phone_auth.sql','utf8'),
   readFile('supabase/migrations/202608200003_profile_edit_requires_account.sql','utf8'),
+  readFile('supabase/migrations/202608200004_registered_public_writes.sql','utf8'),
+  readFile('scripts/verify-production-browser.mjs','utf8'),
+  readFile('.github/workflows/deploy.yml','utf8'),
 ]);
 
-// Public viewing/participation remains phone-free. Registration is only required
-// for editing personal profile fields, not for reading public knowledge.
+// Public viewing remains phone-free. Pending-vote policy is intentionally left
+// unchanged here; authoritative public knowledge creation now requires a real,
+// recoverable account and the database owns that authorization decision.
 for (const source of [auth, ui, sync]) assert.doesNotMatch(source, /phone|sms|otp|verified_phone|验证码/i);
 assert.match(auth, /body: '\{\}'/);
 assert.match(auth, /ensure_anonymous_profile/);
 assert.match(sync, /append_public_knowledge_events/);
-assert.doesNotMatch(sync, /requiresAccount|verified|phone|sms|otp|注册|登录/i);
+assert.doesNotMatch(sync, /service[_-]?role/i,
+  'browser synchronization must never depend on a privileged service-role credential');
 
 assert.match(ui, /我的能量/);
 assert.match(ui, /总能量/);
@@ -65,11 +70,35 @@ assert.match(profileGate, /where p\.user_id = actor[\s\S]*and p\.password_login_
   'server must reject anonymous profile edits even if the UI is bypassed');
 assert.match(profileGate, /raise exception '请先登录账户'/,
   'server profile gate must return the same product-level requirement');
-assert.match(profileGate, /knowledge_ball_schema_version\(\)[\s\S]*202608200003/,
-  'release schema gate must advance with the profile-auth invariant');
+
+assert.match(publicWriteGate, /append_public_knowledge_events\(/,
+  'public-write hardening migration must own the authoritative append RPC');
+assert.match(publicWriteGate, /join auth\.users u on u\.id = p\.user_id/,
+  'public writes must cross-check the authoritative auth user');
+assert.match(publicWriteGate, /p\.active/,
+  'inactive Knowledge Ball accounts must not write public knowledge');
+assert.match(publicWriteGate, /p\.password_login_enabled/,
+  'anonymous guest profiles must not write public knowledge');
+assert.match(publicWriteGate, /u\.is_anonymous is false/,
+  'Supabase anonymous auth users must be rejected server-side');
+assert.match(publicWriteGate, /请先注册或登录账户后再提交公共知识/,
+  'rejected guest writes must return a product-level authorization message');
+assert.match(publicWriteGate, /knowledge_ball_schema_version\(\)[\s\S]*202608200004/,
+  'release schema gate must advance with the public-write invariant');
+
+assert.doesNotMatch(productionBrowser, /Public synchronization probe|crypto\.randomUUID\(\)|#modalSubmit[^\n]*click/,
+  'production browser smoke tests must never manufacture or submit knowledge nodes');
+assert.match(productionBrowser, /publicAppendRequests/,
+  'production browser smoke test must explicitly detect public append RPC calls');
+assert.match(productionBrowser, /authoritative public writes: 0/,
+  'production smoke output must make the zero-write invariant visible');
+assert.doesNotMatch(deploy, /\?e2e=/,
+  'production deploy must not parameterize a test knowledge marker');
+assert.match(deploy, /Read-only click-test deployed Pages and Supabase wiring/,
+  'deployment must describe the production browser check as read-only');
 
 assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Combined account auth form, standard profile form, and profile edit login gate checks passed');
+console.log('Registered public-write gate, read-only production smoke, account UI, and profile authorization checks passed');
