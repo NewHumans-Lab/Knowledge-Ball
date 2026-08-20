@@ -102,6 +102,7 @@ type NodeMeshRecord = {
   baseDotOpacity: number;
 };
 type Layer = NonNullable<KnowledgeSceneNode['layer']>;
+type PersonalVisibilityNode = Pick<KnowledgeSceneNode, 'id' | 'mastery'>;
 
 const CORE_NODE_ENGLISH_LABELS: Readonly<Record<string, string>> = Object.freeze({
   n1: 'Law of Identity',
@@ -200,8 +201,23 @@ export function shouldRenderEdge(fromId: string, toId: string) {
   return !isCoreNodeId(fromId) && !isCoreNodeId(toId);
 }
 
-export function nodeVisibleInPersonalMode(node: Pick<KnowledgeSceneNode, 'id' | 'mastery'>, hideUntouched: boolean): boolean {
+export function nodeVisibleInPersonalMode(node: PersonalVisibilityNode, hideUntouched: boolean): boolean {
   return isCoreNodeId(node.id) || !hideUntouched || node.mastery !== 'none';
+}
+
+export function edgeVisibleInPersonalMode(
+  from: PersonalVisibilityNode | undefined,
+  to: PersonalVisibilityNode | undefined,
+  hideUntouched: boolean,
+  geometryVisible: boolean,
+): boolean {
+  return Boolean(
+    geometryVisible
+      && from
+      && to
+      && nodeVisibleInPersonalMode(from, hideUntouched)
+      && nodeVisibleInPersonalMode(to, hideUntouched),
+  );
 }
 
 export function clampGraphZoom(z: number) {
@@ -234,7 +250,7 @@ export function hasFiniteCoordinates(vector: Pick<THREE.Vector3, 'x' | 'y' | 'z'
 }
 
 export function createCoreSunLight() {
-  const light = new THREE.PointLight(CORE_SUN_COLOR, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_LIGHT_DISTANCE, CORE_SUN_LIGHT_DECAY);
+  const light = new THREE.PointLight(CORE_SUN_COLOR, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_LIGHT_DISTANCE, CORE_SUN_LIGHT_INTENSITY > 0 ? CORE_SUN_LIGHT_DECAY : 0);
   light.position.set(0, 0, 0);
   light.castShadow = true;
   light.shadow.mapSize.set(512, 512);
@@ -481,20 +497,19 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     return eligible.filter(node => mobileActiveNodeIds.has(node.id));
   };
 
-  const updateLine = (line: THREE.Line, a?: THREE.Vector3, b?: THREE.Vector3) => {
+  const updateLineGeometry = (line: THREE.Line, a?: THREE.Vector3, b?: THREE.Vector3) => {
     if (!hasFiniteCoordinates(a) || !hasFiniteCoordinates(b)) {
       line.userData.geometryVisible = false;
-      line.visible = false;
       return;
     }
     line.geometry.setFromPoints([a!.clone(), b!.clone()]);
     line.userData.geometryVisible = true;
-    line.visible = true;
     if (line.material instanceof THREE.LineDashedMaterial) line.computeLineDistances();
   };
 
   const syncEdges = (nodes: KnowledgeSceneNode[]) => {
-    const ids = new Set(nodes.map(n => n.id));
+    const byId = new Map(nodes.map(node => [node.id, node] as const));
+    const ids = new Set(byId.keys());
     const wanted = new Set<string>();
     const hasSelection = selectedId !== null;
     nodes.forEach(n => [...n.premises, ...(n.logicRuleId ? [n.logicRuleId] : [])].forEach(p => {
@@ -518,7 +533,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
             ? KNOWLEDGE_SCENE_THEME.edge.disputedOpacity
             : KNOWLEDGE_SCENE_THEME.edge.normalOpacity;
       material.opacity = relationActive ? KNOWLEDGE_SCENE_THEME.edge.activeOpacity : stateOpacity * (hasSelection ? KNOWLEDGE_SCENE_THEME.edge.inactiveFactor : 1);
-      updateLine(edgeMap[key], nodeMap[p]?.group.position, nodeMap[n.id]?.group.position);
+      updateLineGeometry(edgeMap[key], byId.get(p)?.pos, n.pos);
     }));
 
     nodes.filter(n => n.twinGroup && !isCoreNodeId(n.id)).forEach(n => {
@@ -534,7 +549,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const material = edgeMap[key].material as THREE.LineDashedMaterial;
       material.color.setHex(KNOWLEDGE_SCENE_THEME.edge.twin);
       material.opacity = KNOWLEDGE_SCENE_THEME.edge.twinOpacity;
-      updateLine(edgeMap[key], nodeMap[n.id]?.group.position, nodeMap[twin.id]?.group.position);
+      updateLineGeometry(edgeMap[key], n.pos, twin.pos);
     });
 
     Object.keys(edgeMap).forEach(key => {
@@ -548,18 +563,23 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const applyVisibility = () => {
     const byId = new Map(getNodes().map(node => [node.id, node] as const));
-    const visibleIds = new Set<string>();
     for (const [id, record] of Object.entries(nodeMap)) {
       const node = byId.get(id);
       const visible = Boolean(node && nodeVisibleInPersonalMode(node, hideUntouched));
-      if (visible) visibleIds.add(id);
       record.group.visible = visible;
       if (labelMap[id]) labelMap[id].style.display = visible ? '' : 'none';
     }
     Object.values(edgeMap).forEach(edge => {
       const endpoints = edge.userData.edgeEndpoints as [string, string] | undefined;
-      if (!endpoints) return;
-      edge.visible = edge.userData.geometryVisible === true && visibleIds.has(endpoints[0]) && visibleIds.has(endpoints[1]);
+      edge.visible = Boolean(
+        endpoints
+          && edgeVisibleInPersonalMode(
+            byId.get(endpoints[0]),
+            byId.get(endpoints[1]),
+            hideUntouched,
+            edge.userData.geometryVisible === true,
+          ),
+      );
     });
   };
 
@@ -610,7 +630,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const now = performance.now();
     if (largeMobileGraph || now - lastEdgeSync >= 100) {
-      syncEdges(activeNodes);
+      syncEdges(allNodes);
       lastEdgeSync = now;
     }
     applyVisibility();
