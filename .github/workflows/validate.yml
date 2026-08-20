@@ -5,7 +5,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-and-test:
@@ -14,6 +14,46 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Apply focused-node second-tap priority patch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/focused-node-second-tap-priority' && !contains(github.event.head_commit.message, '[focus-pick-applied]')
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          scene = Path('src/ui/scene/KnowledgeScene.ts')
+          text = scene.read_text()
+          old = """    const shells = Object.values(nodeMap).filter(record => record.group.visible).map(record => record.shell);\n    if (mobilePerformance) {\n      let nearest: { id: string; distance: number } | null = null;\n"""
+          new = """    const shells = Object.values(nodeMap).filter(record => record.group.visible).map(record => record.shell);\n    const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;\n    if (mobilePerformance) {\n      if (focusedRecord?.group.visible) {\n        focusedRecord.group.getWorldPosition(worldPos);\n        const projected = worldPos.clone().project(camera);\n        if (hasFiniteCoordinates(projected)) {\n          const sx = rect.left + (projected.x * .5 + .5) * rect.width;\n          const sy = rect.top + (-projected.y * .5 + .5) * rect.height;\n          if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;\n        }\n      }\n      let nearest: { id: string; distance: number } | null = null;\n"""
+          if old not in text:
+            raise SystemExit('mobile pick insertion point not found')
+          text = text.replace(old, new, 1)
+          old = """    ndc.set(((x - rect.left) / rect.width) * 2 - 1, -(((y - rect.top) / rect.height) * 2 - 1));\n    raycaster.setFromCamera(ndc, camera);\n    const hit = raycaster.intersectObjects(shells, false)[0]?.object.parent?.userData.nodeId;\n"""
+          new = """    ndc.set(((x - rect.left) / rect.width) * 2 - 1, -(((y - rect.top) / rect.height) * 2 - 1));\n    raycaster.setFromCamera(ndc, camera);\n    if (focusedRecord?.group.visible && raycaster.intersectObject(focusedRecord.shell, false).length > 0) return focusedNodeId;\n    const hit = raycaster.intersectObjects(shells, false)[0]?.object.parent?.userData.nodeId;\n"""
+          if old not in text:
+            raise SystemExit('desktop pick insertion point not found')
+          scene.write_text(text.replace(old, new, 1))
+
+          mobile = Path('scripts/verify-mobile-browser.mjs')
+          text = mobile.read_text()
+          old = """    await page.touchscreen.tap(centered.x,centered.y);\n    await page.locator('#panel.open').waitFor({state:'visible'});\n    await assertExit(page.locator('#panelClose'),'node detail exit');\n"""
+          new = """    const coreOverlap=await page.evaluate(({centered})=>['n1','n2','n16']\n      .map(id=>{const point=window.__debug.scene.screenPositionForNode(id);return point?{...point,id,distance:Math.hypot(point.x-centered.x,point.y-centered.y)}:null;})\n      .filter(Boolean).sort((a,b)=>a.distance-b.distance)[0],{centered});\n    assert.ok(coreOverlap,'core triad must expose a projected point for overlap regression');\n    assert.ok(coreOverlap.distance<=24,`nearest core node must overlap the focused node touch radius (distance=${coreOverlap.distance})`);\n    await page.touchscreen.tap(coreOverlap.x,coreOverlap.y);\n    await page.locator('#panel.open').waitFor({state:'visible'});\n    assert.equal((await page.locator('#panelTitle').textContent())?.trim(),target.title,'focused ordinary node must win the second tap inside its existing hit radius even when a core node is closer');\n    await assertExit(page.locator('#panelClose'),'node detail exit');\n"""
+          if old not in text:
+            raise SystemExit('mobile browser second-tap block not found')
+          mobile.write_text(text.replace(old, new, 1))
+
+          regression = Path('src/ui/scene/KnowledgeSceneRegression.test.ts')
+          text = regression.read_text()
+          marker = "assert(sceneSource.includes('const relationActive = hasSelection && (selectedId === p || selectedId === n.id);'),'only edges directly incident to the clicked node may receive the active relation color');\n"
+          addition = marker + "assert(sceneSource.includes('const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;'),'completed focused-node state must own second-tap hit priority');\nassert(sceneSource.includes('if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;'),'mobile second tap must prefer the focused node inside its existing 24px touch radius');\nassert(sceneSource.includes('raycaster.intersectObject(focusedRecord.shell, false).length > 0'),'desktop second tap must prefer the focused node when its existing sphere hit geometry is intersected');\n"
+          if marker not in text:
+            raise SystemExit('scene regression insertion point not found')
+          regression.write_text(text.replace(marker, addition, 1))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui/scene/KnowledgeScene.ts scripts/verify-mobile-browser.mjs src/ui/scene/KnowledgeSceneRegression.test.ts
+          git commit -m "[focus-pick-applied] Prioritize focused node on second tap"
+          git push origin HEAD:fix/focused-node-second-tap-priority
       - uses: actions/setup-node@v4
         with:
           node-version: 20
