@@ -30,6 +30,26 @@ export const KNOWLEDGE_LAYER_HELP: Record<UserKnowledgeLayer, string> = {
   outer: '有争议的知识，或作者在提交时明确声明为概率性 / 不确定性的描述，例如“可能”“也许”“概率为 80%”以及假说、预测、观点和价值判断。',
 };
 
+/**
+ * Layer and node type are separate fields, but a clean dataset still needs a
+ * coherent combination. `reasoning` is generated as the inference-process node
+ * of a theory and may be middle (rigorous) or outer (probabilistic/uncertain).
+ * A static semantic relation currently uses the general `fact` conclusion type;
+ * the relation semantics themselves live in the title/description until a future
+ * dedicated semantic-edge protocol is introduced.
+ */
+export const KNOWLEDGE_LAYER_NODE_TYPES: Readonly<Record<UserKnowledgeLayer, readonly NodeType[]>> = {
+  inner: ['definition', 'fact'],
+  middle: ['axiom', 'logic-symbol', 'reasoning', 'theorem'],
+  outer: ['reasoning', 'hypothesis', 'prediction', 'opinion', 'value'],
+};
+
+export const USER_SELECTABLE_NODE_TYPES: Readonly<Record<UserKnowledgeLayer, readonly NodeType[]>> = {
+  inner: ['definition', 'fact'],
+  middle: ['axiom', 'logic-symbol', 'theorem'],
+  outer: ['hypothesis', 'prediction', 'opinion', 'value'],
+};
+
 export type LayerNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 
 export interface LayerPolicyNode {
@@ -43,6 +63,10 @@ export interface LayerPolicyNode {
 
 export function isSystemCoreNodeId(id: string): boolean {
   return (SYSTEM_CORE_NODE_IDS as readonly string[]).includes(id);
+}
+
+export function nodeTypeAllowedInLayer(layer: UserKnowledgeLayer, type: NodeType): boolean {
+  return KNOWLEDGE_LAYER_NODE_TYPES[layer].includes(type);
 }
 
 /**
