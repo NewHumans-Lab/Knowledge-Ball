@@ -38,7 +38,8 @@ try {
   });
 
   await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.locator('.ai-add').waitFor({ state: 'visible', timeout: 20_000 });
+  await page.locator('#aiInput').waitFor({ state: 'visible', timeout: 20_000 });
+  assert.equal(await page.locator('.ai-add').count(), 0, 'search bar must not expose the old add-node button');
   await page.waitForTimeout(8_000);
 
   const diagnostics = await page.evaluate(() => {
@@ -79,9 +80,9 @@ try {
   assert.ok(Number.isFinite(tappable.x) && Number.isFinite(tappable.y), 'mobile raycast target coordinates must be finite');
 
   // Production smoke tests are intentionally read-only with respect to the
-  // authoritative public knowledge stream. UI creation semantics are covered by
-  // isolated browser regressions against local/mock adapters.
-  await page.locator('.ai-add').click();
+  // authoritative public knowledge stream. Opening and cancelling the existing
+  // keyboard create flow verifies the UI path without submitting anything.
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true })));
   await page.locator('#modalOverlay.show').waitFor({ state: 'visible', timeout: 5_000 });
   await page.locator('#modalCancel').click();
   await page.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'));

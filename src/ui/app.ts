@@ -508,7 +508,7 @@ interaction = new InteractionController({
   nodeRadiusInput: opt<HTMLInputElement>('setNodeRadius'),
   labelBrightnessInput: opt<HTMLInputElement>('setLabelBrightness'),
   hideUntouchedButton: opt<HTMLButtonElement>('btnPersonal'),
-  onPickNode: openNode,
+  onPickNode: id => scene.focusNode(id),
   onOpenCreateNode: () => panel.openCreateModal(currentPanelId),
   onOpenSettings: () => panel.openSettingsOverlay(),
 });
