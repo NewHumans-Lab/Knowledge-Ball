@@ -188,8 +188,14 @@ try{
     const centered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
     assert.ok(centered,'focused node must remain renderable');
     assert.ok(Math.hypot(centered.x-(hostBox.x+hostBox.width/2),centered.y-(hostBox.y+hostBox.height/2))<4,'first node tap must rotate the whole graph until the node reaches screen center');
-    await page.touchscreen.tap(centered.x,centered.y);
+    const coreOverlap=await page.evaluate(({centered})=>['n1','n2','n16']
+      .map(id=>{const point=window.__debug.scene.screenPositionForNode(id);return point?{...point,id,distance:Math.hypot(point.x-centered.x,point.y-centered.y)}:null;})
+      .filter(Boolean).sort((a,b)=>a.distance-b.distance)[0],{centered});
+    assert.ok(coreOverlap,'core triad must expose a projected point for overlap regression');
+    assert.ok(coreOverlap.distance<=24,`nearest core node must overlap the focused node touch radius (distance=${coreOverlap.distance})`);
+    await page.touchscreen.tap(coreOverlap.x,coreOverlap.y);
     await page.locator('#panel.open').waitFor({state:'visible'});
+    assert.equal((await page.locator('#panelTitle').textContent())?.trim(),target.title,'focused ordinary node must win the second tap inside its existing hit radius even when a core node is closer');
     await assertExit(page.locator('#panelClose'),'node detail exit');
     const originalTitle=(await page.locator('#panelTitle').textContent())?.trim();
     assert.ok(originalTitle,'node detail must expose a title');

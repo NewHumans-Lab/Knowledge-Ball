@@ -747,7 +747,17 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const rect = renderer.domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     const shells = Object.values(nodeMap).filter(record => record.group.visible).map(record => record.shell);
+    const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;
     if (mobilePerformance) {
+      if (focusedRecord?.group.visible) {
+        focusedRecord.group.getWorldPosition(worldPos);
+        const projected = worldPos.clone().project(camera);
+        if (hasFiniteCoordinates(projected)) {
+          const sx = rect.left + (projected.x * .5 + .5) * rect.width;
+          const sy = rect.top + (-projected.y * .5 + .5) * rect.height;
+          if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;
+        }
+      }
       let nearest: { id: string; distance: number } | null = null;
       for (const shell of shells) {
         shell.parent!.getWorldPosition(worldPos);
@@ -763,6 +773,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     ndc.set(((x - rect.left) / rect.width) * 2 - 1, -(((y - rect.top) / rect.height) * 2 - 1));
     raycaster.setFromCamera(ndc, camera);
+    if (focusedRecord?.group.visible && raycaster.intersectObject(focusedRecord.shell, false).length > 0) return focusedNodeId;
     const hit = raycaster.intersectObjects(shells, false)[0]?.object.parent?.userData.nodeId;
     return typeof hit === 'string' ? hit : null;
   };
