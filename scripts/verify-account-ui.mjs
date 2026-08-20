@@ -46,6 +46,19 @@ assert.match(ui, /toast\.textContent = '请先登录账户'/,
 assert.match(ui, /LOGIN_REQUIRED_MS = 2_000/,
   'login-required hint must last two seconds');
 
+assert.match(ui, /id="kbProfileEditForm"/,
+  'profile editing must use one ordinary form instead of sequential prompts');
+assert.match(ui, /name="displayName"/,
+  'profile form must include display name');
+assert.match(ui, /name="avatarUrl" type="url"/,
+  'profile form must include avatar URL');
+assert.match(ui, /textarea name="bio" maxlength="280"/,
+  'profile form must include the bio field');
+assert.match(ui, />保存资料</,
+  'profile form must save all fields together');
+assert.doesNotMatch(ui, /\bprompt\s*\(/,
+  'account UI must not use sequential browser prompt dialogs');
+
 assert.match(profileGate, /'password_login_enabled', p\.password_login_enabled/,
   'get_my_account must expose the authoritative permanent-login state');
 assert.match(profileGate, /where p\.user_id = actor[\s\S]*and p\.password_login_enabled/,
@@ -59,4 +72,4 @@ assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Combined account auth form and profile edit login gate checks passed');
+console.log('Combined account auth form, standard profile form, and profile edit login gate checks passed');

@@ -454,7 +454,7 @@ async function submitAuthForm(body: HTMLElement, mode: AuthMode, form: HTMLFormE
 
 function formValue(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
-  return field instanceof HTMLInputElement ? field.value : '';
+  return field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement ? field.value : '';
 }
 
 function editProfile(body: HTMLElement): void {
@@ -463,14 +463,80 @@ function editProfile(body: HTMLElement): void {
     flashLoginRequired();
     return;
   }
-  const username = prompt('用户名（3-24 位小写字母、数字或下划线）', cached.username ?? '');
-  if (username === null) return;
-  const displayName = prompt('显示名称', cached.displayName ?? '') ?? '';
-  const avatarUrl = prompt('头像 HTTPS 地址（可选）', cached.avatarUrl ?? '') ?? '';
-  const bio = prompt('个人简介（最多 280 字）', cached.bio ?? '') ?? '';
-  void account.updateProfile({ username, displayName, avatarUrl, bio })
-    .then(profile => { cached = profile; openAccount(false); })
-    .catch(error => accountStatus(body, error instanceof Error ? error.message : '资料保存失败'));
+  renderProfileEditForm(body);
+}
+
+function renderProfileEditForm(body: HTMLElement): void {
+  if (!cached) return;
+  body.innerHTML = `
+    <section class="kb-auth-card" aria-label="修改个人资料">
+      <h3 class="kb-profile-edit-title">修改资料</h3>
+      <form class="kb-auth-form kb-profile-edit-form" id="kbProfileEditForm" novalidate>
+        <label>用户名
+          <input name="username" type="text" inputmode="text" autocomplete="username" minlength="3" maxlength="24" pattern="[a-z0-9_]{3,24}" value="${escapeHtml(cached.username ?? '')}" placeholder="3-24 位小写字母、数字或下划线" required>
+        </label>
+        <label>显示名称
+          <input name="displayName" type="text" maxlength="60" value="${escapeHtml(cached.displayName ?? '')}" placeholder="公开显示的名称">
+        </label>
+        <label>头像地址
+          <input name="avatarUrl" type="url" inputmode="url" maxlength="2048" value="${escapeHtml(cached.avatarUrl ?? '')}" placeholder="https://…（可选）">
+        </label>
+        <label>个人简介
+          <textarea name="bio" maxlength="280" placeholder="最多 280 字">${escapeHtml(cached.bio ?? '')}</textarea>
+        </label>
+        <button class="btn primary kb-auth-submit" type="submit">保存资料</button>
+      </form>
+      <button class="btn ghost kb-auth-back" id="kbProfileEditBack" type="button">取消</button>
+      <div class="form-hint kb-auth-status" id="kbAccountStatus">一次填写并保存全部资料。</div>
+    </section>`;
+
+  body.querySelector('#kbProfileEditBack')?.addEventListener('click', () => openAccount(false));
+  body.querySelector<HTMLFormElement>('#kbProfileEditForm')?.addEventListener('submit', event => {
+    event.preventDefault();
+    void submitProfileEditForm(body, event.currentTarget as HTMLFormElement);
+  });
+}
+
+async function submitProfileEditForm(body: HTMLElement, form: HTMLFormElement): Promise<void> {
+  if (!account || !cached?.passwordLoginEnabled) {
+    flashLoginRequired();
+    return;
+  }
+  const username = formValue(form, 'username').trim().toLowerCase();
+  const displayName = formValue(form, 'displayName').trim();
+  const avatarUrl = formValue(form, 'avatarUrl').trim();
+  const bio = formValue(form, 'bio').trim();
+
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) {
+    accountStatus(body, '用户名必须是 3-24 位小写字母、数字或下划线');
+    return;
+  }
+  if (displayName.length > 60) {
+    accountStatus(body, '显示名称最多 60 字');
+    return;
+  }
+  if (avatarUrl && !safeAvatarUrl(avatarUrl)) {
+    accountStatus(body, '头像地址必须是 HTTPS 链接');
+    return;
+  }
+  if (bio.length > 280) {
+    accountStatus(body, '个人简介最多 280 字');
+    return;
+  }
+
+  const submit = form.querySelector<HTMLButtonElement>('.kb-auth-submit');
+  if (submit) submit.disabled = true;
+  accountStatus(body, '正在保存资料…');
+  try {
+    cached = await account.updateProfile({ username, displayName, avatarUrl, bio });
+    updateAvatar();
+    openAccount(false);
+    const nextBody = document.getElementById('accountOverlay')?.querySelector<HTMLElement>('.modal-body');
+    if (nextBody) accountStatus(nextBody, '资料已保存');
+  } catch (error) {
+    accountStatus(body, error instanceof Error ? error.message : '资料保存失败');
+    if (submit) submit.disabled = false;
+  }
 }
 
 function flashLoginRequired(): void {
@@ -507,6 +573,6 @@ function updateAvatar(): void {
 function name(profile:AccountProfile|null):string{return profile?.displayName||profile?.username||'匿名探索者';}
 function initial(profile:AccountProfile|null):string{return name(profile).slice(0,1).toUpperCase();}
 function escapeHtml(value:string):string{return value.replace(/[&<>'"]/g,char=>({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[char]??char));}
-function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:8px}.kb-auth-card{width:100%}.kb-auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--bg-deep);border:1px solid var(--panel-border);border-radius:9px;margin-bottom:18px}.kb-auth-tab{appearance:none;border:0;border-radius:6px;padding:9px;background:transparent;color:var(--ink-faint);font:600 13px inherit;cursor:pointer}.kb-auth-tab.active{background:var(--panel);color:var(--ink);box-shadow:0 1px 8px rgba(0,0,0,.3)}.kb-auth-form{display:flex;flex-direction:column;gap:13px}.kb-auth-form label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-dim)}.kb-auth-form input{width:100%;background:var(--bg-deep);border:1px solid var(--panel-border);color:var(--ink);padding:11px 12px;border-radius:7px;font:13px inherit;outline:none}.kb-auth-form input:focus{border-color:var(--brass-dim)}.kb-auth-submit{width:100%;margin-top:4px;padding:10px 12px}.kb-auth-back{width:100%;margin-top:8px}.kb-auth-status{margin-top:10px;min-height:18px;text-align:center}#panelClose{min-width:38px;min-height:38px;display:grid;place-items:center;font-size:19px}.kb-pending-vote{padding:10px;border:1px solid rgba(169,138,232,.34);border-radius:10px;background:rgba(169,138,232,.07)}.kb-vote-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.kb-vote-heading b{font-size:12px;color:var(--ink)}.kb-vote-heading span{font-size:10px;color:#c8b9ed}.kb-vote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kb-vote-button{display:flex!important;flex-direction:column;align-items:center;gap:2px}.kb-vote-button span{font-size:13px}.kb-vote-button small{font-size:9px;opacity:.78}.kb-vote-button.active{box-shadow:inset 0 0 0 1px currentColor}.kb-vote-status{margin-top:7px;font-size:9.5px;line-height:1.45;color:var(--ink-faint);text-align:center}`;document.head.appendChild(style);}
+function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:8px}.kb-auth-card{width:100%}.kb-auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--bg-deep);border:1px solid var(--panel-border);border-radius:9px;margin-bottom:18px}.kb-auth-tab{appearance:none;border:0;border-radius:6px;padding:9px;background:transparent;color:var(--ink-faint);font:600 13px inherit;cursor:pointer}.kb-auth-tab.active{background:var(--panel);color:var(--ink);box-shadow:0 1px 8px rgba(0,0,0,.3)}.kb-auth-form{display:flex;flex-direction:column;gap:13px}.kb-auth-form label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--ink-dim)}.kb-auth-form input,.kb-auth-form textarea{width:100%;background:var(--bg-deep);border:1px solid var(--panel-border);color:var(--ink);padding:11px 12px;border-radius:7px;font:13px inherit;outline:none}.kb-auth-form input:focus,.kb-auth-form textarea:focus{border-color:var(--brass-dim)}.kb-profile-edit-title{margin:0 0 16px;font-size:16px;color:var(--ink)}.kb-profile-edit-form textarea{min-height:88px;resize:vertical}.kb-auth-submit{width:100%;margin-top:4px;padding:10px 12px}.kb-auth-back{width:100%;margin-top:8px}.kb-auth-status{margin-top:10px;min-height:18px;text-align:center}#panelClose{min-width:38px;min-height:38px;display:grid;place-items:center;font-size:19px}.kb-pending-vote{padding:10px;border:1px solid rgba(169,138,232,.34);border-radius:10px;background:rgba(169,138,232,.07)}.kb-vote-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.kb-vote-heading b{font-size:12px;color:var(--ink)}.kb-vote-heading span{font-size:10px;color:#c8b9ed}.kb-vote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kb-vote-button{display:flex!important;flex-direction:column;align-items:center;gap:2px}.kb-vote-button span{font-size:13px}.kb-vote-button small{font-size:9px;opacity:.78}.kb-vote-button.active{box-shadow:inset 0 0 0 1px currentColor}.kb-vote-status{margin-top:7px;font-size:9.5px;line-height:1.45;color:var(--ink-faint);text-align:center}`;document.head.appendChild(style);}
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
