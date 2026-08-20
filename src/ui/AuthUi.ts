@@ -4,13 +4,22 @@ import {
   type AccountProfile,
   type PendingKnowledgeVoteSnapshot,
   type PendingVoteSide,
+  type PersonalKnowledgeStateSnapshot,
+  type PersonalMastery,
 } from '../auth/AuthClient';
 import { safeAvatarUrl } from '../auth/AuthProfilePresentation';
 import { setMastery } from '../command/SetMastery';
 
+interface DebugNode { id:string; title:string; mastery?:PersonalMastery|string; status?:string; }
 interface DebugState {
   store?: Parameters<typeof setMastery>[0];
-  projection?: { state?: { nodesById?: Record<string, { id:string; title:string; mastery?:string; status?:string }> } };
+  projection?: {
+    state?: { nodesById?: Record<string, DebugNode> };
+    replacePersonalMastery?: (states: Readonly<Record<string, PersonalMastery>>) => void;
+  };
+  layoutNodes?: Array<DebugNode>;
+  renderNodes?: Array<DebugNode>;
+  scene?: { markDirty: () => void };
 }
 declare global { interface Window { __debug?: DebugState; } }
 
@@ -22,6 +31,8 @@ let voteRefreshTimer: number | null = null;
 let expirySweepTimer: number | null = null;
 const VOTE_REFRESH_MS = 3_000;
 const EXPIRY_SWEEP_MS = 5 * 60_000;
+const LOCAL_PERSONAL_OWNER_KEY = 'knowledge-ball.personal-local-owner.v1';
+const PERSONAL_CLOUD_MIGRATION_PREFIX = 'knowledge-ball.personal-cloud-migrated.v1:';
 
 function start(): void {
   installStyles();
@@ -54,6 +65,7 @@ function start(): void {
   updateAvatar();
   if (account) void account.publicSession().then(async () => {
     await loadAccount();
+    await syncPersonalKnowledgeCloud();
     await sweepExpiredVoteRounds();
     scheduleExpirySweep();
   }).catch(() => {
@@ -70,17 +82,95 @@ function currentPanelNode(): { id:string; title:string; mastery?:string; status?
   return Object.values(nodes).find(candidate => candidate.title === title) ?? null;
 }
 
+function browserStorage(): Storage | null {
+  try { return window.localStorage; } catch { return null; }
+}
+
+function latestLocalMastery(): Array<{ nodeId:string; mastery:PersonalMastery }> {
+  const events = window.__debug?.store?.allEvents?.() ?? [];
+  const latest = new Map<string, PersonalMastery>();
+  for (const event of events) {
+    if (event.type !== 'NodeMasterySet') continue;
+    const mastery = event.payload.mastery;
+    if (mastery === 'none' || mastery === 'touched' || mastery === 'mastered') {
+      latest.set(event.payload.nodeId, mastery);
+    }
+  }
+  return [...latest].map(([nodeId, mastery]) => ({ nodeId, mastery }));
+}
+
+function applyPersonalSnapshot(states: PersonalKnowledgeStateSnapshot[]): void {
+  const debug = window.__debug;
+  const masteryById = Object.fromEntries(states.map(state => [state.nodeId, state.mastery])) as Record<string, PersonalMastery>;
+
+  if (debug?.projection?.replacePersonalMastery) {
+    debug.projection.replacePersonalMastery(masteryById);
+  } else {
+    const projected = debug?.projection?.state?.nodesById;
+    if (projected) {
+      for (const node of Object.values(projected)) node.mastery = masteryById[node.id] ?? 'none';
+    }
+  }
+
+  for (const collection of [debug?.layoutNodes, debug?.renderNodes]) {
+    if (!collection) continue;
+    for (const node of collection) node.mastery = masteryById[node.id] ?? 'none';
+  }
+  debug?.scene?.markDirty();
+}
+
+function applyOnePersonalState(state: PersonalKnowledgeStateSnapshot): void {
+  const debug = window.__debug;
+  const projected = debug?.projection?.state?.nodesById?.[state.nodeId];
+  if (projected) projected.mastery = state.mastery;
+  for (const collection of [debug?.layoutNodes, debug?.renderNodes]) {
+    const node = collection?.find(candidate => candidate.id === state.nodeId);
+    if (node) node.mastery = state.mastery;
+  }
+  debug?.scene?.markDirty();
+}
+
+async function syncPersonalKnowledgeCloud(): Promise<void> {
+  if (!account) return;
+  const userId = await account.currentUserId();
+  const storage = browserStorage();
+  let localOwner = storage?.getItem(LOCAL_PERSONAL_OWNER_KEY) ?? null;
+  if (!localOwner) {
+    localOwner = userId;
+    try { storage?.setItem(LOCAL_PERSONAL_OWNER_KEY, userId); } catch { /* optional migration marker */ }
+  }
+
+  const migrationKey = `${PERSONAL_CLOUD_MIGRATION_PREFIX}${userId}`;
+  if (localOwner === userId && storage?.getItem(migrationKey) !== '1') {
+    const legacy = latestLocalMastery();
+    if (legacy.length) await account.mergePersonalKnowledgeStates(legacy);
+    try { storage.setItem(migrationKey, '1'); } catch { /* idempotent server merge can safely retry */ }
+  }
+
+  const states = await account.getPersonalKnowledgeStates();
+  applyPersonalSnapshot(states);
+}
+
 async function markViewedNode(): Promise<void> {
   const panel = document.getElementById('panel');
   if (!panel?.classList.contains('open')) return;
   panel.querySelector<HTMLElement>('.mastery-demo-controls')?.remove();
   const privacy = panel.querySelector<HTMLElement>('.mastery-private');
-  if (privacy) privacy.textContent = 'LOCAL ONLY · 查看即自动点亮，只保存在当前设备';
+  if (privacy) privacy.textContent = account
+    ? 'PRIVATE ACCOUNT STATE · 查看即自动点亮，并同步到你的唯一账户'
+    : 'LOCAL ONLY · 远程账户未配置，仅保存在当前设备';
   const node = currentPanelNode();
   const debug = window.__debug;
-  if (!node || !debug?.store || markingNode || node.mastery !== 'none') return;
+  if (!node || markingNode || node.mastery !== 'none') return;
   markingNode = true;
-  try { await setMastery(debug.store, { nodeId:node.id, mastery:'touched' }); } finally { markingNode = false; }
+  try {
+    if (account) {
+      const state = await account.markKnowledgeTouched(node.id);
+      applyOnePersonalState(state);
+    } else if (debug?.store) {
+      await setMastery(debug.store, { nodeId:node.id, mastery:'touched' });
+    }
+  } finally { markingNode = false; }
 }
 
 function clearVoteRefresh(): void {
@@ -147,7 +237,7 @@ async function refreshPendingVote(nodeId: string, root: HTMLElement, token: numb
     const snapshot = await account.getPendingKnowledgeVote(nodeId);
     if (token !== voteRenderToken || !root.isConnected || currentPanelNode()?.id !== nodeId) return;
     applyVoteSnapshot(root, snapshot);
-    if (snapshot.verdict === 'PENDING') scheduleVoteRefresh(nodeId, root, token);
+    if (snapshot.verdict === 'PENDING') scheduleVoteRefresh(node.id, root, token);
     else await handleFinalizedVote(root, snapshot);
   } catch (error) {
     const status = root.querySelector<HTMLElement>('.kb-vote-status');
@@ -259,9 +349,13 @@ function openAccount(shouldLoad = true): void {
     <div class="account-stat"><span>我的能量</span><b id="kbMyBalance">${cached ? compactEnergy(cached.myBalance) : '—'}</b></div>
     <div class="account-stat"><span>总能量</span><b id="kbTotalEnergy">${cached ? compactEnergy(cached.totalEnergy) : '—'}</b></div>
     <div class="account-stat"><span>准确率</span><b>${cached?.accuracy ?? 0}%</b></div>
-    <button class="btn primary kb-account-main-action" id="kbEditProfile" type="button">编辑资料</button>
+    <button class="btn primary kb-account-main-action" id="kbClaimLogin" type="button">设置 / 修改用户名和密码</button>
+    <button class="btn ghost kb-account-main-action" id="kbLoginExisting" type="button">用户名 + 密码登录</button>
+    <button class="btn ghost kb-account-main-action" id="kbEditProfile" type="button">编辑资料</button>
     <div class="form-hint kb-auth-status" id="kbAccountStatus"></div>`;
   renderProfile(body, cached);
+  body.querySelector('#kbClaimLogin')?.addEventListener('click', () => claimUsernamePassword(body));
+  body.querySelector('#kbLoginExisting')?.addEventListener('click', () => loginUsernamePassword(body));
   body.querySelector('#kbEditProfile')?.addEventListener('click', () => editProfile(body));
   overlay.classList.add('show');
   if (account && shouldLoad) void loadAccount(body);
@@ -271,6 +365,45 @@ async function loadAccount(body?: HTMLElement): Promise<void> {
   if (!account) return;
   try { cached = await account.getAccount(); updateAvatar(); if (body) openAccount(false); }
   catch (error) { const status=body?.querySelector<HTMLElement>('#kbAccountStatus'); if(status) status.textContent=error instanceof Error?error.message:'账户读取失败'; }
+}
+
+function accountStatus(body: HTMLElement, value: string): void {
+  const status = body.querySelector<HTMLElement>('#kbAccountStatus');
+  if (status) status.textContent = value;
+}
+
+function claimUsernamePassword(body: HTMLElement): void {
+  if (!account) return;
+  const username = prompt('设置唯一用户名（3-24 位小写字母、数字或下划线）', cached?.username?.startsWith('guest_') ? '' : cached?.username ?? '');
+  if (username === null) return;
+  const password = prompt('设置密码（由你自己决定；需满足当前 Supabase 最低安全要求）', '');
+  if (password === null || password.length === 0) return;
+  accountStatus(body, '正在把当前账户升级为可跨浏览器登录的永久账户…');
+  void account.claimUsernamePassword(username, password).then(async profile => {
+    cached = profile;
+    await syncPersonalKnowledgeCloud();
+    updateAvatar();
+    openAccount(false);
+    const nextBody = document.getElementById('accountOverlay')?.querySelector<HTMLElement>('.modal-body');
+    if (nextBody) accountStatus(nextBody, '设置成功：以后可在其他浏览器用用户名 + 密码恢复同一账户和个人知识记录。');
+  }).catch(error => accountStatus(body, error instanceof Error ? error.message : '账户设置失败'));
+}
+
+function loginUsernamePassword(body: HTMLElement): void {
+  if (!account) return;
+  const username = prompt('用户名', '');
+  if (username === null) return;
+  const password = prompt('密码', '');
+  if (password === null || password.length === 0) return;
+  accountStatus(body, '正在恢复账户和个人知识记录…');
+  void account.loginUsernamePassword(username, password).then(async profile => {
+    cached = profile;
+    await syncPersonalKnowledgeCloud();
+    updateAvatar();
+    openAccount(false);
+    const nextBody = document.getElementById('accountOverlay')?.querySelector<HTMLElement>('.modal-body');
+    if (nextBody) accountStatus(nextBody, '登录成功：已恢复该 user_id 对应的个人资料、账户和知识节点状态。');
+  }).catch(error => accountStatus(body, error instanceof Error ? error.message : '用户名或密码错误'));
 }
 
 function editProfile(body: HTMLElement): void {
@@ -285,12 +418,12 @@ function renderProfile(body:HTMLElement, profile:AccountProfile|null):void {
   if(avatar){avatar.replaceChildren();const src=safeAvatarUrl(profile?.avatarUrl);if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(profile);},{once:true});avatar.append(image);}else avatar.textContent=initial(profile);}
   const set=(selector:string,value:string)=>{const element=body.querySelector<HTMLElement>(selector);if(element)element.textContent=value;};
   set('#kbProfileName',name(profile));set('#kbProfileUsername',`@${profile?.username??'设置用户名'}`);
-  set('#kbProfileBio',profile?.bio??'匿名参与者也可以编辑知识、投票并设置公开资料。');
-  set('#kbAccountStatus',account?'正在自动同步账户数据…':'远程服务未配置；公共知识不可本地提交，个人本地状态仍可使用。');
+  set('#kbProfileBio',profile?.bio??'个人资料、账户和知识节点掌握状态均绑定到唯一 user_id。');
+  set('#kbAccountStatus',account?'个人知识状态会同步到当前账户；换浏览器可用用户名 + 密码恢复。':'远程服务未配置；个人状态只能留在当前设备。');
 }
-function updateAvatar(): void { const avatar=document.querySelector<HTMLElement>('.avatar-btn');if(!avatar)return;avatar.replaceChildren();const src=safeAvatarUrl(cached?.avatarUrl);if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(cached);},{once:true});avatar.append(image);}else avatar.textContent=initial(cached);avatar.title='个人空间 · 匿名参与';avatar.dataset.authState='anonymous'; }
+function updateAvatar(): void { const avatar=document.querySelector<HTMLElement>('.avatar-btn');if(!avatar)return;avatar.replaceChildren();const src=safeAvatarUrl(cached?.avatarUrl);if(src){const image=document.createElement('img');image.src=src;image.alt='';image.referrerPolicy='no-referrer';image.addEventListener('error',()=>{image.remove();avatar.textContent=initial(cached);},{once:true});avatar.append(image);}else avatar.textContent=initial(cached);avatar.title='个人空间 · 账户与知识记录';avatar.dataset.authState='account'; }
 function name(profile:AccountProfile|null):string{return profile?.displayName||profile?.username||'匿名探索者';}
 function initial(profile:AccountProfile|null):string{return name(profile).slice(0,1).toUpperCase();}
-function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:10px}#panelClose{min-width:38px;min-height:38px;display:grid;place-items:center;font-size:19px}.kb-pending-vote{padding:10px;border:1px solid rgba(169,138,232,.34);border-radius:10px;background:rgba(169,138,232,.07)}.kb-vote-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.kb-vote-heading b{font-size:12px;color:var(--ink)}.kb-vote-heading span{font-size:10px;color:#c8b9ed}.kb-vote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kb-vote-button{display:flex!important;flex-direction:column;align-items:center;gap:2px}.kb-vote-button span{font-size:13px}.kb-vote-button small{font-size:9px;opacity:.78}.kb-vote-button.active{box-shadow:inset 0 0 0 1px currentColor}.kb-vote-status{margin-top:7px;font-size:9.5px;line-height:1.45;color:var(--ink-faint);text-align:center}`;document.head.appendChild(style);}
+function installStyles():void{const style=document.createElement('style');style.textContent=`.kb-profile-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}.kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}.kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--brass-dim);color:var(--brass);font-weight:700}.kb-profile-avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover}.kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}.kb-account-main-action{width:100%;margin-top:8px}#panelClose{min-width:38px;min-height:38px;display:grid;place-items:center;font-size:19px}.kb-pending-vote{padding:10px;border:1px solid rgba(169,138,232,.34);border-radius:10px;background:rgba(169,138,232,.07)}.kb-vote-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}.kb-vote-heading b{font-size:12px;color:var(--ink)}.kb-vote-heading span{font-size:10px;color:#c8b9ed}.kb-vote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kb-vote-button{display:flex!important;flex-direction:column;align-items:center;gap:2px}.kb-vote-button span{font-size:13px}.kb-vote-button small{font-size:9px;opacity:.78}.kb-vote-button.active{box-shadow:inset 0 0 0 1px currentColor}.kb-vote-status{margin-top:7px;font-size:9.5px;line-height:1.45;color:var(--ink-faint);text-align:center}`;document.head.appendChild(style);}
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
