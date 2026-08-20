@@ -14,6 +14,10 @@ import {
   SUN_ORBIT_RADIUS,
   SUN_RADIUS_MM,
 } from '../config/KnowledgeUiConfig';
+import {
+  SYSTEM_CORE_DEFINITIONS,
+  createSystemCoreSceneNodes,
+} from '../systemCore/SystemCoreContent';
 import { createCoreSunLight, displayLabelForNode } from './KnowledgeScene';
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -46,12 +50,27 @@ assert(displayLabelForNode({ id: 'n2', title: '排中律' }) === 'Law of Exclude
 assert(displayLabelForNode({ id: 'n16', title: '矛盾律' }) === 'Law of Non-Contradiction', 'n16 core label must be English without changing its stored title');
 assert(displayLabelForNode({ id: 'n3', title: '质数的定义' }) === '质数的定义', 'non-core labels must remain unchanged');
 
+assert(SYSTEM_CORE_DEFINITIONS.length === 3, 'system core must contain exactly three code-only definitions');
+assert(SYSTEM_CORE_DEFINITIONS.every(core => core.author === 'Knowledge Ball'), 'every system core card must use Knowledge Ball as author');
+assert(SYSTEM_CORE_DEFINITIONS.map(core => core.id).join(',') === 'n1,n2,n16', 'system core ids must preserve the existing visual triad ids');
+const systemCoreNodes = createSystemCoreSceneNodes();
+assert(systemCoreNodes.every(node => node.premises.length === 0), 'system core nodes must never expose premise edges');
+assert(systemCoreNodes.every(node => node.status === 'verified'), 'system core visual nodes must have a fixed non-review visual state');
+assert(systemCoreNodes.every(node => node.effectiveLayer === 'core'), 'system core visual nodes must stay in the core layer');
+
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
+const demoSource = readFileSync('src/demo/seedDemoKnowledge.ts', 'utf8');
 const physicsStart = sceneSource.indexOf('const physics =');
 const labelsStart = sceneSource.indexOf('const labels =');
 const physicsSource = sceneSource.slice(physicsStart, labelsStart);
 assert(sceneSource.includes('const updateCoreOrbit = (timeMs: number) =>'), 'core orbit must have a dedicated updater independent of ordinary graph physics');
 assert(!physicsSource.includes('coreOrbitScreenPosition'), 'ordinary graph physics must not own the core orbit anymore');
+assert(sceneSource.includes('const systemCoreNodes: KnowledgeSceneNode[] = createSystemCoreSceneNodes();'), 'scene must inject the fixed core without using GraphProjection');
+assert(sceneSource.includes('openSystemCoreCard(nodeId'), 'core taps must open the static system-core card instead of the public panel');
+assert(!demoSource.includes("await addAtomic('n1'"), 'demo seed must not write Law of Identity into the event stream');
+assert(!demoSource.includes("await addAtomic('n2'"), 'demo seed must not write Law of Excluded Middle into the event stream');
+assert(!demoSource.includes("await addAtomic('n16'"), 'demo seed must not write Law of Non-Contradiction into the event stream');
+assert(!demoSource.includes("['n1', 'n2']"), 'demo reasoning must not use system core as public premises');
 const largeIdleStart = sceneSource.indexOf('if (largeMobileGraph && !largeGraphDirty)');
 const largeIdleEnd = sceneSource.indexOf('const dt = Math.min(clock.getDelta(), .05);', largeIdleStart);
 const largeIdleSource = sceneSource.slice(largeIdleStart, largeIdleEnd);
