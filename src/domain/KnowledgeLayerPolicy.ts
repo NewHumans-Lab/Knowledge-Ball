@@ -23,31 +23,14 @@ export const KNOWLEDGE_LAYER_LABEL: Record<KnowledgeLayer, string> = {
  * Layer 3 contains disputed knowledge and statements that are explicitly framed
  * as probabilistic/uncertain at authoring time ("可能", "也许", probabilities,
  * forecasts, hypotheses, opinions and value claims).
+ *
+ * `NodeType` remains a separate protocol/structural field. It must never be used
+ * as the authoritative owner of these three semantic layers for new clean data.
  */
 export const KNOWLEDGE_LAYER_HELP: Record<UserKnowledgeLayer, string> = {
   inner: '定义、直接事实或观察，以及知识点之间不依赖推导的静态语义关系。第一层描述“是什么 / 有什么关系”，不是推理链。',
   middle: '所有严谨推理，或明确声称严谨的推理结构，包括公理体系、证明、定理、演绎规则和形式化推导。',
   outer: '有争议的知识，或作者在提交时明确声明为概率性 / 不确定性的描述，例如“可能”“也许”“概率为 80%”以及假说、预测、观点和价值判断。',
-};
-
-/**
- * Layer and node type are separate fields, but a clean dataset still needs a
- * coherent combination. `reasoning` is generated as the inference-process node
- * of a theory and may be middle (rigorous) or outer (probabilistic/uncertain).
- * A static semantic relation currently uses the general `fact` conclusion type;
- * the relation semantics themselves live in the title/description until a future
- * dedicated semantic-edge protocol is introduced.
- */
-export const KNOWLEDGE_LAYER_NODE_TYPES: Readonly<Record<UserKnowledgeLayer, readonly NodeType[]>> = {
-  inner: ['definition', 'fact'],
-  middle: ['axiom', 'logic-symbol', 'reasoning', 'theorem'],
-  outer: ['reasoning', 'hypothesis', 'prediction', 'opinion', 'value'],
-};
-
-export const USER_SELECTABLE_NODE_TYPES: Readonly<Record<UserKnowledgeLayer, readonly NodeType[]>> = {
-  inner: ['definition', 'fact'],
-  middle: ['axiom', 'logic-symbol', 'theorem'],
-  outer: ['hypothesis', 'prediction', 'opinion', 'value'],
 };
 
 export type LayerNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
@@ -63,10 +46,6 @@ export interface LayerPolicyNode {
 
 export function isSystemCoreNodeId(id: string): boolean {
   return (SYSTEM_CORE_NODE_IDS as readonly string[]).includes(id);
-}
-
-export function nodeTypeAllowedInLayer(layer: UserKnowledgeLayer, type: NodeType): boolean {
-  return KNOWLEDGE_LAYER_NODE_TYPES[layer].includes(type);
 }
 
 /**
