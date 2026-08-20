@@ -271,6 +271,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let hideUntouched = false;
   let selectedId: string | null = null;
   let draggedNodeId: string | null = null;
+  let returningNodeId: string | null = null;
   let graphZoom = 1.27;
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
@@ -458,6 +459,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const selectedRelationIds = (nodes: readonly KnowledgeSceneNode[]) => {
     const forced = new Set<string>();
     for (const node of nodes) if (isCoreNodeId(node.id)) forced.add(node.id);
+    if (draggedNodeId) forced.add(draggedNodeId);
+    if (returningNodeId) forced.add(returningNodeId);
     if (!selectedId) return forced;
     const byId = new Map(nodes.map(node => [node.id, node] as const));
     const selected = byId.get(selectedId);
@@ -629,7 +632,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     edgesGroup.visible = true;
     const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const now = performance.now();
-    if (largeMobileGraph || now - lastEdgeSync >= 100) {
+    if (largeMobileGraph || draggedNodeId || returningNodeId || now - lastEdgeSync >= 100) {
       syncEdges(allNodes);
       lastEdgeSync = now;
     }
@@ -663,12 +666,28 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const nodes = getNodes();
     nodes.forEach(n => {
       if (!hasFiniteCoordinates(n.pos)) place(n);
-      if (draggedNodeId === n.id || isCoreNodeId(n.id)) return;
+      if (draggedNodeId === n.id || returningNodeId === n.id || isCoreNodeId(n.id)) return;
       n.homePos ??= n.pos!.clone();
       n.pos!.copy(n.homePos!);
       n.vel ??= new THREE.Vector3();
       n.vel.set(0, 0, 0);
     });
+  };
+
+  const updateReturningNode = (dt: number) => {
+    if (!returningNodeId) return false;
+    const node = getNodes().find(value => value.id === returningNodeId);
+    if (!node?.pos || !node.homePos) {
+      returningNodeId = null;
+      return false;
+    }
+    node.pos.lerp(node.homePos, 1 - Math.exp(-12 * dt));
+    if (node.pos.distanceToSquared(node.homePos) < .0025) {
+      node.pos.copy(node.homePos);
+      returningNodeId = null;
+      return false;
+    }
+    return true;
   };
 
   const labels = () => {
@@ -738,6 +757,11 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       return;
     }
     draggedNodeId = pick(e.clientX, e.clientY);
+    if (draggedNodeId && returningNodeId) {
+      const returning = getNodes().find(value => value.id === returningNodeId);
+      if (draggedNodeId !== returningNodeId && returning?.pos && returning.homePos) returning.pos.copy(returning.homePos);
+      returningNodeId = null;
+    }
     mode = draggedNodeId ? 'node' : 'rotate';
   };
 
@@ -771,7 +795,12 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     pointers.delete(e.pointerId);
     if (renderer.domElement.hasPointerCapture(e.pointerId)) renderer.domElement.releasePointerCapture(e.pointerId);
     const moved = Math.hypot(e.clientX - downX, e.clientY - downY) > 6;
+    const releasedDraggedNodeId = draggedNodeId;
     const nodeId = !moved && !pinchOccurred ? draggedNodeId : null;
+    if (moved && !pinchOccurred && releasedDraggedNodeId && !isCoreNodeId(releasedDraggedNodeId)) {
+      returningNodeId = releasedDraggedNodeId;
+      largeGraphDirty = true;
+    }
     if (nodeId) {
       selectedId = nodeId;
       largeGraphDirty = true;
@@ -830,7 +859,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const scheduleFrame = () => {
     if (!running || overlayVisible) return;
     const largeMobileGraph = mobilePerformance && getNodes().length > MOBILE_ACTIVE_NODE_TARGET;
-    const delay = largeMobileGraph && pendingNodeIds.size === 0 ? 100 : 0;
+    const delay = largeMobileGraph && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null ? 100 : 0;
     if (delay) {
       frameTimer = window.setTimeout(() => {
         frameTimer = null;
@@ -859,12 +888,13 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     const dt = Math.min(clock.getDelta(), .05);
     if (!largeMobileGraph) physics(dt);
+    const returnStillActive = updateReturningNode(dt);
     sync();
     updateCoreOrbit(time);
     applyPendingPulse(time);
     labels();
     renderer.render(scene, camera);
-    largeGraphDirty = false;
+    largeGraphDirty = returnStillActive;
     scheduleFrame();
   };
 
