@@ -250,7 +250,7 @@ export function hasFiniteCoordinates(vector: Pick<THREE.Vector3, 'x' | 'y' | 'z'
 }
 
 export function createCoreSunLight() {
-  const light = new THREE.PointLight(CORE_SUN_COLOR, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_LIGHT_DISTANCE, CORE_SUN_LIGHT_INTENSITY > 0 ? CORE_SUN_LIGHT_DECAY : 0);
+  const light = new THREE.PointLight(CORE_SUN_COLOR, CORE_SUN_LIGHT_INTENSITY, CORE_SUN_LIGHT_DISTANCE, CORE_SUN_LIGHT_DECAY);
   light.position.set(0, 0, 0);
   light.castShadow = true;
   light.shadow.mapSize.set(512, 512);
