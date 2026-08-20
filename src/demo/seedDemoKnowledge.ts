@@ -10,7 +10,7 @@ import { disputeNode } from '../command/DisputeNode';
 import type { NodeType } from '../event/Event';
 import type { DomainEvent } from '../event/Event';
 
-const DEMO_NODE_IDS = new Set(['n1','n2','n16','logic-deduction','n3','n4','r-n5','n5','r-n6','n6','r-n15','n15','r-n7','n7','n-ai-trend','r-n8','n8','n-market-observation','r-n9','n9','n-autonomy-definition','r-n10','n10','n11','r-n12','n12','r-n13','n13','r-n14','n14','n11-counter']);
+const DEMO_NODE_IDS = new Set(['logic-deduction','n-euclidean-context','n3','n4','r-n5','n5','r-n6','n6','r-n15','n15','r-n7','n7','n-ai-trend','r-n8','n8','n-market-observation','r-n9','n9','n-autonomy-definition','r-n10','n10','n11','r-n12','n12','r-n13','n13','r-n14','n14','n11-counter']);
 export function isDemoSeedEvent(event:DomainEvent):boolean {
   if(event.type==='KnowledgeAdded')return event.payload.edit.mode==='atomic'?DEMO_NODE_IDS.has(event.payload.edit.node.id):DEMO_NODE_IDS.has(event.payload.edit.reasoning.id)&&DEMO_NODE_IDS.has(event.payload.edit.conclusion.id);
   if(event.type==='KnowledgeStatusChanged')return DEMO_NODE_IDS.has(event.payload.edit.nodeId);
@@ -66,14 +66,11 @@ export async function seedDemoKnowledge(
     for (const id of ids) await resolveNode(store, { nodeId: id });
   };
 
-  await addAtomic('n1', '同一律', 'axiom', '在同一语境与同一时刻，任何对象与其自身保持同一。');
-  await addAtomic('n2', '排中律', 'axiom', '对于一个确定命题，在经典逻辑中命题或其否定至少一个成立。');
-  await addAtomic('n16', '矛盾律', 'axiom', '同一命题在同一语境与同一时刻不能同时为真又为假。');
+  // System Core (n1 / n2 / n16) is a code-only scene/UI fixture and must never
+  // be inserted into the demo/public knowledge event stream or used as a premise.
   await addAtomic('logic-deduction', '演绎蕴含 →', 'logic-symbol', '表示结论由列出的全部前提经演绎规则推出。');
-  await resolve('n1', 'n2', 'n16', 'logic-deduction');
-  await setMastery(store, { nodeId: 'n1', mastery: 'mastered' });
-  await setMastery(store, { nodeId: 'n2', mastery: 'touched' });
-  await setMastery(store, { nodeId: 'n16', mastery: 'mastered' });
+  await addAtomic('n-euclidean-context', '欧氏几何背景', 'fact', '以下几何示例在欧氏平面几何的通常定义与公理背景下讨论。');
+  await resolve('logic-deduction', 'n-euclidean-context');
 
   await addAtomic('n3', '质数的定义', 'definition', '质数是大于一且正因数恰好只有一和自身的自然数。');
   await addAtomic('n4', '标准大气压下水的沸点', 'fact', '在一个标准大气压下，纯水的正常沸点为一百摄氏度。');
@@ -81,7 +78,7 @@ export async function seedDemoKnowledge(
   await setMastery(store, { nodeId: 'n3', mastery: 'mastered' });
   await setMastery(store, { nodeId: 'n4', mastery: 'touched' });
 
-  await addTheory('n5', '勾股定理', 'theorem', '直角三角形两直角边平方和等于斜边平方。', ['n1', 'n2'], '在欧氏几何公理和直角三角形定义下，通过相似三角形面积关系推得平方关系。');
+  await addTheory('n5', '勾股定理', 'theorem', '直角三角形两直角边平方和等于斜边平方。', ['n-euclidean-context'], '在欧氏几何公理和直角三角形定义下，通过相似三角形面积关系推得平方关系。');
   await addTheory('n6', '反证法证明质数无穷', 'theorem', '质数的数量不是有限个。', ['n3'], '假设质数有限，将全部质数相乘再加一；新数不能被列表中任何质数整除，由此产生矛盾。');
   await addTheory('n15', '欧拉乘积证明质数无穷', 'theorem', '调和级数与欧拉乘积共同推出质数必有无限多个。', ['n3'], '若质数有限，欧拉乘积会收敛为有限值，但它等于发散的调和级数，因此假设不成立。');
   await resolve('r-n5', 'n5', 'r-n6', 'n6', 'r-n15', 'n15');
