@@ -1,0 +1,107 @@
+name: Apply focus-node patch
+
+on:
+  push:
+    branches: [feat/focus-node-before-details]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply minimal interaction patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {text.count(old)} for {old[:80]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          scene = 'src/ui/scene/KnowledgeScene.ts'
+          replace_once(scene,
+          """export interface KnowledgeSceneRuntime {\n  markDirty: () => void;\n""",
+          """export interface KnowledgeSceneRuntime {\n  markDirty: () => void;\n  focusNode: (id: string) => void;\n""")
+
+          replace_once(scene,
+          """  let selectedId: string | null = null;\n  let draggedNodeId: string | null = null;\n  let returningNodeId: string | null = null;\n  let graphZoom = 1.27;\n""",
+          """  let selectedId: string | null = null;\n  let draggedNodeId: string | null = null;\n  let returningNodeId: string | null = null;\n  let focusedNodeId: string | null = null;\n  let focusTargetQuaternion: THREE.Quaternion | null = null;\n  let graphZoom = 1.27;\n""")
+
+          replace_once(scene,
+          """  const labels = () => {\n""",
+          """  const focusNode = (id: string) => {\n    const node = getNodes().find(value => value.id === id);\n    if (!node?.pos || node.pos.lengthSq() === 0 || isCoreNodeId(id)) return;\n    selectedId = id;\n    focusedNodeId = id;\n    const direction = node.pos.clone().normalize().applyQuaternion(worldGroup.quaternion);\n    const delta = new THREE.Quaternion().setFromUnitVectors(direction, new THREE.Vector3(0, 0, 1));\n    focusTargetQuaternion = delta.multiply(worldGroup.quaternion.clone()).normalize();\n    largeGraphDirty = true;\n  };\n\n  const updateNodeFocus = (dt: number) => {\n    if (!focusTargetQuaternion) return false;\n    worldGroup.quaternion.slerp(focusTargetQuaternion, 1 - Math.exp(-10 * dt));\n    if (worldGroup.quaternion.angleTo(focusTargetQuaternion) < .001) {\n      worldGroup.quaternion.copy(focusTargetQuaternion);\n      focusTargetQuaternion = null;\n      return false;\n    }\n    return true;\n  };\n\n  const labels = () => {\n""")
+
+          replace_once(scene,
+          """    } else if (mode === 'rotate') {\n      worldGroup.rotation.y += (e.clientX - lastX) * .004;\n      worldGroup.rotation.x += (e.clientY - lastY) * .004;\n      largeGraphDirty = true;\n    } else if (mode === 'node' && draggedNodeId) {\n      const node = getNodes().find(value => value.id === draggedNodeId);\n""",
+          """    } else if (mode === 'rotate') {\n      focusedNodeId = null;\n      focusTargetQuaternion = null;\n      worldGroup.rotation.y += (e.clientX - lastX) * .004;\n      worldGroup.rotation.x += (e.clientY - lastY) * .004;\n      largeGraphDirty = true;\n    } else if (mode === 'node' && draggedNodeId) {\n      focusedNodeId = null;\n      focusTargetQuaternion = null;\n      const node = getNodes().find(value => value.id === draggedNodeId);\n""")
+
+          replace_once(scene,
+          """      } else {\n        window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);\n      }\n""",
+          """      } else if (focusedNodeId === nodeId && focusTargetQuaternion === null) {\n        window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);\n      } else {\n        focusNode(nodeId);\n      }\n""")
+
+          replace_once(scene,
+          """    const delay = largeMobileGraph && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null ? 100 : 0;\n""",
+          """    const delay = largeMobileGraph && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null && focusTargetQuaternion === null ? 100 : 0;\n""")
+
+          replace_once(scene,
+          """    const returnStillActive = updateReturningNode(dt);\n    sync();\n""",
+          """    const returnStillActive = updateReturningNode(dt);\n    const focusStillActive = updateNodeFocus(dt);\n    sync();\n""")
+
+          replace_once(scene,
+          """    largeGraphDirty = returnStillActive;\n""",
+          """    largeGraphDirty = returnStillActive || focusStillActive;\n""")
+
+          replace_once(scene,
+          """  return {\n    markDirty: () => { largeGraphDirty = true; },\n""",
+          """  return {\n    markDirty: () => { largeGraphDirty = true; },\n    focusNode,\n""")
+
+          replace_once('src/ui/app.ts',
+          """  onPickNode: openNode,\n""",
+          """  onPickNode: id => scene.focusNode(id),\n""")
+
+          replace_once('index.html',
+          """          <button class=\"ai-add\" id=\"aiAddBtn\" title=\"新增知识节点\">+</button>\n""",
+          """")
+
+          replace_once('scripts/verify-cloud-authority-browser.mjs',
+          """async function createThroughRealUi(page, title, description) {\n  await page.locator('.ai-add').click();\n""",
+          """async function createThroughRealUi(page, title, description) {\n  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true })));\n""")
+
+          replace_once('scripts/verify-production-browser.mjs',
+          """  await page.locator('.ai-add').waitFor({ state: 'visible', timeout: 20_000 });\n  await page.waitForTimeout(8_000);\n""",
+          """  await page.locator('#aiInput').waitFor({ state: 'visible', timeout: 20_000 });\n  assert.equal(await page.locator('.ai-add').count(), 0, 'search bar must not expose the old add-node button');\n  await page.waitForTimeout(8_000);\n""")
+
+          p = Path('scripts/verify-production-browser.mjs')
+          text = p.read_text()
+          old = "await page.locator('.ai-add').click();"
+          if text.count(old) != 2:
+              raise SystemExit(f'verify-production-browser.mjs: expected 2 add-button clicks, found {text.count(old)}')
+          text = text.replace(old, "await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true })));", 2)
+          p.write_text(text)
+
+          replace_once('scripts/verify-mobile-browser.mjs',
+          """    await page.locator('.ai-add').click();\n    await page.locator('#modalOverlay.show').waitFor({state:'visible'});\n""",
+          """    assert.equal(await page.locator('.ai-add').count(),0,'search bar must not expose the old add-node button');\n    await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true})));\n    await page.locator('#modalOverlay.show').waitFor({state:'visible'});\n""")
+
+          replace_once('scripts/verify-mobile-browser.mjs',
+          """    const target=targets[0];\n    await page.touchscreen.tap(target.x,target.y);\n    await page.locator('#panel.open').waitFor({state:'visible'});\n    await assertExit(page.locator('#panelClose'),'node detail exit');\n""",
+          """    const target=targets[0];\n    await page.evaluate(()=>window.__debug.scene.start());\n    await page.touchscreen.tap(target.x,target.y);\n    await page.waitForTimeout(900);\n    assert.equal(await page.locator('#panel.open').count(),0,'first node tap must focus the node without opening details');\n    const centered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);\n    assert.ok(centered,'focused node must remain renderable');\n    assert.ok(Math.hypot(centered.x-(hostBox.x+hostBox.width/2),centered.y-(hostBox.y+hostBox.height/2))<4,'first node tap must rotate the whole graph until the node reaches screen center');\n    await page.touchscreen.tap(centered.x,centered.y);\n    await page.locator('#panel.open').waitFor({state:'visible'});\n    await assertExit(page.locator('#panelClose'),'node detail exit');\n""")
+          PY
+      - name: Commit patched files
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- src/ui/scene/KnowledgeScene.ts src/ui/app.ts index.html scripts/verify-mobile-browser.mjs scripts/verify-production-browser.mjs scripts/verify-cloud-authority-browser.mjs
+          git commit -m "Focus nodes before opening details"
+          git push origin HEAD:feat/focus-node-before-details
