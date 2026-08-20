@@ -302,9 +302,9 @@ export class PanelController {
 
   private configureLayerSubmission(): void {
     this.fType.innerHTML = `
-      <option value="inner">第一层 · 基础起点</option>
-      <option value="middle">第二层 · 关系与严谨推理</option>
-      <option value="outer">第三层 · 不确定与争议</option>
+      <option value="inner">第一层 · 语义与基础事实</option>
+      <option value="middle">第二层 · 严谨推理</option>
+      <option value="outer">第三层 · 概率与争议</option>
     `;
     const field = this.fType.closest('.form-field');
     const label = field?.querySelector('label');
@@ -398,7 +398,7 @@ export class PanelController {
       : '';
 
     const layerAdjustmentHtml = layerAdjusted
-      ? `<div class="difference-card"><b>系统层级调整</b><br>提交时：${escapeHtml(declaredLayerLabel)}<br>当前：${escapeHtml(effectiveLayerLabel)}<br>${node.declaredLayer === 'inner' && node.effectiveLayer === 'middle' ? '原因：第一层节点现在存在已验证前提，因此按协议自动进入第二层。' : '当前状态或协议约束覆盖了提交时层级。'}</div>`
+      ? `<div class="difference-card"><b>当前显示层级调整</b><br>提交时：${escapeHtml(declaredLayerLabel)}<br>当前：${escapeHtml(effectiveLayerLabel)}<br>${node.status === 'disputed' && node.effectiveLayer === 'outer' ? '原因：该知识当前处于争议状态，因此显示在第三层；原始声明分类仍被保留。' : '当前状态触发了显示层级规则；原始声明分类不会被静默改写。'}</div>`
       : '';
 
     this.panelBody.innerHTML = `
@@ -484,9 +484,9 @@ export class PanelController {
     this.modalHint.style.display = 'block';
     if (prefillPremiseId) {
       const src = this.getNodeById(prefillPremiseId);
-      this.modalHint.textContent = src ? `已预选「${src.title}」作为前提；因此默认进入第二层。` : '已预选一个前提；因此默认进入第二层。';
+      this.modalHint.textContent = src ? `已预选「${src.title}」作为推理前提；因此默认进入第二层。` : '已预选一个推理前提；因此默认进入第二层。';
     } else {
-      this.modalHint.textContent = '只需判断：它是基础起点、关系/严谨推理，还是不确定/争议知识。';
+      this.modalHint.textContent = '选择统一三层分类：第一层是语义/基础事实，第二层是严谨推理，第三层是概率/不确定/争议知识。';
     }
     this.fTitle.value = '';
     this.fCanonical.value = '';
@@ -638,7 +638,7 @@ export class PanelController {
         return;
       }
       if (layer === 'inner' && premises.length > 0) {
-        this.showToast('第一层只能作为知识链起点，不能带前提。请改选第二层。');
+        this.showToast('第一层是非推导性的语义 / 基础事实层，不能带推理前提。请改选第二层。');
         return;
       }
       if (premises.length > 0 && !reasoning) {
@@ -715,7 +715,7 @@ export class PanelController {
               </label>
             `).join('')}
           </div>
-          <div class="form-hint">第一层节点新增前提后，只有当前提本身验证通过，系统实际层级才会自动进入第二层。</div>
+          <div class="form-hint">第一层是非推导性的语义 / 基础事实层，不能通过编辑直接添加推理前提；需要推导时请新增第二层知识。</div>
         </div>
       `;
 
@@ -729,10 +729,14 @@ export class PanelController {
         const type = (this.panelBody.querySelector<HTMLSelectElement>('#editType')?.value ?? node.type) as KnowledgeNodeType;
         const reasoning = (this.panelBody.querySelector<HTMLTextAreaElement>('#editReasoning')?.value ?? '').trim();
         const premises = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-edit-premise]:checked')).map(input => input.value);
+        if (node.declaredLayer === 'inner' && premises.length > 0) {
+          this.showToast('第一层不能添加推理前提；请保留为静态语义 / 基础事实，或通过新增建立第二层推理。');
+          return;
+        }
         try {
           await this.onEditNode(id, { title, type, reasoning, premises });
           this.editMode = false;
-          this.showToast('节点已更新；层级将按有效前提自动重算');
+          this.showToast('节点已更新；声明层级保持不变');
           this.openNodePanel(id);
         } catch (error) {
           this.showOperationError(error);
@@ -1116,7 +1120,7 @@ export class PanelController {
       if (this.fType.value === 'inner' && this.fPremises.querySelector('input:checked')) {
         this.fType.value = 'middle';
         this.updateCreateMode();
-        this.showToast('选择前提后已切换到第二层；第一层只能作为知识链起点。');
+        this.showToast('选择推理前提后已切换到第二层；第一层只表达非推导性的语义 / 基础事实。');
       }
     });
   }
