@@ -1,4 +1,4 @@
-const expected = process.env.EXPECTED_SCHEMA_VERSION ?? '202608200001';
+const expected = process.env.EXPECTED_SCHEMA_VERSION ?? '202608200003';
 const expectedClassification = process.env.EXPECTED_CLASSIFICATION_SCHEMA_VERSION ?? '202608200002';
 const base = (process.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
 const key = process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? '';
