@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   CORE_AMBIENT_LIGHT_INTENSITY,
   CORE_SUN_COLOR,
@@ -13,7 +14,7 @@ import {
   SUN_ORBIT_RADIUS,
   SUN_RADIUS_MM,
 } from '../config/KnowledgeUiConfig';
-import { createCoreSunLight } from './KnowledgeScene';
+import { createCoreSunLight, displayLabelForNode } from './KnowledgeScene';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -39,5 +40,22 @@ assert(light.decay === CORE_SUN_LIGHT_DECAY, 'runtime point light must use inver
 assert(light.castShadow, 'runtime point light must cast shadows so foreground balls can occlude it');
 assert(light.shadow.camera.far === CORE_SUN_SHADOW_FAR, 'runtime shadow camera must use the dedicated full-range shadow distance');
 assert(light.shadow.mapSize.width === 512 && light.shadow.mapSize.height === 512, 'point-light shadow map must stay enabled at the intended mobile-safe resolution');
+
+assert(displayLabelForNode({ id: 'n1', title: '同一律' }) === 'Law of Identity', 'n1 core label must be English without changing its stored title');
+assert(displayLabelForNode({ id: 'n2', title: '排中律' }) === 'Law of Excluded Middle', 'n2 core label must be English without changing its stored title');
+assert(displayLabelForNode({ id: 'n16', title: '矛盾律' }) === 'Law of Non-Contradiction', 'n16 core label must be English without changing its stored title');
+assert(displayLabelForNode({ id: 'n3', title: '质数的定义' }) === '质数的定义', 'non-core labels must remain unchanged');
+
+const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
+const physicsStart = sceneSource.indexOf('const physics =');
+const labelsStart = sceneSource.indexOf('const labels =');
+const physicsSource = sceneSource.slice(physicsStart, labelsStart);
+assert(sceneSource.includes('const updateCoreOrbit = (timeMs: number) =>'), 'core orbit must have a dedicated updater independent of ordinary graph physics');
+assert(!physicsSource.includes('coreOrbitScreenPosition'), 'ordinary graph physics must not own the core orbit anymore');
+const largeIdleStart = sceneSource.indexOf('if (largeMobileGraph && !largeGraphDirty)');
+const largeIdleEnd = sceneSource.indexOf('const dt = Math.min(clock.getDelta(), .05);', largeIdleStart);
+const largeIdleSource = sceneSource.slice(largeIdleStart, largeIdleEnd);
+assert(largeIdleSource.includes('updateCoreOrbit(time);'), 'large mobile graph idle frames must continue advancing the core orbit');
+assert(largeIdleSource.includes('renderer.render(scene, camera);'), 'large mobile graph idle frames must render the advancing core orbit');
 
 console.log('Core sun visual regression tests passed');
