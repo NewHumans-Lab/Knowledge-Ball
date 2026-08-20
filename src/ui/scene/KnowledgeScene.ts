@@ -99,8 +99,18 @@ type NodeMeshRecord = {
 };
 type Layer = NonNullable<KnowledgeSceneNode['layer']>;
 
+const CORE_NODE_ENGLISH_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  n1: 'Law of Identity',
+  n2: 'Law of Excluded Middle',
+  n16: 'Law of Non-Contradiction',
+});
+
 export function isCoreNodeId(id: string): boolean {
   return isSystemCoreNodeId(id);
+}
+
+export function displayLabelForNode(node: Pick<KnowledgeSceneNode, 'id' | 'title'>): string {
+  return CORE_NODE_ENGLISH_LABELS[node.id] ?? node.title;
 }
 
 export function layerForNode(node: Pick<KnowledgeSceneNode, 'id' | 'status' | 'type' | 'effectiveLayer'>): Layer {
@@ -392,7 +402,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     nodesGroup.add(group);
     const label = document.createElement('div');
     label.className = 'node-label';
-    label.textContent = n.title;
+    label.textContent = displayLabelForNode(n);
     labelsLayer.appendChild(label);
     labelMap[n.id] = label;
     return nodeMap[n.id] = {
@@ -608,18 +618,22 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     });
   };
 
+  const updateCoreOrbit = (timeMs: number) => {
+    const inverseWorldRotation = worldGroup.quaternion.clone().invert();
+    SUN_TRIAD_IDS.forEach((id, index) => {
+      if (draggedNodeId === id) return;
+      const record = nodeMap[id];
+      if (!record) return;
+      const screenOrbit = coreOrbitScreenPosition(index, timeMs * .001 * SUN_ANGULAR_SPEED);
+      record.group.position.copy(screenOrbit.applyQuaternion(inverseWorldRotation));
+    });
+  };
+
   const physics = (_dt: number) => {
     const nodes = getNodes();
-    const inverseWorldRotation = worldGroup.quaternion.clone().invert();
     nodes.forEach(n => {
       if (!hasFiniteCoordinates(n.pos)) place(n);
-      if (draggedNodeId === n.id) return;
-      if (isCoreNodeId(n.id)) {
-        const i = SUN_TRIAD_IDS.indexOf(n.id as (typeof SUN_TRIAD_IDS)[number]);
-        const screenOrbit = coreOrbitScreenPosition(i, clock.elapsedTime * SUN_ANGULAR_SPEED);
-        n.pos!.copy(screenOrbit.applyQuaternion(inverseWorldRotation));
-        return;
-      }
+      if (draggedNodeId === n.id || isCoreNodeId(n.id)) return;
       n.homePos ??= n.pos!.clone();
       n.pos!.copy(n.homePos!);
       n.vel ??= new THREE.Vector3();
@@ -790,16 +804,17 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     lastFrameAt = time;
     if (largeMobileGraph && !largeGraphDirty) {
-      if (pendingNodeIds.size > 0) {
-        applyPendingPulse(time);
-        renderer.render(scene, camera);
-      }
+      updateCoreOrbit(time);
+      if (pendingNodeIds.size > 0) applyPendingPulse(time);
+      labels();
+      renderer.render(scene, camera);
       scheduleFrame();
       return;
     }
     const dt = Math.min(clock.getDelta(), .05);
     if (!largeMobileGraph) physics(dt);
     sync();
+    updateCoreOrbit(time);
     applyPendingPulse(time);
     labels();
     renderer.render(scene, camera);
