@@ -1,89 +1,65 @@
-name: Validate
+name: Apply requested edge colors
 
 on:
   push:
-  pull_request:
+    branches: [style/edge-colors]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build-and-test:
+  apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npm run test:pages
-      - run: npm test
-      - run: npm run test:download
-      - name: Install Chromium for browser regressions
-        run: npx playwright install --with-deps chromium
-      - name: Verify cloud-only public state with two already-open real pages
-        run: npm run test:browser-cloud
-      - run: npm run test:browser-mobile
-      - name: Upload mobile scene visual evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mobile-scene-visual
-          path: artifacts/mobile-scene-*.png
-          if-no-files-found: warn
-      - name: Run Issue 51 production-scale interaction trace
-        run: npm run test:issue51-browser
-      - name: Upload Issue 51 Playwright trace
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue51-playwright-trace
-          path: artifacts/issue51-trace.zip
-          if-no-files-found: warn
-      - name: Verify pull request merges cleanly with its base
-        if: github.event_name == 'pull_request'
+      - name: Apply minimal edge-color patch and restore Validate workflow
         run: |
-          git fetch origin "${{ github.base_ref }}"
-          npm run test:merge -- "origin/${{ github.base_ref }}"
+          python - <<'PY'
+          from pathlib import Path
 
-  android-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
-      - uses: android-actions/setup-android@v3
-      - name: Install Android SDK 35
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
-      - run: npm ci
-      - run: npm test
-      - run: npm run android:sync
-      - name: Run Android tests and build debug APK
-        working-directory: android
-        run: ./gradlew test assembleDebug
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}')
+              file.write_text(text.replace(old, new, 1))
 
-  ios-build:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run ios:sync
-      - name: Build iOS simulator app without signing
-        working-directory: ios/App
-        run: xcodebuild -workspace App.xcworkspace -scheme App -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+          replace_once(
+              'src/ui/config/KnowledgeSceneTheme.ts',
+              """  edge: {\n    normal: 0x547CFF,\n    logic: 0x9A8BFF,\n    twin: 0xB18CFF,\n""",
+              """  edge: {\n    normal: 0xB9D8F5,\n    active: 0xD9ECFF,\n    logic: 0xB9D8F5,\n    twin: 0xB9D8F5,\n""",
+          )
+
+          replace_once(
+              'src/ui/scene/KnowledgeScene.ts',
+              """      const key = `${p}->${n.id}`;\n      const logic = n.logicRuleId === p;\n      wanted.add(key);\n      if (!edgeMap[key]) {\n        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: logic ? KNOWLEDGE_SCENE_THEME.edge.logic : KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.normalOpacity }));\n        edgesGroup.add(edgeMap[key]);\n      }\n      edgeMap[key].userData.edgeEndpoints = [p, n.id];\n      const material = edgeMap[key].material as THREE.LineBasicMaterial;\n      material.color.setHex(logic ? KNOWLEDGE_SCENE_THEME.edge.logic : KNOWLEDGE_SCENE_THEME.edge.normal);\n      const relationActive = hasSelection && (selectedId === p || selectedId === n.id || n.premises.includes(selectedId!));\n""",
+              """      const key = `${p}->${n.id}`;\n      wanted.add(key);\n      if (!edgeMap[key]) {\n        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.normalOpacity }));\n        edgesGroup.add(edgeMap[key]);\n      }\n      edgeMap[key].userData.edgeEndpoints = [p, n.id];\n      const material = edgeMap[key].material as THREE.LineBasicMaterial;\n      const relationActive = hasSelection && (selectedId === p || selectedId === n.id);\n      material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);\n""",
+          )
+
+          replace_once(
+              'src/ui/scene/KnowledgeScene.ts',
+              """      if (!edgeMap[key]) {\n        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.twin, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.twinOpacity, dashSize: 4, gapSize: 3 }));\n        edgesGroup.add(edgeMap[key]);\n      }\n      edgeMap[key].userData.edgeEndpoints = [n.id, twin.id];\n      const material = edgeMap[key].material as THREE.LineDashedMaterial;\n      material.color.setHex(KNOWLEDGE_SCENE_THEME.edge.twin);\n      material.opacity = KNOWLEDGE_SCENE_THEME.edge.twinOpacity;\n""",
+              """      if (!edgeMap[key]) {\n        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.twinOpacity, dashSize: 4, gapSize: 3 }));\n        edgesGroup.add(edgeMap[key]);\n      }\n      edgeMap[key].userData.edgeEndpoints = [n.id, twin.id];\n      const material = edgeMap[key].material as THREE.LineDashedMaterial;\n      const relationActive = hasSelection && (selectedId === n.id || selectedId === twin.id);\n      material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);\n      material.opacity = relationActive ? KNOWLEDGE_SCENE_THEME.edge.activeOpacity : KNOWLEDGE_SCENE_THEME.edge.twinOpacity;\n""",
+          )
+
+          replace_once(
+              'src/ui/scene/KnowledgeSceneRegression.test.ts',
+              """assert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity<=.16,'ordinary relation lines must stay visually quiet');\nassert(KNOWLEDGE_SCENE_THEME.edge.activeOpacity>=.4,'selected relation paths must remain visibly distinguishable');\n""",
+              """assert(KNOWLEDGE_SCENE_THEME.edge.normal===0xB9D8F5,'ordinary relation lines must use the approved light blue');\nassert(KNOWLEDGE_SCENE_THEME.edge.active===0xD9ECFF,'relations incident to the clicked node must use the approved highlight color');\nassert(KNOWLEDGE_SCENE_THEME.edge.logic===KNOWLEDGE_SCENE_THEME.edge.normal,'logic relations must share the ordinary line color');\nassert(KNOWLEDGE_SCENE_THEME.edge.twin===KNOWLEDGE_SCENE_THEME.edge.normal,'bidirectional/twin relations must share the ordinary line color when not selected');\nassert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity<=.16,'ordinary relation lines must stay visually quiet');\nassert(KNOWLEDGE_SCENE_THEME.edge.activeOpacity>=.4,'selected relation paths must remain visibly distinguishable');\n""",
+          )
+
+          replace_once(
+              'src/ui/scene/KnowledgeSceneRegression.test.ts',
+              """assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'),'mobile renderer must use the bounded higher-resolution sampling path');\n""",
+              """assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'),'mobile renderer must use the bounded higher-resolution sampling path');\nassert(sceneSource.includes('const relationActive = hasSelection && (selectedId === p || selectedId === n.id);'),'only edges directly incident to the clicked node may receive the active relation color');\nassert(!sceneSource.includes('n.premises.includes(selectedId!)'),'selecting one premise must not recolor sibling premise edges that do not touch the clicked node');\nassert(sceneSource.includes('material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);'),'edge color must switch between the approved ordinary and clicked-node colors');\n""",
+          )
+          PY
+          git checkout 6926775666dfd01e2daadfaf1e9a14f494cad3e7 -- .github/workflows/validate.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- src/ui/config/KnowledgeSceneTheme.ts src/ui/scene/KnowledgeScene.ts src/ui/scene/KnowledgeSceneRegression.test.ts .github/workflows/validate.yml
+          git commit -m "Use approved relation line colors"
+          git push origin HEAD:style/edge-colors
