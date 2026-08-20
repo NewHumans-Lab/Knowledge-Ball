@@ -5,6 +5,8 @@ const html = readFileSync('index.html', 'utf8');
 const panel = readFileSync('src/ui/panels/PanelController.ts', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
 const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
+const layerPolicy = readFileSync('src/domain/KnowledgeLayerPolicy.ts', 'utf8');
+const classificationMigration = readFileSync('supabase/migrations/202608200002_three_layer_classification_contract.sql', 'utf8');
 
 assert(!html.includes('fLogicConfirm'), 'legacy logic-law confirmation checkbox must be removed');
 assert(!html.includes('我确认该结论及推理不违反逻辑三大基本定律'), 'legacy self-attestation text must be removed');
@@ -12,16 +14,21 @@ for (const id of ['fDescription', 'fReasoning', 'fPremises', 'fLogicRule', 'fTyp
   assert(html.includes(`id="${id}"`), `create form is missing #${id}`);
 }
 
-assert(panel.includes('<option value="inner">第一层 · 基础起点</option>'), 'submission UI must offer the first layer');
-assert(panel.includes('<option value="middle">第二层 · 关系与严谨推理</option>'), 'submission UI must offer the second layer');
-assert(panel.includes('<option value="outer">第三层 · 不确定与争议</option>'), 'submission UI must offer the third layer');
+assert(panel.includes('<option value="inner">第一层 · 语义与基础事实</option>'), 'submission UI must offer the canonical first layer');
+assert(panel.includes('<option value="middle">第二层 · 严谨推理</option>'), 'submission UI must offer the canonical second layer');
+assert(panel.includes('<option value="outer">第三层 · 概率与争议</option>'), 'submission UI must offer the canonical third layer');
+assert(layerPolicy.includes('静态语义关系'), 'first layer must explicitly include static semantic relations');
+assert(layerPolicy.includes('所有严谨推理'), 'second layer must explicitly include rigorous or claimed-rigorous reasoning');
+assert(layerPolicy.includes('概率性 / 不确定性'), 'third layer must explicitly include probabilistic/uncertain author declarations');
 assert(
   panel.includes("layer === 'inner'") &&
   panel.includes('premises.length > 0') &&
-  panel.includes('第一层只能作为知识链起点，不能带前提'),
-  'first-layer submission must reject premises',
+  panel.includes('第一层是非推导性的语义 / 基础事实层'),
+  'first-layer submission must reject inferential premises',
 );
-assert(panel.includes('选择前提后已切换到第二层'), 'adding a premise in the create UI must move the declaration away from first layer');
+assert(panel.includes('选择推理前提后已切换到第二层'), 'adding an inference premise in the create UI must move creation to the second layer');
+assert(panel.includes("node.declaredLayer === 'inner' && premises.length > 0"), 'editing must not silently turn a first-layer node into a reasoning node');
+assert(!panel.includes('已验证前提，因此按协议自动进入第二层'), 'verified-premise state must not silently rewrite semantic classification');
 assert(!panel.includes('理论必须选择一个已有逻辑符号'), 'logic symbols must not remain a mandatory submission gate');
 
 for (const action of ['openNegateForm', 'openDecomposeForm', 'openDefinitionMergeForm', 'openTheoryMergeForm']) {
@@ -38,6 +45,21 @@ assert(app.includes('applyUniformLayerLayout(layoutNodes)'), 'application must u
 assert(app.includes('renderNodes = layoutNodes.filter'), 'render visibility must be separated from layout occupancy');
 assert(app.includes('!hiddenIds.has(node.id)'), 'hidden history must stay out of rendering while remaining in layout occupancy');
 assert(!app.includes('onFalsifyNode:'), 'UI must not expose the old evidence-free falsification callback');
+
+for (const databaseObject of [
+  'knowledge_layer_definitions',
+  'public_knowledge_node_declarations',
+  'first_layer_knowledge_nodes',
+  'second_layer_knowledge_nodes',
+  'third_layer_knowledge_nodes',
+  'knowledge_classification_schema_version',
+]) {
+  assert(classificationMigration.includes(databaseObject), `classification migration is missing ${databaseObject}`);
+}
+assert(classificationMigration.includes("jsonb_typeof(layers) is distinct from 'object'"), 'server must reject KnowledgeAdded without declaredLayers');
+assert(classificationMigration.includes('KnowledgeAdded node % must declare inner, middle, or outer'), 'server must validate every new node layer declaration');
+assert(classificationMigration.includes('declaredLayers contains a node not created by this event'), 'server must reject stale/extra layer declarations');
+assert(!classificationMigration.includes('update public.public_knowledge_events'), 'classification migration must not rewrite historical knowledge events');
 
 assert(/if\s*\(node\.effectiveLayer\)\s*return\s+node\.effectiveLayer/.test(scene), 'scene must consume the application-computed effective layer');
 assert(/type\s*===\s*'reasoning'\s*\?\s*conclusionRadius\s*\/\s*3\s*:\s*conclusionRadius/.test(scene), 'reasoning radius must be exactly one third of conclusion radius');
