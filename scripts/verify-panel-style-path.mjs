@@ -105,9 +105,35 @@ try {
   });
   assert.ok(target, 'must expose a tappable production-scale fixture node');
 
-  const tapStarted = performance.now();
-  await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'real node tap');
-  const tapWall = performance.now() - tapStarted;
+  const canvasBox = await page.locator('#canvasHost').boundingBox();
+  assert.ok(canvasBox, 'production-scale canvas must expose a finite bounding box');
+  const center = { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height / 2 };
+
+  // Issue #51 still guards responsiveness, but the product contract is now focus-first:
+  // first tap must remain fast and center the node without opening details.
+  const firstTapStarted = performance.now();
+  await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'first focus tap');
+  const firstTapWall = performance.now() - firstTapStarted;
+  assert.ok(firstTapWall <= 250, `first focus tap took ${firstTapWall.toFixed(1)}ms`);
+  assert.equal(await page.locator('#panel.open').count(), 0, 'first tap must focus without opening the panel');
+  assert.equal(
+    await page.evaluate(beforeCount => window.__debug.store.allEvents().slice(beforeCount).filter(event => event.type === 'NodeMasterySet').length, before),
+    0,
+    'focus-only first tap must not mark the node viewed before details open',
+  );
+
+  await deadline(page.waitForFunction(({ nodeId, centerX, centerY }) => {
+    const point = window.__debug?.scene?.screenPositionForNode?.(nodeId);
+    return Boolean(point && Math.hypot(point.x - centerX, point.y - centerY) < 4);
+  }, { nodeId: target.id, centerX: center.x, centerY: center.y }), 1_000, 'node focus');
+
+  const centered = await page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), target.id);
+  assert.ok(centered, 'focused node must remain renderable at screen center');
+
+  // Second tap is the detail-open action and keeps the original Issue #51 latency gate.
+  const secondTapStarted = performance.now();
+  await deadline(page.touchscreen.tap(centered.x, centered.y), 1_000, 'centered node tap');
+  const secondTapWall = performance.now() - secondTapStarted;
   await deadline(page.waitForFunction(() => document.querySelector('#panel')?.classList.contains('open')), 1_000, 'panel open');
   await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -127,8 +153,8 @@ try {
     };
   }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
 
-  console.log(JSON.stringify({ tapWall, lodState, state }, null, 2));
-  assert.ok(tapWall <= 250, `real node tap took ${tapWall.toFixed(1)}ms`);
+  console.log(JSON.stringify({ firstTapWall, secondTapWall, lodState, state }, null, 2));
+  assert.ok(secondTapWall <= 250, `centered detail tap took ${secondTapWall.toFixed(1)}ms`);
   assert.ok(state.activeCount <= mobileActiveNodeTarget, `selected-node relation retention must remain within the ${mobileActiveNodeTarget}-node working set`);
   assert.ok(state.panelOpen, 'panel must remain open and responsive');
   assert.equal(state.mastery, 'touched', 'viewed node must be automatically marked touched');
