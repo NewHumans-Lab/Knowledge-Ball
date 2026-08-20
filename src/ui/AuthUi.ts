@@ -144,7 +144,7 @@ async function syncPersonalKnowledgeCloud(): Promise<void> {
   if (localOwner === userId && storage?.getItem(migrationKey) !== '1') {
     const legacy = latestLocalMastery();
     if (legacy.length) await account.mergePersonalKnowledgeStates(legacy);
-    try { storage.setItem(migrationKey, '1'); } catch { /* idempotent server merge can safely retry */ }
+    try { storage?.setItem(migrationKey, '1'); } catch { /* idempotent server merge can safely retry */ }
   }
 
   const states = await account.getPersonalKnowledgeStates();
