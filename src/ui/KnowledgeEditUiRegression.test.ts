@@ -14,6 +14,23 @@ for (const id of ['fDescription', 'fReasoning', 'fPremises', 'fLogicRule', 'fTyp
   assert(html.includes(`id="${id}"`), `create form is missing #${id}`);
 }
 
+assert(!html.includes('fCanonical'), 'submission UI must not expose a Canonical English field');
+assert(!html.includes('Canonical English'), 'submission UI must not contain an English-only normalization gate');
+assert(!panel.includes('canonicalTitle'), 'submission controller must not carry a canonical-English field');
+assert(!panel.includes('containsNonEnglish'), 'submission controller must not reject non-English titles');
+assert(!app.includes('fCanonical'), 'application wiring must not depend on the removed English field');
+assert(html.includes('<button class="btn primary" id="modalSubmit">提交知识</button>'), 'submission button must not imply content-truth validation');
+
+assert(html.includes('<option value="inner">第一层 · 语义与基础事实</option>'), 'raw submission form must expose the canonical first layer');
+assert(html.includes('<option value="middle">第二层 · 严谨推理</option>'), 'raw submission form must expose the canonical second layer');
+assert(html.includes('<option value="outer">第三层 · 概率与争议</option>'), 'raw submission form must expose the canonical third layer');
+assert(!html.includes('<option value="fact">事实 Fact</option>'), 'submission form must not ask users for internal fine-grained node types');
+assert(!html.includes('<option value="theorem">定理 Theorem</option>'), 'submission form must not ask users for internal fine-grained node types');
+assert(!html.includes('<option value="prediction">预测 Prediction</option>'), 'submission form must not ask users for internal fine-grained node types');
+assert(!panel.includes('id="editType"'), 'edit form must not expose an internal node-type field');
+assert(!panel.includes('id="middleType"'), 'decomposition form must not ask users to classify intermediate conclusions');
+assert(!panel.includes('id="mergeConclusionType"'), 'merge form must not display a fine-grained conclusion type selector');
+
 assert(panel.includes('<option value="inner">第一层 · 语义与基础事实</option>'), 'submission UI must offer the canonical first layer');
 assert(panel.includes('<option value="middle">第二层 · 严谨推理</option>'), 'submission UI must offer the canonical second layer');
 assert(panel.includes('<option value="outer">第三层 · 概率与争议</option>'), 'submission UI must offer the canonical third layer');
@@ -36,7 +53,9 @@ for (const action of ['openNegateForm', 'openDecomposeForm', 'openDefinitionMerg
 }
 assert(panel.includes('反例知识节点（至少一个）'), 'negation UI must collect counterexamples');
 assert(panel.includes('原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论'), 'decomposition UI must show the complete chain contract');
-assert(panel.includes('推理过程语义等价标识（先验证）'), 'theory merge must validate reasoning identity before conclusion identity');
+assert(panel.includes('推理过程语义等价标识（先检查）'), 'theory merge must check reasoning identity before conclusion identity');
+assert(panel.includes('type: conclusionType'), 'decomposition must derive internal fine type from the existing conclusion rather than ask the user');
+assert(panel.includes('type: node.type'), 'theory merge must preserve the source fine type internally rather than ask the user');
 
 assert(app.includes('executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers)'), 'new knowledge writes must carry layer declarations through the unified server-first boundary');
 assert(app.includes('effectiveLayerForNode(dn, projection.state.nodesById)'), 'application must calculate scene layer from the canonical domain policy');
