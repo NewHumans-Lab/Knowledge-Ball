@@ -25,10 +25,12 @@ assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes mus
 assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
 assert(detail.includes('data-vote-side="AGREE"><span>同意</span><small>能量 −1</small>'), 'pending detail must expose the agree one-energy action');
 assert(detail.includes('data-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small>'), 'pending detail must expose the disagree one-energy action');
-assert(detail.includes('voteAccount.getPendingKnowledgeVote(nodeId)'), 'near-node vote controls must read the authoritative existing vote state');
-assert(detail.includes('voteAccount.castPendingKnowledgeVote(nodeId, side)'), 'near-node vote controls must reuse the real existing vote RPC');
+assert(detail.includes('account.getPendingKnowledgeVote(nodeId)'), 'near-node vote controls must read the authoritative existing vote state');
+assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'near-node vote controls must reuse the real existing vote RPC');
 assert(detail.includes("knowledge-ball:verdict-finalized"), 'near-node finalization must reuse the existing graph reconciliation signal');
 assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'near-node vote tally must retain the existing prompt refresh cadence');
+assert(detail.includes("typeof window === 'undefined'"), 'vote client creation must stay browser-lazy so pure node-detail tests do not require Vite runtime env');
+assert(!detail.includes('const voteAccount = createProductionAuthClient()'), 'vote client must not initialize at module import time');
 assert(!detail.includes('setInterval('), 'near-node voting must not add a permanent polling interval');
 assert(css.includes('grid-template-columns:1fr 1fr'), 'agree and disagree must stay side by side in one row');
 assert(css.includes('.node-detail-vote-button span{font-size:12px'), 'vote choice must be the primary line in each button');
