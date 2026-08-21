@@ -210,7 +210,9 @@ try{
     assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'focused ordinary node must win the second tap inside its existing hit radius even when a core node is closer');
     assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('贡献者'),'near-node detail must expose contributor metadata');
     assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('时间'),'near-node detail must expose server creation time');
-    assert.equal((await detail.locator('.node-detail-content-label').textContent())?.trim(),'内容','near-node detail must use the concise content label');
+    assert.equal(await detail.locator('.node-detail-content-label').count(),0,'near-node detail must not restore the removed standalone content label');
+    assert.ok((await detail.locator('.node-detail-content').textContent())?.trim().length,'near-node detail must place knowledge content directly beneath the title');
+    assert.equal(await detail.locator('.node-detail-meta span').count(),2,'contributor and time must remain two separate metadata rows');
     const detailBox=await detail.boundingBox();
     assert.ok(detailBox,'near-node detail must have a visible mobile box');
     assert.ok(detailBox.height>detailBox.width,'near-node detail must use a narrow vertical ellipse so premise/conclusion context can occupy the side space');

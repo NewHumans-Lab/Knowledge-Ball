@@ -10,10 +10,13 @@ assert.equal(formatNodeContributionTime(undefined), '—');
 assert.equal(formatNodeContributionTime('invalid'), '—');
 assert.match(formatNodeContributionTime('2026-08-21T04:00:00.000Z'), /^2026-08-21\s/);
 
-for (const text of ['贡献者 ·', '时间 ·', '>内容<', '>编辑<']) {
+for (const text of ['贡献者 ·', '时间 ·', '>编辑<']) {
   assert(detail.includes(text), `near-node detail must render ${text}`);
 }
-assert(!detail.includes('知识节点内容'), 'near-node detail content label must stay concise');
+assert(!detail.includes('node-detail-content-label'), 'near-node detail must not render a redundant content label');
+assert(!detail.includes('>内容<'), 'the standalone content heading must stay removed');
+assert(detail.indexOf('node-detail-content') < detail.indexOf('node-detail-meta'), 'knowledge content must appear before contributor/time metadata');
+assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributor and time must remain two ordered footer rows');
 for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
   assert(detail.includes(action), `edit menu must consolidate ${action}`);
 }
@@ -22,10 +25,16 @@ assert(css.includes('z-index:70'), 'near-node detail must render closer than the
 assert(css.includes('width:min(58vw,220px)'), 'detail surface must keep the approved narrow width');
 assert(css.includes('min-height:330px'), 'detail surface must keep the approved vertical-ellipse height');
 assert(css.includes('border-radius:50% / 44%'), 'detail occlusion must keep the approved vertical-ellipse shape');
-assert(css.includes('background:radial-gradient('), 'detail surface must restore the previous radial occlusion');
-assert(css.includes('rgba(3,5,18,.99) 0%'), 'detail occlusion must restore the strong center mask');
-assert(!css.includes('border:1px solid rgba(151,205,255,.46)'), 'detail surface must not draw the temporary ellipse outline');
-assert(css.includes('font-size:15.5px'), 'knowledge content text must keep the larger readable presentation');
+assert(css.includes('background:radial-gradient('), 'detail surface must keep the radial occlusion');
+assert(css.includes('rgba(3,5,18,.99) 0%'), 'detail occlusion must keep the strong center mask');
+assert(!css.includes('border:1px solid rgba(151,205,255,.46)'), 'detail surface must not draw the removed ellipse outline');
+assert(css.includes('justify-content:flex-start'), 'detail hierarchy must start near the top rather than vertically centering the whole stack');
+assert(css.includes('font:700 20px/1.38'), 'desktop node title must keep the 20px primary type size');
+assert(css.includes('font-size:16px'), 'desktop knowledge content must be two visual steps smaller than the 20px title');
+assert(css.includes('.node-detail-title{font-size:19px;}'), 'mobile node title must use 19px');
+assert(css.includes('.node-detail-content{max-height:116px;font-size:15px;}'), 'mobile knowledge content must stay two visual steps smaller than the 19px title');
+assert(css.includes('margin-top:auto'), 'contributor/time metadata must sit at the bottom of the detail surface');
+assert(css.includes('flex-direction:column'), 'contributor and time must remain stacked on two rows');
 assert(css.includes('overflow-y:auto'), 'long knowledge content must scroll inside the fixed-size detail surface');
 assert(css.includes('touch-action:pan-y'), 'mobile users must be able to vertically scroll long detail content');
 assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/action styling must not use the old red danger colour');

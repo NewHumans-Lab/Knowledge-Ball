@@ -144,14 +144,13 @@ export class NodeDetailController {
     this.root.innerHTML = `
       <button type="button" class="node-detail-close" aria-label="关闭知识节点详情">×</button>
       <h2 class="node-detail-title">${escapeHtml(node.title)}</h2>
+      <div class="node-detail-content">${escapeHtml(node.reasoning || '（未填写）')}</div>
+      <button type="button" class="node-detail-edit" aria-expanded="false">编辑</button>
+      <div class="node-detail-edit-menu" hidden></div>
       <div class="node-detail-meta">
         <span>贡献者 · <b>${escapeHtml(contributor)}</b></span>
         <span>时间 · <b>${escapeHtml(time)}</b></span>
       </div>
-      <div class="node-detail-content-label">内容</div>
-      <div class="node-detail-content">${escapeHtml(node.reasoning || '（未填写）')}</div>
-      <button type="button" class="node-detail-edit" aria-expanded="false">编辑</button>
-      <div class="node-detail-edit-menu" hidden></div>
     `;
 
     this.root.querySelector<HTMLButtonElement>('.node-detail-close')?.addEventListener('click', () => this.close());
