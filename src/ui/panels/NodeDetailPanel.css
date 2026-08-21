@@ -8,7 +8,7 @@ html.node-detail-labels-off .node-label{
   width:min(58vw,220px);
   min-height:330px;
   box-sizing:border-box;
-  padding:38px 18px 30px;
+  padding:32px 18px 26px;
   transform:translate(-50%,-50%);
   z-index:70;
   display:none;
@@ -16,7 +16,7 @@ html.node-detail-labels-off .node-label{
   color:var(--ink);
   text-align:center;
   align-items:center;
-  justify-content:center;
+  justify-content:flex-start;
   flex-direction:column;
 }
 #nodeDetailOverlay.open{display:flex;}
@@ -60,35 +60,14 @@ html.node-detail-labels-off .node-label{
   outline:none;
 }
 .node-detail-title{
-  margin:0 28px 12px;
+  margin:0 28px 9px;
   font:700 20px/1.38 'Noto Serif SC',serif;
   color:var(--ink);
   overflow-wrap:anywhere;
 }
-.node-detail-meta{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:4px;
-  margin-bottom:14px;
-  color:var(--ink-faint);
-  font-size:12.5px;
-  line-height:1.5;
-}
-.node-detail-meta b{
-  color:var(--ink-dim);
-  font-weight:500;
-}
-.node-detail-content-label{
-  margin-bottom:7px;
-  color:var(--ink-faint);
-  font-size:11px;
-  font-weight:600;
-  letter-spacing:.10em;
-}
 .node-detail-content{
   width:100%;
-  max-height:132px;
+  max-height:128px;
   overflow-x:hidden;
   overflow-y:auto;
   overscroll-behavior:contain;
@@ -97,13 +76,13 @@ html.node-detail-labels-off .node-label{
   scrollbar-width:thin;
   padding:0 5px;
   color:var(--ink);
-  font-size:15.5px;
-  line-height:1.62;
+  font-size:16px;
+  line-height:1.58;
   white-space:pre-wrap;
   overflow-wrap:anywhere;
 }
 .node-detail-edit{
-  margin-top:11px;
+  margin-top:9px;
   border:0;
   background:transparent;
   color:var(--accent-primary);
@@ -138,15 +117,30 @@ html.node-detail-labels-off .node-label{
   background:rgba(85,236,255,.06);
   outline:none;
 }
+.node-detail-meta{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  width:100%;
+  margin-top:auto;
+  padding-top:10px;
+  color:var(--ink-faint);
+  font-size:11.5px;
+  line-height:1.45;
+}
+.node-detail-meta b{
+  color:var(--ink-dim);
+  font-weight:500;
+}
 @media(max-width:640px){
   #nodeDetailOverlay{
     width:min(56vw,214px);
     min-height:320px;
-    padding:36px 16px 28px;
+    padding:30px 16px 24px;
   }
   #nodeDetailOverlay::before{inset:-16px -12px;}
   .node-detail-title{font-size:19px;}
-  .node-detail-meta{font-size:12px;}
-  .node-detail-content-label{font-size:10.5px;}
-  .node-detail-content{max-height:120px;font-size:15px;}
+  .node-detail-content{max-height:116px;font-size:15px;}
+  .node-detail-meta{font-size:11px;}
 }
