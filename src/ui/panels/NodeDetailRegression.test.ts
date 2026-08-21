@@ -29,6 +29,11 @@ assert(detail.includes('account.getPendingKnowledgeVote(nodeId)'), 'near-node vo
 assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'near-node vote controls must reuse the real existing vote RPC');
 assert(detail.includes("knowledge-ball:verdict-finalized"), 'near-node finalization must reuse the existing graph reconciliation signal');
 assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'near-node vote tally must retain the existing prompt refresh cadence');
+assert(app.includes('actorId: metadata.actorId'), 'near-node detail must receive the authoritative creator actor id');
+assert(detail.includes('await account.currentUserId()'), 'pending detail must compare the current account with the node creator');
+assert(detail.includes("this.root.dataset.voteCreator = '1'"), 'creator identity must lock the pending vote controls');
+assert(detail.includes('你是该知识的提交者，不能参与本轮投票'), 'creator must see an explicit no-self-vote explanation');
+assert(detail.includes('data-vote-side="AGREE" disabled') && detail.includes('data-vote-side="DISAGREE" disabled'), 'vote buttons must stay disabled until identity and server state are known');
 assert(detail.includes("typeof window === 'undefined'"), 'vote client creation must stay browser-lazy so pure node-detail tests do not require Vite runtime env');
 assert(!detail.includes('const voteAccount = createProductionAuthClient()'), 'vote client must not initialize at module import time');
 assert(!detail.includes('setInterval('), 'near-node voting must not add a permanent polling interval');

@@ -19,6 +19,7 @@ export interface NodeDetailNode {
 export interface NodeDetailMetadata {
   contributor: string;
   createdAt: string;
+  actorId: string;
 }
 
 export interface NodeDetailControllerOptions {
@@ -168,8 +169,8 @@ export class NodeDetailController {
         <div class="node-detail-vote">
           <div class="node-detail-vote-title">投票</div>
           <div class="node-detail-vote-actions">
-            <button type="button" class="node-detail-vote-button agree" data-vote-side="AGREE"><span>同意</span><small>能量 −1</small></button>
-            <button type="button" class="node-detail-vote-button disagree" data-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small></button>
+            <button type="button" class="node-detail-vote-button agree" data-vote-side="AGREE" disabled><span>同意</span><small>能量 −1</small></button>
+            <button type="button" class="node-detail-vote-button disagree" data-vote-side="DISAGREE" disabled><span>反对</span><small>能量 −1</small></button>
           </div>
           <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>
         </div>
@@ -180,6 +181,7 @@ export class NodeDetailController {
       `;
 
     this.root.dataset.nodeId = node.id;
+    delete this.root.dataset.voteCreator;
     this.root.innerHTML = `
       <button type="button" class="node-detail-close" aria-label="关闭知识节点详情">×</button>
       <h2 class="node-detail-title">${escapeHtml(node.title)}</h2>
@@ -194,7 +196,7 @@ export class NodeDetailController {
     this.root.querySelector<HTMLButtonElement>('.node-detail-close')?.addEventListener('click', () => this.close());
 
     if (node.status === 'pending') {
-      this.bindPendingVote(node.id, token, account);
+      void this.bindPendingVote(node.id, token, account, metadata?.actorId);
       return;
     }
 
@@ -220,21 +222,38 @@ export class NodeDetailController {
     }
   }
 
-  private bindPendingVote(
+  private async bindPendingVote(
     nodeId: string,
     token: number,
     account: ReturnType<typeof createProductionAuthClient>,
-  ): void {
+    creatorActorId: string | undefined,
+  ): Promise<void> {
     const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
     if (!account) {
       buttons.forEach(button => { button.disabled = true; });
       return;
     }
-    buttons.forEach(button => button.addEventListener('click', () => {
-      const side = button.dataset.voteSide as PendingVoteSide | undefined;
-      if (side === 'AGREE' || side === 'DISAGREE') void this.castPendingVote(nodeId, side, token);
-    }));
-    void this.refreshPendingVote(nodeId, token);
+
+    if (creatorActorId) {
+      try {
+        const actorId = await account.currentUserId();
+        if (!this.isCurrentVote(nodeId, token)) return;
+        if (actorId === creatorActorId) this.root.dataset.voteCreator = '1';
+      } catch {
+        if (!this.isCurrentVote(nodeId, token)) return;
+        const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+        if (status) status.textContent = '身份确认失败，暂不能投票';
+        return;
+      }
+    }
+
+    if (this.root.dataset.voteCreator !== '1') {
+      buttons.forEach(button => button.addEventListener('click', () => {
+        const side = button.dataset.voteSide as PendingVoteSide | undefined;
+        if (side === 'AGREE' || side === 'DISAGREE') void this.castPendingVote(nodeId, side, token);
+      }));
+    }
+    await this.refreshPendingVote(nodeId, token);
   }
 
   private async refreshPendingVote(nodeId: string, token: number): Promise<void> {
@@ -285,7 +304,7 @@ export class NodeDetailController {
     for (const button of buttons) {
       const side = button.dataset.voteSide as PendingVoteSide | undefined;
       button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
-      button.disabled = !open || snapshot.mySide !== null;
+      button.disabled = !open || snapshot.mySide !== null || this.root.dataset.voteCreator === '1';
     }
     const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
     if (!status) return;
@@ -293,6 +312,10 @@ export class NodeDetailController {
     if (!open) {
       const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
       status.textContent = `${snapshot.verdict === 'CORRECT' ? '已判定正确' : '已判定错误'} · ${reason} · ${tally}`;
+      return;
+    }
+    if (this.root.dataset.voteCreator === '1') {
+      status.textContent = `你是该知识的提交者，不能参与本轮投票 · ${tally}`;
       return;
     }
     if (snapshot.mySide) {
