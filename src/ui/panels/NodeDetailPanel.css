@@ -29,10 +29,10 @@
 }
 .node-detail-close{
   position:absolute;
-  right:0;
-  top:-7px;
-  width:30px;
-  height:30px;
+  right:-7px;
+  top:-14px;
+  width:44px;
+  height:44px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -40,7 +40,7 @@
   border:1px solid rgba(85,236,255,.30);
   background:rgba(8,13,32,.86);
   color:#DFF7FF;
-  font:500 16px/1 'Inter','Noto Sans SC',sans-serif;
+  font:500 18px/1 'Inter','Noto Sans SC',sans-serif;
   cursor:pointer;
   box-shadow:0 6px 20px rgba(0,0,0,.28);
 }
@@ -52,7 +52,7 @@
   outline:none;
 }
 .node-detail-title{
-  margin:0 34px 8px;
+  margin:0 42px 8px;
   font:700 17px/1.4 'Noto Serif SC',serif;
   color:var(--ink);
   overflow-wrap:anywhere;
