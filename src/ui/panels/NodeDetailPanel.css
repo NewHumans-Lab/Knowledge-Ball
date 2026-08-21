@@ -26,9 +26,15 @@ html.node-detail-labels-off .node-label{
   inset:-20px -14px;
   z-index:-1;
   pointer-events:none;
-  border:1px solid rgba(151,205,255,.46);
   border-radius:50% / 44%;
-  background:transparent;
+  background:radial-gradient(
+    ellipse at center,
+    rgba(3,5,18,.99) 0%,
+    rgba(3,5,18,.96) 38%,
+    rgba(3,5,18,.82) 61%,
+    rgba(3,5,18,.34) 79%,
+    rgba(3,5,18,0) 97%
+  );
 }
 .node-detail-close{
   position:absolute;

@@ -5,7 +5,7 @@ import type { StorageLike } from '../persistence/KnowledgePersistence';
 
 interface SupabaseConfig { url: string; publishableKey: string; pageSize?: number; storage?: StorageLike | null; fetch?: typeof fetch; }
 interface EventRow { sequence: number; envelope: DomainEvent; actor_id?: string | null; created_at?: string | null; }
-interface ProfileRow { user_id?: string | null; username?: string | null; display_name?: string | null; }
+interface ContributorRow { actor_id?: string | null; contributor?: string | null; }
 interface NodeCreationMetadata { actorId: string; createdAt: string; }
 export interface NodePresentationMetadata { contributor: string; createdAt: string; actorId: string; }
 
@@ -90,19 +90,18 @@ export class SupabaseSyncAdapter implements SyncAdapter {
       const batch = missing.slice(start, start + 100);
       if (!batch.length) continue;
       try {
-        const params = new URLSearchParams({
-          select: 'user_id,username,display_name',
-          user_id: `in.(${batch.join(',')})`,
+        const rows = await this.api<ContributorRow[]>('/rest/v1/rpc/get_public_contributor_profiles', {
+          method: 'POST',
+          body: JSON.stringify({ actor_ids: batch }),
         });
-        const profiles = await this.api<ProfileRow[]>(`/rest/v1/knowledge_ball_profiles?${params}`);
-        for (const profile of profiles) {
-          const userId = cleanText(profile.user_id);
-          if (!userId) continue;
-          this.contributorNameById.set(userId, cleanText(profile.display_name) || cleanText(profile.username) || '未命名贡献者');
+        for (const row of rows) {
+          const actorId = cleanText(row.actor_id);
+          if (!actorId) continue;
+          this.contributorNameById.set(actorId, cleanText(row.contributor) || '未命名贡献者');
         }
       } catch (error) {
-        // Contributor labels are presentation metadata. A profile lookup failure
-        // must never prevent the authoritative public event stream from loading.
+        // Contributor labels are presentation metadata. A lookup failure must
+        // never prevent the authoritative public event stream from loading.
         console.warn('[Knowledge-Ball] contributor profile lookup deferred:', error);
       }
     }

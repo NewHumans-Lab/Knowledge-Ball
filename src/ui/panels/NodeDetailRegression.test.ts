@@ -21,11 +21,11 @@ assert(detail.includes('node-detail-close'), 'detail must expose a top-right clo
 assert(css.includes('z-index:70'), 'near-node detail must render closer than the WebGL canvas and labels');
 assert(css.includes('width:min(58vw,220px)'), 'detail surface must keep the approved narrow width');
 assert(css.includes('min-height:330px'), 'detail surface must keep the approved vertical-ellipse height');
-assert(css.includes('border-radius:50% / 44%'), 'detail separator must remain a vertical ellipse');
-assert(css.includes('border:1px solid'), 'detail surface must use an ellipse outline as its separator');
-assert(css.includes('background:transparent'), 'detail surface must not restore an opaque black background');
-assert(!css.includes('radial-gradient'), 'detail surface must not use the previous black radial fill');
-assert(css.includes('font-size:15.5px'), 'knowledge content text must be larger than the previous compact presentation');
+assert(css.includes('border-radius:50% / 44%'), 'detail occlusion must keep the approved vertical-ellipse shape');
+assert(css.includes('background:radial-gradient('), 'detail surface must restore the previous radial occlusion');
+assert(css.includes('rgba(3,5,18,.99) 0%'), 'detail occlusion must restore the strong center mask');
+assert(!css.includes('border:1px solid rgba(151,205,255,.46)'), 'detail surface must not draw the temporary ellipse outline');
+assert(css.includes('font-size:15.5px'), 'knowledge content text must keep the larger readable presentation');
 assert(css.includes('overflow-y:auto'), 'long knowledge content must scroll inside the fixed-size detail surface');
 assert(css.includes('touch-action:pan-y'), 'mobile users must be able to vertically scroll long detail content');
 assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/action styling must not use the old red danger colour');
