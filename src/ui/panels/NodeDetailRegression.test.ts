@@ -20,6 +20,20 @@ assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributo
 for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
   assert(detail.includes(action), `edit menu must consolidate ${action}`);
 }
+
+assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
+assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
+assert(detail.includes('data-vote-side="AGREE"><span>同意</span><small>能量 −1</small>'), 'pending detail must expose the agree one-energy action');
+assert(detail.includes('data-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small>'), 'pending detail must expose the disagree one-energy action');
+assert(detail.includes('voteAccount.getPendingKnowledgeVote(nodeId)'), 'near-node vote controls must read the authoritative existing vote state');
+assert(detail.includes('voteAccount.castPendingKnowledgeVote(nodeId, side)'), 'near-node vote controls must reuse the real existing vote RPC');
+assert(detail.includes("knowledge-ball:verdict-finalized"), 'near-node finalization must reuse the existing graph reconciliation signal');
+assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'near-node vote tally must retain the existing prompt refresh cadence');
+assert(!detail.includes('setInterval('), 'near-node voting must not add a permanent polling interval');
+assert(css.includes('grid-template-columns:1fr 1fr'), 'agree and disagree must stay side by side in one row');
+assert(css.includes('.node-detail-vote-button span{font-size:12px'), 'vote choice must be the primary line in each button');
+assert(css.includes('.node-detail-vote-button small{font-size:9.5px'), 'one-energy cost must remain the smaller second line');
+
 assert(detail.includes('node-detail-close'), 'detail must expose a top-right close control');
 assert(css.includes('z-index:70'), 'near-node detail must render closer than the WebGL canvas and labels');
 assert(css.includes('width:min(58vw,220px)'), 'detail surface must keep the approved narrow width');
