@@ -42,7 +42,14 @@ const ACTION_LABEL: Readonly<Record<NodeDetailAction, string>> = Object.freeze({
 });
 const LABEL_SWITCH_CLASS = 'node-detail-labels-off';
 const VOTE_REFRESH_MS = 3_000;
-const voteAccount = createProductionAuthClient();
+let voteAccount: ReturnType<typeof createProductionAuthClient> | undefined;
+
+function currentVoteAccount(): ReturnType<typeof createProductionAuthClient> {
+  if (voteAccount !== undefined) return voteAccount;
+  if (typeof window === 'undefined') return null;
+  voteAccount = createProductionAuthClient();
+  return voteAccount;
+}
 
 function escapeHtml(input: string): string {
   return input
@@ -155,6 +162,7 @@ export class NodeDetailController {
     const contributor = metadata?.contributor || '—';
     const time = formatNodeContributionTime(metadata?.createdAt);
     const actions = this.getActions(node.id);
+    const account = node.status === 'pending' ? currentVoteAccount() : null;
     const interaction = node.status === 'pending'
       ? `
         <div class="node-detail-vote">
@@ -163,7 +171,7 @@ export class NodeDetailController {
             <button type="button" class="node-detail-vote-button agree" data-vote-side="AGREE"><span>同意</span><small>能量 −1</small></button>
             <button type="button" class="node-detail-vote-button disagree" data-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small></button>
           </div>
-          <div class="node-detail-vote-status" role="status" aria-live="polite">${voteAccount ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>
+          <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>
         </div>
       `
       : `
@@ -186,7 +194,7 @@ export class NodeDetailController {
     this.root.querySelector<HTMLButtonElement>('.node-detail-close')?.addEventListener('click', () => this.close());
 
     if (node.status === 'pending') {
-      this.bindPendingVote(node.id, token);
+      this.bindPendingVote(node.id, token, account);
       return;
     }
 
@@ -212,9 +220,13 @@ export class NodeDetailController {
     }
   }
 
-  private bindPendingVote(nodeId: string, token: number): void {
+  private bindPendingVote(
+    nodeId: string,
+    token: number,
+    account: ReturnType<typeof createProductionAuthClient>,
+  ): void {
     const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
-    if (!voteAccount) {
+    if (!account) {
       buttons.forEach(button => { button.disabled = true; });
       return;
     }
@@ -226,9 +238,10 @@ export class NodeDetailController {
   }
 
   private async refreshPendingVote(nodeId: string, token: number): Promise<void> {
-    if (!voteAccount || !this.isCurrentVote(nodeId, token)) return;
+    const account = currentVoteAccount();
+    if (!account || !this.isCurrentVote(nodeId, token)) return;
     try {
-      const snapshot = await voteAccount.getPendingKnowledgeVote(nodeId);
+      const snapshot = await account.getPendingKnowledgeVote(nodeId);
       if (!this.isCurrentVote(nodeId, token)) return;
       this.applyVoteSnapshot(snapshot);
       if (snapshot.verdict === 'PENDING') this.scheduleVoteRefresh(nodeId, token);
@@ -242,7 +255,8 @@ export class NodeDetailController {
   }
 
   private async castPendingVote(nodeId: string, side: PendingVoteSide, token: number): Promise<void> {
-    if (!voteAccount || !this.isCurrentVote(nodeId, token) || this.root.dataset.voteBusy === '1') return;
+    const account = currentVoteAccount();
+    if (!account || !this.isCurrentVote(nodeId, token) || this.root.dataset.voteBusy === '1') return;
     this.root.dataset.voteBusy = '1';
     this.clearVoteRefresh();
     const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
@@ -250,7 +264,7 @@ export class NodeDetailController {
     const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
     if (status) status.textContent = `${side === 'AGREE' ? '同意' : '反对'}票提交中 · 能量 −1…`;
     try {
-      const snapshot = await voteAccount.castPendingKnowledgeVote(nodeId, side);
+      const snapshot = await account.castPendingKnowledgeVote(nodeId, side);
       if (!this.isCurrentVote(nodeId, token)) return;
       this.applyVoteSnapshot(snapshot, true);
       if (snapshot.verdict === 'PENDING') this.scheduleVoteRefresh(nodeId, token);
