@@ -4,12 +4,29 @@ import { RemoteHeadConflictError, type PushResult, type SyncAdapter, type SyncBa
 import type { StorageLike } from '../persistence/KnowledgePersistence';
 
 interface SupabaseConfig { url: string; publishableKey: string; pageSize?: number; storage?: StorageLike | null; fetch?: typeof fetch; }
-interface EventRow { sequence: number; envelope: DomainEvent; }
+interface EventRow { sequence: number; envelope: DomainEvent; actor_id?: string | null; created_at?: string | null; }
+interface ProfileRow { user_id?: string | null; username?: string | null; display_name?: string | null; }
+interface NodeCreationMetadata { actorId: string; createdAt: string; }
+export interface NodePresentationMetadata { contributor: string; createdAt: string; actorId: string; }
+
+function cleanText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export function createdNodeIdsFromEvent(event: DomainEvent): string[] {
+  if (event.type === 'NodeCreated') return event.payload.nodeId ? [event.payload.nodeId] : [];
+  if (event.type !== 'KnowledgeAdded' || event.payload.edit.kind !== 'add') return [];
+  const edit = event.payload.edit;
+  if (edit.mode === 'atomic') return edit.node.id ? [edit.node.id] : [];
+  return [edit.reasoning.id, edit.conclusion.id].filter(Boolean);
+}
 
 export class SupabaseSyncAdapter implements SyncAdapter {
   private readonly request: typeof fetch;
   private readonly pageSize: number;
   private readonly auth: KnowledgeBallAuthClient;
+  private readonly nodeCreationById = new Map<string, NodeCreationMetadata>();
+  private readonly contributorNameById = new Map<string, string>();
 
   constructor(private readonly config: SupabaseConfig) {
     this.request = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
@@ -17,21 +34,41 @@ export class SupabaseSyncAdapter implements SyncAdapter {
     this.auth = new KnowledgeBallAuthClient({ url: config.url, publishableKey: config.publishableKey, storage: config.storage as Storage | null | undefined, fetch: this.request });
   }
 
+  nodeMetadata(nodeId: string): NodePresentationMetadata | null {
+    const creation = this.nodeCreationById.get(nodeId);
+    if (!creation) return null;
+    return {
+      actorId: creation.actorId,
+      createdAt: creation.createdAt,
+      contributor: this.contributorNameById.get(creation.actorId) ?? '匿名贡献者',
+    };
+  }
+
   async pull(cursor = '0'): Promise<SyncBatch> {
     let head = Number(cursor);
     const events: PublicKnowledgeEvent[] = [];
+    const actorIds = new Set<string>();
     while (true) {
-      const params = new URLSearchParams({ select: 'sequence,envelope', sequence: `gt.${head}`, order: 'sequence.asc', limit: String(this.pageSize) });
+      const params = new URLSearchParams({ select: 'sequence,envelope,actor_id,created_at', sequence: `gt.${head}`, order: 'sequence.asc', limit: String(this.pageSize) });
       const rows = await this.api<EventRow[]>(`/rest/v1/public_knowledge_events?${params}`);
       for (const row of rows) {
         if (!isPublicKnowledgeEvent(row.envelope)) {
           throw new Error(`public_knowledge_events contains non-public event at sequence ${row.sequence}`);
+        }
+        const actorId = cleanText(row.actor_id);
+        const createdAt = cleanText(row.created_at);
+        if (actorId && createdAt) {
+          actorIds.add(actorId);
+          for (const nodeId of createdNodeIdsFromEvent(row.envelope)) {
+            if (!this.nodeCreationById.has(nodeId)) this.nodeCreationById.set(nodeId, { actorId, createdAt });
+          }
         }
         head = Math.max(head, row.sequence);
         events.push(row.envelope);
       }
       if (rows.length < this.pageSize) break;
     }
+    await this.hydrateContributorNames(actorIds);
     return { events, cursor: String(head) };
   }
 
@@ -44,6 +81,30 @@ export class SupabaseSyncAdapter implements SyncAdapter {
     } catch (error) {
       if (error instanceof SupabaseApiError && error.code === 'KB409') throw new RemoteHeadConflictError(String(error.details?.current_head ?? expectedCursor));
       throw error;
+    }
+  }
+
+  private async hydrateContributorNames(actorIds: ReadonlySet<string>): Promise<void> {
+    const missing = [...actorIds].filter(actorId => !this.contributorNameById.has(actorId));
+    for (let start = 0; start < missing.length; start += 100) {
+      const batch = missing.slice(start, start + 100);
+      if (!batch.length) continue;
+      try {
+        const params = new URLSearchParams({
+          select: 'user_id,username,display_name',
+          user_id: `in.(${batch.join(',')})`,
+        });
+        const profiles = await this.api<ProfileRow[]>(`/rest/v1/knowledge_ball_profiles?${params}`);
+        for (const profile of profiles) {
+          const userId = cleanText(profile.user_id);
+          if (!userId) continue;
+          this.contributorNameById.set(userId, cleanText(profile.display_name) || cleanText(profile.username) || '未命名贡献者');
+        }
+      } catch (error) {
+        // Contributor labels are presentation metadata. A profile lookup failure
+        // must never prevent the authoritative public event stream from loading.
+        console.warn('[Knowledge-Ball] contributor profile lookup deferred:', error);
+      }
     }
   }
 

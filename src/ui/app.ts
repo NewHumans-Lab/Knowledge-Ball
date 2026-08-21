@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { EventStore } from '../event/EventStore';
 import { validateDomainEventAgainstState } from '../event/EventValidation';
 import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjection';
@@ -25,6 +26,7 @@ import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
 import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
 import { SyncEngine } from '../sync/SyncEngine';
 import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
+import { createProductionAuthClient } from '../auth/AuthClient';
 
 import {
   TWIN_META,
@@ -53,6 +55,11 @@ import {
   type NegateNodePayload,
   type PanelNodeSummary,
 } from './panels/PanelController';
+import {
+  NodeDetailController,
+  type NodeDetailAction,
+  type NodeDetailNode,
+} from './panels/NodeDetailController';
 import { setupMobileShell } from '../mobile/MobileShell';
 import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
@@ -68,13 +75,17 @@ const store = new EventStore(
   personalEventPersistence,
   event => validateDomainEventAgainstState(event, projection.state),
 );
+const productionSyncAdapter = createProductionSyncAdapter();
+const nodeViewAuthClient = createProductionAuthClient();
 let layoutNodes: KnowledgeSceneNode[] = [];
 let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
 let panel: PanelController;
+let nodeDetail: NodeDetailController | null = null;
 let interaction: InteractionController;
 let currentPanelId: string | null = null;
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
+let markingViewedNodeId: string | null = null;
 
 async function commitPublicEvent(event: DomainEvent): Promise<boolean> {
   if (!syncEngine) throw new Error('公共知识远程通道尚未初始化');
@@ -191,11 +202,105 @@ function getInteractionNodes(): InteractionNodeSummary[] {
   }));
 }
 
+function getNodeDetailById(id: string): NodeDetailNode | null {
+  const node = getNodeById(id);
+  return node ? {
+    id: node.id,
+    title: node.title,
+    type: node.type,
+    status: node.status,
+    reasoning: node.reasoning,
+  } : null;
+}
+
+function reasoningParentForDetail(node: KnowledgeSceneNode): KnowledgeSceneNode | null {
+  const parents = node.premises
+    .map(id => getNodeById(id))
+    .filter((candidate): candidate is KnowledgeSceneNode => candidate?.type === 'reasoning');
+  return parents.length === 1 ? parents[0] : null;
+}
+
+function canMergeFromDetail(node: KnowledgeSceneNode): boolean {
+  if (node.type === 'definition') return renderNodes.some(candidate => candidate.id !== node.id && candidate.type === 'definition');
+  if (['axiom', 'definition', 'fact', 'logic-symbol', 'reasoning'].includes(node.type)) return false;
+  const reasoning = reasoningParentForDetail(node);
+  if (!reasoning) return false;
+  const premiseKey = [...new Set(reasoning.premises)].sort().join('\0');
+  return renderNodes.some(candidate => {
+    if (candidate.id === node.id || candidate.type !== node.type) return false;
+    const otherReasoning = reasoningParentForDetail(candidate);
+    if (!otherReasoning || otherReasoning.id === reasoning.id || otherReasoning.logicRuleId !== reasoning.logicRuleId) return false;
+    return [...new Set(otherReasoning.premises)].sort().join('\0') === premiseKey;
+  });
+}
+
+function getNodeDetailActions(id: string): NodeDetailAction[] {
+  const node = getNodeById(id);
+  if (!node) return [];
+  const actions: NodeDetailAction[] = ['edit', 'derive'];
+  if (node.type === 'reasoning') actions.push('decompose');
+  if (canMergeFromDetail(node)) actions.push('merge');
+  if (node.status !== 'falsified' && node.status !== 'suspended') actions.push('negate');
+  if (node.status === 'suspended') actions.push('resolve');
+  if (node.status === 'disputed') actions.push('dispute');
+  return actions;
+}
+
+function launchLegacyPanelAction(id: string, action: NodeDetailAction): void {
+  currentPanelId = id;
+  if (action === 'derive') {
+    panel.openCreateModal(id);
+    return;
+  }
+  panel.openNodePanel(id);
+  const buttonId: Partial<Record<NodeDetailAction, string>> = {
+    edit: 'btnEditNode',
+    negate: 'btnNegate',
+    decompose: 'btnDecompose',
+    merge: 'btnMerge',
+    resolve: 'btnResolve',
+    dispute: 'btnDispute',
+  };
+  const targetId = buttonId[action];
+  const button = targetId ? document.getElementById(targetId) as HTMLButtonElement | null : null;
+  if (!button) {
+    panel.closeNodePanel();
+    panel.showToast('当前知识节点不支持这个编辑操作');
+    return;
+  }
+  button.click();
+}
+
+async function markNodeViewed(id: string): Promise<void> {
+  const node = projection.state.nodesById[id];
+  if (!node || node.mastery !== 'none' || markingViewedNodeId === id) return;
+  markingViewedNodeId = id;
+  try {
+    if (nodeViewAuthClient) {
+      const state = await nodeViewAuthClient.markKnowledgeTouched(id);
+      const current = projection.state.nodesById[id];
+      if (current?.mastery === 'none') await cmdSetMastery(store, { nodeId: id, mastery: state.mastery });
+      return;
+    }
+    await cmdSetMastery(store, { nodeId: id, mastery: 'touched' });
+  } catch (error) {
+    console.warn('[Knowledge-Ball] viewed-node mastery update deferred:', error);
+  } finally {
+    if (markingViewedNodeId === id) markingViewedNodeId = null;
+  }
+}
+
 function openNode(id: string): void {
   const node = getNodeById(id);
   if (!node) return;
   currentPanelId = id;
-  panel.openNodePanel(id);
+  if (nodeDetail) {
+    panel.closeNodePanel();
+    nodeDetail.open(id);
+    void markNodeViewed(id);
+  } else {
+    panel.openNodePanel(id);
+  }
   scene.markDirty();
 }
 
@@ -427,10 +532,14 @@ scene = createKnowledgeScene({
     onNodeTap: openNode,
     onBackgroundTap: () => {
       currentPanelId = null;
+      nodeDetail?.close();
       panel.closeNodePanel();
     },
     onBackgroundDoubleTap: () => {
-      panel.openCreateModal(currentPanelId);
+      const premiseId = currentPanelId;
+      nodeDetail?.close();
+      currentPanelId = premiseId;
+      panel.openCreateModal(premiseId);
     },
   },
 });
@@ -495,6 +604,21 @@ panel = new PanelController({
   toast: opt<HTMLElement>('toast'),
 });
 
+if (!Capacitor.isNativePlatform()) {
+  nodeDetail = new NodeDetailController({
+    getNodeById: getNodeDetailById,
+    getMetadata: id => {
+      const metadata = productionSyncAdapter?.nodeMetadata(id);
+      return metadata ? { contributor: metadata.contributor, createdAt: metadata.createdAt } : null;
+    },
+    getScreenPosition: id => scene.screenPositionForNode(id),
+    getActions: getNodeDetailActions,
+    onAction: launchLegacyPanelAction,
+    onDetailNodeChange: id => scene.setDetailNode(id),
+    onClose: () => { currentPanelId = null; },
+  });
+}
+
 openSettingsOverlay = () => panel.openSettingsOverlay();
 closeSettingsOverlay = () => panel.closeSettingsOverlay();
 
@@ -521,7 +645,11 @@ store.subscribe((event) => {
   syncNodesFromProjection();
   scene.markDirty();
 
-  if (currentPanelId) panel.openNodePanel(currentPanelId);
+  if (currentPanelId) {
+    const legacyPanelOpen = must<HTMLElement>('panel').classList.contains('open');
+    if (legacyPanelOpen) panel.openNodePanel(currentPanelId);
+    else if (nodeDetail?.isOpenFor(currentPanelId)) nodeDetail.refresh(currentPanelId);
+  }
   performance.mark?.('knowledge-subscriber-end');
   performance.measure?.('knowledge-subscriber', 'knowledge-subscriber-start', 'knowledge-subscriber-end');
 });
@@ -597,7 +725,6 @@ function validateProposedPublicEvent(event: PublicKnowledgeEvent): string | null
   return errors[0] ?? null;
 }
 
-const productionSyncAdapter = createProductionSyncAdapter();
 function initializeSyncEngine(): void {
   syncEngine = new SyncEngine(store, productionSyncAdapter, validateProposedPublicEvent);
   syncEngine.subscribe((status) => {
@@ -646,6 +773,7 @@ void setupMobileShell();
   },
   interaction,
   panel,
+  nodeDetail,
   scene,
   createKnowledgeNode,
   get syncEngine() { return syncEngine; },

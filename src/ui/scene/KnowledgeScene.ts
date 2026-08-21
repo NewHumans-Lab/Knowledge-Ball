@@ -81,6 +81,7 @@ export interface KnowledgeSceneRuntime {
   start: () => void;
   stop: () => void;
   setOverlayVisible: (visible: boolean) => void;
+  setDetailNode: (id: string | null) => void;
   resize: () => void;
   setLabelBrightness: (n: number) => void;
   setNodeRadius: (n: number) => void;
@@ -271,6 +272,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let nodeRadiusMM = 7.2;
   let hideUntouched = false;
   let selectedId: string | null = null;
+  let detailNodeId: string | null = null;
   let draggedNodeId: string | null = null;
   let returningNodeId: string | null = null;
   let focusedNodeId: string | null = null;
@@ -573,7 +575,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const node = byId.get(id);
       const visible = Boolean(node && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom)) && nodeVisibleInPersonalMode(node, hideUntouched));
       record.group.visible = visible;
-      if (labelMap[id]) labelMap[id].style.display = visible ? '' : 'none';
+      if (labelMap[id]) labelMap[id].style.display = visible && detailNodeId !== id ? '' : 'none';
     }
     Object.values(edgeMap).forEach(edge => {
       const endpoints = edge.userData.edgeEndpoints as [string, string] | undefined;
@@ -727,6 +729,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       record.group.getWorldPosition(worldPos);
       const projected = worldPos.clone().project(camera);
       const visible = record.group.visible
+        && detailNodeId !== n.id
         && (!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)
         && projected.z > -1
         && projected.z < 1
@@ -982,6 +985,11 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       labelsLayer.style.display = visible ? 'none' : 'block';
       if (visible) pauseFrameLoop();
       else resumeFrameLoop();
+    },
+    setDetailNode: id => {
+      detailNodeId = id;
+      applyVisibility();
+      largeGraphDirty = true;
     },
     resize,
     setLabelBrightness: n => {

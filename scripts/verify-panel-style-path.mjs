@@ -115,7 +115,8 @@ try {
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'first focus tap');
   const firstTapWall = performance.now() - firstTapStarted;
   assert.ok(firstTapWall <= 250, `first focus tap took ${firstTapWall.toFixed(1)}ms`);
-  assert.equal(await page.locator('#panel.open').count(), 0, 'first tap must focus without opening the panel');
+  assert.equal(await page.locator('#panel.open').count(), 0, 'first tap must focus without opening the legacy panel');
+  assert.equal(await page.locator('#nodeDetailOverlay.open').count(), 0, 'first tap must focus without opening near-node details');
   assert.equal(
     await page.evaluate(beforeCount => window.__debug.store.allEvents().slice(beforeCount).filter(event => event.type === 'NodeMasterySet').length, before),
     0,
@@ -130,25 +131,25 @@ try {
   const centered = await page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), target.id);
   assert.ok(centered, 'focused node must remain renderable at screen center');
 
-  // Second tap is the detail-open action and keeps the original Issue #51 latency gate.
+  // Second tap opens the lightweight near-node detail view. Keep the original
+  // Issue #51 latency gate and the viewed-node personal-state side effect.
   const secondTapStarted = performance.now();
   await deadline(page.touchscreen.tap(centered.x, centered.y), 1_000, 'centered node tap');
   const secondTapWall = performance.now() - secondTapStarted;
-  await deadline(page.waitForFunction(() => document.querySelector('#panel')?.classList.contains('open')), 1_000, 'panel open');
+  await deadline(page.waitForFunction(() => document.querySelector('#nodeDetailOverlay')?.classList.contains('open')), 1_000, 'near-node detail open');
+  await deadline(page.waitForFunction(nodeId => window.__debug?.projection?.state?.nodesById?.[nodeId]?.mastery === 'touched', target.id), 1_000, 'viewed-node mastery');
   await new Promise(resolve => setTimeout(resolve, 100));
 
   const state = await deadline(page.evaluate(({ beforeCount, nodeId }) => {
     const events = window.__debug.store.allEvents();
     const appended = events.slice(beforeCount);
-    const privacy = document.querySelector('.mastery-private');
-    const privacyStyle = privacy ? getComputedStyle(privacy) : null;
+    const detail = document.querySelector('#nodeDetailOverlay');
     return {
       masteryEvents: appended.filter(event => event.type === 'NodeMasterySet'),
       mastery: window.__debug.projection.state.nodesById[nodeId]?.mastery,
-      panelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
-      privacyText: privacy?.textContent ?? '',
-      privacyFontSize: privacyStyle?.fontSize ?? '',
-      privacyMarginTop: privacyStyle?.marginTop ?? '',
+      detailOpen: detail?.classList.contains('open') ?? false,
+      legacyPanelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
+      detailTitle: detail?.querySelector('.node-detail-title')?.textContent?.trim() ?? '',
       activeCount: window.__debug.scene.getActiveNodeCount(),
     };
   }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
@@ -156,14 +157,13 @@ try {
   console.log(JSON.stringify({ firstTapWall, secondTapWall, lodState, state }, null, 2));
   assert.ok(secondTapWall <= 250, `centered detail tap took ${secondTapWall.toFixed(1)}ms`);
   assert.ok(state.activeCount <= mobileActiveNodeTarget, `selected-node relation retention must remain within the ${mobileActiveNodeTarget}-node working set`);
-  assert.ok(state.panelOpen, 'panel must remain open and responsive');
-  assert.equal(state.mastery, 'touched', 'viewed node must be automatically marked touched');
+  assert.ok(state.detailOpen, 'near-node detail must remain open and responsive');
+  assert.equal(state.legacyPanelOpen, false, 'normal second-tap viewing must not reopen the legacy rectangular panel');
+  assert.equal(state.detailTitle, target.id.replace('panel-style-node-', 'Panel style node '), 'near-node detail must show the selected fixture title');
+  assert.equal(state.mastery, 'touched', 'viewed node must still be automatically marked touched');
   assert.equal(state.masteryEvents.length, 1, `one view must append exactly one mastery event, got ${state.masteryEvents.length}`);
   assert.equal(state.masteryEvents[0]?.payload?.nodeId, target.id, 'mastery event must target the viewed node');
   assert.equal(state.masteryEvents[0]?.payload?.mastery, 'touched', 'viewed node must append touched mastery');
-  assert.ok(state.privacyText.includes('LOCAL ONLY'), 'AuthUi must still update the private mastery note');
-  assert.equal(state.privacyFontSize, '9px', 'replacement selector must preserve private-note typography');
-  assert.equal(state.privacyMarginTop, '5px', 'replacement selector must preserve private-note spacing');
 
   await context.close();
 } finally {
