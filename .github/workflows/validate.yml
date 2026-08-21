@@ -5,81 +5,9 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-requested-patch:
-    if: github.event_name == 'push' && github.ref_name == 'fix/core-10x-and-requirement-precedence' && !contains(github.event.head_commit.message, '[core-10x-applied]')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Apply core visibility and requirement precedence
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          scene = Path('src/ui/scene/KnowledgeScene.ts')
-          text = scene.read_text()
-          old = "      const visible = Boolean(node && nodeVisibleInPersonalMode(node, hideUntouched));"
-          new = "      const visible = Boolean(node && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom)) && nodeVisibleInPersonalMode(node, hideUntouched));"
-          if old in text:
-            text = text.replace(old, new, 1)
-          elif new not in text:
-            raise SystemExit('core body visibility invariant not found')
-          old = "        && (!largeMobileGraph || index % 4 === 0 || selectedId === n.id)"
-          new = "        && (!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)"
-          if old in text:
-            text = text.replace(old, new, 1)
-          elif new not in text:
-            raise SystemExit('core label LOD invariant not found')
-          scene.write_text(text)
-
-          regression = Path('src/ui/scene/KnowledgeSceneRegression.test.ts')
-          text = regression.read_text()
-          core_body_guard = "assert(sceneSource.includes('(!isCoreNodeId(id) || coreLabelsVisible(graphZoom))'),'core triad bodies must stay hidden until the same 10x gate that reveals their labels');"
-          core_label_guard = "assert(sceneSource.includes('(!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)'),'core labels must bypass ordinary large-mobile label thinning once the 10x gate reveals the triad');"
-          if core_body_guard not in text:
-            anchor = "assert(sceneSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');"
-            if anchor not in text:
-              raise SystemExit('regression insertion point not found')
-            text = text.replace(anchor, anchor + '\n' + core_body_guard + '\n' + core_label_guard, 1)
-          regression.write_text(text)
-
-          agents = Path('AGENTS.md')
-          text = agents.read_text()
-          heading = '### Requirement precedence and supersession'
-          if heading not in text:
-            anchor = "Do not interpret permission to fix one subsystem as permission to redesign adjacent systems.\n\n## 2. Default platform scope is Web"
-            replacement = """Do not interpret permission to fix one subsystem as permission to redesign adjacent systems.
-
-### Requirement precedence and supersession
-
-- The maintainer's latest explicit requirement overrides earlier requirements only where they actually conflict.
-- Supersession is local, not global: requirements that do not conflict with the new instruction remain in force and must not be casually changed.
-- Do not restore an older product behavior merely because it appears in Git history, an old issue, an obsolete requirements document, or remembered chat context.
-- Current code/tests describe implemented behavior; they do not outrank a newer explicit maintainer product requirement when the two conflict.
-- Versioned historical protocol documents may remain authoritative for replaying their own historical version, but they are not instructions to reintroduce superseded current-product behavior.
-- If two sources conflict and recency/authority is genuinely unclear, surface the conflict before coding instead of choosing whichever document is easiest to find.
-- For every focused change, preserve adjacent non-conflicting invariants and include regression coverage for any invariant that has repeatedly regressed.
-- Remove obsolete unversioned requirement documents once they have been superseded, rather than leaving them as plausible agent instructions.
-
-## 2. Default platform scope is Web"""
-            if anchor not in text:
-              raise SystemExit('AGENTS precedence insertion point not found')
-            text = text.replace(anchor, replacement, 1)
-          agents.write_text(text)
-
-          stale = Path('docs/android-requirements.md')
-          if stale.exists():
-            stale.unlink()
-          PY
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m "[core-10x-applied] Align core reveal and requirement precedence"
-          git push origin HEAD:fix/core-10x-and-requirement-precedence
-
   build-and-test:
     runs-on: ubuntu-latest
     steps:
