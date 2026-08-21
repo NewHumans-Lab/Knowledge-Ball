@@ -571,7 +571,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const byId = new Map(getNodes().map(node => [node.id, node] as const));
     for (const [id, record] of Object.entries(nodeMap)) {
       const node = byId.get(id);
-      const visible = Boolean(node && nodeVisibleInPersonalMode(node, hideUntouched));
+      const visible = Boolean(node && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom)) && nodeVisibleInPersonalMode(node, hideUntouched));
       record.group.visible = visible;
       if (labelMap[id]) labelMap[id].style.display = visible ? '' : 'none';
     }
@@ -727,7 +727,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       record.group.getWorldPosition(worldPos);
       const projected = worldPos.clone().project(camera);
       const visible = record.group.visible
-        && (!largeMobileGraph || index % 4 === 0 || selectedId === n.id)
+        && (!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)
         && projected.z > -1
         && projected.z < 1
         && (!isCoreNodeId(n.id) || coreLabelsVisible(graphZoom));
