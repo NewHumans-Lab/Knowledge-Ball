@@ -523,7 +523,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const key = `${p}->${n.id}`;
       wanted.add(key);
       if (!edgeMap[key]) {
-        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.normalOpacity }));
+        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: false, opacity: KNOWLEDGE_SCENE_THEME.edge.normalOpacity }));
         edgesGroup.add(edgeMap[key]);
       }
       edgeMap[key].userData.edgeEndpoints = [p, n.id];
@@ -547,7 +547,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const key = [n.id, twin.id].sort().join('<->');
       wanted.add(key);
       if (!edgeMap[key]) {
-        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.twinOpacity, dashSize: 4, gapSize: 3 }));
+        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: false, opacity: KNOWLEDGE_SCENE_THEME.edge.twinOpacity, dashSize: 4, gapSize: 3 }));
         edgesGroup.add(edgeMap[key]);
       }
       edgeMap[key].userData.edgeEndpoints = [n.id, twin.id];
