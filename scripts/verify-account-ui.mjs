@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [auth, ui, sync, migration, profileGate, publicWriteGate, productionBrowser, deploy] = await Promise.all([
+const [auth, ui, sync, migration, profileGate, publicWriteGate, accuracyMigration, productionBrowser, deploy] = await Promise.all([
   readFile('src/auth/AuthClient.ts','utf8'),
   readFile('src/ui/AuthUi.ts','utf8'),
   readFile('src/sync/SupabaseSyncAdapter.ts','utf8'),
   readFile('supabase/migrations/202608140001_remove_phone_auth.sql','utf8'),
   readFile('supabase/migrations/202608200003_profile_edit_requires_account.sql','utf8'),
   readFile('supabase/migrations/202608200004_registered_public_writes.sql','utf8'),
+  readFile('supabase/migrations/202608210002_account_accuracy.sql','utf8'),
   readFile('scripts/verify-production-browser.mjs','utf8'),
   readFile('.github/workflows/deploy.yml','utf8'),
 ]);
@@ -71,6 +72,21 @@ assert.match(profileGate, /where p\.user_id = actor[\s\S]*and p\.password_login_
 assert.match(profileGate, /raise exception '请先登录账户'/,
   'server profile gate must return the same product-level requirement');
 
+assert.match(accuracyMigration, /account_positions[\s\S]*initiator_id[\s\S]*initiator_side/,
+  'accuracy must include creator positions');
+assert.match(accuracyMigration, /knowledge_pending_votes[\s\S]*settlement_status = 'ACTIVE'/,
+  'accuracy must include only valid ordinary-vote positions');
+assert.match(accuracyMigration, /\bunion\b/i,
+  'claim-side positions must be deduplicated across creator and vote history');
+assert.match(accuracyMigration, /r\.verdict in \('CORRECT', 'INCORRECT'\)/,
+  'pending verification rounds must not enter accuracy attempts');
+assert.match(accuracyMigration, /position\.side = 'AGREE'[\s\S]*verdict\.verdict = 'CORRECT'[\s\S]*position\.side = 'DISAGREE'[\s\S]*verdict\.verdict = 'INCORRECT'/,
+  'accuracy wins must match the frozen AGREE/CORRECT and DISAGREE/INCORRECT rule');
+assert.match(accuracyMigration, /100\.0 \* score\.wins/,
+  'database accuracy must return the percent value rendered by the account UI');
+assert.match(accuracyMigration, /202608210002/,
+  'release schema gate must advance with authoritative account accuracy');
+
 assert.match(publicWriteGate, /append_public_knowledge_events\(/,
   'public-write hardening migration must own the authoritative append RPC');
 assert.match(publicWriteGate, /join auth\.users u on u\.id = p\.user_id/,
@@ -84,7 +100,7 @@ assert.match(publicWriteGate, /u\.is_anonymous is false/,
 assert.match(publicWriteGate, /请先注册或登录账户后再提交公共知识/,
   'rejected guest writes must return a product-level authorization message');
 assert.match(publicWriteGate, /knowledge_ball_schema_version\(\)[\s\S]*202608200004/,
-  'release schema gate must advance with the public-write invariant');
+  'public-write migration must preserve its own historical schema milestone');
 
 assert.doesNotMatch(productionBrowser, /Public synchronization probe|crypto\.randomUUID\(\)|#modalSubmit[^\n]*click/,
   'production browser smoke tests must never manufacture or submit knowledge nodes');
@@ -101,4 +117,4 @@ assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Registered public-write gate, read-only production smoke, account UI, and profile authorization checks passed');
+console.log('Registered public-write gate, authoritative accuracy, read-only production smoke, account UI, and profile authorization checks passed');
