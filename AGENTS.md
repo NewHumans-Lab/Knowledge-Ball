@@ -22,6 +22,17 @@ Before starting a new write, verify the current `main` SHA and relevant PR state
 
 Do not interpret permission to fix one subsystem as permission to redesign adjacent systems.
 
+### Requirement precedence and supersession
+
+- The maintainer's latest explicit requirement overrides earlier requirements only where they actually conflict.
+- Supersession is local, not global: requirements that do not conflict with the new instruction remain in force and must not be casually changed.
+- Do not restore an older product behavior merely because it appears in Git history, an old issue, an obsolete requirements document, or remembered chat context.
+- Current code/tests describe implemented behavior; they do not outrank a newer explicit maintainer product requirement when the two conflict.
+- Versioned historical protocol documents may remain authoritative for replaying their own historical version, but they are not instructions to reintroduce superseded current-product behavior.
+- If two sources conflict and recency/authority is genuinely unclear, surface the conflict before coding instead of choosing whichever document is easiest to find.
+- For every focused change, preserve adjacent non-conflicting invariants and include regression coverage for any invariant that has repeatedly regressed.
+- Remove obsolete unversioned requirement documents once they have been superseded, rather than leaving them as plausible agent instructions.
+
 ## 2. Default platform scope is Web
 
 Unless the task explicitly says otherwise:
