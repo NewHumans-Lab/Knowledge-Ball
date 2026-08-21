@@ -26,6 +26,7 @@ import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
 import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
 import { SyncEngine } from '../sync/SyncEngine';
 import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
+import { createProductionAuthClient } from '../auth/AuthClient';
 
 import {
   TWIN_META,
@@ -75,6 +76,7 @@ const store = new EventStore(
   event => validateDomainEventAgainstState(event, projection.state),
 );
 const productionSyncAdapter = createProductionSyncAdapter();
+const nodeViewAuthClient = createProductionAuthClient();
 let layoutNodes: KnowledgeSceneNode[] = [];
 let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
@@ -83,6 +85,7 @@ let nodeDetail: NodeDetailController | null = null;
 let interaction: InteractionController;
 let currentPanelId: string | null = null;
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
+let markingViewedNodeId: string | null = null;
 
 async function commitPublicEvent(event: DomainEvent): Promise<boolean> {
   if (!syncEngine) throw new Error('公共知识远程通道尚未初始化');
@@ -268,6 +271,25 @@ function launchLegacyPanelAction(id: string, action: NodeDetailAction): void {
   button.click();
 }
 
+async function markNodeViewed(id: string): Promise<void> {
+  const node = projection.state.nodesById[id];
+  if (!node || node.mastery !== 'none' || markingViewedNodeId === id) return;
+  markingViewedNodeId = id;
+  try {
+    if (nodeViewAuthClient) {
+      const state = await nodeViewAuthClient.markKnowledgeTouched(id);
+      const current = projection.state.nodesById[id];
+      if (current?.mastery === 'none') await cmdSetMastery(store, { nodeId: id, mastery: state.mastery });
+      return;
+    }
+    await cmdSetMastery(store, { nodeId: id, mastery: 'touched' });
+  } catch (error) {
+    console.warn('[Knowledge-Ball] viewed-node mastery update deferred:', error);
+  } finally {
+    if (markingViewedNodeId === id) markingViewedNodeId = null;
+  }
+}
+
 function openNode(id: string): void {
   const node = getNodeById(id);
   if (!node) return;
@@ -275,6 +297,7 @@ function openNode(id: string): void {
   if (nodeDetail) {
     panel.closeNodePanel();
     nodeDetail.open(id);
+    void markNodeViewed(id);
   } else {
     panel.openNodePanel(id);
   }
