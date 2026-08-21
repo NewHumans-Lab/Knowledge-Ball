@@ -609,7 +609,7 @@ if (!Capacitor.isNativePlatform()) {
     getNodeById: getNodeDetailById,
     getMetadata: id => {
       const metadata = productionSyncAdapter?.nodeMetadata(id);
-      return metadata ? { contributor: metadata.contributor, createdAt: metadata.createdAt } : null;
+      return metadata ? { contributor: metadata.contributor, createdAt: metadata.createdAt, actorId: metadata.actorId } : null;
     },
     getScreenPosition: id => scene.screenPositionForNode(id),
     getActions: getNodeDetailActions,
