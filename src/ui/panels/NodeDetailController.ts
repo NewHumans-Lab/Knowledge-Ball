@@ -1,4 +1,9 @@
 import './NodeDetailPanel.css';
+import {
+  createProductionAuthClient,
+  type PendingKnowledgeVoteSnapshot,
+  type PendingVoteSide,
+} from '../../auth/AuthClient';
 import type { KnowledgeNodeStatus, KnowledgeNodeType } from '../config/KnowledgeUiConfig';
 
 export type NodeDetailAction = 'edit' | 'derive' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
@@ -36,6 +41,15 @@ const ACTION_LABEL: Readonly<Record<NodeDetailAction, string>> = Object.freeze({
   dispute: '争议',
 });
 const LABEL_SWITCH_CLASS = 'node-detail-labels-off';
+const VOTE_REFRESH_MS = 3_000;
+let voteAccount: ReturnType<typeof createProductionAuthClient> | undefined;
+
+function currentVoteAccount(): ReturnType<typeof createProductionAuthClient> {
+  if (voteAccount !== undefined) return voteAccount;
+  if (typeof window === 'undefined') return null;
+  voteAccount = createProductionAuthClient();
+  return voteAccount;
+}
 
 function escapeHtml(input: string): string {
   return input
@@ -71,6 +85,8 @@ export class NodeDetailController {
   private readonly root: HTMLElement;
   private currentId: string | null = null;
   private positionFrame: number | null = null;
+  private voteRefreshTimer: number | null = null;
+  private voteRenderToken = 0;
 
   constructor(options: NodeDetailControllerOptions) {
     this.getNodeById = options.getNodeById;
@@ -121,10 +137,13 @@ export class NodeDetailController {
   close(): void {
     const wasOpen = this.currentId !== null || this.root.classList.contains('open');
     this.setKnowledgeLabelsVisible(true);
+    this.clearVoteRefresh();
+    this.voteRenderToken++;
     if (!wasOpen) return;
     this.currentId = null;
     this.root.classList.remove('open');
     this.root.innerHTML = '';
+    this.root.removeAttribute('data-node-id');
     this.stopPositionTracking();
     this.onDetailNodeChange(null);
     this.onClose?.();
@@ -137,16 +156,35 @@ export class NodeDetailController {
   }
 
   private render(node: NodeDetailNode): void {
+    this.clearVoteRefresh();
+    const token = ++this.voteRenderToken;
     const metadata = this.getMetadata(node.id);
     const contributor = metadata?.contributor || '—';
     const time = formatNodeContributionTime(metadata?.createdAt);
     const actions = this.getActions(node.id);
+    const account = node.status === 'pending' ? currentVoteAccount() : null;
+    const interaction = node.status === 'pending'
+      ? `
+        <div class="node-detail-vote">
+          <div class="node-detail-vote-title">投票</div>
+          <div class="node-detail-vote-actions">
+            <button type="button" class="node-detail-vote-button agree" data-vote-side="AGREE"><span>同意</span><small>能量 −1</small></button>
+            <button type="button" class="node-detail-vote-button disagree" data-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small></button>
+          </div>
+          <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>
+        </div>
+      `
+      : `
+        <button type="button" class="node-detail-edit" aria-expanded="false">编辑</button>
+        <div class="node-detail-edit-menu" hidden></div>
+      `;
+
+    this.root.dataset.nodeId = node.id;
     this.root.innerHTML = `
       <button type="button" class="node-detail-close" aria-label="关闭知识节点详情">×</button>
       <h2 class="node-detail-title">${escapeHtml(node.title)}</h2>
       <div class="node-detail-content">${escapeHtml(node.reasoning || '（未填写）')}</div>
-      <button type="button" class="node-detail-edit" aria-expanded="false">编辑</button>
-      <div class="node-detail-edit-menu" hidden></div>
+      ${interaction}
       <div class="node-detail-meta">
         <span>贡献者 · <b>${escapeHtml(contributor)}</b></span>
         <span>时间 · <b>${escapeHtml(time)}</b></span>
@@ -154,6 +192,12 @@ export class NodeDetailController {
     `;
 
     this.root.querySelector<HTMLButtonElement>('.node-detail-close')?.addEventListener('click', () => this.close());
+
+    if (node.status === 'pending') {
+      this.bindPendingVote(node.id, token, account);
+      return;
+    }
+
     const editButton = this.root.querySelector<HTMLButtonElement>('.node-detail-edit');
     const menu = this.root.querySelector<HTMLElement>('.node-detail-edit-menu');
     editButton?.addEventListener('click', () => {
@@ -174,6 +218,117 @@ export class NodeDetailController {
       });
       menu?.appendChild(button);
     }
+  }
+
+  private bindPendingVote(
+    nodeId: string,
+    token: number,
+    account: ReturnType<typeof createProductionAuthClient>,
+  ): void {
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+    if (!account) {
+      buttons.forEach(button => { button.disabled = true; });
+      return;
+    }
+    buttons.forEach(button => button.addEventListener('click', () => {
+      const side = button.dataset.voteSide as PendingVoteSide | undefined;
+      if (side === 'AGREE' || side === 'DISAGREE') void this.castPendingVote(nodeId, side, token);
+    }));
+    void this.refreshPendingVote(nodeId, token);
+  }
+
+  private async refreshPendingVote(nodeId: string, token: number): Promise<void> {
+    const account = currentVoteAccount();
+    if (!account || !this.isCurrentVote(nodeId, token)) return;
+    try {
+      const snapshot = await account.getPendingKnowledgeVote(nodeId);
+      if (!this.isCurrentVote(nodeId, token)) return;
+      this.applyVoteSnapshot(snapshot);
+      if (snapshot.verdict === 'PENDING') this.scheduleVoteRefresh(nodeId, token);
+      else this.handleFinalizedVote(snapshot);
+    } catch (error) {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '投票状态同步失败';
+      if (document.visibilityState !== 'hidden') this.scheduleVoteRefresh(nodeId, token);
+    }
+  }
+
+  private async castPendingVote(nodeId: string, side: PendingVoteSide, token: number): Promise<void> {
+    const account = currentVoteAccount();
+    if (!account || !this.isCurrentVote(nodeId, token) || this.root.dataset.voteBusy === '1') return;
+    this.root.dataset.voteBusy = '1';
+    this.clearVoteRefresh();
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+    buttons.forEach(button => { button.disabled = true; });
+    const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+    if (status) status.textContent = `${side === 'AGREE' ? '同意' : '反对'}票提交中 · 能量 −1…`;
+    try {
+      const snapshot = await account.castPendingKnowledgeVote(nodeId, side);
+      if (!this.isCurrentVote(nodeId, token)) return;
+      this.applyVoteSnapshot(snapshot, true);
+      if (snapshot.verdict === 'PENDING') this.scheduleVoteRefresh(nodeId, token);
+      else this.handleFinalizedVote(snapshot);
+    } catch (error) {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '投票失败';
+      buttons.forEach(button => { button.disabled = false; });
+      this.scheduleVoteRefresh(nodeId, token);
+    } finally {
+      delete this.root.dataset.voteBusy;
+    }
+  }
+
+  private applyVoteSnapshot(snapshot: PendingKnowledgeVoteSnapshot, justVoted = false): void {
+    const open = snapshot.verdict === 'PENDING';
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+    for (const button of buttons) {
+      const side = button.dataset.voteSide as PendingVoteSide | undefined;
+      button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
+      button.disabled = !open || snapshot.mySide !== null;
+    }
+    const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+    if (!status) return;
+    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    if (!open) {
+      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
+      status.textContent = `${snapshot.verdict === 'CORRECT' ? '已判定正确' : '已判定错误'} · ${reason} · ${tally}`;
+      return;
+    }
+    if (snapshot.mySide) {
+      status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${tally}`;
+    } else {
+      status.textContent = tally;
+    }
+  }
+
+  private handleFinalizedVote(snapshot: PendingKnowledgeVoteSnapshot): void {
+    if (this.root.dataset.finalizedVote === snapshot.nodeId) return;
+    this.root.dataset.finalizedVote = snapshot.nodeId;
+    this.clearVoteRefresh();
+    window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
+      detail: { nodeId:snapshot.nodeId, verdict:snapshot.verdict },
+    }));
+  }
+
+  private scheduleVoteRefresh(nodeId: string, token: number): void {
+    this.clearVoteRefresh();
+    this.voteRefreshTimer = window.setTimeout(() => {
+      this.voteRefreshTimer = null;
+      void this.refreshPendingVote(nodeId, token);
+    }, VOTE_REFRESH_MS);
+  }
+
+  private clearVoteRefresh(): void {
+    if (this.voteRefreshTimer !== null) window.clearTimeout(this.voteRefreshTimer);
+    this.voteRefreshTimer = null;
+  }
+
+  private isCurrentVote(nodeId: string, token: number): boolean {
+    return token === this.voteRenderToken
+      && this.currentId === nodeId
+      && this.root.dataset.nodeId === nodeId
+      && this.root.isConnected;
   }
 
   private setKnowledgeLabelsVisible(visible: boolean): void {
