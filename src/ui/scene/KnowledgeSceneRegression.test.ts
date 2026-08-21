@@ -50,9 +50,9 @@ assert(KNOWLEDGE_SCENE_THEME.edge.normal===0xB9D8F5,'ordinary relation lines mus
 assert(KNOWLEDGE_SCENE_THEME.edge.active===0xD9ECFF,'relations incident to the clicked node must use the approved highlight color');
 assert(KNOWLEDGE_SCENE_THEME.edge.logic===KNOWLEDGE_SCENE_THEME.edge.normal,'logic relations must share the ordinary line color');
 assert(KNOWLEDGE_SCENE_THEME.edge.twin===KNOWLEDGE_SCENE_THEME.edge.normal,'bidirectional/twin relations must share the ordinary line color when not selected');
-assert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity===1&&KNOWLEDGE_SCENE_THEME.edge.activeOpacity===1,'ordinary and selected relation lines must both remain fully opaque');
+assert(KNOWLEDGE_SCENE_THEME.edge.normalOpacity===.5&&KNOWLEDGE_SCENE_THEME.edge.activeOpacity===.5,'ordinary and selected relation lines must keep the same 0.5 opacity so selection changes color only');
 assert(KNOWLEDGE_SCENE_THEME.edge.inactiveFactor===1,'selecting a node must not fade unrelated relation lines');
-assert(KNOWLEDGE_SCENE_THEME.edge.falsifiedOpacity===1&&KNOWLEDGE_SCENE_THEME.edge.suspendedOpacity===1&&KNOWLEDGE_SCENE_THEME.edge.disputedOpacity===1&&KNOWLEDGE_SCENE_THEME.edge.twinOpacity===1,'relation status and twin styling must not reintroduce transparency');
+assert(KNOWLEDGE_SCENE_THEME.edge.falsifiedOpacity===.5&&KNOWLEDGE_SCENE_THEME.edge.suspendedOpacity===.5&&KNOWLEDGE_SCENE_THEME.edge.disputedOpacity===.5&&KNOWLEDGE_SCENE_THEME.edge.twinOpacity===.5,'relation status and twin styling must not introduce a second opacity level');
 assert(KNOWLEDGE_SCENE_THEME.sun.core===0xFFFFFF,'sun core must remain white');
 assert(Number(KNOWLEDGE_SCENE_THEME.sun.corona)!==Number(KNOWLEDGE_SCENE_THEME.sun.halo),'sun corona and outer halo must remain distinct color layers');
 assert(KNOWLEDGE_SCENE_THEME.sun.coronaScale<=4&&KNOWLEDGE_SCENE_THEME.sun.haloScale<=6,'sun glow must not wash most of a phone viewport in cyan/violet haze');
@@ -91,8 +91,8 @@ const phaseA=pendingPulsePhaseMs('pending-a');assert(phaseA===pendingPulsePhaseM
 const phases=new Set(['pending-a','pending-b','pending-c','pending-d'].map(pendingPulsePhaseMs));assert(phases.size>1,'pending nodes must not all share the same phase');
 
 const sceneSource=readFileSync('src/ui/scene/KnowledgeScene.ts','utf8');
-assert(sceneSource.includes('new THREE.LineBasicMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: false'),'ordinary relation material must be opaque');
-assert(sceneSource.includes('new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: false'),'twin relation material must be opaque');
+assert(sceneSource.includes('new THREE.LineBasicMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true'),'ordinary relation material must support the fixed 0.5 opacity');
+assert(sceneSource.includes('new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true'),'twin relation material must support the fixed 0.5 opacity');
 assert(/const\s+up\s*=/.test(sceneSource),'node tap implementation must remain discoverable');
 assert(/const\s+wheel\s*=/.test(sceneSource),'wheel implementation must remain discoverable');
 assert(sceneSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');
