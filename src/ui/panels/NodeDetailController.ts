@@ -144,7 +144,7 @@ export class NodeDetailController {
         <span>贡献者 · <b>${escapeHtml(contributor)}</b></span>
         <span>时间 · <b>${escapeHtml(time)}</b></span>
       </div>
-      <div class="node-detail-content-label">知识节点内容</div>
+      <div class="node-detail-content-label">内容</div>
       <div class="node-detail-content">${escapeHtml(node.reasoning || '（未填写）')}</div>
       <button type="button" class="node-detail-edit" aria-expanded="false">编辑</button>
       <div class="node-detail-edit-menu" hidden></div>
@@ -191,10 +191,10 @@ export class NodeDetailController {
   private positionCurrent = (): void => {
     if (!this.currentId || !this.root.classList.contains('open')) return;
     const point = this.getScreenPosition(this.currentId);
-    const halfWidth = Math.min(window.innerWidth * .43, 154);
-    const halfHeight = 118;
+    const halfWidth = Math.min(window.innerWidth * .30, 120);
+    const halfHeight = 180;
     const x = Math.max(halfWidth + 6, Math.min(window.innerWidth - halfWidth - 6, point?.x ?? window.innerWidth / 2));
-    const y = Math.max(92, Math.min(window.innerHeight - halfHeight - 62, point?.y ?? window.innerHeight / 2));
+    const y = Math.max(halfHeight + 8, Math.min(window.innerHeight - halfHeight - 8, point?.y ?? window.innerHeight / 2));
     this.root.style.left = `${x}px`;
     this.root.style.top = `${y}px`;
   };

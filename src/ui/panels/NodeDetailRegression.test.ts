@@ -11,14 +11,18 @@ assert.equal(formatNodeContributionTime(undefined), '—');
 assert.equal(formatNodeContributionTime('invalid'), '—');
 assert.match(formatNodeContributionTime('2026-08-21T04:00:00.000Z'), /^2026-08-21\s/);
 
-for (const text of ['贡献者 ·', '时间 ·', '知识节点内容', '>编辑<']) {
+for (const text of ['贡献者 ·', '时间 ·', '>内容<', '>编辑<']) {
   assert(detail.includes(text), `near-node detail must render ${text}`);
 }
+assert(!detail.includes('知识节点内容'), 'near-node detail content label must stay concise');
 for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
   assert(detail.includes(action), `edit menu must consolidate ${action}`);
 }
 assert(detail.includes('node-detail-close'), 'detail must expose a top-right close control');
 assert(css.includes('z-index:70'), 'near-node detail must render closer than the WebGL canvas and labels');
+assert(css.includes('width:min(58vw,220px)'), 'detail surface must stay narrow enough to leave room for premise/conclusion context at the sides');
+assert(css.includes('min-height:330px'), 'detail surface must use a vertical-ellipse proportion');
+assert(css.includes('border-radius:50% / 44%'), 'detail occlusion surface must read as a vertical ellipse rather than a rectangle');
 assert(css.includes('radial-gradient'), 'detail surface must occlude the sphere without restoring a large rectangular panel');
 assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/action styling must not use the old red danger colour');
 

@@ -210,9 +210,10 @@ try{
     assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'focused ordinary node must win the second tap inside its existing hit radius even when a core node is closer');
     assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('贡献者'),'near-node detail must expose contributor metadata');
     assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('时间'),'near-node detail must expose server creation time');
-    assert.ok((await detail.locator('.node-detail-content-label').textContent())?.includes('知识节点内容'),'near-node detail must expose node content');
+    assert.equal((await detail.locator('.node-detail-content-label').textContent())?.trim(),'内容','near-node detail must use the concise content label');
     const detailBox=await detail.boundingBox();
     assert.ok(detailBox,'near-node detail must have a visible mobile box');
+    assert.ok(detailBox.height>detailBox.width,'near-node detail must use a narrow vertical ellipse so premise/conclusion context can occupy the side space');
     assert.ok(centered.x>=detailBox.x&&centered.x<=detailBox.x+detailBox.width&&centered.y>=detailBox.y&&centered.y<=detailBox.y+detailBox.height,'near-node detail must sit in front of and visually occlude the selected sphere');
     const selectedLabelHidden=await page.evaluate(title=>[...document.querySelectorAll('.node-label')].find(label=>label.textContent?.trim()===title)?.style.display==='none',target.title);
     assert.equal(selectedLabelHidden,true,'near-node detail must hide only the selected sphere label');
