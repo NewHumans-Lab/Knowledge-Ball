@@ -5,7 +5,6 @@ import { formatNodeContributionTime } from './NodeDetailController';
 const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
 const css = readFileSync('src/ui/panels/NodeDetailPanel.css', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
-const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 
 assert.equal(formatNodeContributionTime(undefined), '—');
 assert.equal(formatNodeContributionTime('invalid'), '—');
@@ -20,10 +19,15 @@ for (const action of ['修改内容', '基于此新增', '否定', '分解', '�
 }
 assert(detail.includes('node-detail-close'), 'detail must expose a top-right close control');
 assert(css.includes('z-index:70'), 'near-node detail must render closer than the WebGL canvas and labels');
-assert(css.includes('width:min(58vw,220px)'), 'detail surface must stay narrow enough to leave room for premise/conclusion context at the sides');
-assert(css.includes('min-height:330px'), 'detail surface must use a vertical-ellipse proportion');
-assert(css.includes('border-radius:50% / 44%'), 'detail occlusion surface must read as a vertical ellipse rather than a rectangle');
-assert(css.includes('radial-gradient'), 'detail surface must occlude the sphere without restoring a large rectangular panel');
+assert(css.includes('width:min(58vw,220px)'), 'detail surface must keep the approved narrow width');
+assert(css.includes('min-height:330px'), 'detail surface must keep the approved vertical-ellipse height');
+assert(css.includes('border-radius:50% / 44%'), 'detail separator must remain a vertical ellipse');
+assert(css.includes('border:1px solid'), 'detail surface must use an ellipse outline as its separator');
+assert(css.includes('background:transparent'), 'detail surface must not restore an opaque black background');
+assert(!css.includes('radial-gradient'), 'detail surface must not use the previous black radial fill');
+assert(css.includes('font-size:15.5px'), 'knowledge content text must be larger than the previous compact presentation');
+assert(css.includes('overflow-y:auto'), 'long knowledge content must scroll inside the fixed-size detail surface');
+assert(css.includes('touch-action:pan-y'), 'mobile users must be able to vertically scroll long detail content');
 assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/action styling must not use the old red danger colour');
 
 assert(app.includes('if (!Capacitor.isNativePlatform())'), 'new near-node detail behavior must remain web-only for now');
@@ -31,10 +35,11 @@ assert(app.includes('nodeDetail.open(id)'), 'second-tap ordinary-node path must 
 assert(app.includes("getMetadata: id =>"), 'detail must receive contributor/time metadata through the production adapter');
 assert(app.includes('panel.openNodePanel(id)') && app.includes('launchLegacyPanelAction'), 'legacy large panel must be retained only as the editing engine');
 
-assert(scene.includes('let detailNodeId: string | null = null;'), 'scene must track the one node whose label is replaced by detail content');
-assert(scene.includes("setDetailNode: id =>"), 'scene runtime must expose explicit detail-label ownership');
-assert(scene.includes("visible && detailNodeId !== id ? '' : 'none'"), 'opening detail must hide only the selected label, not the sphere');
-assert(scene.includes('&& detailNodeId !== n.id'), 'per-frame label layout must keep the selected label hidden while detail is open');
-assert(detail.includes('this.onDetailNodeChange(null);'), 'closing detail must restore normal label rendering');
+assert(detail.includes("const LABEL_SWITCH_CLASS = 'node-detail-labels-off';"), 'detail must own one explicit knowledge-label visibility switch');
+assert(detail.includes('this.setKnowledgeLabelsVisible(false);'), 'opening detail must switch all knowledge labels off');
+assert(detail.includes('this.setKnowledgeLabelsVisible(true);'), 'closing detail must switch knowledge labels back on');
+assert(css.includes('html.node-detail-labels-off .node-label'), 'the detail label switch must target every knowledge-node label');
+assert(css.includes('display:none!important'), 'the detail label switch must override per-frame inline label visibility while active');
+assert(detail.includes('this.onDetailNodeChange(null);'), 'closing detail must also release selected-node detail ownership');
 
 console.log('Near-node detail regression tests passed');

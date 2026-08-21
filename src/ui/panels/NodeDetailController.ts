@@ -35,6 +35,7 @@ const ACTION_LABEL: Readonly<Record<NodeDetailAction, string>> = Object.freeze({
   resolve: '重新验证',
   dispute: '争议',
 });
+const LABEL_SWITCH_CLASS = 'node-detail-labels-off';
 
 function escapeHtml(input: string): string {
   return input
@@ -98,6 +99,7 @@ export class NodeDetailController {
     const node = this.getNodeById(id);
     if (!node) return;
     this.currentId = id;
+    this.setKnowledgeLabelsVisible(false);
     this.onDetailNodeChange(id);
     this.render(node);
     this.root.classList.add('open');
@@ -117,7 +119,9 @@ export class NodeDetailController {
   }
 
   close(): void {
-    if (!this.currentId && !this.root.classList.contains('open')) return;
+    const wasOpen = this.currentId !== null || this.root.classList.contains('open');
+    this.setKnowledgeLabelsVisible(true);
+    if (!wasOpen) return;
     this.currentId = null;
     this.root.classList.remove('open');
     this.root.innerHTML = '';
@@ -171,6 +175,10 @@ export class NodeDetailController {
       });
       menu?.appendChild(button);
     }
+  }
+
+  private setKnowledgeLabelsVisible(visible: boolean): void {
+    document.documentElement.classList.toggle(LABEL_SWITCH_CLASS, !visible);
   }
 
   private startPositionTracking(): void {
