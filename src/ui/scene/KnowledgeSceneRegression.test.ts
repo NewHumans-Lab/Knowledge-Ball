@@ -96,6 +96,8 @@ assert(sceneSource.includes('new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCE
 assert(/const\s+up\s*=/.test(sceneSource),'node tap implementation must remain discoverable');
 assert(/const\s+wheel\s*=/.test(sceneSource),'wheel implementation must remain discoverable');
 assert(sceneSource.includes('callbacks.onNodeTap(nodeId)'),'node tap must emit exactly through the node-tap callback');
+assert(sceneSource.includes('(!isCoreNodeId(id) || coreLabelsVisible(graphZoom))'),'core triad bodies must stay hidden until the same 10x gate that reveals their labels');
+assert(sceneSource.includes('(!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)'),'core labels must bypass ordinary large-mobile label thinning once the 10x gate reveals the triad');
 assert(!sceneSource.includes('queueMicrotask'),'node tap must not defer panel dispatch into the microtask queue');
 assert(!sceneSource.includes('forceContextLoss'),'scene must never force WebGL context loss');
 assert(!sceneSource.includes('forceContextRestore'),'scene must never force context restoration');
