@@ -23,8 +23,8 @@ for (const action of ['修改内容', '基于此新增', '否定', '分解', '�
 
 assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
 assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
-assert(detail.includes('data-vote-side="AGREE"><span>同意</span><small>能量 −1</small>'), 'pending detail must expose the agree one-energy action');
-assert(detail.includes('data-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small>'), 'pending detail must expose the disagree one-energy action');
+assert(detail.includes('data-vote-side="AGREE" disabled><span>同意</span><small>能量 −1</small>'), 'pending detail must expose the agree one-energy action');
+assert(detail.includes('data-vote-side="DISAGREE" disabled><span>反对</span><small>能量 −1</small>'), 'pending detail must expose the disagree one-energy action');
 assert(detail.includes('account.getPendingKnowledgeVote(nodeId)'), 'near-node vote controls must read the authoritative existing vote state');
 assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'near-node vote controls must reuse the real existing vote RPC');
 assert(detail.includes("knowledge-ball:verdict-finalized"), 'near-node finalization must reuse the existing graph reconciliation signal');
