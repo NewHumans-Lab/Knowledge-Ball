@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const reconciliation = await readFile('supabase/migrations/202608220003_viewpoint_energy_reconciliation.sql', 'utf8');
+const accountIndex = await readFile('supabase/migrations/202608220004_viewpoint_reconciliation_account_index.sql', 'utf8');
 const debitHardening = await readFile('supabase/migrations/202608140002_issue45_hardening.sql', 'utf8');
 const firstRoundV2 = await readFile('supabase/migrations/202608180004_legacy_late_vote_refunds.sql', 'utf8');
 const revalidationV1 = await readFile('supabase/migrations/202608220001_lineage_server_projection_revalidation_v1.sql', 'utf8');
@@ -123,5 +124,12 @@ assert.match(revalidationV1, /balance=balance-r\.stake[\s\S]*balance-r\.stake>=-
 assert.doesNotMatch(reconciliation, /where\s+viewpoint_event_id\s*=\s*viewpoint_event_id/i);
 assert.match(reconciliation, /where r\.viewpoint_event_id=p_viewpoint_event_id/);
 assert.match(reconciliation, /select '202608220003'::text/);
+
+// Hosted Supabase performance advisor caught this module's account_id FK without
+// a covering index. Keep the forward fix in the same module and make sure it does
+// not smuggle in any behavior change.
+assert.match(accountIndex, /create index if not exists knowledge_reconciliation_account\s+on private\.knowledge_reconciliation_position_deltas\(account_id\)/);
+assert.doesNotMatch(accountIndex, /update\s+public\.energy_accounts|insert\s+into\s+public\.energy_transactions|public_knowledge_events/i);
+assert.match(accountIndex, /select '202608220004'::text/);
 
 console.log('Knowledge Lineage V3 module 5 reconciliation architecture and math checks passed');
