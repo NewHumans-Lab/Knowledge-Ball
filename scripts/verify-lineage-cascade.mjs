@@ -74,6 +74,18 @@ assert.doesNotMatch(cascade, /insert into private\.knowledge_revalidation_rounds
 assert.doesNotMatch(cascade, /update private\.knowledge_revalidation_rounds/i);
 assert.match(cascade, /select '202608220006'::text/);
 
+// Scope guard: module 6 must not rewrite the already-frozen first-round/challenge
+// tables or energy ledger; the two migrations are projection + propagation only.
+for (const forbiddenWrite of [
+  /insert into\s+public\.energy_/i,
+  /update\s+public\.energy_/i,
+  /insert into\s+private\.knowledge_revalidation_rounds/i,
+  /update\s+private\.knowledge_revalidation_rounds/i,
+]) {
+  assert.doesNotMatch(dag, forbiddenWrite);
+  assert.doesNotMatch(cascade, forbiddenWrite);
+}
+
 // Small executable oracle for the required A->B->C->D + diamond behavior.
 function currentDownstream(edges, currentIds, start) {
   const current = new Set(currentIds);
