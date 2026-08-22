@@ -92,7 +92,7 @@ export function edgeVisibleInKnowledgeMode(
 }
 
 /** Color role is independent from validation/pending state. */
-export function lineageColorForNode(node: KnowledgeLineageViewNode): number | null {
+export function lineageColorForNode(node: Pick<KnowledgeLineageViewNode, 'id' | 'lineage'>): number | null {
   const role = lineageRoleFor(node);
   if (role === 'history' || role === 'candidate-history') return KNOWLEDGE_HISTORY_COLOR;
   if (role === 'opposition' || role === 'candidate-opposition') return KNOWLEDGE_OPPOSITION_COLOR;
