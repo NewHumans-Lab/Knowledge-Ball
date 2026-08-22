@@ -1,4 +1,9 @@
 import { STATUS_LABEL, TYPE_LABEL, type KnowledgeMastery, type KnowledgeNodeStatus, type KnowledgeNodeType } from '../config/KnowledgeUiConfig';
+import {
+  nextKnowledgeVisibilityMode,
+  visibilityModeLabel,
+  type KnowledgeVisibilityMode,
+} from '../KnowledgeLineageView';
 import type { KnowledgeSceneRuntime } from '../scene/KnowledgeScene';
 
 export interface InteractionNodeSummary {
@@ -21,7 +26,6 @@ export interface InteractionControllerOptions {
   settingsButton?: HTMLButtonElement;
   nodeRadiusInput?: HTMLInputElement;
   labelBrightnessInput?: HTMLInputElement;
-  hideUntouchedButton?: HTMLButtonElement;
 
   onPickNode: (id: string) => void;
   onOpenCreateNode?: () => void;
@@ -48,12 +52,11 @@ export class InteractionController {
   private readonly settingsButton?: HTMLButtonElement;
   private readonly nodeRadiusInput?: HTMLInputElement;
   private readonly labelBrightnessInput?: HTMLInputElement;
-  private readonly hideUntouchedButton?: HTMLButtonElement;
   private readonly onPickNode: (id: string) => void;
   private readonly onOpenCreateNode?: () => void;
   private readonly onOpenSettings?: () => void;
 
-  private hideUntouched = false;
+  private visibilityMode: KnowledgeVisibilityMode = 'current';
   private unbinders: Unbind[] = [];
 
   constructor(options: InteractionControllerOptions) {
@@ -65,11 +68,11 @@ export class InteractionController {
     this.settingsButton = options.settingsButton;
     this.nodeRadiusInput = options.nodeRadiusInput;
     this.labelBrightnessInput = options.labelBrightnessInput;
-    this.hideUntouchedButton = options.hideUntouchedButton;
     this.onPickNode = options.onPickNode;
     this.onOpenCreateNode = options.onOpenCreateNode;
     this.onOpenSettings = options.onOpenSettings;
 
+    this.applyVisibilityMode('current');
     this.bind();
   }
 
@@ -78,15 +81,22 @@ export class InteractionController {
     this.unbinders = [];
   }
 
-  setHideUntouched(enabled: boolean): void {
-    this.hideUntouched = enabled;
-    this.scene.setHideUntouched(enabled);
-    if (this.personalButton) {
-      this.personalButton.classList.toggle('active', enabled);
-    }
-    if (this.hideUntouchedButton) {
-      this.hideUntouchedButton.classList.toggle('active', enabled);
-    }
+  setVisibilityMode(mode: KnowledgeVisibilityMode): void {
+    this.applyVisibilityMode(mode);
+  }
+
+  private applyVisibilityMode(mode: KnowledgeVisibilityMode): void {
+    this.visibilityMode = mode;
+    this.scene.setVisibilityMode(mode);
+    if (!this.personalButton) return;
+    this.personalButton.textContent = visibilityModeLabel(mode);
+    this.personalButton.dataset.visibilityMode = mode;
+    this.personalButton.classList.toggle('active', mode !== 'current');
+    this.personalButton.title = mode === 'current'
+      ? '当前：只显示每个主题的当前知识；点击切换到个人'
+      : mode === 'personal'
+        ? '个人：显示你接触过的知识；点击切换到全部'
+        : '全部：显示当前、灰色历史和红色对立知识；点击切换到当前';
   }
 
   private bind(): void {
@@ -140,17 +150,9 @@ export class InteractionController {
     this.unbinders.push(() => document.removeEventListener('click', onDocClick));
 
     if (this.personalButton) {
-      const onPersonalClick = () => this.setHideUntouched(!this.hideUntouched);
+      const onPersonalClick = () => this.applyVisibilityMode(nextKnowledgeVisibilityMode(this.visibilityMode));
       this.personalButton.addEventListener('click', onPersonalClick);
       this.unbinders.push(() => this.personalButton?.removeEventListener('click', onPersonalClick));
-    }
-
-    // The header's "personal" control currently serves both roles. Avoid
-    // attaching the same toggle twice when both options reference that button.
-    if (this.hideUntouchedButton && this.hideUntouchedButton !== this.personalButton) {
-      const onHideToggle = () => this.setHideUntouched(!this.hideUntouched);
-      this.hideUntouchedButton.addEventListener('click', onHideToggle);
-      this.unbinders.push(() => this.hideUntouchedButton?.removeEventListener('click', onHideToggle));
     }
 
     if (this.settingsButton && this.onOpenSettings) {
