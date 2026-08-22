@@ -1,6 +1,7 @@
 import type { GraphNode } from '../graph/Node';
 import {
   currentNodeForTopic,
+  isPendingHeadCandidate,
   lineageRoleFor,
   topicIdFor,
   validateKnowledgeLineage,
@@ -81,8 +82,8 @@ export function validateOptimizationProposal(
   }
 
   const topicId = topicIdFor(target);
-  if (nodes.some(node => topicIdFor(node) === topicId && node.status === 'pending' && isOptimizationCandidate(node))) {
-    errors.push('同一知识主题已有一个优化候选正在验证；线性版本链在当前协议下必须串行推进');
+  if (nodes.some(node => topicIdFor(node) === topicId && isPendingHeadCandidate(node))) {
+    errors.push('同一知识主题已有一个会改变当前版本的候选正在验证；当前节点必须串行推进');
   }
 
   return errors;
