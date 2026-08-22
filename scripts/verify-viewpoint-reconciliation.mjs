@@ -6,6 +6,46 @@ const debitHardening = await readFile('supabase/migrations/202608140002_issue45_
 const firstRoundV2 = await readFile('supabase/migrations/202608180004_legacy_late_vote_refunds.sql', 'utf8');
 const revalidationV1 = await readFile('supabase/migrations/202608220001_lineage_server_projection_revalidation_v1.sql', 'utf8');
 
+// Small test-only oracle for the frozen equal-stake pool. Do not add a second
+// production/domain implementation: runtime authority remains the SQL migration.
+const E = 1_000_000n;
+function equalStakePayouts(positions, winningSide, stakeAtoms) {
+  const winners = positions.filter(position => position.side === winningSide)
+    .sort((a, b) => a.key.localeCompare(b.key));
+  const winnerCount = BigInt(winners.length);
+  const loserCount = BigInt(positions.length - winners.length);
+  const share = winnerCount === 0n ? 0n : loserCount * stakeAtoms / winnerCount;
+  const remainder = winnerCount === 0n ? 0n : loserCount * stakeAtoms % winnerCount;
+  const payouts = Object.fromEntries(positions.map(position => [position.key, 0n]));
+  winners.forEach((winner, index) => {
+    payouts[winner.key] = stakeAtoms + share + (BigInt(index) < remainder ? 1n : 0n);
+  });
+  return payouts;
+}
+
+assert.deepEqual(equalStakePayouts([
+  { key:'vote:a', side:'AGREE' }, { key:'vote:b', side:'AGREE' }, { key:'vote:c', side:'DISAGREE' },
+], 'AGREE', E), { 'vote:a':1_500_000n, 'vote:b':1_500_000n, 'vote:c':0n });
+assert.deepEqual(equalStakePayouts([
+  { key:'vote:a', side:'AGREE' }, { key:'vote:b', side:'AGREE' }, { key:'vote:c', side:'DISAGREE' },
+], 'DISAGREE', E), { 'vote:a':0n, 'vote:b':0n, 'vote:c':3_000_000n });
+assert.deepEqual(equalStakePayouts([
+  { key:'winner:z', side:'AGREE' }, { key:'loser', side:'DISAGREE' },
+  { key:'winner:a', side:'AGREE' }, { key:'winner:m', side:'AGREE' },
+], 'AGREE', E), {
+  'winner:z':1_333_333n, loser:0n, 'winner:a':1_333_334n, 'winner:m':1_333_333n,
+}, 'remainder atoms must be deterministic by sorted position key');
+assert.deepEqual(equalStakePayouts([
+  { key:'initiator:u1', side:'AGREE' }, { key:'vote:v1', side:'AGREE' }, { key:'vote:v2', side:'DISAGREE' },
+], 'AGREE', 10n*E), { 'initiator:u1':15_000_000n, 'vote:v1':15_000_000n, 'vote:v2':0n });
+assert.deepEqual(equalStakePayouts([
+  { key:'initiator:u1', side:'AGREE' }, { key:'vote:v1', side:'AGREE' }, { key:'vote:v2', side:'DISAGREE' },
+], 'DISAGREE', 10n*E), { 'initiator:u1':0n, 'vote:v1':0n, 'vote:v2':30_000_000n });
+const delta = (desired, original, prior = []) => desired - (original + prior.reduce((sum, item) => sum + item, 0n));
+assert.equal(delta(0n, 1_500_000n), -1_500_000n);
+assert.equal(delta(0n, 1_500_000n, [-1_500_000n]), 0n, 'same flip replay must be economically idempotent');
+assert.equal(delta(1_500_000n, 0n, [3_000_000n]), -1_500_000n, 'later viewpoint flip must reverse earlier appended corrections');
+
 // Module boundary: append-only economic reconciliation only.
 assert.match(reconciliation, /'RECONCILIATION'/, 'module 5 needs a dedicated auditable transaction type');
 assert.match(reconciliation, /create table private\.knowledge_viewpoint_reconciliations/);
@@ -84,4 +124,4 @@ assert.doesNotMatch(reconciliation, /where\s+viewpoint_event_id\s*=\s*viewpoint_
 assert.match(reconciliation, /where r\.viewpoint_event_id=p_viewpoint_event_id/);
 assert.match(reconciliation, /select '202608220003'::text/);
 
-console.log('Knowledge Lineage V3 module 5 reconciliation architecture checks passed');
+console.log('Knowledge Lineage V3 module 5 reconciliation architecture and math checks passed');
