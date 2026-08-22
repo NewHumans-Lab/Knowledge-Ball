@@ -1,0 +1,571 @@
+name: Temp cascade convergence
+on:
+  pull_request:
+    types: [reopened]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.head_ref == 'fix/lineage-v3-spec-convergence'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/lineage-v3-spec-convergence
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply cascade convergence patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(p): return Path(p).read_text()
+          def write(p,t): Path(p).write_text(t)
+          def rep(t, old, new, label):
+              c=t.count(old)
+              if c!=1: raise SystemExit(f'{label}: expected 1 match, got {c}')
+              return t.replace(old,new,1)
+
+          # Event contract: distinguish ordinary first-round verdicts from automatic cascade verdicts.
+          p='src/event/Event.ts'; t=read(p)
+          old="""export type KnowledgeVerdictFinalizedEvent = EventEnvelope<'KnowledgeVerdictFinalized', {
+  roundId: string;
+  nodeId: string;
+  verdict: 'CORRECT' | 'INCORRECT';
+  closeReason: 'THRESHOLD' | 'TIMEOUT';
+  agreeCount: number;
+  disagreeCount: number;
+  requiredVotes: number;
+  policyVersion: KnowledgeVerdictPolicyVersion;
+}>;
+
+/** Server-authored only. Starting a challenge never changes lineage role/color. */
+export type KnowledgeRevalidationStartedEvent = EventEnvelope<'KnowledgeRevalidationStarted', {
+  roundId: string;
+  nodeId: string;
+  topicId: string;
+  roleAtStart: 'history' | 'opposition';
+  stage: number;
+  stake: string;
+  scope: KnowledgeRevalidationScope;
+  accuracyGate?: number;
+  localHopLimit?: number;
+  requiredVotes: number;
+  deadline: string;
+  policyVersion: 'ORIGINAL_DESIGN_V1';
+}>;
+"""
+          new="""export type KnowledgeVerdictFinalizedEvent = EventEnvelope<'KnowledgeVerdictFinalized', {
+  roundId: string;
+  nodeId: string;
+  verdict: 'CORRECT' | 'INCORRECT';
+  closeReason: 'THRESHOLD' | 'TIMEOUT';
+  agreeCount: number;
+  disagreeCount: number;
+  requiredVotes: number;
+  policyVersion: KnowledgeVerdictPolicyVersion;
+  /** Present for server-authored automatic dependency revalidation. */
+  roundKind?: 'INITIAL' | 'CASCADE';
+}>;
+
+/** Server-authored only. Human lineage reactivation and automatic DAG cascade share the lifecycle event family. */
+export type KnowledgeRevalidationStartedEvent = EventEnvelope<'KnowledgeRevalidationStarted',
+  | {
+      kind?: 'lineage';
+      roundId: string;
+      nodeId: string;
+      topicId: string;
+      roleAtStart: 'history' | 'opposition';
+      stage: number;
+      stake: string;
+      scope: KnowledgeRevalidationScope;
+      accuracyGate?: number;
+      localHopLimit?: number;
+      requiredVotes: number;
+      deadline: string;
+      policyVersion: 'ORIGINAL_DESIGN_V1';
+    }
+  | {
+      kind: 'cascade';
+      roundId: string;
+      nodeId: string;
+      sourceNodeId: string;
+      requiredVotes: number;
+      deadline: string;
+      policyVersion: 'ORIGINAL_DESIGN_V1';
+    }
+>;
+"""
+          t=rep(t,old,new,'event lifecycle types'); write(p,t)
+
+          # Envelope/state validation: cascade is explicitly server-only and has its own invariants.
+          p='src/event/EventValidation.ts'; t=read(p)
+          t=rep(t,
+          """    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1' && p.policyVersion !== 'ORIGINAL_DESIGN_V2') errors.push('投票结算事件 policyVersion 无效');
+""",
+          """    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1' && p.policyVersion !== 'ORIGINAL_DESIGN_V2') errors.push('投票结算事件 policyVersion 无效');
+    if (p.roundKind !== undefined && p.roundKind !== 'INITIAL' && p.roundKind !== 'CASCADE') errors.push('投票结算事件 roundKind 无效');
+    if (p.roundKind === 'CASCADE' && p.policyVersion !== 'ORIGINAL_DESIGN_V1') errors.push('自动级联重审必须使用 ORIGINAL_DESIGN_V1 标识');
+""",'verdict round kind validation')
+          old="""  if (event.type === 'KnowledgeRevalidationStarted') {
+    const p = event.payload;
+    if (!p.roundId?.trim() || !p.nodeId?.trim() || !p.topicId?.trim()) errors.push('重新验证启动事件缺少必要 ID');
+    if (p.roleAtStart !== 'history' && p.roleAtStart !== 'opposition') errors.push('重新验证只能从灰链或红链发起');
+    if (!Number.isSafeInteger(p.stage) || p.stage < 0) errors.push('重新验证 stage 无效');
+    if (!validEnergyText(p.stake)) errors.push('重新验证 stake 无效');
+    if (p.scope !== 'GLOBAL' && p.scope !== 'LOCAL_10') errors.push('重新验证 scope 无效');
+    if (p.accuracyGate !== undefined && (!Number.isInteger(p.accuracyGate) || p.accuracyGate < 0 || p.accuracyGate > 100)) errors.push('重新验证 accuracyGate 无效');
+    if (p.scope === 'LOCAL_10' && (!Number.isSafeInteger(p.localHopLimit) || p.localHopLimit! < 1)) errors.push('LOCAL_10 必须携带有效 hop limit');
+    if (!safeCount(p.requiredVotes, false) || !p.deadline || Number.isNaN(Date.parse(p.deadline))) errors.push('重新验证门槛或截止时间无效');
+    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1') errors.push('第二次及后续重新验证必须使用冻结 ORIGINAL_DESIGN_V1');
+  }
+"""
+          new="""  if (event.type === 'KnowledgeRevalidationStarted') {
+    const p = event.payload;
+    if (p.kind === 'cascade') {
+      if (!p.roundId?.trim() || !p.nodeId?.trim() || !p.sourceNodeId?.trim()) errors.push('自动级联重审启动事件缺少必要 ID');
+      if (!safeCount(p.requiredVotes, false) || !p.deadline || Number.isNaN(Date.parse(p.deadline))) errors.push('自动级联重审门槛或截止时间无效');
+      if (p.policyVersion !== 'ORIGINAL_DESIGN_V1') errors.push('自动级联重审必须使用 ORIGINAL_DESIGN_V1 标识');
+    } else {
+      if (!p.roundId?.trim() || !p.nodeId?.trim() || !p.topicId?.trim()) errors.push('重新验证启动事件缺少必要 ID');
+      if (p.roleAtStart !== 'history' && p.roleAtStart !== 'opposition') errors.push('重新验证只能从灰链或红链发起');
+      if (!Number.isSafeInteger(p.stage) || p.stage < 0) errors.push('重新验证 stage 无效');
+      if (!validEnergyText(p.stake)) errors.push('重新验证 stake 无效');
+      if (p.scope !== 'GLOBAL' && p.scope !== 'LOCAL_10') errors.push('重新验证 scope 无效');
+      if (p.accuracyGate !== undefined && (!Number.isInteger(p.accuracyGate) || p.accuracyGate < 0 || p.accuracyGate > 100)) errors.push('重新验证 accuracyGate 无效');
+      if (p.scope === 'LOCAL_10' && (!Number.isSafeInteger(p.localHopLimit) || p.localHopLimit! < 1)) errors.push('LOCAL_10 必须携带有效 hop limit');
+      if (!safeCount(p.requiredVotes, false) || !p.deadline || Number.isNaN(Date.parse(p.deadline))) errors.push('重新验证门槛或截止时间无效');
+      if (p.policyVersion !== 'ORIGINAL_DESIGN_V1') errors.push('第二次及后续重新验证必须使用冻结 ORIGINAL_DESIGN_V1');
+    }
+  }
+"""
+          t=rep(t,old,new,'revalidation started envelope')
+          old="""    case 'KnowledgeRevalidationStarted': {
+      const target = state.nodesById[event.payload.nodeId];
+      if (!target) return [`重新验证目标不存在: ${event.payload.nodeId}`];
+      if (topicIdFor(target) !== event.payload.topicId) return ['重新验证 topicId 与目标不一致'];
+      if (lineageRoleFor(target) !== event.payload.roleAtStart) return ['重新验证启动时 lineage role 与目标不一致'];
+      if (target.status !== 'verified') return ['只有稳定已验证的灰/红节点可以开始重新验证'];
+      return [];
+    }
+"""
+          new="""    case 'KnowledgeRevalidationStarted': {
+      const target = state.nodesById[event.payload.nodeId];
+      if (!target) return [`重新验证目标不存在: ${event.payload.nodeId}`];
+      if (event.payload.kind === 'cascade') {
+        if (lineageRoleFor(target) !== 'current') return ['自动级联重审只能作用于当前节点'];
+        if (target.status !== 'verified') return ['只有稳定当前节点可以进入自动级联重审'];
+        if (!state.nodesById[event.payload.sourceNodeId]) return [`自动级联重审原因节点不存在: ${event.payload.sourceNodeId}`];
+        return [];
+      }
+      if (topicIdFor(target) !== event.payload.topicId) return ['重新验证 topicId 与目标不一致'];
+      if (lineageRoleFor(target) !== event.payload.roleAtStart) return ['重新验证启动时 lineage role 与目标不一致'];
+      if (target.status !== 'verified') return ['只有稳定已验证的灰/红节点可以开始重新验证'];
+      return [];
+    }
+"""
+          t=rep(t,old,new,'revalidation started state'); write(p,t)
+
+          # Projection: cascade start => pending current; failed cascade => suspended, never falsified.
+          p='src/projection/GraphProjection.ts'; t=read(p)
+          old="""      case 'KnowledgeVerdictFinalized': {
+        const n = this.state.nodesById[event.payload.nodeId];
+        if (!n) break;
+        if (isOptimizationCandidate(n)) {
+"""
+          new="""      case 'KnowledgeVerdictFinalized': {
+        const n = this.state.nodesById[event.payload.nodeId];
+        if (!n) break;
+        if (event.payload.roundKind === 'CASCADE') {
+          n.status = event.payload.verdict === 'CORRECT' ? 'verified' : 'suspended';
+          n.hidden = false;
+          break;
+        }
+        if (isOptimizationCandidate(n)) {
+"""
+          t=rep(t,old,new,'cascade verdict projection')
+          old="""      case 'KnowledgeRevalidationStarted': {
+        beginKnowledgeRevalidation(Object.values(this.state.nodesById), event.payload.nodeId);
+        break;
+      }
+"""
+          new="""      case 'KnowledgeRevalidationStarted': {
+        if (event.payload.kind === 'cascade') {
+          const n = this.state.nodesById[event.payload.nodeId];
+          if (n) { n.status = 'pending'; n.hidden = false; }
+        } else {
+          beginKnowledgeRevalidation(Object.values(this.state.nodesById), event.payload.nodeId);
+        }
+        break;
+      }
+"""
+          t=rep(t,old,new,'cascade start projection'); write(p,t)
+
+          # Pending-vote snapshot exposes round kind so UI can distinguish initial creator lock from no-initiator cascade.
+          p='src/auth/AuthClient.ts'; t=read(p)
+          t=rep(t,
+          """  policyVersion?: string;
+}
+
+export type KnowledgeRevalidationScope""",
+          """  policyVersion?: string;
+  roundKind?: 'INITIAL' | 'CASCADE';
+}
+
+export type KnowledgeRevalidationScope""",'snapshot round kind type')
+          t=rep(t,
+          """  const closeReason = response.close_reason;
+  if (closeReason !== null && closeReason !== undefined && closeReason !== 'THRESHOLD' && closeReason !== 'TIMEOUT') throw new Error('服务端返回了无效结算原因');
+  return {
+""",
+          """  const closeReason = response.close_reason;
+  if (closeReason !== null && closeReason !== undefined && closeReason !== 'THRESHOLD' && closeReason !== 'TIMEOUT') throw new Error('服务端返回了无效结算原因');
+  const roundKind = response.round_kind;
+  if (roundKind !== null && roundKind !== undefined && roundKind !== 'INITIAL' && roundKind !== 'CASCADE') throw new Error('服务端返回了无效投票轮次类型');
+  return {
+""",'parse round kind')
+          t=rep(t,
+          """    policyVersion: optionalString(response.policy_version),
+  };
+}
+""",
+          """    policyVersion: optionalString(response.policy_version),
+    roundKind: roundKind === 'INITIAL' || roundKind === 'CASCADE' ? roundKind : undefined,
+  };
+}
+""",'return round kind'); write(p,t)
+
+          # Legacy detail voting engine: creator lock is INITIAL-only; cascade has no initiator.
+          p='src/ui/panels/NodeDetailControllerLegacy.ts'; t=read(p)
+          t=rep(t,
+          """    if (this.root.dataset.voteCreator !== '1') {
+      buttons.forEach(button => button.addEventListener('click', () => {
+        const side = button.dataset.voteSide as PendingVoteSide | undefined;
+        if (side === 'AGREE' || side === 'DISAGREE') void this.castPendingVote(nodeId, side, token);
+      }));
+    }
+    await this.refreshPendingVote(nodeId, token);
+""",
+          """    buttons.forEach(button => button.addEventListener('click', () => {
+      const side = button.dataset.voteSide as PendingVoteSide | undefined;
+      if (side === 'AGREE' || side === 'DISAGREE') void this.castPendingVote(nodeId, side, token);
+    }));
+    await this.refreshPendingVote(nodeId, token);
+""",'bind pending vote always')
+          old="""  private applyVoteSnapshot(snapshot: PendingKnowledgeVoteSnapshot, justVoted = false): void {
+    const open = snapshot.verdict === 'PENDING';
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+    for (const button of buttons) {
+      const side = button.dataset.voteSide as PendingVoteSide | undefined;
+      button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
+      button.disabled = !open || snapshot.mySide !== null || this.root.dataset.voteCreator === '1';
+    }
+    const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+    if (!status) return;
+    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    if (!open) {
+      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
+      status.textContent = `${snapshot.verdict === 'CORRECT' ? '已判定正确' : '已判定错误'} · ${reason} · ${tally}`;
+      return;
+    }
+    if (this.root.dataset.voteCreator === '1') {
+      status.textContent = `你是该知识的提交者，不能参与本轮投票 · ${tally}`;
+      return;
+    }
+    if (snapshot.mySide) {
+      status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${tally}`;
+    } else {
+      status.textContent = tally;
+    }
+  }
+"""
+          new="""  private applyVoteSnapshot(snapshot: PendingKnowledgeVoteSnapshot, justVoted = false): void {
+    const open = snapshot.verdict === 'PENDING';
+    const creatorLocked = snapshot.roundKind !== 'CASCADE' && this.root.dataset.voteCreator === '1';
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
+    for (const button of buttons) {
+      const side = button.dataset.voteSide as PendingVoteSide | undefined;
+      button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
+      button.disabled = !open || snapshot.mySide !== null || creatorLocked;
+    }
+    const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+    if (!status) return;
+    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    if (!open) {
+      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
+      const result = snapshot.roundKind === 'CASCADE'
+        ? (snapshot.verdict === 'CORRECT' ? '级联重审通过' : '级联重审未通过，知识已悬置')
+        : (snapshot.verdict === 'CORRECT' ? '已判定正确' : '已判定错误');
+      status.textContent = `${result} · ${reason} · ${tally}`;
+      return;
+    }
+    if (creatorLocked) {
+      status.textContent = `你是该知识的提交者，不能参与本轮投票 · ${tally}`;
+      return;
+    }
+    if (snapshot.mySide) {
+      status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${snapshot.roundKind === 'CASCADE' ? '自动级联重审 · ' : ''}${tally}`;
+    } else {
+      status.textContent = `${snapshot.roundKind === 'CASCADE' ? '自动级联重审 · ' : ''}${tally}`;
+    }
+  }
+"""
+          t=rep(t,old,new,'apply pending snapshot'); write(p,t)
+
+          # Static UI regression continues to inspect the retained full controller; adapter gets its own assertions.
+          p='src/ui/panels/NodeDetailRegression.test.ts'; t=read(p)
+          t=rep(t,
+          """const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
+const css""",
+          """const detail = readFileSync('src/ui/panels/NodeDetailControllerLegacy.ts', 'utf8');
+const lineageDetail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
+const css""",'detail regression source')
+          t=rep(t,
+          """for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
+  assert(detail.includes(action), `edit menu must consolidate ${action}`);
+}
+
+assert(detail.includes(\"node.status === 'pending'\"),""",
+          """for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
+  assert(detail.includes(action), `legacy edit engine must retain ${action}`);
+}
+assert(lineageDetail.includes("edit.textContent = '优化'"), 'V3 detail adapter must relabel edit as optimization');
+assert(lineageDetail.includes("negate.textContent = '提出对立观点'"), 'V3 detail adapter must relabel negate as opposition');
+
+assert(detail.includes(\"node.status === 'pending'\"),""",'detail adapter assertions')
+          t=rep(t,
+          """assert(detail.includes(\"this.root.dataset.voteCreator = '1'\"), 'creator identity must lock the pending vote controls');
+assert(detail.includes('你是该知识的提交者，不能参与本轮投票'), 'creator must see an explicit no-self-vote explanation');
+""",
+          """assert(detail.includes(\"this.root.dataset.voteCreator = '1'\"), 'initial creator identity must still be detected');
+assert(detail.includes("snapshot.roundKind !== 'CASCADE'"), 'creator lock must not apply to automatic cascade rounds');
+assert(detail.includes('你是该知识的提交者，不能参与本轮投票'), 'initial creator must see an explicit no-self-vote explanation');
+assert(detail.includes('自动级联重审'), 'cascade pending UI must identify the automatic revalidation round');
+""",'creator/cascade UI regression'); write(p,t)
+
+          # Rewrite the convergence cascade verifier: module 006 remains the DAG trigger base; 008 is authoritative lifecycle override.
+          Path('scripts/verify-lineage-cascade.mjs').write_text(r'''import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const dag = await readFile('supabase/migrations/202608220005_dependency_dag_projection.sql', 'utf8');
+const baseCascade = await readFile('supabase/migrations/202608220006_current_change_cascade.sql', 'utf8');
+const cascade = await readFile('supabase/migrations/202608220008_cascade_revalidation_rounds.sql', 'utf8');
+
+assert.match(dag, /create table private\.knowledge_dependency_edges/);
+assert.match(dag, /primary key \(premise_node_id, conclusion_node_id\)/);
+assert.match(dag, /knowledge dependency graph must remain acyclic/);
+assert.match(dag, /with recursive downstream\(node_id\)/);
+assert.match(dag, /order by sequence, event_id/);
+assert.doesNotMatch(dag, /order by seq, event_id/);
+assert.match(dag, /create trigger project_knowledge_dependency_event/);
+assert.doesNotMatch(dag, /topic_id|lineage_role|opposition_rank|history_rank/i);
+for (const eventType of ['NodeCreated','NodeEdited','KnowledgeAdded','KnowledgeNodeEdited','KnowledgeNegated','KnowledgeDecomposed','KnowledgeMerged']) {
+  assert.ok(dag.includes(`event_type_value = '${eventType}'`), `${eventType} must be covered by dependency replay`);
+}
+assert.match(dag, /payload,optimization[\s\S]*where conclusion_node_id = target_id/);
+assert.match(dag, /payload,opposition[\s\S]*where conclusion_node_id = target_id/);
+assert.match(dag, /repoint_dependency_sources/);
+
+// 006 is retained only as the already-deployed traversal trigger base; 008 must replace its reduced disputed-only effect.
+assert.match(baseCascade, /with recursive downstream\(node_id\)/);
+assert.match(baseCascade, /KnowledgeVerdictFinalized/);
+assert.match(baseCascade, /KnowledgeRevalidationFinalized/);
+
+assert.match(cascade, /round_kind in \('INITIAL','CASCADE'\)/);
+assert.match(cascade, /initiator_id drop not null/);
+assert.match(cascade, /initiator_side drop not null/);
+assert.match(cascade, /knowledge_pending_votes_round_id_voter_id_key unique\(round_id,voter_id\)/i);
+assert.match(cascade, /start_cascade_knowledge_revalidation/);
+assert.match(cascade, /'kind','cascade'/);
+assert.match(cascade, /'type','KnowledgeRevalidationStarted'/);
+assert.doesNotMatch(cascade, /'status','pending'/, 'cascade start must use a server-only lifecycle event, not a client-writable status command');
+assert.match(cascade, /720 hours/);
+assert.match(cascade, /if agree_count=disagree_count then[\s\S]*'PENDING'/);
+assert.match(cascade, /round_row\.round_kind='CASCADE'[\s\S]*'ORDINARY_ONLY'/);
+assert.match(cascade, /stake_amount numeric\(30,6\):=1\.000000/);
+assert.match(cascade, /round_row\.round_kind='INITIAL' and round_row\.initiator_id=actor/);
+assert.match(cascade, /'roundKind',round_row\.round_kind/);
+assert.match(cascade, /case when decided_verdict='CORRECT' then 'verified' else 'suspended' end/);
+assert.doesNotMatch(cascade, /case when decided_verdict='CORRECT' then 'verified' else 'falsified' end/);
+
+// Traverse current descendants only, recursively and once; lineage history/opposition never become DAG bridges.
+assert.match(cascade, /lm\.role='current'/g);
+assert.match(cascade, /with recursive downstream\(node_id\)/);
+assert.match(cascade, /\n\s*union\n/);
+assert.match(cascade, /where node_id<>new_current_id/);
+assert.match(cascade, /order by node_id/);
+const startIndex=cascade.indexOf('start_cascade_knowledge_revalidation');
+const repointIndex=cascade.indexOf('perform private.repoint_dependency_sources');
+assert.ok(startIndex>=0 && repointIndex>startIndex, 'dependency source repoint must occur after cascade targets are discovered');
+
+// Current-version changes that can propagate remain exactly optimization/opposition/human old-ball reactivation.
+assert.match(cascade, /KnowledgeVerdictFinalized/);
+assert.match(cascade, /proposal_kind in\('optimization','opposition'\)/);
+assert.match(cascade, /KnowledgeRevalidationFinalized/);
+assert.match(cascade, /role_at_start_value='history'/);
+assert.match(cascade, /role_at_start_value='opposition'/);
+assert.match(cascade, /policyVersion.*ORIGINAL_DESIGN_V1/);
+
+// A cascade verdict itself must not be interpreted as another head change or historical viewpoint flip.
+assert.match(cascade, /new\.envelope#>>'\{payload,policyVersion\}'='ORIGINAL_DESIGN_V1' then return new/);
+
+// Human head changes are blocked while the current ball of that topic is in an open cascade round.
+assert.match(cascade, /knowledge topic current head is under cascade revalidation/);
+
+function currentDownstream(edges,currentIds,start){
+  const current=new Set(currentIds),visited=new Set(),queue=[start];
+  while(queue.length){const source=queue.shift();for(const [from,to] of edges){if(from!==source||!current.has(to)||visited.has(to))continue;visited.add(to);queue.push(to);}}
+  visited.delete(start);return [...visited].sort();
+}
+assert.deepEqual(currentDownstream([['A1','B'],['B','C'],['C','D'],['B','D']],['A2','B','C','D'],'A1'),['B','C','D']);
+assert.deepEqual(currentDownstream([['A1','B-old'],['B-old','C'],['A1','B-current'],['B-current','C']],['A2','B-current','C'],'A1'),['B-current','C']);
+console.log('Knowledge Lineage automatic cascade lifecycle checks passed');
+''')
+
+          # 008: use server-only lifecycle start, carry roundKind, and serialize topic head changes against active cascade.
+          p='supabase/migrations/202608220008_cascade_revalidation_rounds.sql'; t=read(p)
+          t=rep(t,
+          """  trigger_actor uuid; request_hash text; verdict_event jsonb; status_event jsonb;
+""",
+          """  trigger_actor uuid; request_hash text; verdict_event jsonb; status_event jsonb;
+""",'noop declaration guard')
+          t=rep(t,
+          """      'requiredVotes',round_row.required_votes,'policyVersion',round_row.policy_version
+""",
+          """      'requiredVotes',round_row.required_votes,'policyVersion',round_row.policy_version,
+      'roundKind',round_row.round_kind
+""",'verdict roundKind')
+          old="""declare
+  next_round integer;
+  snapshot bigint;
+  opened timestamptz:=clock_timestamp();
+  event_envelope jsonb;
+begin
+"""
+          new="""declare
+  next_round integer;
+  snapshot bigint;
+  opened timestamptz:=clock_timestamp();
+  round_id uuid;
+  required integer;
+  event_envelope jsonb;
+begin
+"""
+          t=rep(t,old,new,'cascade start declarations')
+          old="""  insert into public.knowledge_pending_vote_rounds(
+    node_id,round_no,policy_version,initiator_id,initiator_side,
+    eligible_user_snapshot,required_votes,opened_at,deadline,
+    creator_stake_transaction_id,legacy_unfunded,round_kind,source_node_id,source_event_id
+  ) values(
+    target_node_id,next_round,'ORIGINAL_DESIGN_V1',null,null,
+    snapshot,public.pending_vote_required_for_snapshot(snapshot),opened,opened+interval '720 hours',
+    null,true,'CASCADE',source_node_id,triggering_event_id
+  );
+
+  event_envelope:=jsonb_build_object(
+    'id','cascade-revalidation:'||triggering_event_id||':'||target_node_id,
+    'type','KnowledgeStatusChanged','scope','public','schemaVersion',1,
+    'timestamp',floor(extract(epoch from clock_timestamp())*1000)::bigint,
+    'payload',jsonb_build_object('edit',jsonb_build_object(
+      'kind','status','nodeId',target_node_id,'status','pending','causeNodeId',source_node_id
+    ))
+  );
+  insert into public.public_knowledge_events(event_id,schema_version,event_type,envelope,actor_id)
+  values(event_envelope->>'id',1,'KnowledgeStatusChanged',event_envelope,triggering_actor)
+"""
+          new="""  required:=public.pending_vote_required_for_snapshot(snapshot);
+  insert into public.knowledge_pending_vote_rounds(
+    node_id,round_no,policy_version,initiator_id,initiator_side,
+    eligible_user_snapshot,required_votes,opened_at,deadline,
+    creator_stake_transaction_id,legacy_unfunded,round_kind,source_node_id,source_event_id
+  ) values(
+    target_node_id,next_round,'ORIGINAL_DESIGN_V1',null,null,
+    snapshot,required,opened,opened+interval '720 hours',
+    null,true,'CASCADE',source_node_id,triggering_event_id
+  ) returning id into round_id;
+
+  event_envelope:=jsonb_build_object(
+    'id','cascade-revalidation-start:'||round_id::text,
+    'type','KnowledgeRevalidationStarted','scope','public','schemaVersion',1,
+    'timestamp',floor(extract(epoch from clock_timestamp())*1000)::bigint,
+    'payload',jsonb_build_object(
+      'kind','cascade','roundId',round_id::text,'nodeId',target_node_id,
+      'sourceNodeId',source_node_id,'requiredVotes',required,
+      'deadline',(opened+interval '720 hours')::text,'policyVersion','ORIGINAL_DESIGN_V1'
+    )
+  );
+  insert into public.public_knowledge_events(event_id,schema_version,event_type,envelope,actor_id)
+  values(event_envelope->>'id',1,'KnowledgeRevalidationStarted',event_envelope,triggering_actor)
+"""
+          t=rep(t,old,new,'server only cascade start')
+
+          # Serialize product head changes against an active automatic cascade on that topic's current node.
+          insert_marker="""revoke all on function private.start_cascade_knowledge_revalidation(text,text,text,uuid)
+from public,anon,authenticated;
+
+-- Supersede module 6's reduced"""
+          guard_sql="""revoke all on function private.start_cascade_knowledge_revalidation(text,text,text,uuid)
+from public,anon,authenticated;
+
+create or replace function private.guard_lineage_candidate_insert() returns trigger
+language plpgsql security definer set search_path=private,public,pg_temp
+as $$
+declare topic_value text; target_value text;
+begin
+  if new.event_type <> 'KnowledgeAdded' then return new; end if;
+  if new.envelope#>'{payload,optimization}' is null and new.envelope#>'{payload,opposition}' is null then return new; end if;
+  topic_value:=coalesce(new.envelope#>>'{payload,optimization,topicId}',new.envelope#>>'{payload,opposition,topicId}');
+  target_value:=coalesce(new.envelope#>>'{payload,optimization,targetId}',new.envelope#>>'{payload,opposition,targetId}');
+  if nullif(topic_value,'') is null or nullif(target_value,'') is null then return new; end if;
+  perform pg_advisory_xact_lock(hashtextextended('knowledge-head-change:'||topic_value,0));
+  if exists(select 1 from private.knowledge_revalidation_rounds r where r.topic_id=topic_value and r.verdict='PENDING') then
+    raise exception 'knowledge topic already has an active revalidation round' using errcode='KB409';
+  end if;
+  if exists(select 1 from public.knowledge_pending_vote_rounds r where r.node_id=target_value and r.verdict='PENDING' and r.round_kind='CASCADE') then
+    raise exception 'knowledge topic current head is under cascade revalidation' using errcode='KB409';
+  end if;
+  return new;
+end $$;
+revoke all on function private.guard_lineage_candidate_insert() from public,anon,authenticated;
+
+create or replace function private.guard_revalidation_head_change_insert() returns trigger
+language plpgsql security definer set search_path=private,public,pg_temp
+as $$
+declare current_id text;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('knowledge-head-change:'||new.topic_id,0));
+  if exists(select 1 from private.knowledge_lineage_members m where m.topic_id=new.topic_id and m.role in('candidate-history','candidate-opposition')) then
+    raise exception 'knowledge topic already has a pending head-change candidate' using errcode='KB409';
+  end if;
+  select node_id into current_id from private.knowledge_lineage_members where topic_id=new.topic_id and role='current' limit 1;
+  if current_id is not null and exists(select 1 from public.knowledge_pending_vote_rounds r where r.node_id=current_id and r.verdict='PENDING' and r.round_kind='CASCADE') then
+    raise exception 'knowledge topic current head is under cascade revalidation' using errcode='KB409';
+  end if;
+  return new;
+end $$;
+revoke all on function private.guard_revalidation_head_change_insert() from public,anon,authenticated;
+
+-- Supersede module 6's reduced"""
+          t=rep(t,insert_marker,guard_sql,'cascade head-change guards')
+          write(p,t)
+          PY
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:edit-ui
+      - run: npm run test:knowledge-edits
+      - run: npm run test:vote-verdict
+      - run: npm run test:architecture
+      - run: npm run test:auth
+      - name: Commit verified patch
+        shell: bash
+        run: |
+          rm .github/workflows/temp-cascade-convergence.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/event/Event.ts src/event/EventValidation.ts src/projection/GraphProjection.ts src/auth/AuthClient.ts src/ui/panels/NodeDetailControllerLegacy.ts src/ui/panels/NodeDetailRegression.test.ts scripts/verify-lineage-cascade.mjs supabase/migrations/202608220008_cascade_revalidation_rounds.sql .github/workflows/temp-cascade-convergence.yml
+          git commit -m 'Complete automatic cascade revalidation lifecycle'
+          git push origin HEAD:fix/lineage-v3-spec-convergence
