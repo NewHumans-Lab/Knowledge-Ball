@@ -2,6 +2,7 @@ import type { DomainEvent } from './Event';
 import type { GraphState } from '../state/GraphState';
 import { topicIdFor } from '../domain/KnowledgeLineage';
 import { validateOptimizationProposal } from '../domain/KnowledgeOptimization';
+import { validateOppositionProposal } from '../domain/KnowledgeOpposition';
 import {
   validateKnowledgeEdit,
   type ProtocolNode,
@@ -31,11 +32,17 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
       errors.push(`${event.type} 必须携带 ${expected} 编辑载荷`);
     }
   }
-  if (event.type === 'KnowledgeAdded' && event.payload.optimization) {
-    if (!event.payload.optimization.targetId?.trim() || !event.payload.optimization.topicId?.trim()) {
-      errors.push('优化事件必须携带 targetId 和 topicId');
+  if (event.type === 'KnowledgeAdded') {
+    const { optimization, opposition } = event.payload;
+    if (optimization && opposition) errors.push('KnowledgeAdded 不能同时声明优化和否定候选');
+    if (optimization) {
+      if (!optimization.targetId?.trim() || !optimization.topicId?.trim()) errors.push('优化事件必须携带 targetId 和 topicId');
+      if (event.payload.edit.mode !== 'atomic') errors.push('优化候选必须作为单一不可变知识球提交');
     }
-    if (event.payload.edit.mode !== 'atomic') errors.push('优化候选必须作为单一不可变知识球提交');
+    if (opposition) {
+      if (!opposition.targetId?.trim() || !opposition.topicId?.trim()) errors.push('否定事件必须携带 targetId 和 topicId');
+      if (event.payload.edit.mode !== 'atomic') errors.push('否定候选必须作为单一不可变知识球提交');
+    }
   }
   if (event.type === 'KnowledgeVerdictFinalized') {
     const p = event.payload;
@@ -93,12 +100,35 @@ function validateOptimizationEvent(event: Extract<DomainEvent, { type: 'Knowledg
   return errors;
 }
 
+function validateOppositionEvent(event: Extract<DomainEvent, { type: 'KnowledgeAdded' }>, state: GraphState): string[] {
+  const opposition = event.payload.opposition;
+  if (!opposition) return [];
+  if (event.payload.edit.mode !== 'atomic') return ['否定候选必须作为单一不可变知识球提交'];
+
+  const candidate = event.payload.edit.node;
+  const errors = validateOppositionProposal(Object.values(state.nodesById), {
+    targetId: opposition.targetId,
+    candidateId: candidate.id,
+    title: candidate.title,
+    reasoning: candidate.reasoning,
+  });
+  const target = state.nodesById[opposition.targetId];
+  if (!target) return errors;
+
+  if (opposition.topicId !== topicIdFor(target)) errors.push('否定事件 topicId 与当前目标所属主题不一致');
+  if (candidate.type !== target.type) errors.push('否定表单只允许名字、层级和内容，不允许偷偷改变节点类型');
+  if (candidate.logicRuleId !== target.logicRuleId) errors.push('否定表单不能偷偷改变原节点的逻辑规则身份');
+  if (!event.payload.declaredLayers?.[candidate.id]) errors.push('否定候选必须显式声明第一/第二/第三层');
+  return errors;
+}
+
 export function validateDomainEventAgainstState(event: DomainEvent, state: GraphState): string[] {
   const errors = validateDomainEventEnvelope(event);
   if (errors.length) return errors;
   switch (event.type) {
     case 'KnowledgeAdded':
       if (event.payload.optimization) return validateOptimizationEvent(event, state);
+      if (event.payload.opposition) return validateOppositionEvent(event, state);
       return validateKnowledgeEdit(protocolNodes(state), event.payload.edit);
     case 'KnowledgeNegated':
     case 'KnowledgeDecomposed':
