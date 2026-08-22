@@ -37,10 +37,23 @@ import type {
   NegateEdit,
 } from '../protocol/KnowledgeEditingProtocol';
 
+export interface KnowledgeOptimizationMetadata {
+  /** Current knowledge ball that this immutable candidate was created to improve. */
+  targetId: string;
+  /** Stable topic identity copied from the target at submission time. */
+  topicId: string;
+}
+
 export type KnowledgeAddedEvent = EventEnvelope<'KnowledgeAdded', {
   edit: AddEdit;
   /** Explicit layer declarations for nodes created by this event. Missing entries are legacy-compatible. */
   declaredLayers?: Record<string, UserKnowledgeLayer>;
+  /**
+   * Optional version-lineage intent. Keeping the wire event as KnowledgeAdded
+   * preserves the existing public event stream and V2 first-round funding path;
+   * the optimization metadata changes lineage semantics, not event ownership.
+   */
+  optimization?: KnowledgeOptimizationMetadata;
 }>;
 export type KnowledgeNegatedEvent = EventEnvelope<'KnowledgeNegated', { edit: NegateEdit }>;
 export type KnowledgeDecomposedEvent = EventEnvelope<'KnowledgeDecomposed', { edit: DecomposeEdit }>;
