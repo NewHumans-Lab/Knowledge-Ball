@@ -147,7 +147,12 @@ export function validateDomainEventAgainstState(event: DomainEvent, state: Graph
     case 'KnowledgeVerdictFinalized': {
       const target = state.nodesById[event.payload.nodeId];
       if (!target) return [`投票结算目标不存在: ${event.payload.nodeId}`];
-      if (target.status !== 'pending') return [`只有待验证节点可以接收首轮投票结算: ${event.payload.nodeId}`];
+      const cascadeIntermediate = event.payload.policyVersion === 'ORIGINAL_DESIGN_V1'
+        && target.status === 'disputed'
+        && lineageRoleFor(target) === 'current';
+      if (target.status !== 'pending' && !cascadeIntermediate) {
+        return [`只有待验证节点或正在自动级联重审的当前节点可以接收投票结算: ${event.payload.nodeId}`];
+      }
       return [];
     }
     case 'KnowledgeRevalidationStarted': {
