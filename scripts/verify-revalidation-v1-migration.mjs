@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const sql = await readFile('supabase/migrations/202608220001_lineage_server_projection_revalidation_v1.sql', 'utf8');
+const hardening = await readFile('supabase/migrations/202608220002_revalidation_rpc_hardening.sql', 'utf8');
 
 // Modules 1-3 must have a server-side projection before revalidation can trust
 // history/opposition roles supplied by a browser.
@@ -73,6 +74,19 @@ assert.match(sql, /KnowledgeRevalidationFinalized/);
 assert.match(sql, /set revalidating=true/);
 assert.match(sql, /lineage_reactivate_history/);
 assert.match(sql, /lineage_reactivate_opposition/);
-assert.match(sql, /select '202608220001'::text/);
+
+// Hosted advisor follow-up: the three new FK access paths are indexed, and
+// initiating an authoritative head change requires the same permanent-account
+// boundary as append_public_knowledge_events. Ordinary voting is intentionally
+// not forced through that registration gate here.
+assert.match(hardening, /knowledge_revalidation_rounds_node/);
+assert.match(hardening, /knowledge_revalidation_rounds_initiator/);
+assert.match(hardening, /knowledge_revalidation_votes_voter/);
+assert.match(hardening, /create trigger require_registered_revalidation_initiator/);
+assert.match(hardening, /p\.password_login_enabled/);
+assert.match(hardening, /u\.is_anonymous is false/);
+assert.match(hardening, /new\.initiator_id is distinct from auth\.uid\(\)/);
+assert.match(hardening, /请先注册或登录账户后再发起重新验证/);
+assert.match(hardening, /select '202608220002'::text/);
 
 console.log('Knowledge Lineage V3 server projection and ORIGINAL_DESIGN_V1 revalidation migration checks passed');
