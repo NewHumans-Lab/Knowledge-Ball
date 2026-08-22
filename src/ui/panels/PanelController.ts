@@ -49,7 +49,9 @@ export class PanelController extends LegacyPanelController {
       .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 
-    this.bridge.panelTitle.textContent = optimization ? `优化：${node.title}` : `对立观点：${node.title}`;
+    this.bridge.panelTitle.textContent = optimization
+      ? `编辑节点 · 优化：${node.title}`
+      : `编辑节点 · 对立观点：${node.title}`;
     this.bridge.panelBody.innerHTML = `
       <div class="difference-card"><b>${optimization ? 'IMMUTABLE OPTIMIZATION' : 'IMMUTABLE OPPOSITION'}</b><br>${optimization
         ? '提交会生成新的灰色闪烁候选球；最终判定前当前球保持不变。'
