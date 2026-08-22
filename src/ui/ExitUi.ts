@@ -25,7 +25,7 @@ function configureExitButton(spec: ExitSpec): void {
 function panelReturnControl(): HTMLButtonElement | null {
   const actions = document.getElementById('panelActions');
   if (!actions) return null;
-  return actions.querySelector<HTMLButtonElement>('#cancelEdit, #cancelOperation');
+  return actions.querySelector<HTMLButtonElement>('#cancelEdit, #cancelOperation, #cancelLineageCandidate');
 }
 
 function updatePanelExitLabel(): void {
@@ -40,9 +40,10 @@ function handlePanelExit(event: MouseEvent): void {
   const back = panelReturnControl();
   if (!back) return;
 
-  // Edit / negate / decompose / merge are subviews of one knowledge node.
-  // Their existing cancel action already knows how to rebuild the correct node
-  // detail. Reuse that path rather than teaching the exit control business logic.
+  // Edit / lineage candidate / negate / decompose / merge are subviews of one
+  // knowledge node. Their cancel action already knows how to rebuild the
+  // correct node detail. Reuse that path rather than teaching the exit control
+  // protocol/domain logic.
   event.preventDefault();
   event.stopImmediatePropagation();
   back.click();

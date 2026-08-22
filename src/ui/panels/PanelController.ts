@@ -46,13 +46,10 @@ export interface CreateNodePayload {
   author?: string;
 }
 
-export interface NegateNodePayload {
-  counterexampleIds: string[];
-  correctedReasoning?: {
-    title: string;
-    reasoning: string;
-    logicRuleId: string;
-  };
+export interface LineageCandidatePayload {
+  title: string;
+  layer: UserKnowledgeLayer;
+  description: string;
 }
 
 export interface DecomposeNodePayload {
@@ -75,20 +72,13 @@ export interface MergeTheoryPayload {
   mergedConclusion: { title: string; type: KnowledgeNodeType; description: string };
 }
 
-export interface EditNodePayload {
-  title: string;
-  type: KnowledgeNodeType;
-  reasoning: string;
-  premises?: string[];
-}
-
 export interface PanelControllerCallbacks {
   getNodes: () => PanelNodeSummary[];
   getNodeById: (id: string) => PanelNodeSummary | null;
 
   onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
-  onEditNode: (id: string, payload: EditNodePayload) => Promise<void> | void;
-  onNegateNode: (id: string, payload: NegateNodePayload) => Promise<void> | void;
+  onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
+  onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
   onMergeDefinitions: (payload: MergeDefinitionPayload) => Promise<void> | void;
   onMergeTheories: (payload: MergeTheoryPayload) => Promise<void> | void;
@@ -147,6 +137,8 @@ export interface PanelControllerElements {
   toast?: HTMLElement;
 }
 
+type LineageCandidateKind = 'optimization' | 'opposition';
+
 function escapeHtml(input: string): string {
   return input
     .replaceAll('&', '&amp;')
@@ -170,8 +162,8 @@ export class PanelController {
   private readonly getNodeById: (id: string) => PanelNodeSummary | null;
 
   private readonly onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
-  private readonly onEditNode: (id: string, payload: EditNodePayload) => Promise<void> | void;
-  private readonly onNegateNode: (id: string, payload: NegateNodePayload) => Promise<void> | void;
+  private readonly onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
+  private readonly onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
   private readonly onMergeDefinitions: (payload: MergeDefinitionPayload) => Promise<void> | void;
   private readonly onMergeTheories: (payload: MergeTheoryPayload) => Promise<void> | void;
@@ -227,7 +219,6 @@ export class PanelController {
   private readonly toast?: HTMLElement;
 
   private selectedId: string | null = null;
-  private editMode = false;
   private prefillPremise: string | null = null;
   private toastTimer: number | null = null;
 
@@ -236,8 +227,8 @@ export class PanelController {
     this.getNodeById = options.getNodeById;
 
     this.onCreateNode = options.onCreateNode;
-    this.onEditNode = options.onEditNode;
-    this.onNegateNode = options.onNegateNode;
+    this.onOptimizeNode = options.onOptimizeNode;
+    this.onOpposeNode = options.onOpposeNode;
     this.onDecomposeNode = options.onDecomposeNode;
     this.onMergeDefinitions = options.onMergeDefinitions;
     this.onMergeTheories = options.onMergeTheories;
@@ -342,7 +333,6 @@ export class PanelController {
     if (!node) return;
 
     this.selectedId = id;
-    this.editMode = false;
     this.onOverlayVisibilityChange?.(true);
     this.panel.classList.add('open');
     this.panelTitle.textContent = node.title;
@@ -445,14 +435,14 @@ export class PanelController {
 
     this.panelActions.innerHTML = `
       <div class="action-grid">
-        <button class="btn ghost" id="btnEditNode">Edit · 编辑</button>
+        <button class="btn ghost" id="btnEditNode">Optimize · 优化</button>
         <button class="btn ghost" id="btnDeriveNode">Add · 新增</button>
       </div>
       <div class="action-grid">
         ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">Decompose · 分解</button>' : ''}
         ${this.canMerge(node, nodes, byId) ? '<button class="btn ghost" id="btnMerge">Merge · 合并</button>' : ''}
       </div>
-      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Negate · 以 Counterexample 否定</button>` : ''}
+      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Oppose · 提出对立观点</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
       ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
       <div class="note-small">公共知识由服务器确认后进入共享事件流；浏览器只渲染当前内存投影。</div>
@@ -470,12 +460,10 @@ export class PanelController {
     this.panel.classList.remove('open');
     this.onOverlayVisibilityChange?.(false);
     this.selectedId = null;
-    this.editMode = false;
   }
 
   openCreateModal(prefillPremiseId: string | null = null): void {
     this.prefillPremise = prefillPremiseId;
-    this.editMode = false;
     this.modalTitle.textContent = prefillPremiseId ? '基于现有知识提交新节点' : '提交新知识节点';
     this.modalHint.style.display = 'block';
     if (prefillPremiseId) {
@@ -653,79 +641,17 @@ export class PanelController {
   }
 
   private bindPanelRuntimeEvents(id: string): void {
-    const editBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
+    const optimizeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
     const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
-    const negateBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
+    const opposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
     const decomposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDecompose');
     const mergeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnMerge');
     const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
     const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
 
-    editBtn?.addEventListener('click', () => {
-      const node = this.getNodeById(id);
-      if (!node) return;
-      this.editMode = true;
-      this.panelTitle.textContent = '编辑节点';
-      const premiseCandidates = this.getNodes().filter(candidate =>
-        candidate.id !== id &&
-        candidate.type !== 'reasoning' &&
-        candidate.type !== 'logic-symbol' &&
-        candidate.status !== 'falsified'
-      );
-      this.panelBody.innerHTML = `
-        <div class="field">
-          <label>结论（标题）</label>
-          <input type="text" id="editTitle" value="${escapeHtml(node.title)}">
-        </div>
-        <div class="field">
-          <label>${node.type === 'reasoning' ? '推理过程' : '知识描述'}</label>
-          <textarea id="editReasoning">${escapeHtml(node.reasoning || '')}</textarea>
-        </div>
-        <div class="field">
-          <label>已记录前提</label>
-          <div class="premise-list">
-            ${premiseCandidates.map(candidate => `
-              <label class="premise-item">
-                <input type="checkbox" data-edit-premise value="${escapeHtml(candidate.id)}" ${node.premises.includes(candidate.id) ? 'checked' : ''}>
-                ${escapeHtml(shortText(candidate.title, 32))}
-              </label>
-            `).join('')}
-          </div>
-          <div class="form-hint">第一层是非推导性的语义 / 基础事实层，不能通过编辑直接添加推理前提；需要推导时请新增第二层知识。</div>
-        </div>
-      `;
-
-      this.panelActions.innerHTML = `
-        <button class="btn primary" id="saveEdit">保存修改</button>
-        <button class="btn ghost" id="cancelEdit">取消</button>
-      `;
-
-      this.panelActions.querySelector<HTMLButtonElement>('#saveEdit')?.addEventListener('click', async () => {
-        const title = (this.panelBody.querySelector<HTMLInputElement>('#editTitle')?.value ?? '').trim() || node.title;
-        const reasoning = (this.panelBody.querySelector<HTMLTextAreaElement>('#editReasoning')?.value ?? '').trim();
-        const premises = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-edit-premise]:checked')).map(input => input.value);
-        if (node.declaredLayer === 'inner' && premises.length > 0) {
-          this.showToast('第一层不能添加推理前提；请保留为静态语义 / 基础事实，或通过新增建立第二层推理。');
-          return;
-        }
-        try {
-          await this.onEditNode(id, { title, type: node.type, reasoning, premises });
-          this.editMode = false;
-          this.showToast('节点已更新；声明层级保持不变');
-          this.openNodePanel(id);
-        } catch (error) {
-          this.showOperationError(error);
-        }
-      });
-
-      this.panelActions.querySelector<HTMLButtonElement>('#cancelEdit')?.addEventListener('click', () => {
-        this.editMode = false;
-        this.openNodePanel(id);
-      });
-    });
-
+    optimizeBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'optimization'));
     deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
-    negateBtn?.addEventListener('click', () => this.openNegateForm(id));
+    opposeBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'opposition'));
     decomposeBtn?.addEventListener('click', () => this.openDecomposeForm(id));
     mergeBtn?.addEventListener('click', () => this.openMergeForm(id));
     resolveBtn?.addEventListener('click', async () => {
@@ -753,6 +679,55 @@ export class PanelController {
         const node = this.getNodeById(id);
         if (node) this.openNodePanel(id);
       });
+    });
+  }
+
+  private openLineageCandidateForm(id: string, kind: LineageCandidateKind): void {
+    const node = this.getNodeById(id);
+    if (!node) return;
+    const optimization = kind === 'optimization';
+    const candidateLayer = node.declaredLayer ?? node.effectiveLayer ?? 'outer';
+    const defaultLayer = isUserKnowledgeLayer(candidateLayer) ? candidateLayer : 'outer';
+
+    this.panelTitle.textContent = optimization
+      ? `编辑节点 · 优化：${node.title}`
+      : `编辑节点 · 对立观点：${node.title}`;
+    this.panelBody.innerHTML = `
+      <div class="difference-card"><b>${optimization ? 'IMMUTABLE OPTIMIZATION' : 'IMMUTABLE OPPOSITION'}</b><br>${optimization
+        ? '提交会生成新的灰色闪烁候选球；最终判定前当前球保持不变。'
+        : '提交会生成新的红色闪烁候选球；最终判定前当前球不会被证伪、隐藏或换边。'}</div>
+      <div class="field"><label>名称</label><input type="text" id="lineageCandidateTitle" value="${optimization ? escapeHtml(node.title) : ''}" placeholder="${optimization ? '可保留当前名称，也可改为新的唯一名称' : '请输入新的唯一名称'}"></div>
+      <div class="field"><label>知识层级</label><select id="lineageCandidateLayer">
+        <option value="inner" ${defaultLayer === 'inner' ? 'selected' : ''}>第一层 · 语义与基础事实</option>
+        <option value="middle" ${defaultLayer === 'middle' ? 'selected' : ''}>第二层 · 严谨推理</option>
+        <option value="outer" ${defaultLayer === 'outer' ? 'selected' : ''}>第三层 · 概率与争议</option>
+      </select></div>
+      <div class="field"><label>内容</label><textarea id="lineageCandidateDescription" placeholder="填写新的完整内容">${optimization ? escapeHtml(node.reasoning || '') : ''}</textarea></div>
+      <p class="note-small" style="text-align:left;">节点类型、前提关系和逻辑规则身份全部沿用当前球。这里仅允许修改名称、层级和内容。</p>
+    `;
+    this.panelActions.innerHTML = `
+      <button class="btn ${optimization ? 'primary' : 'danger'}" id="submitLineageCandidate">${optimization ? '提交优化候选' : '提交对立候选'}</button>
+      <button class="btn ghost" id="cancelLineageCandidate">取消</button>
+    `;
+
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelLineageCandidate')?.addEventListener('click', () => this.openNodePanel(id));
+    this.panelActions.querySelector<HTMLButtonElement>('#submitLineageCandidate')?.addEventListener('click', async () => {
+      const title = this.panelBody.querySelector<HTMLInputElement>('#lineageCandidateTitle')?.value.trim() ?? '';
+      const layerValue = this.panelBody.querySelector<HTMLSelectElement>('#lineageCandidateLayer')?.value ?? '';
+      const description = this.panelBody.querySelector<HTMLTextAreaElement>('#lineageCandidateDescription')?.value.trim() ?? '';
+      if (!title || !description || !isUserKnowledgeLayer(layerValue)) {
+        this.showToast('请完整填写名称、知识层级和内容。');
+        return;
+      }
+      const payload: LineageCandidatePayload = { title, layer: layerValue, description };
+      try {
+        if (optimization) await this.onOptimizeNode(id, payload);
+        else await this.onOpposeNode(id, payload);
+        this.showToast(optimization ? '优化候选已提交，等待验证' : '对立候选已提交，等待验证');
+        this.closeNodePanel();
+      } catch (error) {
+        this.showOperationError(error);
+      }
     });
   }
 
@@ -822,78 +797,6 @@ export class PanelController {
   private showOperationError(error: unknown): void {
     console.error('[Knowledge-Ball] knowledge edit failed:', error);
     this.showToast(error instanceof Error ? `操作失败：${error.message}` : '操作失败');
-  }
-
-  private openNegateForm(id: string): void {
-    const node = this.getNodeById(id);
-    if (!node) return;
-    const candidates = this.getNodes().filter(candidate => candidate.id !== id && candidate.type !== 'reasoning');
-    const correction = node.type === 'reasoning'
-      ? `
-        <div class="field">
-          <label>正确推理过程标题</label>
-          <input type="text" id="negateCorrectedTitle" placeholder="必须提供替换推理">
-        </div>
-        <div class="field">
-          <label>正确推理过程</label>
-          <textarea id="negateCorrectedReasoning" placeholder="完整写出修正后的推理步骤"></textarea>
-        </div>
-        <div class="field">
-          <label>正确推理使用的逻辑符号</label>
-          <select id="negateCorrectedLogic">${this.logicRuleOptions(node.logicRuleId)}</select>
-        </div>
-      `
-      : '';
-
-    this.panelTitle.textContent = `否定：${node.title}`;
-    this.panelBody.innerHTML = `
-      <div class="counterexample-callout"><b>COUNTEREXAMPLE → TARGET</b><br>反例将沿真实依赖关系抵达目标命题；目标与下游路径会减弱，而不会被爆炸式删除。</div>
-      <div class="field">
-        <label>反例知识节点（至少一个）</label>
-        <div class="premise-list">
-          ${candidates.map(candidate => `
-            <label class="premise-item">
-              <input type="checkbox" data-counterexample value="${escapeHtml(candidate.id)}">
-              ${escapeHtml(shortText(candidate.title, 34))}
-            </label>
-          `).join('') || '<div class="chip empty">没有可用反例，请先增加反例知识节点</div>'}
-        </div>
-      </div>
-      ${correction}
-      <p class="note-small" style="text-align:left;">提交后目标不会删除，只会进入已证伪并默认隐藏；其反例以后被否定时，目标才会重新进入等待验证。</p>
-    `;
-    this.panelActions.innerHTML = `
-      <button class="btn danger" id="submitNegate">验证反例并否定</button>
-      <button class="btn ghost" id="cancelOperation">取消</button>
-    `;
-
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(id));
-    this.panelActions.querySelector<HTMLButtonElement>('#submitNegate')?.addEventListener('click', async () => {
-      const counterexampleIds = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-counterexample]:checked'))
-        .map(input => input.value);
-      if (counterexampleIds.length === 0) {
-        this.showToast('否定必须选择至少一个反例知识节点。');
-        return;
-      }
-      const correctedReasoning = node.type === 'reasoning'
-        ? {
-            title: safeText(this.panelBody.querySelector<HTMLInputElement>('#negateCorrectedTitle')?.value),
-            reasoning: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#negateCorrectedReasoning')?.value),
-            logicRuleId: safeText(this.panelBody.querySelector<HTMLSelectElement>('#negateCorrectedLogic')?.value),
-          }
-        : undefined;
-      if (correctedReasoning && (!correctedReasoning.title || !correctedReasoning.reasoning || !correctedReasoning.logicRuleId)) {
-        this.showToast('否定错误推理时，必须完整填写正确推理及其逻辑符号。');
-        return;
-      }
-      try {
-        await this.onNegateNode(id, { counterexampleIds, correctedReasoning });
-        this.showToast('否定事件已提交；原节点保留并默认隐藏');
-        this.closeNodePanel();
-      } catch (error) {
-        this.showOperationError(error);
-      }
-    });
   }
 
   private openDecomposeForm(id: string): void {

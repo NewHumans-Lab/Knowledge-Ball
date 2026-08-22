@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 
 const html = readFileSync('index.html', 'utf8');
@@ -8,6 +8,9 @@ const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const systemCore = readFileSync('src/ui/systemCore/SystemCoreContent.ts', 'utf8');
 const layerPolicy = readFileSync('src/domain/KnowledgeLayerPolicy.ts', 'utf8');
 const classificationMigration = readFileSync('supabase/migrations/202608200002_three_layer_classification_contract.sql', 'utf8');
+
+assert.equal(existsSync('src/ui/LineageIntentBridge.ts'), false, 'lineage business intent must not travel through encoded strings');
+assert.equal(existsSync('src/ui/panels/PanelControllerLegacy.ts'), false, 'there must be one PanelController implementation');
 
 assert(!html.includes('fLogicConfirm'), 'legacy logic-law confirmation checkbox must be removed');
 assert(!html.includes('我确认该结论及推理不违反逻辑三大基本定律'), 'legacy self-attestation text must be removed');
@@ -28,7 +31,7 @@ assert(html.includes('<option value="outer">第三层 · 概率与争议</option
 assert(!html.includes('<option value="fact">事实 Fact</option>'), 'submission form must not ask users for internal fine-grained node types');
 assert(!html.includes('<option value="theorem">定理 Theorem</option>'), 'submission form must not ask users for internal fine-grained node types');
 assert(!html.includes('<option value="prediction">预测 Prediction</option>'), 'submission form must not ask users for internal fine-grained node types');
-assert(!panel.includes('id="editType"'), 'edit form must not expose an internal node-type field');
+assert(!panel.includes('id="editType"'), 'optimization form must not expose an internal node-type field');
 assert(!panel.includes('id="middleType"'), 'decomposition form must not ask users to classify intermediate conclusions');
 assert(!panel.includes('id="mergeConclusionType"'), 'merge form must not display a fine-grained conclusion type selector');
 
@@ -45,20 +48,32 @@ assert(
   'first-layer submission must reject inferential premises',
 );
 assert(panel.includes('选择推理前提后已切换到第二层'), 'adding an inference premise in the create UI must move creation to the second layer');
-assert(panel.includes("node.declaredLayer === 'inner' && premises.length > 0"), 'editing must not silently turn a first-layer node into a reasoning node');
 assert(!panel.includes('已验证前提，因此按协议自动进入第二层'), 'verified-premise state must not silently rewrite semantic classification');
 assert(!panel.includes('理论必须选择一个已有逻辑符号'), 'logic symbols must not remain a mandatory submission gate');
 
-for (const action of ['openNegateForm', 'openDecomposeForm', 'openDefinitionMergeForm', 'openTheoryMergeForm']) {
-  assert(panel.includes(action), `panel is missing the ${action} operation flow`);
+for (const action of ['openDecomposeForm', 'openDefinitionMergeForm', 'openTheoryMergeForm']) {
+  assert(panel.includes(action), `single controller is missing the ${action} flow`);
 }
-assert(panel.includes('反例知识节点（至少一个）'), 'negation UI must collect counterexamples');
+assert(!panel.includes('openEditForm'), 'current-node edits must not retain an in-place edit subview');
+assert(!panel.includes('openNegateForm'), 'current-node opposition must not retain the legacy immediate-negation subview');
+assert(!panel.includes('反例知识节点（至少一个）'), 'current product UI must not expose the legacy immediate-negation form');
 assert(panel.includes('原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论'), 'decomposition UI must show the complete chain contract');
 assert(panel.includes('推理过程语义等价标识（先检查）'), 'theory merge must check reasoning identity before conclusion identity');
 assert(panel.includes('type: conclusionType'), 'decomposition must derive internal fine type from the existing conclusion rather than ask the user');
 assert(panel.includes('type: node.type'), 'theory merge must preserve the source fine type internally rather than ask the user');
 
+assert(panel.includes('Optimize · 优化'), 'current-node edit action must be immutable optimization');
+assert(panel.includes('Oppose · 提出对立观点'), 'current-node negate action must be pending opposition');
+assert(panel.includes('IMMUTABLE OPTIMIZATION') && panel.includes('IMMUTABLE OPPOSITION'), 'single controller must expose both immutable candidate forms');
+assert(panel.includes('节点类型、前提关系和逻辑规则身份全部沿用当前球'), 'lineage candidate form must not expose structural mutation');
+assert(panel.includes('onOptimizeNode') && panel.includes('onOpposeNode'), 'candidate submission must use typed callbacks');
+assert(!panel.includes('encodeLineageIntent') && !panel.includes('decodeLineageIntent') && !panel.includes('KBL3:'), 'candidate submission must not encode commands in user text');
+
 assert(app.includes('executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers)'), 'new knowledge writes must carry layer declarations through the unified server-first boundary');
+assert(app.includes('executeKnowledgeOptimization(store, projection'), 'optimization UI must call the structured optimization command directly');
+assert(app.includes('executeKnowledgeOpposition(store, projection'), 'opposition UI must call the structured opposition command directly');
+assert(app.includes('onOptimizeNode: optimizeKnowledgeNode') && app.includes('onOpposeNode: opposeKnowledgeNode'), 'application wiring must preserve typed lineage intent end to end');
+assert(!app.includes('cmdEditNode') && !app.includes('LineageIntentBridge'), 'application must not route head changes through legacy edit/string compatibility');
 assert(app.includes('effectiveLayerForNode(dn, projection.state.nodesById)'), 'application must calculate scene layer from the canonical domain policy');
 assert(app.includes('layoutNodes = domainNodes.map'), 'all projected nodes must receive layout slots before visibility filtering');
 assert(app.includes('applyUniformLayerLayout(layoutNodes)'), 'application must use the canonical uniform layer layout');
