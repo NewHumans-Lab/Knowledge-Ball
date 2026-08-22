@@ -288,7 +288,9 @@ end $$;
 revoke all on function private.project_dependency_event(text, jsonb)
 from public, anon, authenticated;
 
--- Reconstruct the current effective premise DAG from the append-only history.
+-- Reconstruct the current effective premise DAG from the append-only hosted
+-- event order. The database column is `sequence`; DomainEvent `seq` is only a
+-- client-side alias and must never be referenced by SQL migrations.
 do $$
 declare
   item record;
@@ -296,7 +298,7 @@ begin
   for item in
     select event_type, envelope
     from public.public_knowledge_events
-    order by seq, event_id
+    order by sequence, event_id
   loop
     perform private.project_dependency_event(item.event_type, item.envelope);
   end loop;
