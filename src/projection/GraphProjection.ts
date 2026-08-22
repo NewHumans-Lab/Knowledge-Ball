@@ -226,11 +226,6 @@ export class GraphProjection implements Projection<GraphState> {
         finalizeKnowledgeRevalidation(Object.values(this.state.nodesById), event.payload.nodeId, event.payload.verdict);
         break;
       }
-      case 'KnowledgeCascadeRevalidationStarted': {
-        const n = this.state.nodesById[event.payload.nodeId];
-        if (n && n.status !== 'falsified' && n.status !== 'suspended') n.status = 'disputed';
-        break;
-      }
       case 'KnowledgeNodeEdited': {
         const n = this.state.nodesById[event.payload.edit.nodeId];
         if (n) {
