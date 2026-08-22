@@ -115,7 +115,7 @@ assert(/\.group\.scale\.setScalar\(pulse\.scale\)/.test(sceneSource),'pending st
 assert(/baseShellOpacity\s*\*\s*pulse\.opacityFactor/.test(sceneSource),'pending pulse must fade the node shell');
 assert(/basePointOpacity\s*\*\s*pulse\.opacityFactor/.test(sceneSource),'pending pulse must fade the semantic color point');
 assert(/baseDotOpacity\s*\*\s*pulse\.opacityFactor/.test(sceneSource),'pending pulse must fade the mastery dot proportionally without changing mastery semantics');
-assert(/const\s+pending\s*=\s*!core\s*&&\s*n\.status\s*===\s*'pending'/.test(sceneSource),'only non-core pending nodes may receive the pending pulse');
+assert(/const\s+pending\s*=\s*!core\s*&&\s*nodeShouldPulse\(n\)/.test(sceneSource),'only non-core pending or revalidating nodes may receive the pulse');
 assert(sceneSource.includes('new THREE.MeshMatcapMaterial'),'ordinary semantic node bodies must use unlit matcap shading so surface depth cannot reintroduce sun-distance darkening');
 assert(/const\s+nodeMatcap\s*=/.test(sceneSource),'semantic sphere depth must come from one shared neutral runtime matcap');
 assert(/nodeMatcapTex\s*=\s*nodeMatcap\(\)/.test(sceneSource),'ordinary nodes must allocate exactly one shared neutral matcap texture per scene');

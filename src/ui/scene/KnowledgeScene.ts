@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { KnowledgeLineageMeta } from '../../domain/KnowledgeLineage';
 import type { KnowledgeLayer } from '../../domain/KnowledgeLayerPolicy';
 import { isSystemCoreNodeId } from '../../domain/KnowledgeLayerPolicy';
 import {
@@ -32,6 +33,13 @@ import {
   TYPE_COLOR,
 } from '../config/KnowledgeUiConfig';
 import {
+  edgeVisibleInKnowledgeMode,
+  lineageColorForNode,
+  nodeShouldPulse,
+  nodeVisibleInKnowledgeMode,
+  type KnowledgeVisibilityMode,
+} from '../KnowledgeLineageView';
+import {
   createSystemCoreSceneNodes,
   openSystemCoreCard,
 } from '../systemCore/SystemCoreContent';
@@ -52,6 +60,8 @@ export interface KnowledgeSceneNode {
   logicRuleId?: string;
   aliases?: string[];
   semanticKey?: string;
+  hidden?: boolean;
+  lineage?: KnowledgeLineageMeta;
   twinGroup?: string;
   sharedTitle?: string;
   declaredLayer?: KnowledgeLayer;
@@ -85,6 +95,8 @@ export interface KnowledgeSceneRuntime {
   resize: () => void;
   setLabelBrightness: (n: number) => void;
   setNodeRadius: (n: number) => void;
+  setVisibilityMode: (mode: KnowledgeVisibilityMode) => void;
+  /** Legacy binary compatibility; the header now uses setVisibilityMode(). */
   setHideUntouched: (enabled: boolean) => void;
   setCascadeDepthLimit: (n: number | null) => void;
   getCameraZ: () => number;
@@ -129,7 +141,9 @@ export function layerForNode(node: Pick<KnowledgeSceneNode, 'id' | 'status' | 't
   return 'middle';
 }
 
-export function colorForNode(node: Pick<KnowledgeSceneNode, 'id' | 'status' | 'type' | 'effectiveLayer'>): number {
+export function colorForNode(node: Pick<KnowledgeSceneNode, 'id' | 'status' | 'type' | 'effectiveLayer' | 'lineage'>): number {
+  const lineageColor = lineageColorForNode(node);
+  if (lineageColor !== null) return lineageColor;
   if (node.status === 'falsified') return NODE_SPECIAL_COLOR.falsified;
   if (node.type === 'reasoning' || node.type === 'logic-symbol') return NODE_SPECIAL_COLOR.structural;
   return NODE_LAYER_COLOR[layerForNode(node)];
@@ -203,6 +217,7 @@ export function shouldRenderEdge(fromId: string, toId: string) {
   return !isCoreNodeId(fromId) && !isCoreNodeId(toId);
 }
 
+/** Legacy exported binary helpers retained for regression compatibility. */
 export function nodeVisibleInPersonalMode(node: PersonalVisibilityNode, hideUntouched: boolean): boolean {
   return isCoreNodeId(node.id) || !hideUntouched || node.mastery !== 'none';
 }
@@ -270,7 +285,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let frameTimer: number | null = null;
   let labelBrightness = 1;
   let nodeRadiusMM = 7.2;
-  let hideUntouched = false;
+  let visibilityMode: KnowledgeVisibilityMode = 'current';
   let selectedId: string | null = null;
   let detailNodeId: string | null = null;
   let draggedNodeId: string | null = null;
@@ -495,7 +510,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const activeNodesForRender = (nodes: KnowledgeSceneNode[]) => {
-    const eligible = nodes.filter(node => nodeVisibleInPersonalMode(node, hideUntouched));
+    const eligible = nodes.filter(node => nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(node.id)));
     if (!mobilePerformance || eligible.length <= MOBILE_ACTIVE_NODE_TARGET) {
       mobileActiveNodeIds = new Set(eligible.map(node => node.id));
       return eligible;
@@ -573,7 +588,11 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const byId = new Map(getNodes().map(node => [node.id, node] as const));
     for (const [id, record] of Object.entries(nodeMap)) {
       const node = byId.get(id);
-      const visible = Boolean(node && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom)) && nodeVisibleInPersonalMode(node, hideUntouched));
+      const visible = Boolean(
+        node
+          && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom))
+          && nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(id)),
+      );
       record.group.visible = visible;
       if (labelMap[id]) labelMap[id].style.display = visible && detailNodeId !== id ? '' : 'none';
     }
@@ -581,11 +600,12 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const endpoints = edge.userData.edgeEndpoints as [string, string] | undefined;
       edge.visible = Boolean(
         endpoints
-          && edgeVisibleInPersonalMode(
+          && edgeVisibleInKnowledgeMode(
             byId.get(endpoints[0]),
             byId.get(endpoints[1]),
-            hideUntouched,
+            visibilityMode,
             edge.userData.geometryVisible === true,
+            isCoreNodeId,
           ),
       );
     });
@@ -605,7 +625,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       record.group.position.copy(n.pos!);
       record.group.scale.setScalar(1);
       const core = isCoreNodeId(n.id);
-      const pending = !core && n.status === 'pending';
+      const pending = !core && nodeShouldPulse(n);
       const radius = core ? SUN_RADIUS_MM : nodeRadiusForType(n.type, nodeRadiusMM);
       const color = colorFor(n);
       const compensation = core ? 1 : ordinaryNodeCompensationScale(graphZoom);
@@ -1000,8 +1020,13 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       nodeRadiusMM = THREE.MathUtils.clamp(n, .1, 30);
       largeGraphDirty = true;
     },
+    setVisibilityMode: mode => {
+      visibilityMode = mode;
+      applyVisibility();
+      largeGraphDirty = true;
+    },
     setHideUntouched: enabled => {
-      hideUntouched = enabled;
+      visibilityMode = enabled ? 'personal' : 'current';
       applyVisibility();
       largeGraphDirty = true;
     },
