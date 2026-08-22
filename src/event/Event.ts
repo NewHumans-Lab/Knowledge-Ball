@@ -4,11 +4,12 @@ export type { Mastery, NodeType } from '../domain/KnowledgeModel';
 
 export type NodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 export type KnowledgeVerdictPolicyVersion = 'ORIGINAL_DESIGN_V1' | 'ORIGINAL_DESIGN_V2';
+export type KnowledgeRevalidationScope = 'GLOBAL' | 'LOCAL_10';
 
 interface EventEnvelope<TType extends string, TPayload, TScope extends 'public' | 'personal' = 'public'> {
   id: string;
   type: TType;
-  scope?: TScope; // optional only for persisted v0 migration; every new event sets it
+  scope?: TScope;
   schemaVersion: number;
   timestamp: number;
   seq?: number;
@@ -30,34 +31,22 @@ export type NodeDisputedEvent = EventEnvelope<'NodeDisputed', { nodeId: string }
 export type NodeResolvedEvent = EventEnvelope<'NodeResolved', { nodeId: string }>;
 export type NodeMasterySetEvent = EventEnvelope<'NodeMasterySet', { nodeId: string; mastery: Mastery }, 'personal'>;
 
-import type {
-  AddEdit,
-  DecomposeEdit,
-  MergeEdit,
-  NegateEdit,
-} from '../protocol/KnowledgeEditingProtocol';
+import type { AddEdit, DecomposeEdit, MergeEdit, NegateEdit } from '../protocol/KnowledgeEditingProtocol';
 
 export interface KnowledgeOptimizationMetadata {
-  /** Current knowledge ball that this immutable candidate was created to improve. */
   targetId: string;
-  /** Stable topic identity copied from the target at submission time. */
   topicId: string;
 }
 
 export interface KnowledgeOppositionMetadata {
-  /** Current knowledge ball challenged by this immutable opposing viewpoint. */
   targetId: string;
-  /** Stable topic identity shared by both viewpoint chains. */
   topicId: string;
 }
 
 export type KnowledgeAddedEvent = EventEnvelope<'KnowledgeAdded', {
   edit: AddEdit;
-  /** Explicit layer declarations for nodes created by this event. Missing entries are legacy-compatible. */
   declaredLayers?: Record<string, UserKnowledgeLayer>;
-  /** Optimization candidate lineage intent; mutually exclusive with opposition. */
   optimization?: KnowledgeOptimizationMetadata;
-  /** Opposition candidate lineage intent; mutually exclusive with optimization. */
   opposition?: KnowledgeOppositionMetadata;
 }>;
 export type KnowledgeNegatedEvent = EventEnvelope<'KnowledgeNegated', { edit: NegateEdit }>;
@@ -80,14 +69,44 @@ export type KnowledgeVerdictFinalizedEvent = EventEnvelope<'KnowledgeVerdictFina
   policyVersion: KnowledgeVerdictPolicyVersion;
 }>;
 
-export type PublicKnowledgeEvent = NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent | NodeResolvedEvent | NodeDisputedEvent | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent;
+/** Server-authored only. Starting a challenge never changes lineage role/color. */
+export type KnowledgeRevalidationStartedEvent = EventEnvelope<'KnowledgeRevalidationStarted', {
+  roundId: string;
+  nodeId: string;
+  topicId: string;
+  roleAtStart: 'history' | 'opposition';
+  stage: number;
+  stake: string;
+  scope: KnowledgeRevalidationScope;
+  accuracyGate?: number;
+  localHopLimit?: number;
+  requiredVotes: number;
+  deadline: string;
+  policyVersion: 'ORIGINAL_DESIGN_V1';
+}>;
+
+/** CORRECT means the challenged old ball becomes current; INCORRECT means current remains unchanged. */
+export type KnowledgeRevalidationFinalizedEvent = EventEnvelope<'KnowledgeRevalidationFinalized', {
+  roundId: string;
+  nodeId: string;
+  topicId: string;
+  verdict: 'CORRECT' | 'INCORRECT';
+  closeReason: 'THRESHOLD' | 'TIMEOUT';
+  agreeCount: number;
+  disagreeCount: number;
+  requiredVotes: number;
+  stage: number;
+  policyVersion: 'ORIGINAL_DESIGN_V1';
+}>;
+
+export type PublicKnowledgeEvent =
+  | NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent | NodeResolvedEvent | NodeDisputedEvent
+  | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent
+  | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent
+  | KnowledgeRevalidationStartedEvent | KnowledgeRevalidationFinalizedEvent;
 export type PersonalKnowledgeEvent = NodeMasterySetEvent;
 
-export type DomainEvent =
-  | NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent
-  | NodeResolvedEvent | NodeMasterySetEvent | NodeDisputedEvent
-  | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent
-  | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent;
+export type DomainEvent = PublicKnowledgeEvent | PersonalKnowledgeEvent;
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
@@ -95,9 +114,8 @@ export function isPublicKnowledgeEvent(event: DomainEvent): event is PublicKnowl
   return event.type !== 'NodeMasterySet' && (event.scope === undefined || event.scope === 'public');
 }
 
-// This guard is intentionally the client-writable canonical command family.
-// Server-authored KnowledgeVerdictFinalized is public and sync-readable, but it
-// must never be queued or pushed back through append_public_knowledge_events.
+// Only client-writable command families belong here. Verdict/revalidation lifecycle
+// events are server-authored and sync-readable but can never be pushed by clients.
 export function isCanonicalPublicKnowledgeEvent(event: DomainEvent): event is KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent {
   return event.scope === 'public' && ['KnowledgeAdded','KnowledgeNegated','KnowledgeDecomposed','KnowledgeMerged','KnowledgeStatusChanged','KnowledgeNodeEdited'].includes(event.type);
 }
