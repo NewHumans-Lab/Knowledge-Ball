@@ -89,7 +89,7 @@ assert(!physicsSource.includes('twinGroup'), 'uniform layout must not yet optimi
 const appSource = readFileSync('src/ui/app.ts', 'utf8');
 assert(appSource.includes('layoutNodes = domainNodes.map'), 'layout must be built from every projected node before visibility filtering');
 assert(appSource.includes('applyUniformLayerLayout(layoutNodes)'), 'all projected nodes must participate in one global uniform-layout pass');
-assert(appSource.includes('renderNodes = layoutNodes.filter'), 'render visibility must be applied only after occupancy positions are assigned');
-assert(appSource.includes('!hiddenIds.has(node.id)'), 'hidden nodes must be excluded from rendering without being excluded from layout');
+assert(appSource.includes('renderNodes = layoutNodes.filter'), 'scene membership must be applied only after occupancy positions are assigned');
+assert(appSource.includes('nodeBelongsInLineageScene(node)'), 'formal gray/red lineage balls must remain in scene data while rejected audit-only and legacy hidden records stay excluded');
 
 console.log('Uniform layer layout regression tests passed.');
