@@ -11,28 +11,29 @@ assert.equal(safeAvatarUrl('javascript:alert(1)'), null);
 assert.equal(safeAvatarUrl('http://example.test/avatar.png'), null);
 
 assert.deepEqual(parsePendingKnowledgeVote({
-  node_id:'pending-1', round_id:'round-1', agree_count:2, disagree_count:1, required_votes:4,
+  node_id:'pending-1', round_id:'round-1', round_kind:'CASCADE', agree_count:2, disagree_count:1, required_votes:4,
   my_side:'AGREE', my_balance:'-1.000000', verdict:'PENDING', close_reason:null,
-  deadline:'2026-09-17T00:00:00+00:00', closed_at:null, policy_version:'ORIGINAL_DESIGN_V1',
+  deadline:'2026-09-17T00:00:00+00:00', closed_at:null, policy_version:'KNOWLEDGE_LINEAGE_V3_CASCADE',
 }, 'pending-1'), {
-  nodeId:'pending-1', roundId:'round-1', agreeCount:2, disagreeCount:1, requiredVotes:4,
+  nodeId:'pending-1', roundId:'round-1', roundKind:'CASCADE', agreeCount:2, disagreeCount:1, requiredVotes:4,
   mySide:'AGREE', myBalance:'-1.000000', verdict:'PENDING', closeReason:null,
-  deadline:'2026-09-17T00:00:00+00:00', closedAt:undefined, policyVersion:'ORIGINAL_DESIGN_V1',
+  deadline:'2026-09-17T00:00:00+00:00', closedAt:undefined, policyVersion:'KNOWLEDGE_LINEAGE_V3_CASCADE',
 });
 
 assert.deepEqual(parsePendingKnowledgeVote({
   node_id:'pending-legacy', agree_count:0, disagree_count:0, required_votes:1, my_side:null,
 }, 'pending-legacy'), {
   nodeId:'pending-legacy', agreeCount:0, disagreeCount:0, requiredVotes:1, mySide:null,
-  myBalance:undefined, roundId:undefined, verdict:'PENDING', closeReason:null,
+  myBalance:undefined, roundId:undefined, roundKind:undefined, verdict:'PENDING', closeReason:null,
   deadline:undefined, closedAt:undefined, policyVersion:undefined,
 }, 'client must remain rollout-compatible with the pre-round RPC shape');
 
 const closed = parsePendingKnowledgeVote({
-  node_id:'closed-1', round_id:'round-closed', agree_count:1, disagree_count:2, required_votes:2,
+  node_id:'closed-1', round_id:'round-closed', round_kind:'INITIAL', agree_count:1, disagree_count:2, required_votes:2,
   my_side:'DISAGREE', my_balance:'1.000000', verdict:'INCORRECT', close_reason:'THRESHOLD',
-  deadline:'2026-09-17T00:00:00+00:00', closed_at:'2026-08-18T00:00:00+00:00', policy_version:'ORIGINAL_DESIGN_V1',
+  deadline:'2026-09-17T00:00:00+00:00', closed_at:'2026-08-18T00:00:00+00:00', policy_version:'ORIGINAL_DESIGN_V2',
 }, 'closed-1');
+assert.equal(closed.roundKind, 'INITIAL');
 assert.equal(closed.verdict, 'INCORRECT');
 assert.equal(closed.closeReason, 'THRESHOLD');
 assert.equal(closed.closedAt, '2026-08-18T00:00:00+00:00');
@@ -40,6 +41,7 @@ assert.equal(closed.closedAt, '2026-08-18T00:00:00+00:00');
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'other', agree_count:0, disagree_count:0, required_votes:1, my_side:null }, 'pending-1'), /节点不匹配/);
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count:-1, disagree_count:0, required_votes:1, my_side:null }, 'pending-1'), /无效赞成票数/);
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count:0, disagree_count:0, required_votes:1, my_side:'MAYBE' }, 'pending-1'), /无效投票状态/);
+assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', round_kind:'MANUAL', agree_count:0, disagree_count:0, required_votes:1, my_side:null }, 'pending-1'), /无效投票轮次类型/);
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count:0, disagree_count:0, required_votes:1, my_side:null, verdict:'MAYBE' }, 'pending-1'), /无效结算状态/);
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count:0, disagree_count:0, required_votes:1, my_side:null, close_reason:'MANUAL' }, 'pending-1'), /无效结算原因/);
 
@@ -75,6 +77,10 @@ const authClient = readFileSync('src/auth/AuthClient.ts', 'utf8');
 const authUi = readFileSync('src/ui/AuthUi.ts', 'utf8');
 const syncEngine = readFileSync('src/sync/SyncEngine.ts', 'utf8');
 const publicSyncCoordinator = readFileSync('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
+assert.match(authClient, /operationKey = freshOperationKey\('pending-vote', nodeId\)/, 'ordinary pending votes need a fresh idempotency key per submission/round');
+assert.doesNotMatch(authClient, /operation_key:\s*`pending-vote:\$\{nodeId\}`/, 'pending vote idempotency must not be permanently keyed only by node id');
+const pendingCastBody = authClient.slice(authClient.indexOf('async castPendingKnowledgeVote'), authClient.indexOf('async settleExpiredPendingKnowledgeVotes'));
+assert.doesNotMatch(pendingCastBody, /ensure_anonymous_profile/, 'public truth voting must not proactively provision anonymous voting profiles');
 assert.match(authClient, /start_knowledge_revalidation/, 'client must expose the authoritative revalidation start RPC');
 assert.match(authClient, /get_knowledge_revalidation/, 'client must expose the authoritative revalidation snapshot RPC');
 assert.match(authClient, /cast_knowledge_revalidation_vote/, 'client must expose the authoritative revalidation ballot RPC');
@@ -98,4 +104,4 @@ assert.match(authUi, /snapshot\.verdict === 'PENDING'/, 'closed rounds must stop
 assert.match(authUi, /observe\(panelTitle/, 'panel enhancements must keep the safe title-only observer boundary');
 assert.doesNotMatch(authUi, /observe\(panel,\s*\{\s*subtree:true/, 'vote UI must not recreate the old panel-subtree MutationObserver feedback loop');
 assert.doesNotMatch(authUi, /setInterval\(/, 'vote synchronization must not add permanent or per-node intervals');
-console.log('Account formatting, pending vote, revalidation RPC, and public-sync ownership regression checks passed');
+console.log('Account formatting, round-safe pending vote, revalidation RPC, and public-sync ownership regression checks passed');
