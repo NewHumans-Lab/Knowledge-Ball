@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { compactEnergy, parsePendingKnowledgeVote } from './AuthClient';
+import { compactEnergy, parseKnowledgeRevalidation, parsePendingKnowledgeVote } from './AuthClient';
 import { safeAvatarUrl } from './AuthProfilePresentation';
 
 for (const [input, output] of [['0.000000','0'], ['-0.000001','0'], ['-0.999999','0'], ['1.999999','1'], ['-1.000000','-1']] as const) {
@@ -43,9 +43,42 @@ assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count:0, disagree_count:0, required_votes:1, my_side:null, verdict:'MAYBE' }, 'pending-1'), /无效结算状态/);
 assert.throws(() => parsePendingKnowledgeVote({ node_id:'pending-1', agree_count:0, disagree_count:0, required_votes:1, my_side:null, close_reason:'MANUAL' }, 'pending-1'), /无效结算原因/);
 
+assert.deepEqual(parseKnowledgeRevalidation({
+  node_id:'old-red', topic_id:'topic-1', round_id:'reval-1', round_no:2,
+  role_at_start:'opposition', stage:32, stake:'20.000000', scope:'GLOBAL', accuracy_gate:50,
+  local_hop_limit:null, agree_count:3, disagree_count:1, required_votes:4,
+  my_side:'AGREE', my_balance:'-9.000000', verdict:'PENDING', close_reason:null,
+  deadline:'2026-09-21T00:00:00+00:00', closed_at:null, policy_version:'ORIGINAL_DESIGN_V1',
+}, 'old-red'), {
+  nodeId:'old-red', topicId:'topic-1', roundId:'reval-1', roundNo:2,
+  roleAtStart:'opposition', stage:32, stake:'20.000000', scope:'GLOBAL', accuracyGate:50,
+  localHopLimit:undefined, agreeCount:3, disagreeCount:1, requiredVotes:4,
+  mySide:'AGREE', myBalance:'-9.000000', verdict:'PENDING', closeReason:null,
+  deadline:'2026-09-21T00:00:00+00:00', closedAt:undefined, policyVersion:'ORIGINAL_DESIGN_V1',
+});
+assert.deepEqual(parseKnowledgeRevalidation({
+  node_id:'old-gray', topic_id:'topic-2', round_id:'reval-2', round_no:1,
+  role_at_start:'history', stage:1, stake:'10', scope:'LOCAL_10', accuracy_gate:null,
+  local_hop_limit:10, agree_count:0, disagree_count:0, required_votes:1,
+  my_side:null, my_balance:'0', verdict:'PENDING', close_reason:null,
+  deadline:'2026-09-21T00:00:00Z', policy_version:'ORIGINAL_DESIGN_V1',
+}, 'old-gray').stake, '10.000000');
+assert.throws(() => parseKnowledgeRevalidation({
+  node_id:'old-gray', topic_id:'topic-2', round_id:'reval-2', round_no:1,
+  role_at_start:'history', stage:1, stake:'10', scope:'LOCAL_10', accuracy_gate:null,
+  local_hop_limit:10, agree_count:0, disagree_count:0, required_votes:1,
+  my_side:null, verdict:'PENDING', close_reason:null, deadline:'2026-09-21T00:00:00Z',
+  policy_version:'ORIGINAL_DESIGN_V2',
+}, 'old-gray'), /协议版本/);
+
+const authClient = readFileSync('src/auth/AuthClient.ts', 'utf8');
 const authUi = readFileSync('src/ui/AuthUi.ts', 'utf8');
 const syncEngine = readFileSync('src/sync/SyncEngine.ts', 'utf8');
 const publicSyncCoordinator = readFileSync('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
+assert.match(authClient, /start_knowledge_revalidation/, 'client must expose the authoritative revalidation start RPC');
+assert.match(authClient, /get_knowledge_revalidation/, 'client must expose the authoritative revalidation snapshot RPC');
+assert.match(authClient, /cast_knowledge_revalidation_vote/, 'client must expose the authoritative revalidation ballot RPC');
+assert.match(authClient, /settle_expired_knowledge_revalidations/, 'client must expose the authoritative revalidation sweep RPC');
 assert.match(authUi, /panelClose\.textContent = '❌'/, 'node detail must expose an explicit top-right return/close affordance');
 assert.match(authUi, /node\.status !== 'pending'/, 'vote controls must be pending-only');
 assert.match(authUi, /data-vote-side=\"AGREE\"/, 'pending detail must expose an agree action');
@@ -65,4 +98,4 @@ assert.match(authUi, /snapshot\.verdict === 'PENDING'/, 'closed rounds must stop
 assert.match(authUi, /observe\(panelTitle/, 'panel enhancements must keep the safe title-only observer boundary');
 assert.doesNotMatch(authUi, /observe\(panel,\s*\{\s*subtree:true/, 'vote UI must not recreate the old panel-subtree MutationObserver feedback loop');
 assert.doesNotMatch(authUi, /setInterval\(/, 'vote synchronization must not add permanent or per-node intervals');
-console.log('Account formatting, pending vote, and public-sync ownership regression checks passed');
+console.log('Account formatting, pending vote, revalidation RPC, and public-sync ownership regression checks passed');

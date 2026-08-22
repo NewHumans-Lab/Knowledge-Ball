@@ -31,11 +31,43 @@ export interface PendingKnowledgeVoteSnapshot {
   policyVersion?: string;
 }
 
+export type KnowledgeRevalidationScope = 'GLOBAL' | 'LOCAL_10';
+export type KnowledgeRevalidationRole = 'history' | 'opposition';
+export interface KnowledgeRevalidationSnapshot {
+  nodeId: string;
+  topicId: string;
+  roundId: string;
+  roundNo: number;
+  roleAtStart: KnowledgeRevalidationRole;
+  stage: number;
+  stake: string;
+  scope: KnowledgeRevalidationScope;
+  accuracyGate?: number;
+  localHopLimit?: number;
+  agreeCount: number;
+  disagreeCount: number;
+  requiredVotes: number;
+  mySide: PendingVoteSide | null;
+  myBalance?: string;
+  verdict: PendingVoteVerdict;
+  closeReason: PendingVoteCloseReason | null;
+  deadline: string;
+  closedAt?: string;
+  policyVersion: 'ORIGINAL_DESIGN_V1';
+}
+
 export const GUEST_SESSION_KEY = 'knowledge-ball.supabase-guest-session.v1';
 const LEGACY_SESSION_KEY = 'knowledge-ball.supabase-session.v1';
 
 function browserStorage(): Storage | null {
   try { return typeof window === 'undefined' ? null : window.localStorage; } catch { return null; }
+}
+
+function freshOperationKey(prefix: string, nodeId: string): string {
+  const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}:${nodeId}:${random}`;
 }
 
 export class KnowledgeBallAuthClient {
@@ -169,6 +201,48 @@ export class KnowledgeBallAuthClient {
     return processed;
   }
 
+  /** Start a human V1 challenge. The server additionally enforces permanent registration. */
+  async startKnowledgeRevalidation(nodeId: string, operationKey = freshOperationKey('knowledge-revalidation', nodeId)): Promise<KnowledgeRevalidationSnapshot> {
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/start_knowledge_revalidation', current, {
+      method: 'POST', body: JSON.stringify({ target_node_id: nodeId, operation_key: operationKey }),
+    });
+    return parseKnowledgeRevalidation(response, nodeId);
+  }
+
+  async getKnowledgeRevalidation(nodeId: string): Promise<KnowledgeRevalidationSnapshot> {
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/get_knowledge_revalidation', current, {
+      method: 'POST', body: JSON.stringify({ target_node_id: nodeId }),
+    });
+    return parseKnowledgeRevalidation(response, nodeId);
+  }
+
+  async castKnowledgeRevalidationVote(
+    nodeId: string,
+    side: PendingVoteSide,
+    operationKey = freshOperationKey('knowledge-revalidation-vote', nodeId),
+  ): Promise<KnowledgeRevalidationSnapshot> {
+    if (side !== 'AGREE' && side !== 'DISAGREE') throw new Error('无效重新验证投票方向');
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/cast_knowledge_revalidation_vote', current, {
+      method: 'POST',
+      body: JSON.stringify({ target_node_id: nodeId, vote_side: side, operation_key: operationKey }),
+    });
+    return parseKnowledgeRevalidation(response, nodeId);
+  }
+
+  async settleExpiredKnowledgeRevalidations(maxRounds = 50): Promise<number> {
+    if (!Number.isSafeInteger(maxRounds) || maxRounds < 1 || maxRounds > 200) throw new Error('无效重新验证结算批量大小');
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/settle_expired_knowledge_revalidations', current, {
+      method: 'POST', body: JSON.stringify({ max_rounds: maxRounds }),
+    });
+    const processed = Number(response);
+    if (!Number.isSafeInteger(processed) || processed < 0) throw new Error('服务端返回了无效重新验证结算数量');
+    return processed;
+  }
+
   private profileFrom(value: unknown): AccountProfile {
     const response = value as Record<string, unknown>;
     return {
@@ -284,6 +358,19 @@ function countValue(value: unknown, field: string): number {
   return number;
 }
 
+function positiveCountValue(value: unknown, field: string): number {
+  const number = countValue(value, field);
+  if (number < 1) throw new Error(`服务端返回了无效${field}`);
+  return number;
+}
+
+function optionalInteger(value: unknown, field: string, min: number, max: number): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < min || number > max) throw new Error(`服务端返回了无效${field}`);
+  return number;
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
@@ -311,6 +398,53 @@ export function parsePendingKnowledgeVote(value: unknown, nodeId: string): Pendi
     deadline: optionalString(response.deadline),
     closedAt: optionalString(response.closed_at),
     policyVersion: optionalString(response.policy_version),
+  };
+}
+
+export function parseKnowledgeRevalidation(value: unknown, nodeId: string): KnowledgeRevalidationSnapshot {
+  const response = value as Record<string, unknown>;
+  const responseNodeId = typeof response.node_id === 'string' ? response.node_id : '';
+  const topicId = typeof response.topic_id === 'string' ? response.topic_id : '';
+  const roundId = typeof response.round_id === 'string' ? response.round_id : '';
+  const roleAtStart = response.role_at_start;
+  const scope = response.scope;
+  const side = response.my_side;
+  const verdict = response.verdict;
+  const closeReason = response.close_reason;
+  const policyVersion = response.policy_version;
+  const deadline = typeof response.deadline === 'string' ? response.deadline : '';
+
+  if (responseNodeId !== nodeId) throw new Error('重新验证响应节点不匹配');
+  if (!topicId || !roundId) throw new Error('服务端返回了无效重新验证身份');
+  if (roleAtStart !== 'history' && roleAtStart !== 'opposition') throw new Error('服务端返回了无效重新验证角色');
+  if (scope !== 'GLOBAL' && scope !== 'LOCAL_10') throw new Error('服务端返回了无效重新验证范围');
+  if (side !== null && side !== undefined && side !== 'AGREE' && side !== 'DISAGREE') throw new Error('服务端返回了无效重新验证投票状态');
+  if (verdict !== 'PENDING' && verdict !== 'CORRECT' && verdict !== 'INCORRECT') throw new Error('服务端返回了无效重新验证结算状态');
+  if (closeReason !== null && closeReason !== undefined && closeReason !== 'THRESHOLD' && closeReason !== 'TIMEOUT') throw new Error('服务端返回了无效重新验证结算原因');
+  if (policyVersion !== 'ORIGINAL_DESIGN_V1') throw new Error('服务端返回了无效重新验证协议版本');
+  if (!deadline || Number.isNaN(Date.parse(deadline))) throw new Error('服务端返回了无效重新验证截止时间');
+
+  return {
+    nodeId,
+    topicId,
+    roundId,
+    roundNo: positiveCountValue(response.round_no, '重新验证轮次'),
+    roleAtStart,
+    stage: countValue(response.stage, '重新验证阶段'),
+    stake: exactEnergy(response.stake),
+    scope,
+    accuracyGate: optionalInteger(response.accuracy_gate, '重新验证准确率门槛', 0, 100),
+    localHopLimit: optionalInteger(response.local_hop_limit, '重新验证局部距离', 1, Number.MAX_SAFE_INTEGER),
+    agreeCount: countValue(response.agree_count, '重新验证赞成票数'),
+    disagreeCount: countValue(response.disagree_count, '重新验证反对票数'),
+    requiredVotes: positiveCountValue(response.required_votes, '重新验证所需票数'),
+    mySide: side === 'AGREE' || side === 'DISAGREE' ? side : null,
+    myBalance: response.my_balance === null || response.my_balance === undefined ? undefined : exactEnergy(response.my_balance),
+    verdict,
+    closeReason: closeReason === 'THRESHOLD' || closeReason === 'TIMEOUT' ? closeReason : null,
+    deadline,
+    closedAt: optionalString(response.closed_at),
+    policyVersion,
   };
 }
 
