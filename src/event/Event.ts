@@ -44,16 +44,21 @@ export interface KnowledgeOptimizationMetadata {
   topicId: string;
 }
 
+export interface KnowledgeOppositionMetadata {
+  /** Current knowledge ball challenged by this immutable opposing viewpoint. */
+  targetId: string;
+  /** Stable topic identity shared by both viewpoint chains. */
+  topicId: string;
+}
+
 export type KnowledgeAddedEvent = EventEnvelope<'KnowledgeAdded', {
   edit: AddEdit;
   /** Explicit layer declarations for nodes created by this event. Missing entries are legacy-compatible. */
   declaredLayers?: Record<string, UserKnowledgeLayer>;
-  /**
-   * Optional version-lineage intent. Keeping the wire event as KnowledgeAdded
-   * preserves the existing public event stream and V2 first-round funding path;
-   * the optimization metadata changes lineage semantics, not event ownership.
-   */
+  /** Optimization candidate lineage intent; mutually exclusive with opposition. */
   optimization?: KnowledgeOptimizationMetadata;
+  /** Opposition candidate lineage intent; mutually exclusive with optimization. */
+  opposition?: KnowledgeOppositionMetadata;
 }>;
 export type KnowledgeNegatedEvent = EventEnvelope<'KnowledgeNegated', { edit: NegateEdit }>;
 export type KnowledgeDecomposedEvent = EventEnvelope<'KnowledgeDecomposed', { edit: DecomposeEdit }>;
