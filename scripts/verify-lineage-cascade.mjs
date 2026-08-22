@@ -61,7 +61,10 @@ assert.doesNotMatch(hardening, /creator_payout:=2\.000000/, 'cascade settlement 
 assert.match(hardening, /'status','disputed'/);
 assert.doesNotMatch(hardening, /'status','pending'/, 'cascade projection must not invent a client-writable pending status command');
 assert.match(hardening, /case when decided_verdict='CORRECT' then 'verified' else 'suspended' end/);
-assert.doesNotMatch(hardening, /KnowledgeVerdictFinalized/, 'cascade finalization must not masquerade as a first-round verdict event');
+// Comments may mention the forbidden event by name; reject only an actual event
+// construction/insertion in the hardening layer.
+assert.doesNotMatch(hardening, /'type'\s*,\s*'KnowledgeVerdictFinalized'|values\([^\n]*'KnowledgeVerdictFinalized'/i,
+  'cascade finalization must not masquerade as a first-round verdict event');
 assert.match(hardening, /knowledge_ball\.internal_cascade_write/);
 assert.match(hardening, /active cascade revalidation can only be finalized by its vote round/);
 assert.match(hardening, /knowledge topic current head is under cascade revalidation/);
