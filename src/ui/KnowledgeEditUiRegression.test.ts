@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 
 const html = readFileSync('index.html', 'utf8');
-const panel = readFileSync('src/ui/panels/PanelController.ts', 'utf8');
+// The full pre-lineage controller is intentionally retained verbatim as Legacy;
+// the same-name controller is now a thin adapter that only replaces Edit/Negate.
+const panel = readFileSync('src/ui/panels/PanelControllerLegacy.ts', 'utf8');
+const lineagePanel = readFileSync('src/ui/panels/PanelController.ts', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
 const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const systemCore = readFileSync('src/ui/systemCore/SystemCoreContent.ts', 'utf8');
@@ -50,13 +53,20 @@ assert(!panel.includes('已验证前提，因此按协议自动进入第二层')
 assert(!panel.includes('理论必须选择一个已有逻辑符号'), 'logic symbols must not remain a mandatory submission gate');
 
 for (const action of ['openNegateForm', 'openDecomposeForm', 'openDefinitionMergeForm', 'openTheoryMergeForm']) {
-  assert(panel.includes(action), `panel is missing the ${action} operation flow`);
+  assert(panel.includes(action), `legacy controller is missing the ${action} compatibility flow`);
 }
-assert(panel.includes('反例知识节点（至少一个）'), 'negation UI must collect counterexamples');
+assert(panel.includes('反例知识节点（至少一个）'), 'legacy replay controller must retain the historical counterexample form');
 assert(panel.includes('原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论'), 'decomposition UI must show the complete chain contract');
 assert(panel.includes('推理过程语义等价标识（先检查）'), 'theory merge must check reasoning identity before conclusion identity');
 assert(panel.includes('type: conclusionType'), 'decomposition must derive internal fine type from the existing conclusion rather than ask the user');
 assert(panel.includes('type: node.type'), 'theory merge must preserve the source fine type internally rather than ask the user');
+
+// Product head-changing actions are owned by the thin V3 adapter, not by the
+// retained legacy counterexample/edit forms above.
+assert(lineagePanel.includes('Optimize · 优化'), 'current-node edit action must be replaced by immutable optimization');
+assert(lineagePanel.includes('Oppose · 提出对立观点'), 'current-node negate action must be replaced by pending opposition');
+assert(lineagePanel.includes('IMMUTABLE OPTIMIZATION') && lineagePanel.includes('IMMUTABLE OPPOSITION'), 'lineage adapter must expose both immutable candidate forms');
+assert(lineagePanel.includes('节点类型、前提关系和逻辑规则身份全部沿用当前球'), 'lineage candidate form must not expose structural mutation');
 
 assert(app.includes('executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers)'), 'new knowledge writes must carry layer declarations through the unified server-first boundary');
 assert(app.includes('effectiveLayerForNode(dn, projection.state.nodesById)'), 'application must calculate scene layer from the canonical domain policy');
