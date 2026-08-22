@@ -49,8 +49,6 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
     if (p.verdict !== 'CORRECT' && p.verdict !== 'INCORRECT') errors.push('投票结算事件 verdict 无效');
     if (p.closeReason !== 'THRESHOLD' && p.closeReason !== 'TIMEOUT') errors.push('投票结算事件 closeReason 无效');
     if (p.policyVersion !== 'ORIGINAL_DESIGN_V1' && p.policyVersion !== 'ORIGINAL_DESIGN_V2') errors.push('投票结算事件 policyVersion 无效');
-    // Keep the original field-specific contract: existing callers/tests depend
-    // on knowing whether agree, disagree, or the frozen threshold was malformed.
     for (const [label, value, allowZero] of [
       ['赞成票', p.agreeCount, true],
       ['反对票', p.disagreeCount, true],
@@ -79,6 +77,13 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
     if (!Number.isSafeInteger(p.stage) || p.stage < 0) errors.push('重新验证 stage 无效');
     if (!safeCount(p.agreeCount) || !safeCount(p.disagreeCount) || !safeCount(p.requiredVotes, false)) errors.push('重新验证票数无效');
     if (p.policyVersion !== 'ORIGINAL_DESIGN_V1') errors.push('重新验证结算必须使用冻结 ORIGINAL_DESIGN_V1');
+  }
+  if (event.type === 'KnowledgeCascadeRevalidationStarted') {
+    const p = event.payload;
+    if (!p.nodeId?.trim() || !p.sourceNodeId?.trim() || !p.replacementNodeId?.trim() || !p.triggerEventId?.trim()) {
+      errors.push('级联重新验证事件缺少必要 ID');
+    }
+    if (p.nodeId === p.sourceNodeId || p.nodeId === p.replacementNodeId) errors.push('级联重新验证不能把变更源自身作为下游目标');
   }
   return errors;
 }
@@ -163,6 +168,18 @@ export function validateDomainEventAgainstState(event: DomainEvent, state: Graph
       if (!target) return [`重新验证目标不存在: ${event.payload.nodeId}`];
       if (topicIdFor(target) !== event.payload.topicId) return ['重新验证结算 topicId 与目标不一致'];
       if (target.status !== 'disputed') return ['只有正在重新验证的节点可以结算'];
+      return [];
+    }
+    case 'KnowledgeCascadeRevalidationStarted': {
+      const target = state.nodesById[event.payload.nodeId];
+      const source = state.nodesById[event.payload.sourceNodeId];
+      const replacement = state.nodesById[event.payload.replacementNodeId];
+      if (!target) return [`级联重新验证目标不存在: ${event.payload.nodeId}`];
+      if (!source) return [`级联重新验证变更源不存在: ${event.payload.sourceNodeId}`];
+      if (!replacement) return [`级联重新验证新版本不存在: ${event.payload.replacementNodeId}`];
+      if (lineageRoleFor(target) !== 'current') return ['级联重新验证只能标记当前有效知识'];
+      if (lineageRoleFor(replacement) !== 'current') return ['级联重新验证 replacement 必须是最终 current'];
+      if (target.status === 'falsified' || target.status === 'suspended') return ['不可用节点不能进入级联重新验证'];
       return [];
     }
     case 'KnowledgeNodeEdited': return state.nodesById[event.payload.edit.nodeId] ? [] : [`事件目标不存在: ${event.payload.edit.nodeId}`];
