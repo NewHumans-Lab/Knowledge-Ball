@@ -25,9 +25,10 @@ assert.doesNotMatch(panel, /encodeLineageIntent|decodeLineageIntent|KBL3:/);
 assert.doesNotMatch(panel, /openNegateForm|openEditForm/);
 
 assert.doesNotMatch(detail, /NodeDetailControllerLegacy/);
+assert.match(detail, /edit: '优化'/);
+assert.match(detail, /negate: '提出对立观点'/);
 assert.match(lineageUi, /class NodeDetailLineageUi/);
-assert.match(lineageUi, /optimize\.textContent = '优化'/);
-assert.match(lineageUi, /oppose\.textContent = '提出对立观点'/);
+assert.doesNotMatch(lineageUi, /relabelActions|data-node-detail-action="edit"|data-node-detail-action="negate"/);
 assert.match(lineageUi, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/);
 assert.match(lineageUi, /data-cascade-vote-side="AGREE"/);
 assert.match(lineageUi, /data-cascade-vote-side="DISAGREE"/);

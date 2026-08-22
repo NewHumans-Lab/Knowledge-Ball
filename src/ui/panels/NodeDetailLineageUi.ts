@@ -16,9 +16,8 @@ export interface NodeDetailLineageUiOptions {
  * Narrow V3 enhancement for the single NodeDetailController surface.
  *
  * NodeDetailController remains the sole renderer/lifecycle owner for the detail
- * itself, initial V2 voting and human V1 revalidation. This helper only maps the
- * two head-changing action labels to their immutable-lineage meaning and owns
- * the server-created CASCADE pending-vote interaction for disputed CURRENT nodes.
+ * itself, initial V2 voting and human V1 revalidation. This helper owns only the
+ * server-created CASCADE pending-vote interaction for disputed CURRENT nodes.
  */
 export class NodeDetailLineageUi {
   private readonly getNodeById: NodeDetailLineageUiOptions['getNodeById'];
@@ -34,7 +33,6 @@ export class NodeDetailLineageUi {
     this.currentId = nodeId;
     this.clearRefresh();
     const token = ++this.renderToken;
-    this.relabelActions();
     void this.refreshSnapshot(nodeId, token);
   }
 
@@ -45,7 +43,6 @@ export class NodeDetailLineageUi {
     }
     this.clearRefresh();
     const token = ++this.renderToken;
-    this.relabelActions();
     void this.refreshSnapshot(nodeId, token);
   }
 
@@ -53,14 +50,6 @@ export class NodeDetailLineageUi {
     this.currentId = null;
     this.clearRefresh();
     this.renderToken++;
-  }
-
-  private relabelActions(): void {
-    const root = document.getElementById('nodeDetailOverlay');
-    const optimize = root?.querySelector<HTMLButtonElement>('[data-node-detail-action="edit"]');
-    const oppose = root?.querySelector<HTMLButtonElement>('[data-node-detail-action="negate"]');
-    if (optimize) optimize.textContent = '优化';
-    if (oppose) oppose.textContent = '提出对立观点';
   }
 
   private async refreshSnapshot(nodeId: string, token: number): Promise<void> {

@@ -39,9 +39,9 @@ export interface NodeDetailControllerOptions {
 }
 
 const ACTION_LABEL: Readonly<Record<NodeDetailAction, string>> = Object.freeze({
-  edit: '修改内容',
+  edit: '优化',
   derive: '基于此新增',
-  negate: '否定',
+  negate: '提出对立观点',
   decompose: '分解',
   merge: '合并',
   resolve: '重新验证',

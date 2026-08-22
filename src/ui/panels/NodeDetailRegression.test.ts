@@ -19,12 +19,12 @@ assert(!detail.includes('node-detail-content-label'), 'near-node detail must not
 assert(!detail.includes('>内容<'), 'the standalone content heading must stay removed');
 assert(detail.indexOf('node-detail-content') < detail.indexOf('node-detail-meta'), 'knowledge content must appear before contributor/time metadata');
 assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributor and time must remain two ordered footer rows');
-for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
-  assert(detail.includes(action), `base detail engine must retain ${action}`);
+for (const action of ['优化', '基于此新增', '提出对立观点', '分解', '合并']) {
+  assert(detail.includes(action), `single detail engine must expose ${action}`);
 }
 assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit from a copied legacy controller');
-assert(lineageUi.includes("optimize.textContent = '优化'"), 'V3 lineage UI must relabel edit as optimization');
-assert(lineageUi.includes("oppose.textContent = '提出对立观点'"), 'V3 lineage UI must relabel negate as opposition');
+assert(!lineageUi.includes('relabelActions'), 'cascade helper must not rewrite ordinary detail action labels after render');
+assert(!lineageUi.includes('data-node-detail-action="edit"') && !lineageUi.includes('data-node-detail-action="negate"'), 'cascade helper must not own ordinary edit/opposition presentation');
 
 assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
 assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
