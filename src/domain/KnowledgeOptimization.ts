@@ -9,6 +9,17 @@ import {
 
 export type KnowledgeOptimizationVerdict = 'CORRECT' | 'INCORRECT';
 
+export interface KnowledgeOptimizationProposalInput {
+  targetId: string;
+  candidateId: string;
+  title: string;
+  reasoning: string;
+}
+
+function canonicalText(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+}
+
 export function optimizationCandidateLineage(target: GraphNode): KnowledgeLineageMeta {
   return {
     topicId: topicIdFor(target),
@@ -25,6 +36,48 @@ export function isOptimizationCandidate(node: GraphNode | undefined): node is Gr
     && node.lineage.role === 'candidate-history'
     && node.lineage.targetId,
   );
+}
+
+/**
+ * Product-level optimization guard. It intentionally permits the candidate to
+ * keep exactly the current target title, while every genuinely new title still
+ * participates in the repository-wide uniqueness rule.
+ */
+export function validateOptimizationProposal(
+  nodes: readonly GraphNode[],
+  input: KnowledgeOptimizationProposalInput,
+): string[] {
+  const errors: string[] = [];
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const target = byId.get(input.targetId);
+  const candidateId = input.candidateId.trim();
+  const title = canonicalText(input.title);
+  const reasoning = canonicalText(input.reasoning);
+
+  if (!target) return [`优化目标不存在: ${input.targetId}`];
+  if (target.status !== 'verified' || target.hidden || target.supersededBy) {
+    errors.push('只能优化当前已验证且可见的有效知识');
+  }
+  if (lineageRoleFor(target) !== 'current') errors.push('只能优化当前版本，不能直接编辑历史、对立或候选版本');
+
+  if (!candidateId || candidateId !== input.candidateId) errors.push('优化候选必须有不含首尾空白的新节点 ID');
+  else if (byId.has(candidateId)) errors.push(`优化候选节点 ID 已存在: ${candidateId}`);
+
+  if (!title) errors.push('优化候选必须有名字');
+  if (!reasoning) errors.push('优化候选必须有内容');
+
+  const targetTitle = canonicalText(target.title);
+  if (title && title !== targetTitle) {
+    const duplicate = nodes.find(node => canonicalText(node.title) === title);
+    if (duplicate) errors.push(`优化后的新名字已被其他知识节点使用: ${input.title.trim()}`);
+  }
+
+  const topicId = topicIdFor(target);
+  if (nodes.some(node => topicIdFor(node) === topicId && node.status === 'pending' && isOptimizationCandidate(node))) {
+    errors.push('同一知识主题已有一个优化候选正在验证；线性版本链在当前协议下必须串行推进');
+  }
+
+  return errors;
 }
 
 function assertValidLineage(nodes: readonly GraphNode[]): void {
