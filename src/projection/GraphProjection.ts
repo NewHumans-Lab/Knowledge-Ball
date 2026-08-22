@@ -5,6 +5,11 @@ import {
   optimizationCandidateLineage,
   resolveOptimizationCandidate,
 } from '../domain/KnowledgeOptimization';
+import {
+  isOppositionCandidate,
+  oppositionCandidateLineage,
+  resolveOppositionCandidate,
+} from '../domain/KnowledgeOpposition';
 import type { GraphState } from '../state/GraphState';
 import { emptyGraphState, nodeList } from '../state/GraphState';
 import type { Projection } from './Projection';
@@ -76,6 +81,27 @@ export class GraphProjection implements Projection<GraphState> {
       logicRuleId: target.logicRuleId,
       semanticKey: target.semanticKey,
       lineage: optimizationCandidateLineage(target),
+    };
+  }
+
+  private applyOppositionAdd(event: Extract<DomainEvent, { type: 'KnowledgeAdded' }>): void {
+    const opposition = event.payload.opposition;
+    if (!opposition || event.payload.edit.mode !== 'atomic') return;
+    const target = this.state.nodesById[opposition.targetId];
+    if (!target) throw new Error(`Opposition target missing during projection: ${opposition.targetId}`);
+    const draft = event.payload.edit.node;
+    this.state.nodesById[draft.id] = {
+      id: draft.id,
+      title: draft.title.trim(),
+      type: target.type,
+      status: 'pending',
+      mastery: this.takePendingMastery(draft.id),
+      reasoning: draft.reasoning.trim(),
+      premises: [...target.premises],
+      declaredLayer: event.payload.declaredLayers?.[draft.id],
+      hidden: false,
+      logicRuleId: target.logicRuleId,
+      lineage: oppositionCandidateLineage(target),
     };
   }
 
@@ -193,6 +219,10 @@ export class GraphProjection implements Projection<GraphState> {
           resolveOptimizationCandidate(Object.values(this.state.nodesById), n.id, event.payload.verdict);
           break;
         }
+        if (isOppositionCandidate(n)) {
+          resolveOppositionCandidate(Object.values(this.state.nodesById), n.id, event.payload.verdict);
+          break;
+        }
         if (event.payload.verdict === 'CORRECT') {
           n.status = 'verified';
           n.hidden = false;
@@ -211,6 +241,7 @@ export class GraphProjection implements Projection<GraphState> {
       }
       case 'KnowledgeAdded': {
         if (event.payload.optimization) this.applyOptimizationAdd(event);
+        else if (event.payload.opposition) this.applyOppositionAdd(event);
         else this.applyKnowledgeEdit(event.payload.edit, event.payload.declaredLayers);
         break;
       }
