@@ -48,7 +48,9 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
     if (!p.roundId?.trim() || !p.nodeId?.trim()) errors.push('投票结算事件缺少轮次或节点 ID');
     if (p.verdict !== 'CORRECT' && p.verdict !== 'INCORRECT') errors.push('投票结算事件 verdict 无效');
     if (p.closeReason !== 'THRESHOLD' && p.closeReason !== 'TIMEOUT') errors.push('投票结算事件 closeReason 无效');
-    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1' && p.policyVersion !== 'ORIGINAL_DESIGN_V2') errors.push('投票结算事件 policyVersion 无效');
+    if (p.policyVersion !== 'ORIGINAL_DESIGN_V1'
+      && p.policyVersion !== 'ORIGINAL_DESIGN_V2'
+      && p.policyVersion !== 'KNOWLEDGE_LINEAGE_V3_CASCADE') errors.push('投票结算事件 policyVersion 无效');
     // Keep the original field-specific contract: existing callers/tests depend
     // on knowing whether agree, disagree, or the frozen threshold was malformed.
     for (const [label, value, allowZero] of [
@@ -147,7 +149,9 @@ export function validateDomainEventAgainstState(event: DomainEvent, state: Graph
     case 'KnowledgeVerdictFinalized': {
       const target = state.nodesById[event.payload.nodeId];
       if (!target) return [`投票结算目标不存在: ${event.payload.nodeId}`];
-      const cascadeIntermediate = event.payload.policyVersion === 'ORIGINAL_DESIGN_V1'
+      const cascadePolicy = event.payload.policyVersion === 'KNOWLEDGE_LINEAGE_V3_CASCADE'
+        || event.payload.policyVersion === 'ORIGINAL_DESIGN_V1'; // legacy cascade replay
+      const cascadeIntermediate = cascadePolicy
         && target.status === 'disputed'
         && lineageRoleFor(target) === 'current';
       if (target.status !== 'pending' && !cascadeIntermediate) {
