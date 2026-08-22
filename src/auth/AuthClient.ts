@@ -16,6 +16,7 @@ export interface PersonalKnowledgeStateSnapshot {
 export type PendingVoteSide = 'AGREE' | 'DISAGREE';
 export type PendingVoteVerdict = 'PENDING' | 'CORRECT' | 'INCORRECT';
 export type PendingVoteCloseReason = 'THRESHOLD' | 'TIMEOUT';
+export type PendingVoteRoundKind = 'INITIAL' | 'CASCADE';
 export interface PendingKnowledgeVoteSnapshot {
   nodeId: string;
   agreeCount: number;
@@ -24,6 +25,7 @@ export interface PendingKnowledgeVoteSnapshot {
   mySide: PendingVoteSide | null;
   myBalance?: string;
   roundId?: string;
+  roundKind?: PendingVoteRoundKind;
   verdict: PendingVoteVerdict;
   closeReason: PendingVoteCloseReason | null;
   deadline?: string;
@@ -179,13 +181,16 @@ export class KnowledgeBallAuthClient {
     return parsePendingKnowledgeVote(response, nodeId);
   }
 
-  async castPendingKnowledgeVote(nodeId: string, side: PendingVoteSide): Promise<PendingKnowledgeVoteSnapshot> {
+  async castPendingKnowledgeVote(
+    nodeId: string,
+    side: PendingVoteSide,
+    operationKey = freshOperationKey('pending-vote', nodeId),
+  ): Promise<PendingKnowledgeVoteSnapshot> {
     if (side !== 'AGREE' && side !== 'DISAGREE') throw new Error('无效投票方向');
     const current = await this.publicSession();
-    await this.restRequest('/rest/v1/rpc/ensure_anonymous_profile', current, { method: 'POST', body: '{}' });
     const response = await this.restRequest('/rest/v1/rpc/cast_pending_knowledge_vote', current, {
       method: 'POST',
-      body: JSON.stringify({ target_node_id: nodeId, vote_side: side, operation_key: `pending-vote:${nodeId}` }),
+      body: JSON.stringify({ target_node_id: nodeId, vote_side: side, operation_key: operationKey }),
     });
     return parsePendingKnowledgeVote(response, nodeId);
   }
@@ -381,6 +386,8 @@ export function parsePendingKnowledgeVote(value: unknown, nodeId: string): Pendi
   if (side !== null && side !== undefined && side !== 'AGREE' && side !== 'DISAGREE') throw new Error('服务端返回了无效投票状态');
   const responseNodeId = typeof response.node_id === 'string' ? response.node_id : nodeId;
   if (responseNodeId !== nodeId) throw new Error('投票响应节点不匹配');
+  const roundKind = response.round_kind;
+  if (roundKind !== null && roundKind !== undefined && roundKind !== 'INITIAL' && roundKind !== 'CASCADE') throw new Error('服务端返回了无效投票轮次类型');
   const verdict = response.verdict ?? 'PENDING';
   if (verdict !== 'PENDING' && verdict !== 'CORRECT' && verdict !== 'INCORRECT') throw new Error('服务端返回了无效结算状态');
   const closeReason = response.close_reason;
@@ -393,6 +400,7 @@ export function parsePendingKnowledgeVote(value: unknown, nodeId: string): Pendi
     mySide: side === 'AGREE' || side === 'DISAGREE' ? side : null,
     myBalance: response.my_balance === null || response.my_balance === undefined ? undefined : exactEnergy(response.my_balance),
     roundId: optionalString(response.round_id),
+    roundKind: roundKind === 'INITIAL' || roundKind === 'CASCADE' ? roundKind : undefined,
     verdict,
     closeReason: closeReason === 'THRESHOLD' || closeReason === 'TIMEOUT' ? closeReason : null,
     deadline: optionalString(response.deadline),
