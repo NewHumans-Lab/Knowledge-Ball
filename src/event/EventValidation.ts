@@ -49,7 +49,15 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
     if (p.verdict !== 'CORRECT' && p.verdict !== 'INCORRECT') errors.push('投票结算事件 verdict 无效');
     if (p.closeReason !== 'THRESHOLD' && p.closeReason !== 'TIMEOUT') errors.push('投票结算事件 closeReason 无效');
     if (p.policyVersion !== 'ORIGINAL_DESIGN_V1' && p.policyVersion !== 'ORIGINAL_DESIGN_V2') errors.push('投票结算事件 policyVersion 无效');
-    if (!safeCount(p.agreeCount) || !safeCount(p.disagreeCount) || !safeCount(p.requiredVotes, false)) errors.push('投票结算事件票数无效');
+    // Keep the original field-specific contract: existing callers/tests depend
+    // on knowing whether agree, disagree, or the frozen threshold was malformed.
+    for (const [label, value, allowZero] of [
+      ['赞成票', p.agreeCount, true],
+      ['反对票', p.disagreeCount, true],
+      ['门槛', p.requiredVotes, false],
+    ] as const) {
+      if (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1)) errors.push(`投票结算事件${label}无效`);
+    }
   }
   if (event.type === 'KnowledgeRevalidationStarted') {
     const p = event.payload;
