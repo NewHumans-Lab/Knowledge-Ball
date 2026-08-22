@@ -63,7 +63,8 @@ assert(app.includes('effectiveLayerForNode(dn, projection.state.nodesById)'), 'a
 assert(app.includes('layoutNodes = domainNodes.map'), 'all projected nodes must receive layout slots before visibility filtering');
 assert(app.includes('applyUniformLayerLayout(layoutNodes)'), 'application must use the canonical uniform layer layout');
 assert(app.includes('renderNodes = layoutNodes.filter'), 'render visibility must be separated from layout occupancy');
-assert(app.includes('!hiddenIds.has(node.id)'), 'hidden history must stay out of rendering while remaining in layout occupancy');
+assert(app.includes('nodeBelongsInLineageScene(node)'), 'formal lineage history/opposition must remain in scene data so Current/Personal/All can control visibility');
+assert(app.includes('scene.setVisibilityMode') || app.includes("interaction.setVisibilityMode('current')"), 'lineage visibility must be controlled by the explicit mode system rather than deleting history from scene data');
 assert(!app.includes('onFalsifyNode:'), 'UI must not expose the old evidence-free falsification callback');
 
 for (const databaseObject of [
