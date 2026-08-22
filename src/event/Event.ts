@@ -99,11 +99,23 @@ export type KnowledgeRevalidationFinalizedEvent = EventEnvelope<'KnowledgeRevali
   policyVersion: 'ORIGINAL_DESIGN_V1';
 }>;
 
+/**
+ * Server-authored only. A current-version change invalidates the proof basis of
+ * every direct/indirect current dependent. This event marks that dependent for
+ * revalidation without inventing a human initiator or V1 challenge stake.
+ */
+export type KnowledgeCascadeRevalidationStartedEvent = EventEnvelope<'KnowledgeCascadeRevalidationStarted', {
+  nodeId: string;
+  sourceNodeId: string;
+  replacementNodeId: string;
+  triggerEventId: string;
+}>;
+
 export type PublicKnowledgeEvent =
   | NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent | NodeResolvedEvent | NodeDisputedEvent
   | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeMergedEvent
   | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent
-  | KnowledgeRevalidationStartedEvent | KnowledgeRevalidationFinalizedEvent;
+  | KnowledgeRevalidationStartedEvent | KnowledgeRevalidationFinalizedEvent | KnowledgeCascadeRevalidationStartedEvent;
 export type PersonalKnowledgeEvent = NodeMasterySetEvent;
 
 export type DomainEvent = PublicKnowledgeEvent | PersonalKnowledgeEvent;
