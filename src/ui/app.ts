@@ -15,17 +15,16 @@ import {
   type UserKnowledgeLayer,
 } from '../domain/KnowledgeLayerPolicy';
 
-import { editNode as cmdEditNode } from '../command/EditNode';
+import { executeKnowledgeOptimization } from '../command/KnowledgeOptimization';
+import { executeKnowledgeOpposition } from '../command/KnowledgeOpposition';
 import { resolveNode as cmdResolveNode } from '../command/ResolveNode';
 import { setMastery as cmdSetMastery } from '../command/SetMastery';
 import { disputeNode as cmdDisputeNode } from '../command/DisputeNode';
 import { executeKnowledgeEdit } from '../command/KnowledgeEdit';
 import {
-  canonicalKnowledgeText,
   type AddEdit,
   type DecomposeEdit,
   type MergeEdit,
-  type NegateEdit,
 } from '../protocol/KnowledgeEditingProtocol';
 import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
 import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
@@ -55,10 +54,9 @@ import {
   PanelController,
   type CreateNodePayload,
   type DecomposeNodePayload,
-  type EditNodePayload,
+  type LineageCandidatePayload,
   type MergeDefinitionPayload,
   type MergeTheoryPayload,
-  type NegateNodePayload,
   type PanelNodeSummary,
 } from './panels/PanelController';
 import {
@@ -66,6 +64,7 @@ import {
   type NodeDetailAction,
   type NodeDetailNode,
 } from './panels/NodeDetailController';
+import { NodeDetailLineageUi } from './panels/NodeDetailLineageUi';
 import { buildNodeDetailRelations } from './panels/NodeDetailRelations';
 import { setupMobileShell } from '../mobile/MobileShell';
 import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
@@ -89,6 +88,7 @@ let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
 let panel: PanelController;
 let nodeDetail: NodeDetailController | null = null;
+let nodeDetailLineageUi: NodeDetailLineageUi | null = null;
 let interaction: InteractionController;
 let currentPanelId: string | null = null;
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
@@ -270,7 +270,7 @@ function getNodeDetailActions(id: string): NodeDetailAction[] {
   return actions;
 }
 
-function launchLegacyPanelAction(id: string, action: NodeDetailAction): void {
+function launchPanelAction(id: string, action: NodeDetailAction): void {
   currentPanelId = id;
   if (action === 'derive') {
     panel.openCreateModal(id);
@@ -321,6 +321,7 @@ function openNode(id: string): void {
   if (nodeDetail) {
     panel.closeNodePanel();
     nodeDetail.open(id);
+    nodeDetailLineageUi?.open(id);
     void markNodeViewed(id);
   } else {
     panel.openNodePanel(id);
@@ -392,55 +393,31 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
 }
 
 async function applyKnowledgeEdit(
-  edit: AddEdit | NegateEdit | DecomposeEdit | MergeEdit,
+  edit: AddEdit | DecomposeEdit | MergeEdit,
   declaredLayers?: Readonly<Record<string, UserKnowledgeLayer>>,
 ): Promise<void> {
   await executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers);
 }
 
-async function editKnowledgeNode(id: string, payload: EditNodePayload): Promise<void> {
-  const current = projection.state.nodesById[id];
-  if (!current) throw new Error('编辑目标不存在');
-  if (payload.type !== current.type) throw new Error('结构类型不能直接更改；请通过增加、分解或合并建立新结构');
-  const title = canonicalKnowledgeText(payload.title);
-  const description = canonicalKnowledgeText(payload.reasoning);
-  const duplicateTitle = nodeList(projection.state).find(node => node.id !== id && canonicalKnowledgeText(node.title) === title);
-  const duplicateDescription = nodeList(projection.state).find(node => node.id !== id && canonicalKnowledgeText(node.reasoning) === description);
-  if (duplicateTitle) throw new Error(`节点标题已被“${duplicateTitle.title}”占用，包括隐藏历史节点`);
-  if (duplicateDescription) throw new Error(`节点描述已被“${duplicateDescription.title}”占用，包括隐藏历史节点`);
-  const premises = payload.premises ? [...new Set(payload.premises)] : [...current.premises];
-  if (premises.includes(id)) throw new Error('知识节点不能把自己作为前提');
-  for (const premiseId of premises) {
-    if (!projection.state.nodesById[premiseId]) throw new Error(`前提不存在: ${premiseId}`);
-  }
-  await cmdEditNode(store, {
-    nodeId: id,
+async function optimizeKnowledgeNode(id: string, payload: LineageCandidatePayload): Promise<void> {
+  await executeKnowledgeOptimization(store, projection, {
+    targetId: id,
+    candidateId: generateNodeId(),
     title: payload.title,
-    nodeType: payload.type,
-    reasoning: payload.reasoning,
-    premises,
+    reasoning: payload.description,
+    declaredLayer: payload.layer,
   }, commitPublicEvent);
+  currentPanelId = null;
 }
 
-async function negateKnowledgeNode(id: string, payload: NegateNodePayload): Promise<void> {
-  const target = projection.state.nodesById[id];
-  if (!target) throw new Error('否定目标不存在');
-  const edit: NegateEdit = {
-    kind: 'negate',
-    target: target.type === 'reasoning' ? 'reasoning' : 'conclusion',
+async function opposeKnowledgeNode(id: string, payload: LineageCandidatePayload): Promise<void> {
+  await executeKnowledgeOpposition(store, projection, {
     targetId: id,
-    counterexampleIds: payload.counterexampleIds,
-    correctedReasoning: payload.correctedReasoning
-      ? {
-          id: generateNodeId(),
-          title: payload.correctedReasoning.title,
-          type: 'reasoning',
-          reasoning: payload.correctedReasoning.reasoning,
-          logicRuleId: payload.correctedReasoning.logicRuleId,
-        }
-      : undefined,
-  };
-  await applyKnowledgeEdit(edit);
+    candidateId: generateNodeId(),
+    title: payload.title,
+    reasoning: payload.description,
+    declaredLayer: payload.layer,
+  }, commitPublicEvent);
   currentPanelId = null;
 }
 
@@ -556,11 +533,13 @@ scene = createKnowledgeScene({
     onNodeTap: openNode,
     onBackgroundTap: () => {
       currentPanelId = null;
+      nodeDetailLineageUi?.close();
       nodeDetail?.close();
       panel.closeNodePanel();
     },
     onBackgroundDoubleTap: () => {
       const premiseId = currentPanelId;
+      nodeDetailLineageUi?.close();
       nodeDetail?.close();
       currentPanelId = premiseId;
       panel.openCreateModal(premiseId);
@@ -573,8 +552,8 @@ panel = new PanelController({
   getNodeById: getPanelNodeById,
 
   onCreateNode: createKnowledgeNode,
-  onEditNode: editKnowledgeNode,
-  onNegateNode: negateKnowledgeNode,
+  onOptimizeNode: optimizeKnowledgeNode,
+  onOpposeNode: opposeKnowledgeNode,
   onDecomposeNode: decomposeKnowledgeNode,
   onMergeDefinitions: mergeDefinitions,
   onMergeTheories: mergeTheories,
@@ -638,10 +617,14 @@ if (!Capacitor.isNativePlatform()) {
     getRelations: id => buildNodeDetailRelations(id, nodeList(projection.state)),
     getScreenPosition: id => scene.screenPositionForNode(id),
     getActions: getNodeDetailActions,
-    onAction: launchLegacyPanelAction,
+    onAction: launchPanelAction,
     onDetailNodeChange: id => scene.setDetailNode(id),
-    onClose: () => { currentPanelId = null; },
+    onClose: () => {
+      nodeDetailLineageUi?.close();
+      currentPanelId = null;
+    },
   });
+  nodeDetailLineageUi = new NodeDetailLineageUi({ getNodeById: getNodeDetailById });
 }
 
 openSettingsOverlay = () => panel.openSettingsOverlay();
@@ -670,9 +653,12 @@ store.subscribe((event) => {
   scene.markDirty();
 
   if (currentPanelId) {
-    const legacyPanelOpen = must<HTMLElement>('panel').classList.contains('open');
-    if (legacyPanelOpen) panel.openNodePanel(currentPanelId);
-    else if (nodeDetail?.isOpenFor(currentPanelId)) nodeDetail.refresh(currentPanelId);
+    const panelOpen = must<HTMLElement>('panel').classList.contains('open');
+    if (panelOpen) panel.openNodePanel(currentPanelId);
+    else if (nodeDetail?.isOpenFor(currentPanelId)) {
+      nodeDetail.refresh(currentPanelId);
+      nodeDetailLineageUi?.refresh(currentPanelId);
+    }
   }
   performance.mark?.('knowledge-subscriber-end');
   performance.measure?.('knowledge-subscriber', 'knowledge-subscriber-start', 'knowledge-subscriber-end');
@@ -798,6 +784,7 @@ void setupMobileShell();
   interaction,
   panel,
   nodeDetail,
+  nodeDetailLineageUi,
   scene,
   createKnowledgeNode,
   get syncEngine() { return syncEngine; },

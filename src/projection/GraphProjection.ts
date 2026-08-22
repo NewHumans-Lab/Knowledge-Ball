@@ -214,6 +214,12 @@ export class GraphProjection implements Projection<GraphState> {
           resolveOppositionCandidate(Object.values(this.state.nodesById), n.id, event.payload.verdict);
           break;
         }
+        // New initial rounds use V2, but historical initial rounds used V1 and
+        // must still replay. The generic V1 verdict is a CASCADE intermediate
+        // result only when the ordinary node is already disputed by the preceding
+        // authoritative KnowledgeStatusChanged event. The following status event
+        // owns the final cascade result (verified or suspended).
+        if (event.payload.policyVersion === 'ORIGINAL_DESIGN_V1' && n.status === 'disputed') break;
         if (event.payload.verdict === 'CORRECT') { n.status = 'verified'; n.hidden = false; }
         else { n.status = 'falsified'; n.hidden = true; }
         break;

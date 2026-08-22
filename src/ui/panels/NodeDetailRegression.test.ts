@@ -1,12 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 import { formatNodeContributionTime } from './NodeDetailController';
 
-const detail = readFileSync('src/ui/panels/NodeDetailControllerLegacy.ts', 'utf8');
-const lineageDetail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
+const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
+const lineageUi = readFileSync('src/ui/panels/NodeDetailLineageUi.ts', 'utf8');
 const css = readFileSync('src/ui/panels/NodeDetailPanel.css', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
 
+assert.equal(existsSync('src/ui/panels/NodeDetailControllerLegacy.ts'), false, 'there must be one NodeDetailController implementation');
 assert.equal(formatNodeContributionTime(undefined), '—');
 assert.equal(formatNodeContributionTime('invalid'), '—');
 assert.match(formatNodeContributionTime('2026-08-21T04:00:00.000Z'), /^2026-08-21\s/);
@@ -19,10 +20,11 @@ assert(!detail.includes('>内容<'), 'the standalone content heading must stay r
 assert(detail.indexOf('node-detail-content') < detail.indexOf('node-detail-meta'), 'knowledge content must appear before contributor/time metadata');
 assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributor and time must remain two ordered footer rows');
 for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
-  assert(detail.includes(action), `legacy edit engine must retain ${action}`);
+  assert(detail.includes(action), `base detail engine must retain ${action}`);
 }
-assert(lineageDetail.includes("edit.textContent = '优化'"), 'V3 adapter must relabel edit as optimization');
-assert(lineageDetail.includes("negate.textContent = '提出对立观点'"), 'V3 adapter must relabel negate as opposition');
+assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit from a copied legacy controller');
+assert(lineageUi.includes("optimize.textContent = '优化'"), 'V3 lineage UI must relabel edit as optimization');
+assert(lineageUi.includes("oppose.textContent = '提出对立观点'"), 'V3 lineage UI must relabel negate as opposition');
 
 assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
 assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
@@ -41,18 +43,20 @@ assert(detail.includes("typeof window === 'undefined'"), 'vote client creation m
 assert(!detail.includes('const voteAccount = createProductionAuthClient()'), 'vote client must not initialize at module import time');
 assert(!detail.includes('setInterval('), 'near-node voting must not add a permanent polling interval');
 
-// Automatic dependency cascade reuses the one-energy pending-vote RPC, but has
-// no initiator and is distinguished from first-round V2 by its V1 pending round.
-assert(lineageDetail.includes("node.status !== 'disputed' || lineageRoleFor(node) !== 'current'"), 'cascade UI must attach only to disputed current nodes');
-assert(lineageDetail.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade UI must require the server-created V1 pending round');
-assert(lineageDetail.includes('data-cascade-vote-side="AGREE"'), 'cascade UI must expose agree');
-assert(lineageDetail.includes('data-cascade-vote-side="DISAGREE"'), 'cascade UI must expose disagree');
-assert(lineageDetail.includes('能量 −1'), 'cascade ordinary vote cost must remain one energy');
-assert(lineageDetail.includes('无发起人、无发起人票'), 'cascade UI must state the no-initiator rule');
-assert(lineageDetail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'cascade must reuse the authoritative pending-vote RPC');
-assert(lineageDetail.includes('CASCADE_REFRESH_MS = 3_000'), 'cascade tally must refresh without a permanent interval');
-assert(lineageDetail.includes("knowledge-ball:verdict-finalized"), 'cascade finalization must request public-stream convergence');
-assert(!lineageDetail.includes('setInterval('), 'cascade must not add a permanent polling interval');
+// Automatic dependency cascade is a focused V3 enhancement, not a copied
+// detail controller. It reuses the authoritative pending-vote RPC.
+assert(lineageUi.includes('class NodeDetailLineageUi'), 'lineage detail enhancement must have one narrow owner');
+assert(lineageUi.includes("node.status !== 'disputed' || lineageRoleFor(node) !== 'current'"), 'cascade UI must attach only to disputed current nodes');
+assert(lineageUi.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade UI must require the server-created V1 pending round');
+assert(lineageUi.includes('data-cascade-vote-side="AGREE"'), 'cascade UI must expose agree');
+assert(lineageUi.includes('data-cascade-vote-side="DISAGREE"'), 'cascade UI must expose disagree');
+assert(lineageUi.includes('能量 −1'), 'cascade ordinary vote cost must remain one energy');
+assert(lineageUi.includes('无发起人、无发起人票'), 'cascade UI must state the no-initiator rule');
+assert(lineageUi.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'cascade must reuse the authoritative pending-vote RPC');
+assert(lineageUi.includes('REFRESH_MS = 3_000'), 'cascade tally must refresh without a permanent interval');
+assert(lineageUi.includes("knowledge-ball:verdict-finalized"), 'cascade finalization must request public-stream convergence');
+assert(!lineageUi.includes('setInterval('), 'cascade must not add a permanent polling interval');
+assert(app.includes('nodeDetailLineageUi?.open(id)') && app.includes('nodeDetailLineageUi?.refresh(currentPanelId)'), 'app must explicitly start and refresh lineage detail enhancement with the detail lifecycle');
 
 assert(css.includes('grid-template-columns:1fr 1fr'), 'agree and disagree must stay side by side in one row');
 assert(css.includes('.node-detail-vote-button span{font-size:12px'), 'vote choice must be the primary line in each button');
@@ -78,9 +82,9 @@ assert(css.includes('touch-action:pan-y'), 'mobile users must be able to vertica
 assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/action styling must not use the old red danger colour');
 
 assert(app.includes('if (!Capacitor.isNativePlatform())'), 'new near-node detail behavior must remain web-only for now');
-assert(app.includes('nodeDetail.open(id)'), 'second-tap ordinary-node path must open the near-node detail surface');
+assert(app.includes('nodeDetail.open(id)'), 'ordinary-node path must open the near-node detail surface');
 assert(app.includes("getMetadata: id =>"), 'detail must receive contributor/time metadata through the production adapter');
-assert(app.includes('panel.openNodePanel(id)') && app.includes('launchLegacyPanelAction'), 'legacy large panel must be retained only as the editing engine');
+assert(app.includes('panel.openNodePanel(id)') && app.includes('launchPanelAction'), 'large panel must remain the single editing surface behind detail actions');
 
 assert(detail.includes("const LABEL_SWITCH_CLASS = 'node-detail-labels-off';"), 'detail must own one explicit knowledge-label visibility switch');
 assert(detail.includes('this.setKnowledgeLabelsVisible(false);'), 'opening detail must switch all knowledge labels off');
