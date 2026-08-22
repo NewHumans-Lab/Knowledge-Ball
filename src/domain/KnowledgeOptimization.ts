@@ -16,6 +16,14 @@ export interface KnowledgeOptimizationProposalInput {
   reasoning: string;
 }
 
+type OptimizationCandidateNode = GraphNode & {
+  lineage: KnowledgeLineageMeta & {
+    proposal: 'optimization';
+    role: 'candidate-history';
+    targetId: string;
+  };
+};
+
 function canonicalText(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
 }
@@ -30,7 +38,7 @@ export function optimizationCandidateLineage(target: GraphNode): KnowledgeLineag
   };
 }
 
-export function isOptimizationCandidate(node: GraphNode | undefined): node is GraphNode {
+export function isOptimizationCandidate(node: GraphNode | undefined): node is OptimizationCandidateNode {
   return Boolean(
     node?.lineage?.proposal === 'optimization'
     && node.lineage.role === 'candidate-history'
