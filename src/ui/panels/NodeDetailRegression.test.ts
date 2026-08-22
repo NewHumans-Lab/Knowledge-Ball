@@ -47,7 +47,8 @@ assert(!detail.includes('setInterval('), 'near-node voting must not add a perman
 // detail controller. It reuses the authoritative pending-vote RPC.
 assert(lineageUi.includes('class NodeDetailLineageUi'), 'lineage detail enhancement must have one narrow owner');
 assert(lineageUi.includes("node.status !== 'disputed' || lineageRoleFor(node) !== 'current'"), 'cascade UI must attach only to disputed current nodes');
-assert(lineageUi.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade UI must require the server-created V1 pending round');
+assert(lineageUi.includes("snapshot.roundKind !== 'CASCADE'"), 'cascade UI must require the explicit server-created CASCADE round kind');
+assert(!lineageUi.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade UI must not infer round semantics from human V1 policy identity');
 assert(lineageUi.includes('data-cascade-vote-side="AGREE"'), 'cascade UI must expose agree');
 assert(lineageUi.includes('data-cascade-vote-side="DISAGREE"'), 'cascade UI must expose disagree');
 assert(lineageUi.includes('能量 −1'), 'cascade ordinary vote cost must remain one energy');
