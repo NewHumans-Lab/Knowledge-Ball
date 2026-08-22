@@ -1,0 +1,10 @@
+/*
+ * Public truth status transitions are server-owned. These legacy PanelController
+ * actions remain only as compatibility wiring for local/history code paths; the
+ * product UI must never expose them as ordinary-user controls.
+ */
+#btnResolve,
+#btnDispute {
+  display: none !important;
+  pointer-events: none !important;
+}
