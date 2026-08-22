@@ -3,7 +3,7 @@ import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
 export type { Mastery, NodeType } from '../domain/KnowledgeModel';
 
 export type NodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
-export type KnowledgeVerdictPolicyVersion = 'ORIGINAL_DESIGN_V1' | 'ORIGINAL_DESIGN_V2';
+export type KnowledgeVerdictPolicyVersion = 'ORIGINAL_DESIGN_V1' | 'ORIGINAL_DESIGN_V2' | 'KNOWLEDGE_LINEAGE_V3_CASCADE';
 export type KnowledgeRevalidationScope = 'GLOBAL' | 'LOCAL_10';
 
 interface EventEnvelope<TType extends string, TPayload, TScope extends 'public' | 'personal' = 'public'> {
