@@ -5,6 +5,7 @@ import {
 } from '../../auth/AuthClient';
 import { lineageRoleFor } from '../../domain/KnowledgeLineage';
 import type { NodeDetailNode } from './NodeDetailController';
+import './LineageV3Hardening.css';
 
 const REFRESH_MS = 3_000;
 
@@ -61,10 +62,9 @@ export class NodeDetailLineageUi {
     try {
       const snapshot = await account.getPendingKnowledgeVote(nodeId);
       if (!this.isCurrent(nodeId, token)) return;
-      // Human ORIGINAL_DESIGN_V1 revalidation uses a separate RPC/table family.
-      // A V1 round returned by the generic pending-vote RPC is the server-created
-      // CASCADE round and has no creator/initiator lock.
-      if (snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1') return;
+      // CASCADE is identified by its explicit round kind. Policy version is an
+      // audit/protocol field and must not be overloaded as a client routing flag.
+      if (snapshot.roundKind !== 'CASCADE') return;
       this.renderSnapshot(snapshot, token);
     } catch {
       // A manually disputed current node can legitimately have no cascade round.
@@ -132,7 +132,7 @@ export class NodeDetailLineageUi {
     try {
       const snapshot = await account.castPendingKnowledgeVote(nodeId, side);
       if (!this.isCurrent(nodeId, token)) return;
-      if (snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1') return;
+      if (snapshot.roundKind !== 'CASCADE') return;
       this.renderSnapshot(snapshot, token);
     } catch (error) {
       if (!this.isCurrent(nodeId, token)) return;
