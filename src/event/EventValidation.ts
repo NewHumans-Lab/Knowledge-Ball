@@ -1,5 +1,7 @@
 import type { DomainEvent } from './Event';
 import type { GraphState } from '../state/GraphState';
+import { topicIdFor } from '../domain/KnowledgeLineage';
+import { validateOptimizationProposal } from '../domain/KnowledgeOptimization';
 import {
   validateKnowledgeEdit,
   type ProtocolNode,
@@ -28,6 +30,12 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
     if (!edit || edit.kind !== expected) {
       errors.push(`${event.type} 必须携带 ${expected} 编辑载荷`);
     }
+  }
+  if (event.type === 'KnowledgeAdded' && event.payload.optimization) {
+    if (!event.payload.optimization.targetId?.trim() || !event.payload.optimization.topicId?.trim()) {
+      errors.push('优化事件必须携带 targetId 和 topicId');
+    }
+    if (event.payload.edit.mode !== 'atomic') errors.push('优化候选必须作为单一不可变知识球提交');
   }
   if (event.type === 'KnowledgeVerdictFinalized') {
     const p = event.payload;
@@ -63,11 +71,35 @@ function protocolNodes(state: GraphState): ProtocolNode[] {
   }));
 }
 
+function validateOptimizationEvent(event: Extract<DomainEvent, { type: 'KnowledgeAdded' }>, state: GraphState): string[] {
+  const optimization = event.payload.optimization;
+  if (!optimization) return [];
+  if (event.payload.edit.mode !== 'atomic') return ['优化候选必须作为单一不可变知识球提交'];
+
+  const candidate = event.payload.edit.node;
+  const errors = validateOptimizationProposal(Object.values(state.nodesById), {
+    targetId: optimization.targetId,
+    candidateId: candidate.id,
+    title: candidate.title,
+    reasoning: candidate.reasoning,
+  });
+  const target = state.nodesById[optimization.targetId];
+  if (!target) return errors;
+
+  if (optimization.topicId !== topicIdFor(target)) errors.push('优化事件 topicId 与当前目标所属主题不一致');
+  if (candidate.type !== target.type) errors.push('优化只能修改名字、层级和内容，不能偷偷改变节点类型');
+  if (candidate.logicRuleId !== target.logicRuleId) errors.push('优化不能偷偷改变原节点的逻辑规则身份');
+  if (!event.payload.declaredLayers?.[candidate.id]) errors.push('优化候选必须显式声明第一/第二/第三层');
+  return errors;
+}
+
 export function validateDomainEventAgainstState(event: DomainEvent, state: GraphState): string[] {
   const errors = validateDomainEventEnvelope(event);
   if (errors.length) return errors;
   switch (event.type) {
     case 'KnowledgeAdded':
+      if (event.payload.optimization) return validateOptimizationEvent(event, state);
+      return validateKnowledgeEdit(protocolNodes(state), event.payload.edit);
     case 'KnowledgeNegated':
     case 'KnowledgeDecomposed':
     case 'KnowledgeMerged':
