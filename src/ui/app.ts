@@ -5,6 +5,11 @@ import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjec
 import { nodeList } from '../state/GraphState';
 import type { GraphNode } from '../graph/Node';
 import {
+  currentNodeForTopic,
+  lineageRoleFor,
+  topicIdFor,
+} from '../domain/KnowledgeLineage';
+import {
   declaredLayerForNode,
   effectiveLayerForNode,
   type UserKnowledgeLayer,
@@ -32,6 +37,7 @@ import {
   TWIN_META,
   type KnowledgeNodeType,
 } from './config/KnowledgeUiConfig';
+import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
 
 import {
   createKnowledgeScene,
@@ -60,6 +66,7 @@ import {
   type NodeDetailAction,
   type NodeDetailNode,
 } from './panels/NodeDetailController';
+import { buildNodeDetailRelations } from './panels/NodeDetailRelations';
 import { setupMobileShell } from '../mobile/MobileShell';
 import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
@@ -114,15 +121,27 @@ function generateNodeId(): string {
   return `n-${crypto.randomUUID()}`;
 }
 
+function effectivePremiseIds(node: GraphNode, allNodes: readonly GraphNode[]): string[] {
+  const byId = new Map(allNodes.map(item => [item.id, item] as const));
+  return [...new Set(node.premises.map(premiseId => {
+    const premise = byId.get(premiseId);
+    if (!premise) return premiseId;
+    return currentNodeForTopic(allNodes, topicIdFor(premise))?.id ?? premiseId;
+  }))];
+}
+
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
-  const hiddenIds = new Set(domainNodes.filter(dn => dn.hidden).map(dn => dn.id));
 
-  // Every projected node receives a real slot before render visibility is applied.
-  // Hidden/falsified/superseded history therefore continues to occupy space.
-  layoutNodes = domainNodes.map(dn => renderNodeFromDomain(dn));
+  // All formal lineage balls stay in scene data. Current/Personal/All owns their
+  // visibility; rejected audit-only candidates and legacy hidden records do not.
+  layoutNodes = domainNodes.map(dn => {
+    const rendered = renderNodeFromDomain(dn);
+    rendered.premises = effectivePremiseIds(dn, domainNodes);
+    return rendered;
+  });
   applyUniformLayerLayout(layoutNodes);
-  renderNodes = layoutNodes.filter(node => !hiddenIds.has(node.id));
+  renderNodes = layoutNodes.filter(node => nodeBelongsInLineageScene(node));
 }
 
 function renderNodeFromDomain(dn: GraphNode): KnowledgeSceneNode {
@@ -136,12 +155,14 @@ function renderNodeFromDomain(dn: GraphNode): KnowledgeSceneNode {
       status: dn.status,
       mastery: dn.mastery,
       reasoning: dn.reasoning,
-      premises: dn.premises,
+      premises: [...dn.premises],
       declaredLayer,
       effectiveLayer,
       logicRuleId: dn.logicRuleId,
       aliases: dn.aliases,
       semanticKey: dn.semanticKey,
+      hidden: dn.hidden,
+      lineage: dn.lineage,
       ...meta,
   };
 }
@@ -152,7 +173,7 @@ function getNodeById(id: string): KnowledgeSceneNode | null {
 
 function getPanelNodeById(id: string): PanelNodeSummary | null {
   const n = getNodeById(id);
-  if (!n) return null;
+  if (!n || lineageRoleFor(n) !== 'current') return null;
 
   return {
     id: n.id,
@@ -173,22 +194,24 @@ function getPanelNodeById(id: string): PanelNodeSummary | null {
 }
 
 function getPanelNodes(): PanelNodeSummary[] {
-  return renderNodes.map(n => ({
-    id: n.id,
-    title: n.title,
-    type: n.type,
-    status: n.status,
-    mastery: n.mastery,
-    reasoning: n.reasoning,
-    premises: n.premises,
-    declaredLayer: n.declaredLayer,
-    effectiveLayer: n.effectiveLayer,
-    twinGroup: n.twinGroup,
-    sharedTitle: n.sharedTitle,
-    logicRuleId: n.logicRuleId,
-    aliases: n.aliases,
-    semanticKey: n.semanticKey,
-  }));
+  return renderNodes
+    .filter(n => lineageRoleFor(n) === 'current')
+    .map(n => ({
+      id: n.id,
+      title: n.title,
+      type: n.type,
+      status: n.status,
+      mastery: n.mastery,
+      reasoning: n.reasoning,
+      premises: n.premises,
+      declaredLayer: n.declaredLayer,
+      effectiveLayer: n.effectiveLayer,
+      twinGroup: n.twinGroup,
+      sharedTitle: n.sharedTitle,
+      logicRuleId: n.logicRuleId,
+      aliases: n.aliases,
+      semanticKey: n.semanticKey,
+    }));
 }
 
 function getInteractionNodes(): InteractionNodeSummary[] {
@@ -210,6 +233,7 @@ function getNodeDetailById(id: string): NodeDetailNode | null {
     type: node.type,
     status: node.status,
     reasoning: node.reasoning,
+    lineage: node.lineage,
   } : null;
 }
 
@@ -221,13 +245,13 @@ function reasoningParentForDetail(node: KnowledgeSceneNode): KnowledgeSceneNode 
 }
 
 function canMergeFromDetail(node: KnowledgeSceneNode): boolean {
-  if (node.type === 'definition') return renderNodes.some(candidate => candidate.id !== node.id && candidate.type === 'definition');
+  if (node.type === 'definition') return renderNodes.some(candidate => candidate.id !== node.id && candidate.type === 'definition' && lineageRoleFor(candidate) === 'current');
   if (['axiom', 'definition', 'fact', 'logic-symbol', 'reasoning'].includes(node.type)) return false;
   const reasoning = reasoningParentForDetail(node);
   if (!reasoning) return false;
   const premiseKey = [...new Set(reasoning.premises)].sort().join('\0');
   return renderNodes.some(candidate => {
-    if (candidate.id === node.id || candidate.type !== node.type) return false;
+    if (candidate.id === node.id || candidate.type !== node.type || lineageRoleFor(candidate) !== 'current') return false;
     const otherReasoning = reasoningParentForDetail(candidate);
     if (!otherReasoning || otherReasoning.id === reasoning.id || otherReasoning.logicRuleId !== reasoning.logicRuleId) return false;
     return [...new Set(otherReasoning.premises)].sort().join('\0') === premiseKey;
@@ -236,7 +260,7 @@ function canMergeFromDetail(node: KnowledgeSceneNode): boolean {
 
 function getNodeDetailActions(id: string): NodeDetailAction[] {
   const node = getNodeById(id);
-  if (!node) return [];
+  if (!node || lineageRoleFor(node) !== 'current') return [];
   const actions: NodeDetailAction[] = ['edit', 'derive'];
   if (node.type === 'reasoning') actions.push('decompose');
   if (canMergeFromDetail(node)) actions.push('merge');
@@ -611,6 +635,7 @@ if (!Capacitor.isNativePlatform()) {
       const metadata = productionSyncAdapter?.nodeMetadata(id);
       return metadata ? { contributor: metadata.contributor, createdAt: metadata.createdAt, actorId: metadata.actorId } : null;
     },
+    getRelations: id => buildNodeDetailRelations(id, nodeList(projection.state)),
     getScreenPosition: id => scene.screenPositionForNode(id),
     getActions: getNodeDetailActions,
     onAction: launchLegacyPanelAction,
@@ -631,7 +656,6 @@ interaction = new InteractionController({
   settingsButton: opt<HTMLButtonElement>('btnSettings'),
   nodeRadiusInput: opt<HTMLInputElement>('setNodeRadius'),
   labelBrightnessInput: opt<HTMLInputElement>('setLabelBrightness'),
-  hideUntouchedButton: opt<HTMLButtonElement>('btnPersonal'),
   onPickNode: id => scene.focusNode(id),
   onOpenCreateNode: () => panel.openCreateModal(currentPanelId),
   onOpenSettings: () => panel.openSettingsOverlay(),
@@ -684,7 +708,7 @@ if (depthLimitInput) {
     }
   };
 
-   depthLimitInput.addEventListener('input', applyDepthLimit);
+  depthLimitInput.addEventListener('input', applyDepthLimit);
   applyDepthLimit();
 }
 
@@ -718,7 +742,7 @@ sendButton?.addEventListener('click', () => {
   );
 });
 
-interaction.setHideUntouched(false);
+interaction.setVisibilityMode('current');
 
 function validateProposedPublicEvent(event: PublicKnowledgeEvent): string | null {
   const errors = validateDomainEventAgainstState(event, projection.state);
