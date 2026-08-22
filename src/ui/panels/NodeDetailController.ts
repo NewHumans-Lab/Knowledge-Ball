@@ -1,10 +1,14 @@
 import './NodeDetailPanel.css';
 import {
   createProductionAuthClient,
+  type KnowledgeRevalidationSnapshot,
   type PendingKnowledgeVoteSnapshot,
   type PendingVoteSide,
 } from '../../auth/AuthClient';
+import type { KnowledgeLineageMeta } from '../../domain/KnowledgeLineage';
+import { lineageRoleFor } from '../../domain/KnowledgeLineage';
 import type { KnowledgeNodeStatus, KnowledgeNodeType } from '../config/KnowledgeUiConfig';
+import type { NodeDetailRelations } from './NodeDetailRelations';
 
 export type NodeDetailAction = 'edit' | 'derive' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
 
@@ -14,6 +18,7 @@ export interface NodeDetailNode {
   type: KnowledgeNodeType;
   status: KnowledgeNodeStatus;
   reasoning: string;
+  lineage?: KnowledgeLineageMeta;
 }
 
 export interface NodeDetailMetadata {
@@ -25,6 +30,7 @@ export interface NodeDetailMetadata {
 export interface NodeDetailControllerOptions {
   getNodeById: (id: string) => NodeDetailNode | null;
   getMetadata: (id: string) => NodeDetailMetadata | null;
+  getRelations: (id: string) => NodeDetailRelations;
   getScreenPosition: (id: string) => { x: number; y: number } | null;
   getActions: (id: string) => NodeDetailAction[];
   onAction: (id: string, action: NodeDetailAction) => void;
@@ -61,6 +67,23 @@ function escapeHtml(input: string): string {
     .replaceAll("'", '&#39;');
 }
 
+function displayEnergy(value: string): string {
+  return value.replace(/\.0+$/, '').replace(/(\.\d*?[1-9])0+$/, '$1');
+}
+
+function relationMarkup(relations: NodeDetailRelations): string {
+  const render = (className: string, items: NodeDetailRelations[keyof NodeDetailRelations]) => {
+    if (items.length === 0) return '';
+    return `<div class="node-detail-relations ${className}">${items.map(item => `<span>${escapeHtml(item.title)}</span>`).join('')}</div>`;
+  };
+  return [
+    render('left', relations.premises),
+    render('top', relations.history),
+    render('right', relations.conclusions),
+    render('bottom', relations.opposition),
+  ].join('');
+}
+
 export function formatNodeContributionTime(value: string | undefined | null): string {
   if (!value) return '—';
   const date = new Date(value);
@@ -78,6 +101,7 @@ export function formatNodeContributionTime(value: string | undefined | null): st
 export class NodeDetailController {
   private readonly getNodeById: NodeDetailControllerOptions['getNodeById'];
   private readonly getMetadata: NodeDetailControllerOptions['getMetadata'];
+  private readonly getRelations: NodeDetailControllerOptions['getRelations'];
   private readonly getScreenPosition: NodeDetailControllerOptions['getScreenPosition'];
   private readonly getActions: NodeDetailControllerOptions['getActions'];
   private readonly onAction: NodeDetailControllerOptions['onAction'];
@@ -92,6 +116,7 @@ export class NodeDetailController {
   constructor(options: NodeDetailControllerOptions) {
     this.getNodeById = options.getNodeById;
     this.getMetadata = options.getMetadata;
+    this.getRelations = options.getRelations;
     this.getScreenPosition = options.getScreenPosition;
     this.getActions = options.getActions;
     this.onAction = options.onAction;
@@ -163,10 +188,16 @@ export class NodeDetailController {
     const contributor = metadata?.contributor || '—';
     const time = formatNodeContributionTime(metadata?.createdAt);
     const actions = this.getActions(node.id);
-    const account = node.status === 'pending' ? currentVoteAccount() : null;
-    const interaction = node.status === 'pending'
-      ? `
-        <div class="node-detail-vote">
+    const account = currentVoteAccount();
+    const role = lineageRoleFor(node);
+    const oldLineage = role === 'history' || role === 'opposition';
+    const relations = this.getRelations(node.id);
+
+    let interaction: string;
+    if (node.status === 'pending') {
+      // First-round node/candidate validation remains V2 and one energy.
+      interaction = `
+        <div class="node-detail-vote node-detail-interaction">
           <div class="node-detail-vote-title">投票</div>
           <div class="node-detail-vote-actions">
             <button type="button" class="node-detail-vote-button agree" data-vote-side="AGREE" disabled><span>同意</span><small>能量 −1</small></button>
@@ -174,15 +205,45 @@ export class NodeDetailController {
           </div>
           <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>
         </div>
-      `
-      : `
+      `;
+    } else if (oldLineage && node.status === 'verified') {
+      interaction = `
+        <div class="node-detail-reactivation node-detail-interaction">
+          <div class="node-detail-vote-title">设为当前最优</div>
+          <div class="node-detail-vote-actions">
+            <button type="button" class="node-detail-vote-button agree" data-reactivate-intent="1" ${account ? '' : 'disabled'}><span>同意</span><small>重新验证</small></button>
+            <button type="button" class="node-detail-vote-button disagree" disabled><span>反对</span><small>此处不可用</small></button>
+          </div>
+          <div class="node-detail-confirm" hidden>
+            <div>请确认该知识点为当前最优</div>
+            <div class="node-detail-confirm-actions">
+              <button type="button" data-reactivate-cancel>取消</button>
+              <button type="button" data-reactivate-confirm>确认</button>
+            </div>
+          </div>
+          <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '确认后按当前 ORIGINAL_DESIGN_V1 阶段启动重新验证' : '共享服务未配置，暂不能重新验证'}</div>
+        </div>
+      `;
+    } else if (oldLineage && node.status === 'disputed') {
+      interaction = this.revalidationMarkup(null, account !== null);
+    } else if (role === 'current' && node.status === 'disputed') {
+      interaction = `
+        <div class="node-detail-cascade-status node-detail-interaction" role="status">
+          前提的当前版本已经变化，此知识正在等待重新验证。
+        </div>
+      `;
+    } else {
+      interaction = `
         <button type="button" class="node-detail-edit" aria-expanded="false">编辑</button>
         <div class="node-detail-edit-menu" hidden></div>
       `;
+    }
 
     this.root.dataset.nodeId = node.id;
     delete this.root.dataset.voteCreator;
+    delete this.root.dataset.revalidationInitiator;
     this.root.innerHTML = `
+      ${relationMarkup(relations)}
       <button type="button" class="node-detail-close" aria-label="关闭知识节点详情">×</button>
       <h2 class="node-detail-title">${escapeHtml(node.title)}</h2>
       <div class="node-detail-content">${escapeHtml(node.reasoning || '（未填写）')}</div>
@@ -199,6 +260,18 @@ export class NodeDetailController {
       void this.bindPendingVote(node.id, token, account, metadata?.actorId);
       return;
     }
+
+    if (oldLineage && node.status === 'verified') {
+      this.bindReactivation(node.id, token, account);
+      return;
+    }
+
+    if (oldLineage && node.status === 'disputed') {
+      void this.bindRevalidationVote(node.id, token, account);
+      return;
+    }
+
+    if (role === 'current' && node.status === 'disputed') return;
 
     const editButton = this.root.querySelector<HTMLButtonElement>('.node-detail-edit');
     const menu = this.root.querySelector<HTMLElement>('.node-detail-edit-menu');
@@ -220,6 +293,199 @@ export class NodeDetailController {
       });
       menu?.appendChild(button);
     }
+  }
+
+  private bindReactivation(
+    nodeId: string,
+    token: number,
+    account: ReturnType<typeof createProductionAuthClient>,
+  ): void {
+    const intent = this.root.querySelector<HTMLButtonElement>('[data-reactivate-intent]');
+    const confirm = this.root.querySelector<HTMLElement>('.node-detail-confirm');
+    const cancel = this.root.querySelector<HTMLButtonElement>('[data-reactivate-cancel]');
+    const submit = this.root.querySelector<HTMLButtonElement>('[data-reactivate-confirm]');
+    const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+    if (!account || !intent || !confirm || !submit) return;
+
+    intent.addEventListener('click', () => { confirm.hidden = false; });
+    cancel?.addEventListener('click', () => { confirm.hidden = true; });
+    submit.addEventListener('click', async () => {
+      if (!this.isCurrentVote(nodeId, token) || this.root.dataset.voteBusy === '1') return;
+      this.root.dataset.voteBusy = '1';
+      intent.disabled = true;
+      submit.disabled = true;
+      if (status) status.textContent = '正在启动重新验证…';
+      try {
+        const snapshot = await account.startKnowledgeRevalidation(nodeId);
+        if (!this.isCurrentVote(nodeId, token)) return;
+        this.root.dataset.revalidationInitiator = '1';
+        this.showRevalidationSnapshot(snapshot, token, account);
+        window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
+          detail: { nodeId, revalidationStarted: true },
+        }));
+      } catch (error) {
+        if (!this.isCurrentVote(nodeId, token)) return;
+        intent.disabled = false;
+        submit.disabled = false;
+        if (status) status.textContent = error instanceof Error ? `启动失败：${error.message}` : '重新验证启动失败';
+      } finally {
+        delete this.root.dataset.voteBusy;
+      }
+    });
+  }
+
+  private revalidationMarkup(snapshot: KnowledgeRevalidationSnapshot | null, configured: boolean): string {
+    const stake = snapshot ? displayEnergy(snapshot.stake) : '…';
+    return `
+      <div class="node-detail-revalidation node-detail-interaction">
+        <div class="node-detail-vote-title">重新验证 · ORIGINAL_DESIGN_V1</div>
+        <div class="node-detail-vote-actions">
+          <button type="button" class="node-detail-vote-button agree" data-revalidation-side="AGREE" disabled><span>同意</span><small>能量 −${stake}</small></button>
+          <button type="button" class="node-detail-vote-button disagree" data-revalidation-side="DISAGREE" disabled><span>反对</span><small>能量 −${stake}</small></button>
+        </div>
+        <div class="node-detail-vote-status" role="status" aria-live="polite">${configured ? '正在同步重新验证状态…' : '共享服务未配置，暂不能投票'}</div>
+      </div>
+    `;
+  }
+
+  private async bindRevalidationVote(
+    nodeId: string,
+    token: number,
+    account: ReturnType<typeof createProductionAuthClient>,
+  ): Promise<void> {
+    if (!account) return;
+    try {
+      const snapshot = await account.getKnowledgeRevalidation(nodeId);
+      if (!this.isCurrentVote(nodeId, token)) return;
+      this.showRevalidationSnapshot(snapshot, token, account);
+    } catch (error) {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '重新验证状态同步失败';
+    }
+  }
+
+  private showRevalidationSnapshot(
+    snapshot: KnowledgeRevalidationSnapshot,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): void {
+    const interaction = this.root.querySelector<HTMLElement>('.node-detail-interaction');
+    if (!interaction) return;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = this.revalidationMarkup(snapshot, true);
+    interaction.replaceWith(wrapper.firstElementChild!);
+
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-revalidation-side]'));
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        const side = button.dataset.revalidationSide as PendingVoteSide | undefined;
+        if (side === 'AGREE' || side === 'DISAGREE') void this.castRevalidationVote(snapshot.nodeId, side, token, account);
+      });
+    }
+    this.applyRevalidationSnapshot(snapshot);
+    if (snapshot.verdict === 'PENDING') this.scheduleRevalidationRefresh(snapshot.nodeId, token, account);
+    else this.handleFinalizedRevalidation(snapshot);
+  }
+
+  private async refreshRevalidationVote(
+    nodeId: string,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): Promise<void> {
+    if (!this.isCurrentVote(nodeId, token)) return;
+    try {
+      const snapshot = await account.getKnowledgeRevalidation(nodeId);
+      if (!this.isCurrentVote(nodeId, token)) return;
+      this.applyRevalidationSnapshot(snapshot);
+      if (snapshot.verdict === 'PENDING') this.scheduleRevalidationRefresh(nodeId, token, account);
+      else this.handleFinalizedRevalidation(snapshot);
+    } catch (error) {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '重新验证状态同步失败';
+      if (document.visibilityState !== 'hidden') this.scheduleRevalidationRefresh(nodeId, token, account);
+    }
+  }
+
+  private async castRevalidationVote(
+    nodeId: string,
+    side: PendingVoteSide,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): Promise<void> {
+    if (!this.isCurrentVote(nodeId, token) || this.root.dataset.voteBusy === '1') return;
+    this.root.dataset.voteBusy = '1';
+    this.clearVoteRefresh();
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-revalidation-side]'));
+    buttons.forEach(button => { button.disabled = true; });
+    const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+    if (status) status.textContent = `${side === 'AGREE' ? '同意' : '反对'}票提交中…`;
+    try {
+      const snapshot = await account.castKnowledgeRevalidationVote(nodeId, side);
+      if (!this.isCurrentVote(nodeId, token)) return;
+      this.applyRevalidationSnapshot(snapshot, true);
+      if (snapshot.verdict === 'PENDING') this.scheduleRevalidationRefresh(nodeId, token, account);
+      else this.handleFinalizedRevalidation(snapshot);
+    } catch (error) {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '重新验证投票失败';
+      buttons.forEach(button => { button.disabled = this.root.dataset.revalidationInitiator === '1'; });
+      this.scheduleRevalidationRefresh(nodeId, token, account);
+    } finally {
+      delete this.root.dataset.voteBusy;
+    }
+  }
+
+  private applyRevalidationSnapshot(snapshot: KnowledgeRevalidationSnapshot, justVoted = false): void {
+    const open = snapshot.verdict === 'PENDING';
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-revalidation-side]'));
+    for (const button of buttons) {
+      const side = button.dataset.revalidationSide as PendingVoteSide | undefined;
+      button.querySelector('small')!.textContent = `能量 −${displayEnergy(snapshot.stake)}`;
+      button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
+      button.disabled = !open
+        || snapshot.mySide !== null
+        || this.root.dataset.revalidationInitiator === '1';
+    }
+    const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
+    if (!status) return;
+    const gate = snapshot.accuracyGate === undefined ? '' : ` · 准确率≥${snapshot.accuracyGate}%`;
+    const scope = snapshot.scope === 'LOCAL_10' ? 'LOCAL_10' : 'GLOBAL';
+    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    if (!open) {
+      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
+      status.textContent = `${snapshot.verdict === 'CORRECT' ? '旧知识重新成为当前' : '当前知识保持不变'} · ${reason} · ${tally}`;
+      return;
+    }
+    if (this.root.dataset.revalidationInitiator === '1') {
+      status.textContent = `已发起 · 第 ${snapshot.stage} 阶段 · ${scope}${gate} · ${tally}`;
+      return;
+    }
+    if (snapshot.mySide) {
+      status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${scope}${gate} · ${tally}`;
+    } else {
+      status.textContent = `第 ${snapshot.stage} 阶段 · ${scope}${gate} · ${tally}`;
+    }
+  }
+
+  private handleFinalizedRevalidation(snapshot: KnowledgeRevalidationSnapshot): void {
+    this.clearVoteRefresh();
+    window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
+      detail: { nodeId: snapshot.nodeId, verdict: snapshot.verdict, revalidation: true },
+    }));
+  }
+
+  private scheduleRevalidationRefresh(
+    nodeId: string,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): void {
+    this.clearVoteRefresh();
+    this.voteRefreshTimer = window.setTimeout(() => {
+      this.voteRefreshTimer = null;
+      void this.refreshRevalidationVote(nodeId, token, account);
+    }, VOTE_REFRESH_MS);
   }
 
   private async bindPendingVote(
