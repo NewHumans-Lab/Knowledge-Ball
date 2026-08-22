@@ -34,6 +34,10 @@ export interface KnowledgeLineageNode {
   lineage?: KnowledgeLineageMeta;
 }
 
+export interface KnowledgeLineageStatusNode extends KnowledgeLineageNode {
+  status?: string;
+}
+
 /** Legacy balls predate explicit lineage metadata and form a one-ball topic. */
 export function topicIdFor(node: KnowledgeLineageNode): string {
   return node.lineage?.topicId ?? node.id;
@@ -42,6 +46,17 @@ export function topicIdFor(node: KnowledgeLineageNode): string {
 /** Legacy balls are current heads of their own one-ball topic. */
 export function lineageRoleFor(node: KnowledgeLineageNode): KnowledgeLineageRole {
   return node.lineage?.role ?? 'current';
+}
+
+/**
+ * Optimization and opposition both compete to replace the same unique current
+ * head. Until explicit candidate-rebase semantics exist, a topic may have only
+ * one pending head-changing candidate of either kind.
+ */
+export function isPendingHeadCandidate(node: KnowledgeLineageStatusNode): boolean {
+  if (node.status !== 'pending') return false;
+  const role = lineageRoleFor(node);
+  return role === 'candidate-history' || role === 'candidate-opposition';
 }
 
 export function initialLineage(nodeId: string): KnowledgeLineageMeta {
