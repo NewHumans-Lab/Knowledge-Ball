@@ -304,7 +304,7 @@ declare
   added_node_id text;
   layer_key text;
   declared_layer text;
-  target_id text;
+  target_node_id text;
   lineage_topic_id text;
   candidate_title text;
   candidate_type text;
@@ -378,7 +378,7 @@ begin
         raise exception 'lineage head-change candidate must be one atomic immutable node' using errcode='22023';
       end if;
 
-      target_id:=case when has_optimization
+      target_node_id:=case when has_optimization
         then item#>>'{payload,optimization,targetId}'
         else item#>>'{payload,opposition,targetId}' end;
       lineage_topic_id:=case when has_optimization
@@ -388,7 +388,7 @@ begin
       candidate_type:=item#>>'{payload,edit,node,type}';
       candidate_logic_rule_id:=item#>>'{payload,edit,node,logicRuleId}';
 
-      if nullif(target_id,'') is null
+      if nullif(target_node_id,'') is null
          or nullif(lineage_topic_id,'') is null
          or nullif(candidate_title,'') is null
          or nullif(candidate_type,'') is null then
@@ -397,7 +397,7 @@ begin
 
       select lm.* into target_row
       from private.knowledge_lineage_members lm
-      where lm.node_id=target_id;
+      where lm.node_id=target_node_id;
       if not found
          or target_row.role<>'current'
          or target_row.topic_id<>lineage_topic_id
@@ -421,7 +421,7 @@ begin
 
       select d.title,d.node_type into target_title,target_type
       from public.public_knowledge_node_declarations d
-      where d.node_id=target_id
+      where d.node_id=target_node_id
       order by d.sequence
       limit 1;
       if target_title is null or target_type is null then
@@ -431,7 +431,7 @@ begin
         raise exception 'lineage candidate must inherit the current node type' using errcode='22023';
       end if;
 
-      target_logic_rule_id:=private.knowledge_node_logic_rule(target_id);
+      target_logic_rule_id:=private.knowledge_node_logic_rule(target_node_id);
       if candidate_logic_rule_id is distinct from target_logic_rule_id then
         raise exception 'lineage candidate must inherit the current logic-rule identity' using errcode='22023';
       end if;
