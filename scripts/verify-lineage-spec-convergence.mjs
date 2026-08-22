@@ -8,6 +8,8 @@ const lineageUi = await readFile('src/ui/panels/NodeDetailLineageUi.ts', 'utf8')
 const app = await readFile('src/ui/app.ts', 'utf8');
 const command = await readFile('src/command/EditNode.ts', 'utf8');
 const projection = await readFile('src/projection/GraphProjection.ts', 'utf8');
+const eventTypes = await readFile('src/event/Event.ts', 'utf8');
+const eventValidation = await readFile('src/event/EventValidation.ts', 'utf8');
 const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 const sql = await readFile('supabase/migrations/202608220007_lineage_spec_convergence.sql', 'utf8');
 
@@ -29,7 +31,8 @@ assert.match(detail, /edit: '优化'/);
 assert.match(detail, /negate: '提出对立观点'/);
 assert.match(lineageUi, /class NodeDetailLineageUi/);
 assert.doesNotMatch(lineageUi, /relabelActions|data-node-detail-action="edit"|data-node-detail-action="negate"/);
-assert.match(lineageUi, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/);
+assert.match(lineageUi, /snapshot\.roundKind !== 'CASCADE'/);
+assert.doesNotMatch(lineageUi, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/);
 assert.match(lineageUi, /data-cascade-vote-side="AGREE"/);
 assert.match(lineageUi, /data-cascade-vote-side="DISAGREE"/);
 assert.match(lineageUi, /account\.castPendingKnowledgeVote\(nodeId, side\)/);
@@ -42,8 +45,12 @@ assert.match(app, /nodeDetailLineageUi\?\.open\(id\)/);
 assert.doesNotMatch(app, /LineageIntentBridge|encodeLineageIntent|decodeLineageIntent/);
 assert.doesNotMatch(command, /decodeLineageIntent|executeKnowledgeOptimization|executeKnowledgeOpposition/);
 
-assert.match(projection, /policyVersion === 'ORIGINAL_DESIGN_V1' && n\.status === 'disputed'/);
-assert.match(projection, /historical initial rounds used V1/);
+assert.match(eventTypes, /KNOWLEDGE_LINEAGE_V3_CASCADE/);
+assert.match(eventValidation, /p\.policyVersion !== 'KNOWLEDGE_LINEAGE_V3_CASCADE'/);
+assert.match(eventValidation, /const cascadePolicy = event\.payload\.policyVersion === 'KNOWLEDGE_LINEAGE_V3_CASCADE'/);
+assert.match(projection, /const cascadePolicy = event\.payload\.policyVersion === 'KNOWLEDGE_LINEAGE_V3_CASCADE'/);
+assert.match(projection, /event\.payload\.policyVersion === 'ORIGINAL_DESIGN_V1'/);
+assert.match(projection, /historical cascade/);
 assert.match(pkg.scripts['test:bootstrap'], /&& node \.test-dist\/remote-first-bootstrap\.mjs/);
 assert.match(pkg.scripts['test:knowledge-edits'], /KnowledgeLineageStateMachineRegression\.test\.ts/);
 
