@@ -1,5 +1,10 @@
 import type { DomainEvent, Mastery } from '../event/Event';
 import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
+import {
+  isOptimizationCandidate,
+  optimizationCandidateLineage,
+  resolveOptimizationCandidate,
+} from '../domain/KnowledgeOptimization';
 import type { GraphState } from '../state/GraphState';
 import { emptyGraphState, nodeList } from '../state/GraphState';
 import type { Projection } from './Projection';
@@ -51,6 +56,29 @@ export class GraphProjection implements Projection<GraphState> {
     return mastery;
   }
 
+  private applyOptimizationAdd(event: Extract<DomainEvent, { type: 'KnowledgeAdded' }>): void {
+    const optimization = event.payload.optimization;
+    if (!optimization || event.payload.edit.mode !== 'atomic') return;
+    const target = this.state.nodesById[optimization.targetId];
+    if (!target) throw new Error(`Optimization target missing during projection: ${optimization.targetId}`);
+    const draft = event.payload.edit.node;
+    this.state.nodesById[draft.id] = {
+      id: draft.id,
+      title: draft.title.trim(),
+      type: target.type,
+      status: 'pending',
+      mastery: this.takePendingMastery(draft.id),
+      reasoning: draft.reasoning.trim(),
+      premises: [...target.premises],
+      declaredLayer: event.payload.declaredLayers?.[draft.id],
+      hidden: false,
+      aliases: target.aliases ? [...target.aliases] : undefined,
+      logicRuleId: target.logicRuleId,
+      semanticKey: target.semanticKey,
+      lineage: optimizationCandidateLineage(target),
+    };
+  }
+
   private applyKnowledgeEdit(
     edit: KnowledgeEdit,
     declaredLayers?: Readonly<Record<string, UserKnowledgeLayer>>,
@@ -81,6 +109,7 @@ export class GraphProjection implements Projection<GraphState> {
     }
     const masteryById = new Map(nodeList(this.state).map(node => [node.id, node.mastery]));
     const declaredLayerById = new Map(nodeList(this.state).map(node => [node.id, node.declaredLayer]));
+    const lineageById = new Map(nodeList(this.state).map(node => [node.id, node.lineage ? structuredClone(node.lineage) : undefined]));
     const protocolNodes: ProtocolNode[] = nodeList(this.state).map(node => ({
       id: node.id,
       title: node.title,
@@ -106,6 +135,7 @@ export class GraphProjection implements Projection<GraphState> {
         ...node,
         mastery: masteryById.get(node.id) ?? 'none',
         declaredLayer: declaredLayerById.get(node.id),
+        lineage: lineageById.get(node.id),
         premises: [...node.premises],
       },
     ]));
@@ -159,6 +189,10 @@ export class GraphProjection implements Projection<GraphState> {
       case 'KnowledgeVerdictFinalized': {
         const n = this.state.nodesById[event.payload.nodeId];
         if (!n) break;
+        if (isOptimizationCandidate(n)) {
+          resolveOptimizationCandidate(Object.values(this.state.nodesById), n.id, event.payload.verdict);
+          break;
+        }
         if (event.payload.verdict === 'CORRECT') {
           n.status = 'verified';
           n.hidden = false;
@@ -176,7 +210,8 @@ export class GraphProjection implements Projection<GraphState> {
         break;
       }
       case 'KnowledgeAdded': {
-        this.applyKnowledgeEdit(event.payload.edit, event.payload.declaredLayers);
+        if (event.payload.optimization) this.applyOptimizationAdd(event);
+        else this.applyKnowledgeEdit(event.payload.edit, event.payload.declaredLayers);
         break;
       }
       case 'KnowledgeNegated':
