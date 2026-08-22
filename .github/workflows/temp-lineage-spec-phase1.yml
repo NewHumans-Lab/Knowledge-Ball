@@ -1,0 +1,343 @@
+name: Temp lineage spec convergence phase 1
+on:
+  push:
+    branches: [fix/lineage-v3-spec-convergence]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'Apply lineage spec convergence phase 1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/lineage-v3-spec-convergence
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply scoped patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(path): return Path(path).read_text()
+          def write(path, text): Path(path).write_text(text)
+          def replace_once(text, old, new, label):
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, got {text.count(old)}')
+              return text.replace(old, new, 1)
+
+          # PanelController: make the real product actions optimization/opposition candidates.
+          p = 'src/ui/panels/PanelController.ts'
+          t = read(p)
+          t = replace_once(t,
+          "export interface EditNodePayload {\n  title: string;\n  type: KnowledgeNodeType;\n  reasoning: string;\n  premises?: string[];\n}\n",
+          "export interface EditNodePayload {\n  title: string;\n  type: KnowledgeNodeType;\n  reasoning: string;\n  premises?: string[];\n}\n\nexport interface LineageCandidatePayload {\n  title: string;\n  layer: UserKnowledgeLayer;\n  description: string;\n}\n",
+          'candidate payload')
+          t = replace_once(t,
+          "  onEditNode: (id: string, payload: EditNodePayload) => Promise<void> | void;\n  onNegateNode: (id: string, payload: NegateNodePayload) => Promise<void> | void;",
+          "  onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;\n  onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;",
+          'panel callbacks')
+          t = replace_once(t,
+          "  private readonly onEditNode: (id: string, payload: EditNodePayload) => Promise<void> | void;\n  private readonly onNegateNode: (id: string, payload: NegateNodePayload) => Promise<void> | void;",
+          "  private readonly onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;\n  private readonly onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;",
+          'panel callback fields')
+          t = replace_once(t,
+          "    this.onEditNode = options.onEditNode;\n    this.onNegateNode = options.onNegateNode;",
+          "    this.onOptimizeNode = options.onOptimizeNode;\n    this.onOpposeNode = options.onOpposeNode;",
+          'panel callback assignments')
+          t = replace_once(t,
+          '<button class="btn ghost" id="btnEditNode">Edit · 编辑</button>',
+          '<button class="btn ghost" id="btnEditNode">Optimize · 优化</button>',
+          'edit action label')
+          t = replace_once(t,
+          '<button class="btn danger" id="btnNegate">Negate · 以 Counterexample 否定</button>',
+          '<button class="btn danger" id="btnNegate">Oppose · 提出对立观点</button>',
+          'oppose action label')
+
+          start = t.index("    editBtn?.addEventListener('click', () => {")
+          end = t.index("    deriveBtn?.addEventListener('click'", start)
+          t = t[:start] + "    editBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'optimization'));\n\n" + t[end:]
+          t = replace_once(t,
+          "    negateBtn?.addEventListener('click', () => this.openNegateForm(id));",
+          "    negateBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'opposition'));",
+          'negate runtime wiring')
+
+          start = t.index('  private openNegateForm(id: string): void {')
+          end = t.index('  private openDecomposeForm(id: string): void {', start)
+          candidate_form = '''  private openLineageCandidateForm(id: string, kind: 'optimization' | 'opposition'): void {
+    const node = this.getNodeById(id);
+    if (!node) return;
+    const optimization = kind === 'optimization';
+    const defaultLayer = node.declaredLayer ?? node.effectiveLayer ?? 'outer';
+    if (!isUserKnowledgeLayer(defaultLayer)) throw new Error('当前节点缺少可提交的知识层级');
+
+    this.panelTitle.textContent = optimization ? `优化：${node.title}` : `对立观点：${node.title}`;
+    this.panelBody.innerHTML = `
+      <div class="difference-card"><b>${optimization ? 'IMMUTABLE OPTIMIZATION' : 'IMMUTABLE OPPOSITION'}</b><br>${optimization
+        ? '提交后会生成一个新的灰色闪烁候选球；当前球在最终判定前不会改变。'
+        : '提交后会生成一个新的红色闪烁候选球；当前球在最终判定前不会被证伪、隐藏或换边。'}</div>
+      <div class="field"><label>名称</label><input type="text" id="lineageCandidateTitle" value="${optimization ? escapeHtml(node.title) : ''}" placeholder="${optimization ? '可保留当前名称，也可使用新的唯一名称' : '请输入新的唯一名称'}"></div>
+      <div class="field"><label>知识层级</label><select id="lineageCandidateLayer">
+        <option value="inner" ${defaultLayer === 'inner' ? 'selected' : ''}>第一层 · 语义与基础事实</option>
+        <option value="middle" ${defaultLayer === 'middle' ? 'selected' : ''}>第二层 · 严谨推理</option>
+        <option value="outer" ${defaultLayer === 'outer' ? 'selected' : ''}>第三层 · 概率与争议</option>
+      </select></div>
+      <div class="field"><label>内容</label><textarea id="lineageCandidateDescription" placeholder="填写新的完整内容">${optimization ? escapeHtml(node.reasoning || '') : ''}</textarea></div>
+      <p class="note-small" style="text-align:left;">节点类型、前提关系和逻辑规则身份沿用当前球，不能在这里偷偷修改。只有名称、层级、内容属于本次候选。</p>
+    `;
+    this.panelActions.innerHTML = `
+      <button class="btn ${optimization ? 'primary' : 'danger'}" id="submitLineageCandidate">${optimization ? '提交优化候选' : '提交对立候选'}</button>
+      <button class="btn ghost" id="cancelOperation">取消</button>
+    `;
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(id));
+    this.panelActions.querySelector<HTMLButtonElement>('#submitLineageCandidate')?.addEventListener('click', async () => {
+      const title = safeText(this.panelBody.querySelector<HTMLInputElement>('#lineageCandidateTitle')?.value);
+      const layerValue = safeText(this.panelBody.querySelector<HTMLSelectElement>('#lineageCandidateLayer')?.value);
+      const description = safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#lineageCandidateDescription')?.value);
+      if (!title || !description || !isUserKnowledgeLayer(layerValue)) {
+        this.showToast('请完整填写名称、知识层级和内容。');
+        return;
+      }
+      try {
+        const payload: LineageCandidatePayload = { title, layer: layerValue, description };
+        if (optimization) await this.onOptimizeNode(id, payload);
+        else await this.onOpposeNode(id, payload);
+        this.showToast(optimization ? '优化候选已提交，等待验证' : '对立候选已提交，等待验证');
+        this.closeNodePanel();
+      } catch (error) {
+        this.showOperationError(error);
+      }
+    });
+  }
+
+'''
+          t = t[:start] + candidate_form + t[end:]
+          write(p, t)
+
+          # app.ts: remove in-place semantic writes and call the lineage commands.
+          p = 'src/ui/app.ts'; t = read(p)
+          t = replace_once(t, "import { editNode as cmdEditNode } from '../command/EditNode';\n", '', 'remove EditNode import')
+          t = replace_once(t, "import { executeKnowledgeEdit } from '../command/KnowledgeEdit';\n",
+          "import { executeKnowledgeEdit } from '../command/KnowledgeEdit';\nimport { executeKnowledgeOptimization } from '../command/KnowledgeOptimization';\nimport { executeKnowledgeOpposition } from '../command/KnowledgeOpposition';\n",
+          'lineage command imports')
+          t = replace_once(t,
+          "  canonicalKnowledgeText,\n  type AddEdit,\n  type DecomposeEdit,\n  type MergeEdit,\n  type NegateEdit,\n",
+          "  type AddEdit,\n  type DecomposeEdit,\n  type MergeEdit,\n  type NegateEdit,\n",
+          'remove canonical edit helper')
+          t = replace_once(t,
+          "  type EditNodePayload,\n  type MergeDefinitionPayload,\n  type MergeTheoryPayload,\n  type NegateNodePayload,\n",
+          "  type LineageCandidatePayload,\n  type MergeDefinitionPayload,\n  type MergeTheoryPayload,\n",
+          'panel payload imports')
+          start = t.index('async function editKnowledgeNode(')
+          end = t.index('async function decomposeKnowledgeNode(', start)
+          new_funcs = '''async function optimizeKnowledgeNode(id: string, payload: LineageCandidatePayload): Promise<void> {
+  await executeKnowledgeOptimization(store, projection, {
+    targetId: id,
+    candidateId: generateNodeId(),
+    title: payload.title,
+    reasoning: payload.description,
+    declaredLayer: payload.layer,
+  }, commitPublicEvent);
+  currentPanelId = null;
+}
+
+async function opposeKnowledgeNode(id: string, payload: LineageCandidatePayload): Promise<void> {
+  await executeKnowledgeOpposition(store, projection, {
+    targetId: id,
+    candidateId: generateNodeId(),
+    title: payload.title,
+    reasoning: payload.description,
+    declaredLayer: payload.layer,
+  }, commitPublicEvent);
+  currentPanelId = null;
+}
+
+'''
+          t = t[:start] + new_funcs + t[end:]
+          t = replace_once(t,
+          "  onEditNode: editKnowledgeNode,\n  onNegateNode: negateKnowledgeNode,",
+          "  onOptimizeNode: optimizeKnowledgeNode,\n  onOpposeNode: opposeKnowledgeNode,",
+          'panel app callbacks')
+          write(p, t)
+
+          # Detail labels must describe the new immutable actions, even though the action IDs stay compatibility-stable.
+          p = 'src/ui/panels/NodeDetailController.ts'; t = read(p)
+          t = replace_once(t, "  edit: '修改内容',", "  edit: '优化',", 'detail optimize label')
+          t = replace_once(t, "  negate: '否定',", "  negate: '提出对立观点',", 'detail opposition label')
+          write(p, t)
+
+          # Forward-only server hardening: immutable product writes + one topic head-change lock.
+          migration = r'''-- Knowledge Lineage V3 convergence / part 1.
+-- Close legacy semantic-write bypasses and serialize every human head-change attempt per topic.
+
+create or replace function private.canonical_knowledge_title(value text) returns text
+language sql immutable strict set search_path=pg_catalog
+as $$ select lower(regexp_replace(trim(value), '[[:space:]]+', ' ', 'g')) $$;
+revoke all on function private.canonical_knowledge_title(text) from public, anon, authenticated;
+
+create or replace function private.guard_lineage_candidate_insert() returns trigger
+language plpgsql security definer set search_path=private,public,pg_temp
+as $$
+declare topic_value text; target_value text;
+begin
+  if new.event_type <> 'KnowledgeAdded' then return new; end if;
+  if new.envelope#>'{payload,optimization}' is null and new.envelope#>'{payload,opposition}' is null then return new; end if;
+  topic_value := coalesce(new.envelope#>>'{payload,optimization,topicId}', new.envelope#>>'{payload,opposition,topicId}');
+  target_value := coalesce(new.envelope#>>'{payload,optimization,targetId}', new.envelope#>>'{payload,opposition,targetId}');
+  if nullif(topic_value,'') is null or nullif(target_value,'') is null then return new; end if;
+  perform pg_advisory_xact_lock(hashtextextended('knowledge-head-change:'||topic_value,0));
+  if exists(select 1 from private.knowledge_revalidation_rounds r where r.topic_id=topic_value and r.verdict='PENDING') then
+    raise exception 'knowledge topic already has an active revalidation round' using errcode='KB409';
+  end if;
+  return new;
+end $$;
+revoke all on function private.guard_lineage_candidate_insert() from public,anon,authenticated;
+drop trigger if exists aa_guard_lineage_candidate_insert on public.public_knowledge_events;
+create trigger aa_guard_lineage_candidate_insert before insert on public.public_knowledge_events
+for each row execute function private.guard_lineage_candidate_insert();
+
+create or replace function private.guard_revalidation_head_change_insert() returns trigger
+language plpgsql security definer set search_path=private,public,pg_temp
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('knowledge-head-change:'||new.topic_id,0));
+  if exists(select 1 from private.knowledge_lineage_members m where m.topic_id=new.topic_id and m.role in('candidate-history','candidate-opposition')) then
+    raise exception 'knowledge topic already has a pending head-change candidate' using errcode='KB409';
+  end if;
+  return new;
+end $$;
+revoke all on function private.guard_revalidation_head_change_insert() from public,anon,authenticated;
+drop trigger if exists aa_guard_revalidation_head_change_insert on private.knowledge_revalidation_rounds;
+create trigger aa_guard_revalidation_head_change_insert before insert on private.knowledge_revalidation_rounds
+for each row execute function private.guard_revalidation_head_change_insert();
+
+create or replace function public.validate_public_knowledge_event(item jsonb) returns void
+language plpgsql stable set search_path=public,private,pg_temp
+as $$
+declare
+  kind text := item#>>'{payload,edit,kind}';
+  status text := item#>>'{payload,edit,status}';
+  layers jsonb := item#>'{payload,declaredLayers}';
+  added_node_ids text[] := '{}'; added_node_id text; layer_key text; declared_layer text;
+  target_id text; topic_id text; candidate_title text; target_title text;
+  target_row private.knowledge_lineage_members%rowtype;
+  has_optimization boolean := item#>'{payload,optimization}' is not null;
+  has_opposition boolean := item#>'{payload,opposition}' is not null;
+begin
+  if jsonb_path_exists(item,'$.**.mastery') then raise exception 'PERSONAL_STATE_IN_PUBLIC_PAYLOAD' using errcode='22023'; end if;
+  if item->>'type' in('KnowledgeVerdictFinalized','KnowledgeRevalidationStarted','KnowledgeRevalidationFinalized') then
+    raise exception 'protocol lifecycle events are server-only' using errcode='42501';
+  end if;
+  if item->>'type'='KnowledgeNodeEdited' then
+    raise exception 'immutable knowledge balls cannot be edited in place; submit an optimization candidate' using errcode='22023';
+  end if;
+  if item->>'type'='KnowledgeNegated' then
+    raise exception 'legacy negation is read-only; submit an opposition candidate' using errcode='22023';
+  end if;
+
+  if item->>'type'='KnowledgeAdded' and kind='add' then
+    if jsonb_typeof(layers) is distinct from 'object' then raise exception 'KnowledgeAdded must declare one canonical layer for every created node' using errcode='22023'; end if;
+    for added_node_id in select node_id from (values
+      (item#>>'{payload,edit,node,id}'),(item#>>'{payload,edit,reasoning,id}'),(item#>>'{payload,edit,conclusion,id}')
+    ) as added(node_id) where nullif(node_id,'') is not null loop
+      if added_node_id=any(added_node_ids) then raise exception 'KnowledgeAdded contains duplicate created node id: %',added_node_id using errcode='22023'; end if;
+      added_node_ids:=array_append(added_node_ids,added_node_id);
+      declared_layer:=layers->>added_node_id;
+      if declared_layer is null or not exists(select 1 from public.knowledge_layer_definitions d where d.layer_code=declared_layer) then
+        raise exception 'KnowledgeAdded node % must declare inner, middle, or outer',added_node_id using errcode='22023';
+      end if;
+    end loop;
+    if cardinality(added_node_ids)=0 then raise exception 'KnowledgeAdded must create at least one node' using errcode='22023'; end if;
+    for layer_key in select jsonb_object_keys(layers) loop
+      if not(layer_key=any(added_node_ids)) then raise exception 'declaredLayers contains a node not created by this event: %',layer_key using errcode='22023'; end if;
+    end loop;
+    if has_optimization and has_opposition then raise exception 'KnowledgeAdded cannot be optimization and opposition simultaneously' using errcode='22023'; end if;
+    if has_optimization or has_opposition then
+      if item#>>'{payload,edit,mode}'<>'atomic' or cardinality(added_node_ids)<>1 then raise exception 'lineage head-change candidate must be one atomic immutable node' using errcode='22023'; end if;
+      target_id:=case when has_optimization then item#>>'{payload,optimization,targetId}' else item#>>'{payload,opposition,targetId}' end;
+      topic_id:=case when has_optimization then item#>>'{payload,optimization,topicId}' else item#>>'{payload,opposition,topicId}' end;
+      candidate_title:=item#>>'{payload,edit,node,title}';
+      if nullif(target_id,'') is null or nullif(topic_id,'') is null or nullif(candidate_title,'') is null then raise exception 'lineage candidate requires targetId, topicId and title' using errcode='22023'; end if;
+      select * into target_row from private.knowledge_lineage_members where node_id=target_id;
+      if not found or target_row.role<>'current' or target_row.topic_id<>topic_id or target_row.revalidating then raise exception 'lineage candidate target is not the stable current head' using errcode='KB409'; end if;
+      if exists(select 1 from private.knowledge_lineage_members where topic_id=topic_id and role in('candidate-history','candidate-opposition')) then raise exception 'knowledge topic already has a pending head-change candidate' using errcode='KB409'; end if;
+      if exists(select 1 from private.knowledge_revalidation_rounds where topic_id=topic_id and verdict='PENDING') then raise exception 'knowledge topic already has an active revalidation round' using errcode='KB409'; end if;
+      select d.title into target_title from public.public_knowledge_node_declarations d where d.node_id=target_id order by d.sequence limit 1;
+      if target_title is null then raise exception 'lineage target declaration is missing' using errcode='KB409'; end if;
+      if has_opposition or private.canonical_knowledge_title(candidate_title)<>private.canonical_knowledge_title(target_title) then
+        if exists(select 1 from public.public_knowledge_node_declarations d where private.canonical_knowledge_title(d.title)=private.canonical_knowledge_title(candidate_title)) then
+          raise exception 'lineage candidate title already exists' using errcode='23505';
+        end if;
+      end if;
+    end if;
+    return;
+  end if;
+
+  if (item->>'type',kind) in (('KnowledgeDecomposed','decompose'),('KnowledgeMerged','merge')) then return; end if;
+  if item->>'type'='KnowledgeStatusChanged' and kind='status' and status in('verified','suspended','disputed')
+     and nullif(item#>>'{payload,edit,nodeId}','') is not null
+     and (status<>'suspended' or nullif(item#>>'{payload,edit,causeNodeId}','') is not null) then return; end if;
+  raise exception 'event type does not match canonical knowledge command' using errcode='22023';
+end $$;
+revoke all on function public.validate_public_knowledge_event(jsonb) from public,anon,authenticated;
+
+create or replace function public.knowledge_ball_schema_version() returns text
+language sql stable security definer set search_path=public,pg_temp
+as $$ select '202608220007'::text $$;
+revoke all on function public.knowledge_ball_schema_version() from public,anon;
+grant execute on function public.knowledge_ball_schema_version() to authenticated;
+'''
+          Path('supabase/migrations/202608220007_lineage_spec_convergence.sql').write_text(migration)
+
+          verifier = r'''import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const app = await readFile('src/ui/app.ts','utf8');
+const panel = await readFile('src/ui/panels/PanelController.ts','utf8');
+const detail = await readFile('src/ui/panels/NodeDetailController.ts','utf8');
+const sql = await readFile('supabase/migrations/202608220007_lineage_spec_convergence.sql','utf8');
+assert.match(app,/executeKnowledgeOptimization/);
+assert.match(app,/executeKnowledgeOpposition/);
+assert.doesNotMatch(app,/cmdEditNode|editKnowledgeNode|negateKnowledgeNode/);
+assert.match(panel,/onOptimizeNode/);
+assert.match(panel,/onOpposeNode/);
+assert.match(panel,/IMMUTABLE OPTIMIZATION/);
+assert.match(panel,/IMMUTABLE OPPOSITION/);
+assert.doesNotMatch(panel,/验证反例并否定|提交后目标不会删除，只会进入已证伪/);
+assert.match(detail,/edit: '优化'/);
+assert.match(detail,/negate: '提出对立观点'/);
+assert.match(sql,/immutable knowledge balls cannot be edited in place/);
+assert.match(sql,/legacy negation is read-only/);
+assert.match(sql,/knowledge-head-change:/);
+assert.match(sql,/knowledge_revalidation_rounds[\s\S]*verdict='PENDING'/);
+assert.match(sql,/lineage candidate title already exists/);
+assert.match(sql,/canonical_knowledge_title\(candidate_title\)<>private\.canonical_knowledge_title\(target_title\)/);
+for (const forbidden of ['energy_accounts','energy_ledger_entries','CHALLENGE_STAKE','VOTE_STAKE']) assert.ok(!sql.includes(forbidden),`phase1 must not change energy: ${forbidden}`);
+console.log('Knowledge Lineage spec convergence phase 1 checks passed');
+'''
+          Path('scripts/verify-lineage-spec-convergence.mjs').write_text(verifier)
+
+          p='package.json'; t=read(p)
+          t=replace_once(t,
+          'node scripts/verify-lineage-cascade.mjs && node scripts/verify-total-energy.mjs',
+          'node scripts/verify-lineage-cascade.mjs && node scripts/verify-lineage-spec-convergence.mjs && node scripts/verify-total-energy.mjs',
+          'architecture hook')
+          write(p,t)
+          PY
+      - run: npm ci
+      - run: npm run test:edit-ui
+      - run: npm run test:knowledge-edits
+      - run: npm run test:architecture
+      - run: npm run build
+      - name: Commit scoped patch
+        shell: bash
+        run: |
+          rm .github/workflows/temp-lineage-spec-phase1.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/ui/panels/PanelController.ts src/ui/app.ts src/ui/panels/NodeDetailController.ts supabase/migrations/202608220007_lineage_spec_convergence.sql scripts/verify-lineage-spec-convergence.mjs package.json .github/workflows/temp-lineage-spec-phase1.yml
+          git commit -m 'Apply lineage spec convergence phase 1'
+          git push origin HEAD:fix/lineage-v3-spec-convergence
