@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 import { formatNodeContributionTime } from './NodeDetailController';
 
-const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
+const detail = readFileSync('src/ui/panels/NodeDetailControllerLegacy.ts', 'utf8');
+const lineageDetail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
 const css = readFileSync('src/ui/panels/NodeDetailPanel.css', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
 
@@ -18,8 +19,10 @@ assert(!detail.includes('>内容<'), 'the standalone content heading must stay r
 assert(detail.indexOf('node-detail-content') < detail.indexOf('node-detail-meta'), 'knowledge content must appear before contributor/time metadata');
 assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributor and time must remain two ordered footer rows');
 for (const action of ['修改内容', '基于此新增', '否定', '分解', '合并']) {
-  assert(detail.includes(action), `edit menu must consolidate ${action}`);
+  assert(detail.includes(action), `legacy edit engine must retain ${action}`);
 }
+assert(lineageDetail.includes("edit.textContent = '优化'"), 'V3 adapter must relabel edit as optimization');
+assert(lineageDetail.includes("negate.textContent = '提出对立观点'"), 'V3 adapter must relabel negate as opposition');
 
 assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
 assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
@@ -30,13 +33,27 @@ assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'near-
 assert(detail.includes("knowledge-ball:verdict-finalized"), 'near-node finalization must reuse the existing graph reconciliation signal');
 assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'near-node vote tally must retain the existing prompt refresh cadence');
 assert(app.includes('actorId: metadata.actorId'), 'near-node detail must receive the authoritative creator actor id');
-assert(detail.includes('await account.currentUserId()'), 'pending detail must compare the current account with the node creator');
-assert(detail.includes("this.root.dataset.voteCreator = '1'"), 'creator identity must lock the pending vote controls');
-assert(detail.includes('你是该知识的提交者，不能参与本轮投票'), 'creator must see an explicit no-self-vote explanation');
+assert(detail.includes('await account.currentUserId()'), 'initial pending detail must compare the current account with the node creator');
+assert(detail.includes("this.root.dataset.voteCreator = '1'"), 'initial creator identity must lock the first-round vote controls');
+assert(detail.includes('你是该知识的提交者，不能参与本轮投票'), 'first-round creator must see an explicit no-self-vote explanation');
 assert(detail.includes('data-vote-side="AGREE" disabled') && detail.includes('data-vote-side="DISAGREE" disabled'), 'vote buttons must stay disabled until identity and server state are known');
 assert(detail.includes("typeof window === 'undefined'"), 'vote client creation must stay browser-lazy so pure node-detail tests do not require Vite runtime env');
 assert(!detail.includes('const voteAccount = createProductionAuthClient()'), 'vote client must not initialize at module import time');
 assert(!detail.includes('setInterval('), 'near-node voting must not add a permanent polling interval');
+
+// Automatic dependency cascade reuses the one-energy pending-vote RPC, but has
+// no initiator and is distinguished from first-round V2 by its V1 pending round.
+assert(lineageDetail.includes("node.status !== 'disputed' || lineageRoleFor(node) !== 'current'"), 'cascade UI must attach only to disputed current nodes');
+assert(lineageDetail.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade UI must require the server-created V1 pending round');
+assert(lineageDetail.includes('data-cascade-vote-side="AGREE"'), 'cascade UI must expose agree');
+assert(lineageDetail.includes('data-cascade-vote-side="DISAGREE"'), 'cascade UI must expose disagree');
+assert(lineageDetail.includes('能量 −1'), 'cascade ordinary vote cost must remain one energy');
+assert(lineageDetail.includes('无发起人、无发起人票'), 'cascade UI must state the no-initiator rule');
+assert(lineageDetail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'cascade must reuse the authoritative pending-vote RPC');
+assert(lineageDetail.includes('CASCADE_REFRESH_MS = 3_000'), 'cascade tally must refresh without a permanent interval');
+assert(lineageDetail.includes("knowledge-ball:verdict-finalized"), 'cascade finalization must request public-stream convergence');
+assert(!lineageDetail.includes('setInterval('), 'cascade must not add a permanent polling interval');
+
 assert(css.includes('grid-template-columns:1fr 1fr'), 'agree and disagree must stay side by side in one row');
 assert(css.includes('.node-detail-vote-button span{font-size:12px'), 'vote choice must be the primary line in each button');
 assert(css.includes('.node-detail-vote-button small{font-size:9.5px'), 'one-energy cost must remain the smaller second line');
