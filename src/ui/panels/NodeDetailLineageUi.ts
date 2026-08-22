@@ -5,6 +5,7 @@ import {
 } from '../../auth/AuthClient';
 import { lineageRoleFor } from '../../domain/KnowledgeLineage';
 import type { NodeDetailNode } from './NodeDetailController';
+import './LineageV3Hardening.css';
 
 const REFRESH_MS = 3_000;
 
