@@ -21,7 +21,11 @@ for (const eventType of [
 }
 assert.match(dag, /knowledge dependency graph must remain acyclic/);
 assert.match(dag, /with recursive downstream\(node_id\)/);
-assert.match(dag, /order by seq, event_id/);
+// Hosted public_knowledge_events exposes the authoritative append order as
+// `sequence` (not the in-memory DomainEvent `seq` alias). Backfill must follow
+// the hosted schema exactly or a fresh migration fails before creating the DAG.
+assert.match(dag, /order by sequence, event_id/);
+assert.doesNotMatch(dag, /order by seq, event_id/);
 assert.match(dag, /create trigger project_knowledge_dependency_event/);
 
 // Current-version replacement inherits/represents effective dependency identity
