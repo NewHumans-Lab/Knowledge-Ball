@@ -96,9 +96,10 @@ function assertValidLineage(nodes: readonly GraphNode[]): void {
 export function rejectOptimizationCandidate(nodes: GraphNode[], candidateId: string): void {
   const candidate = nodes.find(node => node.id === candidateId);
   if (!isOptimizationCandidate(candidate)) throw new Error(`Not an optimization candidate: ${candidateId}`);
-  candidate.lineage = { ...candidate.lineage, role: 'rejected', rank: 0 };
-  candidate.status = 'falsified';
-  candidate.hidden = true;
+  const candidateNode: GraphNode = candidate;
+  candidateNode.lineage = { ...candidate.lineage, role: 'rejected', rank: 0 };
+  candidateNode.status = 'falsified';
+  candidateNode.hidden = true;
   assertValidLineage(nodes);
 }
 
@@ -129,9 +130,10 @@ export function promoteOptimizationCandidate(nodes: GraphNode[], candidateId: st
   current.lineage = { ...previousMeta, topicId, role: 'history', rank: 1 };
   current.hidden = true;
 
-  candidate.lineage = { ...candidate.lineage, role: 'current', rank: 0 };
-  candidate.status = 'verified';
-  candidate.hidden = false;
+  const candidateNode: GraphNode = candidate;
+  candidateNode.lineage = { ...candidate.lineage, role: 'current', rank: 0 };
+  candidateNode.status = 'verified';
+  candidateNode.hidden = false;
 
   assertValidLineage(nodes);
   return current.id;
