@@ -9,6 +9,7 @@ import {
   lineageRoleFor,
   topicIdFor,
 } from '../domain/KnowledgeLineage';
+import { buildKnowledgeRelations } from '../domain/KnowledgeRelations';
 import {
   declaredLayerForNode,
   effectiveLayerForNode,
@@ -32,10 +33,7 @@ import { SyncEngine } from '../sync/SyncEngine';
 import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
 import { createProductionAuthClient } from '../auth/AuthClient';
 
-import {
-  TWIN_META,
-  type KnowledgeNodeType,
-} from './config/KnowledgeUiConfig';
+import { type KnowledgeNodeType } from './config/KnowledgeUiConfig';
 import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
 
 import {
@@ -65,7 +63,6 @@ import {
   type NodeDetailNode,
 } from './panels/NodeDetailController';
 import { NodeDetailLineageUi } from './panels/NodeDetailLineageUi';
-import { buildNodeDetailRelations } from './panels/NodeDetailRelations';
 import { setupMobileShell } from '../mobile/MobileShell';
 import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
@@ -145,7 +142,6 @@ function syncNodesFromProjection(): void {
 }
 
 function renderNodeFromDomain(dn: GraphNode): KnowledgeSceneNode {
-  const meta = (TWIN_META as Record<string, { twinGroup: string; sharedTitle: string }>)[dn.id] ?? {};
   const declaredLayer = declaredLayerForNode(dn);
   const effectiveLayer = effectiveLayerForNode(dn, projection.state.nodesById);
   return {
@@ -163,7 +159,6 @@ function renderNodeFromDomain(dn: GraphNode): KnowledgeSceneNode {
       semanticKey: dn.semanticKey,
       hidden: dn.hidden,
       lineage: dn.lineage,
-      ...meta,
   };
 }
 
@@ -185,8 +180,6 @@ function getPanelNodeById(id: string): PanelNodeSummary | null {
     premises: n.premises,
     declaredLayer: n.declaredLayer,
     effectiveLayer: n.effectiveLayer,
-    twinGroup: n.twinGroup,
-    sharedTitle: n.sharedTitle,
     logicRuleId: n.logicRuleId,
     aliases: n.aliases,
     semanticKey: n.semanticKey,
@@ -206,8 +199,6 @@ function getPanelNodes(): PanelNodeSummary[] {
       premises: n.premises,
       declaredLayer: n.declaredLayer,
       effectiveLayer: n.effectiveLayer,
-      twinGroup: n.twinGroup,
-      sharedTitle: n.sharedTitle,
       logicRuleId: n.logicRuleId,
       aliases: n.aliases,
       semanticKey: n.semanticKey,
@@ -614,7 +605,7 @@ if (!Capacitor.isNativePlatform()) {
       const metadata = productionSyncAdapter?.nodeMetadata(id);
       return metadata ? { contributor: metadata.contributor, createdAt: metadata.createdAt, actorId: metadata.actorId } : null;
     },
-    getRelations: id => buildNodeDetailRelations(id, nodeList(projection.state)),
+    getRelations: id => buildKnowledgeRelations(id, nodeList(projection.state)),
     getScreenPosition: id => scene.screenPositionForNode(id),
     getActions: getNodeDetailActions,
     onAction: launchPanelAction,
