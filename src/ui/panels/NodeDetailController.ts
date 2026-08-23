@@ -34,6 +34,7 @@ export interface NodeDetailControllerOptions {
   getScreenPosition: (id: string) => { x: number; y: number } | null;
   getActions: (id: string) => NodeDetailAction[];
   onAction: (id: string, action: NodeDetailAction) => void;
+  onSelectRelatedNode: (id: string) => void;
   onDetailNodeChange: (id: string | null) => void;
   onClose?: () => void;
 }
@@ -72,15 +73,20 @@ function displayEnergy(value: string): string {
 }
 
 function relationMarkup(relations: NodeDetailRelations): string {
-  const render = (className: string, items: NodeDetailRelations[keyof NodeDetailRelations]) => {
+  const render = (
+    className: string,
+    relationKind: keyof NodeDetailRelations,
+    label: string,
+  ) => {
+    const items = relations[relationKind];
     if (items.length === 0) return '';
-    return `<div class="node-detail-relations ${className}">${items.map(item => `<span>${escapeHtml(item.title)}</span>`).join('')}</div>`;
+    return `<div class="node-detail-relations ${className}" role="group" aria-label="${label}">${items.map(item => `<button type="button" class="node-detail-relation" data-relation-kind="${relationKind}" data-related-node-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</button>`).join('')}</div>`;
   };
   return [
-    render('left', relations.premises),
-    render('top', relations.history),
-    render('right', relations.conclusions),
-    render('bottom', relations.opposition),
+    render('left', 'premises', '前置知识'),
+    render('top', 'history', '历史版本'),
+    render('right', 'conclusions', '直接结论'),
+    render('bottom', 'opposition', '对立观点'),
   ].join('');
 }
 
@@ -105,6 +111,7 @@ export class NodeDetailController {
   private readonly getScreenPosition: NodeDetailControllerOptions['getScreenPosition'];
   private readonly getActions: NodeDetailControllerOptions['getActions'];
   private readonly onAction: NodeDetailControllerOptions['onAction'];
+  private readonly onSelectRelatedNode: NodeDetailControllerOptions['onSelectRelatedNode'];
   private readonly onDetailNodeChange: NodeDetailControllerOptions['onDetailNodeChange'];
   private readonly onClose?: NodeDetailControllerOptions['onClose'];
   private readonly root: HTMLElement;
@@ -120,6 +127,7 @@ export class NodeDetailController {
     this.getScreenPosition = options.getScreenPosition;
     this.getActions = options.getActions;
     this.onAction = options.onAction;
+    this.onSelectRelatedNode = options.onSelectRelatedNode;
     this.onDetailNodeChange = options.onDetailNodeChange;
     this.onClose = options.onClose;
     this.root = document.createElement('section');
@@ -255,6 +263,13 @@ export class NodeDetailController {
     `;
 
     this.root.querySelector<HTMLButtonElement>('.node-detail-close')?.addEventListener('click', () => this.close());
+    this.root.querySelectorAll<HTMLButtonElement>('[data-related-node-id]').forEach(button => {
+      button.addEventListener('click', () => {
+        const relatedId = button.dataset.relatedNodeId;
+        if (!relatedId || relatedId === this.currentId) return;
+        this.onSelectRelatedNode(relatedId);
+      });
+    });
 
     if (node.status === 'pending') {
       void this.bindPendingVote(node.id, token, account, metadata?.actorId);
