@@ -210,8 +210,11 @@ try {
 
     // The preview fixture is intentionally independent of hosted production data.
     // Add two-step gray + red chains to the same domain projection and scene.
-    // Current detail must reveal only rank 1 (direct line); moving to rank 1 must
-    // then naturally reveal rank 2.
+    // Mark the injected nodes touched from the start: they are test-only records
+    // appended after the real layout pass, and allowing markNodeViewed() to fire
+    // would rebuild their positions while a focus animation is already targeting
+    // the pre-layout fixture coordinate. Production lineage nodes are laid out
+    // before interaction and do not have this fixture-only discontinuity.
     const lineageFixture = await page.evaluate(currentId => {
       const debug = window.__debug;
       const domainCurrent = debug.projection.state.nodesById[currentId];
@@ -224,7 +227,7 @@ try {
         id,
         title,
         status: 'verified',
-        mastery: 'none',
+        mastery: 'touched',
         hidden: true,
         premises: [...domainCurrent.premises],
         lineage: { topicId, proposal, targetId, role, rank },
@@ -234,7 +237,7 @@ try {
         title,
         type: renderCurrent.type,
         status: 'verified',
-        mastery: 'none',
+        mastery: 'touched',
         reasoning: renderCurrent.reasoning,
         premises: [...renderCurrent.premises],
         logicRuleId: renderCurrent.logicRuleId,
