@@ -168,11 +168,13 @@ async function preparePage(context) {
 
 async function createThroughRealUi(page, title, description) {
   await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true })));
-  await page.locator('#modalOverlay.show').waitFor({ state: 'visible' });
-  await page.locator('#fTitle').fill(title);
-  await page.locator('#fType').selectOption('inner');
-  await page.locator('#fDescription').fill(description);
-  await page.locator('#modalSubmit').click();
+  const overlay = page.locator('#knowledgeCreateOverlay.show');
+  await overlay.waitFor({ state: 'visible' });
+  assert.equal((await overlay.locator('h3').textContent())?.trim(), '新增知识', 'cloud-authority write must exercise the real standalone create form');
+  await overlay.locator('[data-create-title]').fill(title);
+  await overlay.locator('[data-create-layer]').selectOption('inner');
+  await overlay.locator('[data-create-description]').fill(description);
+  await overlay.locator('[data-create-submit]').click();
 }
 
 let browser;
@@ -205,11 +207,12 @@ try {
     const pullsBeforeWrite = publicPullCount;
     await createThroughRealUi(pageA, marker, `Real mobile click probe for ${marker}`);
     await pageA.waitForFunction(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).some(node => node.title === title), marker);
-    await pageA.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'));
+    await pageA.locator('#knowledgeCreateOverlay.show').waitFor({ state: 'hidden' });
 
     const createdA = await pageA.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).find(node => node.title === title), marker);
     assert.ok(createdA?.id, 'writer must render the server-acknowledged node after the real submit click');
     assert.equal(createdA?.declaredLayer, 'inner', 'real submit must preserve declared layer');
+    assert.deepEqual(createdA?.premises ?? [], [], 'standalone cloud write must remain an isolated node with no logical premise edges');
     assert.equal(events.filter(event => event.payload?.edit?.node?.title === marker).length, 1, 'mock cloud must contain exactly one authoritative write');
 
     await pageB.waitForFunction(
@@ -220,26 +223,31 @@ try {
     const createdB = await pageB.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).find(node => node.title === title), marker);
     assert.equal(createdB?.id, createdA.id, 'already-open client must receive the same authoritative node identity automatically');
     assert.equal(createdB?.declaredLayer, 'inner', 'already-open client must receive the same authoritative state automatically');
+    assert.deepEqual(createdB?.premises ?? [], [], 'already-open client must receive the same isolated-node structure');
     await pageB.waitForFunction(head => window.__debug?.syncEngine?.currentCursor?.() === String(head), events.length);
     assert.ok(publicPullCount > pullsBeforeWrite, 'automatic convergence must perform cloud pulls after both pages were already open');
 
     const heads = await Promise.all([pageA, pageB].map(page => page.evaluate(() => ({
       cursor: window.__debug?.syncEngine?.currentCursor?.() ?? null,
       publicNodes: Object.values(window.__debug?.projection?.state?.nodesById ?? {})
-        .map(node => ({ id: node.id, title: node.title, status: node.status, hidden: node.hidden ?? false }))
+        .map(node => ({ id: node.id, title: node.title, status: node.status, hidden: node.hidden ?? false, premises: [...(node.premises ?? [])] }))
         .sort((left, right) => left.id.localeCompare(right.id)),
     }))));
     assert.equal(heads[0].cursor, heads[1].cursor, 'already-open clients must converge to the same cloud cursor');
     assert.deepEqual(heads[0].publicNodes, heads[1].publicNodes, 'already-open clients must project identical public node state');
 
-    // A real UI write while the cloud is unavailable must stay in the modal,
-    // surface a failure, and never become a local public fact.
+    // A real UI write while the cloud is unavailable must stay in the new create
+    // overlay, surface the server error, and never become a local public fact.
     cloudOnline = false;
     const offlineMarker = `E2E rejected local ${crypto.randomUUID()}`;
     const cloudSizeBeforeOfflineWrite = events.length;
     await createThroughRealUi(pageA, offlineMarker, 'This must never become local public truth');
-    await pageA.waitForFunction(() => document.querySelector('#toast')?.textContent?.includes('提交失败'));
-    assert.equal(await pageA.locator('#modalOverlay').evaluate(element => element.classList.contains('show')), true, 'failed server-first submit must keep the create modal open');
+    await pageA.waitForFunction(() => document.querySelector('#toast')?.textContent?.includes('mock cloud offline'));
+    assert.equal(
+      await pageA.locator('#knowledgeCreateOverlay').evaluate(element => element.classList.contains('show')),
+      true,
+      'failed server-first submit must keep the split create overlay open',
+    );
     const offlineRendered = await pageA.evaluate(title => Object.values(window.__debug?.projection?.state?.nodesById ?? {}).some(node => node.title === title), offlineMarker);
     assert.equal(offlineRendered, false, 'failed cloud write must never enter the writer projection');
     assert.equal(events.length, cloudSizeBeforeOfflineWrite, 'failed cloud write must never enter authoritative cloud history');
