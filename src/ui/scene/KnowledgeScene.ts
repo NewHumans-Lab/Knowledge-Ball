@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { KnowledgeLineageMeta } from '../../domain/KnowledgeLineage';
+import { buildKnowledgeRelations, collectKnowledgeChainEdges } from '../../domain/KnowledgeRelations';
 import type { KnowledgeLayer } from '../../domain/KnowledgeLayerPolicy';
 import { isSystemCoreNodeId } from '../../domain/KnowledgeLayerPolicy';
 import {
@@ -62,8 +63,6 @@ export interface KnowledgeSceneNode {
   semanticKey?: string;
   hidden?: boolean;
   lineage?: KnowledgeLineageMeta;
-  twinGroup?: string;
-  sharedTitle?: string;
   declaredLayer?: KnowledgeLayer;
   effectiveLayer?: KnowledgeLayer;
   pos?: THREE.Vector3;
@@ -482,15 +481,12 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     if (draggedNodeId) forced.add(draggedNodeId);
     if (returningNodeId) forced.add(returningNodeId);
     if (!selectedId) return forced;
-    const byId = new Map(nodes.map(node => [node.id, node] as const));
-    const selected = byId.get(selectedId);
+    const selected = nodes.find(node => node.id === selectedId);
     if (!selected) return forced;
     forced.add(selected.id);
-    for (const id of selected.premises) forced.add(id);
-    if (selected.logicRuleId) forced.add(selected.logicRuleId);
-    for (const node of nodes) {
-      if (node.premises.includes(selected.id) || node.logicRuleId === selected.id) forced.add(node.id);
-      if (selected.twinGroup && node.twinGroup === selected.twinGroup) forced.add(node.id);
+    const relations = buildKnowledgeRelations(selected.id, nodes);
+    for (const items of Object.values(relations)) {
+      for (const item of items) forced.add(item.id);
     }
     return forced;
   };
@@ -527,53 +523,37 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     line.geometry.setFromPoints([a!.clone(), b!.clone()]);
     line.userData.geometryVisible = true;
-    if (line.material instanceof THREE.LineDashedMaterial) line.computeLineDistances();
   };
 
   const syncEdges = (nodes: KnowledgeSceneNode[]) => {
     const byId = new Map(nodes.map(node => [node.id, node] as const));
-    const ids = new Set(byId.keys());
     const wanted = new Set<string>();
     const hasSelection = selectedId !== null;
-    nodes.forEach(n => [...n.premises, ...(n.logicRuleId ? [n.logicRuleId] : [])].forEach(p => {
-      if (!ids.has(p) || !shouldRenderEdge(p, n.id)) return;
-      const key = `${p}->${n.id}`;
+
+    for (const edge of collectKnowledgeChainEdges(nodes)) {
+      const from = byId.get(edge.fromId);
+      const to = byId.get(edge.toId);
+      if (!from || !to || !shouldRenderEdge(from.id, to.id)) continue;
+      const key = `${from.id}->${to.id}`;
       wanted.add(key);
       if (!edgeMap[key]) {
         edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.normalOpacity }));
         edgesGroup.add(edgeMap[key]);
       }
-      edgeMap[key].userData.edgeEndpoints = [p, n.id];
+      edgeMap[key].userData.edgeEndpoints = [from.id, to.id];
       const material = edgeMap[key].material as THREE.LineBasicMaterial;
-      const relationActive = hasSelection && (selectedId === p || selectedId === n.id);
+      const relationActive = hasSelection && (selectedId === from.id || selectedId === to.id);
       material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);
-      const stateOpacity = n.status === 'falsified'
+      const stateOpacity = to.status === 'falsified'
         ? KNOWLEDGE_SCENE_THEME.edge.falsifiedOpacity
-        : n.status === 'suspended'
+        : to.status === 'suspended'
           ? KNOWLEDGE_SCENE_THEME.edge.suspendedOpacity
-          : n.status === 'disputed'
+          : to.status === 'disputed'
             ? KNOWLEDGE_SCENE_THEME.edge.disputedOpacity
             : KNOWLEDGE_SCENE_THEME.edge.normalOpacity;
       material.opacity = relationActive ? KNOWLEDGE_SCENE_THEME.edge.activeOpacity : stateOpacity * (hasSelection ? KNOWLEDGE_SCENE_THEME.edge.inactiveFactor : 1);
-      updateLineGeometry(edgeMap[key], byId.get(p)?.pos, n.pos);
-    }));
-
-    nodes.filter(n => n.twinGroup && !isCoreNodeId(n.id)).forEach(n => {
-      const twin = nodes.find(other => other.id !== n.id && other.twinGroup === n.twinGroup && shouldRenderEdge(n.id, other.id));
-      if (!twin) return;
-      const key = [n.id, twin.id].sort().join('<->');
-      wanted.add(key);
-      if (!edgeMap[key]) {
-        edgeMap[key] = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: KNOWLEDGE_SCENE_THEME.edge.normal, transparent: true, opacity: KNOWLEDGE_SCENE_THEME.edge.twinOpacity, dashSize: 4, gapSize: 3 }));
-        edgesGroup.add(edgeMap[key]);
-      }
-      edgeMap[key].userData.edgeEndpoints = [n.id, twin.id];
-      const material = edgeMap[key].material as THREE.LineDashedMaterial;
-      const relationActive = hasSelection && (selectedId === n.id || selectedId === twin.id);
-      material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal);
-      material.opacity = relationActive ? KNOWLEDGE_SCENE_THEME.edge.activeOpacity : KNOWLEDGE_SCENE_THEME.edge.twinOpacity;
-      updateLineGeometry(edgeMap[key], n.pos, twin.pos);
-    });
+      updateLineGeometry(edgeMap[key], from.pos, to.pos);
+    }
 
     Object.keys(edgeMap).forEach(key => {
       if (wanted.has(key)) return;
