@@ -23,9 +23,15 @@ jobs:
       - run: npm run test:pages
       - run: npm test
       - run: npm run test:download
+      - name: Require the hosted release schema expected by migrations
+        if: github.event_name == 'pull_request'
+        run: node scripts/verify-supabase-schema.mjs
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
-      - name: Verify Current Personal All visibility cycle on the built page
+      - name: Verify real-touch Current Personal All cycle on the built page
         run: node scripts/verify-visibility-mode-browser.mjs
       - name: Verify second-tap related-node navigation
         run: node scripts/verify-node-detail-relations-browser.mjs

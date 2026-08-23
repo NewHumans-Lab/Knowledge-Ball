@@ -60,3 +60,5 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Read-only click-test deployed Pages and Supabase wiring
         run: node scripts/verify-production-browser.mjs "${{ steps.deployment.outputs.page_url }}" "${GITHUB_SHA}"
+      - name: Real-touch Current Personal All production gate
+        run: node scripts/verify-live-visibility-cycle.mjs "${{ steps.deployment.outputs.page_url }}" "${GITHUB_SHA}"

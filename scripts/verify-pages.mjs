@@ -14,6 +14,13 @@ function pageAssets(html) {
 function validateHtml(html) {
   assert.match(html, /<div class="app" id="app">/, 'Pages HTML must contain the application root');
   assert.doesNotMatch(html, /src="\/src\//, 'Pages HTML must not reference unbuilt source files');
+  assert.match(html, /<meta\s+name="knowledge-ball-build"\s+content="[^"]+"/, 'Pages HTML must expose its build identity');
+  assert.match(
+    html,
+    /<button class="btn" id="btnPersonal" data-visibility-mode="current" title="当前：只显示每个主题的当前知识；点击切换到个人">当前<\/button>/,
+    'Pages HTML must boot with the canonical Current visibility shell',
+  );
+  assert.doesNotMatch(html, /隐藏\/恢复未接触的知识节点/, 'obsolete binary Personal shell must never ship in a built artifact');
   const assets = pageAssets(html);
   assert.ok(assets.some(asset => /\/assets\/index-[^/]+\.js$/.test(asset)), 'Pages HTML must reference its hashed application bundle');
   return assets;

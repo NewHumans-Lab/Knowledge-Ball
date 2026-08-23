@@ -4,7 +4,6 @@ import {
   visibilityModeLabel,
   type KnowledgeVisibilityMode,
 } from '../KnowledgeLineageView';
-import type { KnowledgeSceneRuntime } from '../scene/KnowledgeScene';
 
 export interface InteractionNodeSummary {
   id: string;
@@ -15,8 +14,14 @@ export interface InteractionNodeSummary {
   reasoning: string;
 }
 
+export interface InteractionScenePort {
+  setVisibilityMode: (mode: KnowledgeVisibilityMode) => void;
+  setNodeRadius: (radius: number) => void;
+  setLabelBrightness: (brightness: number) => void;
+}
+
 export interface InteractionControllerOptions {
-  scene: KnowledgeSceneRuntime;
+  scene: InteractionScenePort;
   getNodes: () => InteractionNodeSummary[];
 
   searchInput: HTMLInputElement;
@@ -44,7 +49,7 @@ function escapeHtml(input: string): string {
 }
 
 export class InteractionController {
-  private readonly scene: KnowledgeSceneRuntime;
+  private readonly scene: InteractionScenePort;
   private readonly getNodes: () => InteractionNodeSummary[];
   private readonly searchInput: HTMLInputElement;
   private readonly searchResults: HTMLElement;
@@ -83,6 +88,10 @@ export class InteractionController {
 
   setVisibilityMode(mode: KnowledgeVisibilityMode): void {
     this.applyVisibilityMode(mode);
+  }
+
+  getVisibilityMode(): KnowledgeVisibilityMode {
+    return this.visibilityMode;
   }
 
   private applyVisibilityMode(mode: KnowledgeVisibilityMode): void {
