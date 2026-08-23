@@ -293,23 +293,9 @@ function launchPanelAction(id: string, action: NodeDetailAction): void {
     knowledgeCreate.openReasoning(id);
     return;
   }
-  panel.openNodePanel(id);
-  const buttonId: Partial<Record<NodeDetailAction, string>> = {
-    edit: 'btnEditNode',
-    negate: 'btnNegate',
-    decompose: 'btnDecompose',
-    merge: 'btnMerge',
-    resolve: 'btnResolve',
-    dispute: 'btnDispute',
-  };
-  const targetId = buttonId[action];
-  const button = targetId ? document.getElementById(targetId) as HTMLButtonElement | null : null;
-  if (!button) {
-    panel.closeNodePanel();
+  if (!panel.openNodeAction(id, action)) {
     panel.showToast('当前知识节点不支持这个编辑操作');
-    return;
   }
-  button.click();
 }
 
 async function markNodeViewed(id: string): Promise<void> {
