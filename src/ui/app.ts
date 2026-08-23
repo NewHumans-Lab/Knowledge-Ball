@@ -618,6 +618,7 @@ if (!Capacitor.isNativePlatform()) {
     getScreenPosition: id => scene.screenPositionForNode(id),
     getActions: getNodeDetailActions,
     onAction: launchPanelAction,
+    onSelectRelatedNode: openNode,
     onDetailNodeChange: id => scene.setDetailNode(id),
     onClose: () => {
       nodeDetailLineageUi?.close();
