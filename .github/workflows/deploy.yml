@@ -59,4 +59,4 @@ jobs:
           npm install --no-save playwright
           npx playwright install --with-deps chromium
       - name: Read-only click-test deployed Pages and Supabase wiring
-        run: node scripts/verify-production-browser.mjs "${{ steps.deployment.outputs.page_url }}"
+        run: node scripts/verify-production-browser.mjs "${{ steps.deployment.outputs.page_url }}" "${GITHUB_SHA}"
