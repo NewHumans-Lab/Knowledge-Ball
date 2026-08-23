@@ -22,9 +22,11 @@ assert(!detail.includes('node-detail-content-label'), 'near-node detail must not
 assert(!detail.includes('>内容<'), 'the standalone content heading must stay removed');
 assert(detail.indexOf('node-detail-content') < detail.indexOf('node-detail-meta'), 'knowledge content must appear before contributor/time metadata');
 assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributor and time must remain two ordered footer rows');
-for (const action of ['优化', '基于此新增', '提出对立观点', '分解', '合并']) {
+for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解', '合并']) {
   assert(detail.includes(action), `single detail engine must expose ${action}`);
 }
+assert(!detail.includes("derive: '基于此新增'"), 'legacy combined 基于此新增 action must stay removed');
+assert(detail.includes("derive: '新增'") && detail.includes("'derive-reasoning': '新增推理'"), 'detail must expose two explicit create actions');
 assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit from a copied legacy controller');
 assert(!lineageUi.includes('relabelActions'), 'cascade helper must not rewrite ordinary detail action labels after render');
 assert(!lineageUi.includes('data-node-detail-action="edit"') && !lineageUi.includes('data-node-detail-action="negate"'), 'cascade helper must not own ordinary edit/opposition presentation');
@@ -159,7 +161,7 @@ assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/actio
 assert(app.includes('if (!Capacitor.isNativePlatform())'), 'new near-node detail behavior must remain web-only for now');
 assert(app.includes('nodeDetail.open(id)'), 'ordinary-node path must open the near-node detail surface');
 assert(app.includes("getMetadata: id =>"), 'detail must receive contributor/time metadata through the production adapter');
-assert(app.includes('panel.openNodePanel(id)') && app.includes('launchPanelAction'), 'large panel must remain the single editing surface behind detail actions');
+assert(app.includes('panel.openNodePanel(id)') && app.includes('launchPanelAction'), 'large panel must remain the single editing surface behind non-create detail actions');
 
 assert(detail.includes("const LABEL_SWITCH_CLASS = 'node-detail-labels-off';"), 'detail must own one explicit knowledge-label visibility switch');
 assert(detail.includes('this.setKnowledgeLabelsVisible(false);'), 'opening detail must switch all knowledge labels off');
