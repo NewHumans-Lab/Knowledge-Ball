@@ -1,5 +1,5 @@
 import type { NodeStatus, NodeType } from '../event/Event';
-import type { UserKnowledgeLayer } from './KnowledgeLayerPolicy';
+import type { KnowledgeLayer } from './KnowledgeLayerPolicy';
 import {
   currentNodeForTopic,
   lineageRoleFor,
@@ -14,7 +14,7 @@ export interface KnowledgeRelationNode {
   premises: readonly string[];
   type?: NodeType;
   status?: NodeStatus;
-  declaredLayer?: UserKnowledgeLayer;
+  declaredLayer?: KnowledgeLayer;
   lineage?: KnowledgeLineageMeta;
 }
 
@@ -28,7 +28,7 @@ export interface KnowledgeRelationItem {
    */
   type?: NodeType;
   status?: NodeStatus;
-  declaredLayer?: UserKnowledgeLayer;
+  declaredLayer?: KnowledgeLayer;
   lineage?: KnowledgeLineageMeta;
 }
 
