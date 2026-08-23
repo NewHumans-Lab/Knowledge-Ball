@@ -25,6 +25,13 @@ jobs:
       - run: npm run test:download
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
+      - name: Diagnose hosted schema release gate
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: node scripts/verify-supabase-schema.mjs
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Diagnose deployed main visibility cycle
         if: github.event_name == 'pull_request'
         run: node scripts/diagnose-live-visibility-cycle.mjs "https://rushow111.github.io/Knowledge-Ball/" "${{ github.event.pull_request.base.sha }}"
