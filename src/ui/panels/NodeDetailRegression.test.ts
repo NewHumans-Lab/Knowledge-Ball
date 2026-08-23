@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
-import { formatNodeContributionTime } from './NodeDetailController';
+import { formatNodeContributionTime, relationNodeTextColor } from './NodeDetailController';
+import { NODE_LAYER_COLOR_HEX, NODE_SPECIAL_COLOR_HEX } from '../config/KnowledgeUiConfig';
 
 const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
 const lineageUi = readFileSync('src/ui/panels/NodeDetailLineageUi.ts', 'utf8');
@@ -45,12 +46,43 @@ assert(!scene.includes('n.logicRuleId ? [n.logicRuleId]'), 'scene must not redra
 assert(!scene.includes("join('<->')"), 'scene must not redraw legacy twin links');
 assert(detail.includes('data-related-node-id='), 'near-node relations must preserve each projected related node id in the DOM');
 assert(detail.includes('data-relation-kind='), 'near-node relations must preserve the four canonical directions');
+assert(detail.includes('data-relation-count='), 'each relation rail must expose its real item count for layout diagnostics');
 assert(detail.includes('this.onSelectRelatedNode(relatedId)'), 'relation controls must delegate navigation instead of opening nodes locally');
 assert(!detail.includes('items.map(item => `<span>'), 'related nodes must not regress to non-interactive decorative spans');
 assert.equal((app.match(/onSelectRelatedNode:\s*openNode/g) ?? []).length, 2, 'editing panel and near-node detail must share the same openNode navigation authority');
 assert(css.includes('.node-detail-relation{'), 'related nodes must have one explicit button style');
-assert(css.includes('pointer-events:auto'), 'related-node buttons must remain pointer-interactive while empty relation containers stay transparent');
+assert(css.includes('pointer-events:auto'), 'related-node buttons must remain pointer-interactive');
 assert(css.includes('.node-detail-relation:hover') && css.includes('.node-detail-relation:focus-visible'), 'related-node controls must expose pointer and keyboard interaction affordances');
+
+// The local navigator text is a label for the real node ball, not a new semantic
+// colour system. Verify the same scene priority including explicit outer facts.
+assert.equal(
+  relationNodeTextColor({ id: 'reasoning', title: '推理', type: 'reasoning', status: 'verified' }),
+  NODE_SPECIAL_COLOR_HEX.structural,
+  'white structural reasoning ball must produce white structural relation text',
+);
+assert.equal(
+  relationNodeTextColor({ id: 'outer-fact', title: '外层事实', type: 'fact', status: 'verified', declaredLayer: 'outer' }),
+  NODE_LAYER_COLOR_HEX.outer,
+  'declared outer fact must use its real outer-layer ball colour instead of a type fallback',
+);
+assert.equal(
+  relationNodeTextColor({ id: 'disputed', title: '争议', type: 'definition', status: 'disputed', declaredLayer: 'inner' }),
+  NODE_LAYER_COLOR_HEX.outer,
+  'disputed current node must use the same outer-layer display colour as its ball',
+);
+assert.equal(
+  relationNodeTextColor({ id: 'history', title: '历史', type: 'definition', status: 'verified', lineage: { topicId: 't', proposal: 'optimization', targetId: 'current', role: 'history', rank: 1 } }),
+  '#8A949E',
+  'history text must use the same gray as a history ball',
+);
+assert.equal(
+  relationNodeTextColor({ id: 'opposition', title: '对立', type: 'definition', status: 'verified', lineage: { topicId: 't', proposal: 'opposition', targetId: 'current', role: 'opposition', rank: 1 } }),
+  '#EE5B63',
+  'opposition text must use the same red as an opposition ball',
+);
+assert(detail.includes('--relation-node-color'), 'relation markup must carry the real node colour into CSS without a direction colour table');
+assert(relationDomain.includes('declaredLayer: node.declaredLayer'), 'relation items must preserve the node declaration needed to reproduce its actual scene layer colour');
 
 assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
 assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
@@ -108,12 +140,19 @@ assert(css.includes('rgba(3,5,18,.99) 0%'), 'detail occlusion must keep the stro
 assert(!css.includes('border:1px solid rgba(151,205,255,.46)'), 'detail surface must not draw the removed ellipse outline');
 assert(css.includes('justify-content:flex-start'), 'detail hierarchy must start near the top rather than vertically centering the whole stack');
 assert(css.includes('font:700 20px/1.38'), 'desktop node title must keep the 20px primary type size');
-assert(css.includes('font-size:16px'), 'desktop knowledge content must be two visual steps smaller than the 20px title');
+assert(css.includes('--detail-body-font-size:16px'), 'desktop knowledge content and neighbour labels must share the 16px body token');
+assert(css.includes('--detail-body-font-family') && css.includes('--detail-body-font-weight:400'), 'knowledge content and neighbour labels must share one font family and weight');
+assert(css.includes('font-size:var(--detail-body-font-size)') && css.includes('font-weight:var(--detail-body-font-weight)'), 'neighbour labels must consume the same typography tokens as middle content');
 assert(css.includes('.node-detail-title{font-size:19px;}'), 'mobile node title must use 19px');
-assert(css.includes('.node-detail-content{max-height:116px;font-size:15px;}'), 'mobile knowledge content must stay two visual steps smaller than the 19px title');
+assert(css.includes('--detail-body-font-size:15px'), 'mobile middle content and neighbour labels must both use 15px');
+assert(css.includes('.node-detail-content{max-height:116px;}'), 'mobile knowledge content must retain its approved scroll height');
+assert(css.includes('right:calc(100% + var(--detail-relation-offset))') && css.includes('left:calc(100% + var(--detail-relation-offset))'), 'left/right relation rails must use the same ellipse offset');
+assert(css.includes('bottom:calc(100% + var(--detail-relation-offset))') && css.includes('top:calc(100% + var(--detail-relation-offset))'), 'top/bottom relation rails must use the same ellipse offset');
+assert(css.includes('transform:translateY(-50%)'), 'any-size side relation list must stay centred on the ellipse horizontal axis');
+assert(css.includes('flex-flow:row wrap') && css.includes('justify-content:center') && css.includes('align-content:center'), 'any-size top/bottom relation set must wrap into centred rows');
+assert(css.includes('max-height:min(58vh,330px)') && css.includes('overflow-y:auto'), 'large side relation sets must remain bounded and scrollable rather than clipping or drifting');
 assert(css.includes('margin-top:auto'), 'contributor/time metadata must sit at the bottom of the detail surface');
 assert(css.includes('flex-direction:column'), 'contributor and time must remain stacked on two rows');
-assert(css.includes('overflow-y:auto'), 'long knowledge content must scroll inside the fixed-size detail surface');
 assert(css.includes('touch-action:pan-y'), 'mobile users must be able to vertically scroll long detail content');
 assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/action styling must not use the old red danger colour');
 
