@@ -15,6 +15,15 @@ async function assertExit(locator,name){
   assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
 }
 
+async function assertCreateExit(locator,name){
+  await locator.waitFor({state:'visible'});
+  assert.equal((await locator.textContent())?.trim(),'✕',`${name} must use the split-create close control`);
+  const box=await locator.boundingBox();
+  assert.ok(box,`${name} must have a mobile bounding box`);
+  assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
+  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
+}
+
 async function assertNodeDetailExit(locator,name){
   await locator.waitFor({state:'visible'});
   assert.equal((await locator.textContent())?.trim(),'×',`${name} must use the neutral X close control`);
@@ -172,10 +181,14 @@ try{
 
     assert.equal(await page.locator('.ai-add').count(),0,'search bar must not expose the old add-node button');
     await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true})));
-    await page.locator('#modalOverlay.show').waitFor({state:'visible'});
-    await assertExit(page.locator('#modalClose'),'create modal exit');
-    await page.locator('#modalClose').click();
-    await page.locator('#modalOverlay').waitFor({state:'hidden'});
+    const createOverlay=page.locator('#knowledgeCreateOverlay.show');
+    await createOverlay.waitFor({state:'visible'});
+    assert.equal((await createOverlay.locator('h3').textContent())?.trim(),'新增知识','Ctrl+N must open the new standalone create flow');
+    assert.equal(await createOverlay.locator('[data-create-reasoning]').count(),0,'standalone mobile create must not expose the old reasoning field');
+    assert.equal(await createOverlay.locator('[data-picker]').count(),0,'standalone mobile create must not expose premise/conclusion pickers');
+    await assertCreateExit(createOverlay.locator('[data-create-close]'),'split create modal exit');
+    await createOverlay.locator('[data-create-close]').click();
+    await page.locator('#knowledgeCreateOverlay').waitFor({state:'hidden'});
 
     await page.locator('#btnSettings').click();
     await page.locator('#settingsOverlay.show').waitFor({state:'visible'});
@@ -261,5 +274,5 @@ try{
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, focus-before-details, near-node details, search focus, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, split create exit, focus-before-details, near-node details, search focus, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}
