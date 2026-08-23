@@ -861,6 +861,13 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
           labelsLayer.style.display = 'block';
           resumeFrameLoop();
         }
+      } else if (detailNodeId !== null) {
+        // Once the local detail navigator is open, one real-ball tap owns the
+        // whole navigation gesture: move that actual ball to centre and replace
+        // the open detail with that node. The pre-detail two-tap contract below
+        // remains unchanged.
+        focusNode(nodeId);
+        window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
       } else if (focusedNodeId === nodeId && focusTargetQuaternion === null) {
         window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
       } else {
@@ -988,6 +995,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     },
     setDetailNode: id => {
       detailNodeId = id;
+      // The detail node and the physical scene focus are one identity. Relation
+      // button navigation therefore moves the corresponding real ball to centre,
+      // just like tapping that ball directly in the open local navigator.
+      if (id) focusNode(id);
       applyVisibility();
       largeGraphDirty = true;
     },

@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import type { KnowledgeRelationNode } from './KnowledgeRelations';
+import type { KnowledgeRelationNode, KnowledgeRelations } from './KnowledgeRelations';
 import { buildKnowledgeRelations, collectKnowledgeChainEdges } from './KnowledgeRelations';
 
 function node(
@@ -9,6 +9,15 @@ function node(
   lineage?: KnowledgeRelationNode['lineage'],
 ): KnowledgeRelationNode {
   return { id, title, premises, lineage };
+}
+
+function allRelatedIds(relations: KnowledgeRelations): string[] {
+  return [
+    ...relations.previous,
+    ...relations.next,
+    ...relations.history,
+    ...relations.opposition,
+  ].map(item => item.id);
 }
 
 const nodes: KnowledgeRelationNode[] = [
@@ -27,14 +36,56 @@ const nodes: KnowledgeRelationNode[] = [
 ];
 
 const reasoning = buildKnowledgeRelations('reasoning-1', nodes);
-assert.deepEqual(reasoning.previous.map(item => item.id), ['premise-a', 'premise-b'], 'a reasoning-process node sees its real premises on the left');
-assert.deepEqual(reasoning.next.map(item => item.id), ['conclusion-1'], 'a reasoning-process node sees its real conclusion on the right');
+assert.deepEqual(reasoning.previous.map(item => item.id), ['premise-a', 'premise-b'], 'a reasoning-process ball sees its real premise balls on the left');
+assert.deepEqual(reasoning.next.map(item => item.id), ['conclusion-1'], 'a reasoning-process ball sees its real conclusion ball on the right');
 
 const conclusion = buildKnowledgeRelations('conclusion-1', nodes);
-assert.deepEqual(conclusion.previous.map(item => item.id), ['reasoning-1'], 'a conclusion sees the reasoning-process ball itself on the left');
-assert.deepEqual(conclusion.next.map(item => item.id), ['reasoning-2'], 'a conclusion used later sees the next reasoning-process ball on the right');
-assert.deepEqual(conclusion.history.map(item => item.id), ['conclusion-1-old', 'conclusion-1-older'], 'history stays on the top axis nearest-first');
-assert.deepEqual(conclusion.opposition.map(item => item.id), ['conclusion-1-opposition', 'conclusion-1-opposition-older'], 'opposition history stays on the bottom axis nearest-first');
+assert.deepEqual(conclusion.previous.map(item => item.id), ['reasoning-1'], 'a conclusion sees the white reasoning-process ball itself on the left');
+assert.deepEqual(conclusion.next.map(item => item.id), ['reasoning-2'], 'a conclusion reused later sees the next white reasoning-process ball on the right');
+assert.deepEqual(
+  conclusion.history.map(item => item.id),
+  ['conclusion-1-old', 'conclusion-1-candidate-history'],
+  'detail history contains only gray balls with a direct live line to the current ball',
+);
+assert.deepEqual(
+  conclusion.opposition.map(item => item.id),
+  ['conclusion-1-opposition', 'conclusion-1-candidate-opposition'],
+  'detail opposition contains only red balls with a direct live line to the current ball',
+);
+
+const firstHistory = buildKnowledgeRelations('conclusion-1-old', nodes);
+assert.deepEqual(
+  firstHistory.history.map(item => item.id),
+  ['conclusion-1', 'conclusion-1-older'],
+  'opening history rank 1 exposes the two balls directly joined to it in the history chain',
+);
+assert.deepEqual(
+  buildKnowledgeRelations('conclusion-1-older', nodes).history.map(item => item.id),
+  ['conclusion-1-old'],
+  'opening the oldest gray ball does not jump across rank 1 to the current ball',
+);
+assert.deepEqual(
+  buildKnowledgeRelations('conclusion-1-candidate-history', nodes).history.map(item => item.id),
+  ['conclusion-1'],
+  'a pending gray candidate exposes only the target ball it is directly connected to',
+);
+
+const firstOpposition = buildKnowledgeRelations('conclusion-1-opposition', nodes);
+assert.deepEqual(
+  firstOpposition.opposition.map(item => item.id),
+  ['conclusion-1', 'conclusion-1-opposition-older'],
+  'opening opposition rank 1 exposes the two balls directly joined to it in the opposition chain',
+);
+assert.deepEqual(
+  buildKnowledgeRelations('conclusion-1-opposition-older', nodes).opposition.map(item => item.id),
+  ['conclusion-1-opposition'],
+  'opening the oldest red ball does not jump across rank 1 to the current ball',
+);
+assert.deepEqual(
+  buildKnowledgeRelations('conclusion-1-candidate-opposition', nodes).opposition.map(item => item.id),
+  ['conclusion-1'],
+  'a pending red candidate exposes only the target ball it is directly connected to',
+);
 
 const secondReasoning = buildKnowledgeRelations('reasoning-2', nodes);
 assert.deepEqual(secondReasoning.previous.map(item => item.id), ['conclusion-1']);
@@ -66,8 +117,29 @@ assert.deepEqual(edges.slice(5), [
   { fromId: 'conclusion-1', toId: 'conclusion-1-candidate-opposition' },
 ], 'history/opposition are live rank-ordered chains and pending candidates connect to their target');
 
+// Strong invariant for the local navigator: a detail button exists iff its
+// target is one endpoint away on the exact canonical scene-line projection.
+const undirectedEdgeKeys = new Set(edges.flatMap(edge => [
+  `${edge.fromId}\0${edge.toId}`,
+  `${edge.toId}\0${edge.fromId}`,
+]));
+for (const opened of nodes) {
+  const relationIds = allRelatedIds(buildKnowledgeRelations(opened.id, nodes));
+  assert.equal(new Set(relationIds).size, relationIds.length, `detail ${opened.id} must not duplicate one real neighbour across axes`);
+  for (const relatedId of relationIds) {
+    assert.ok(
+      undirectedEdgeKeys.has(`${opened.id}\0${relatedId}`),
+      `detail button ${opened.id} -> ${relatedId} must have a direct scene line`,
+    );
+  }
+  for (const edge of edges.filter(edge => edge.fromId === opened.id || edge.toId === opened.id)) {
+    const otherId = edge.fromId === opened.id ? edge.toId : edge.fromId;
+    assert.ok(relationIds.includes(otherId), `direct scene-line endpoint ${otherId} must appear as a button when ${opened.id} is open`);
+  }
+}
+
 assert.deepEqual(buildKnowledgeRelations('missing', nodes), {
   previous: [], next: [], history: [], opposition: [],
 });
 
-console.log('Canonical four-direction knowledge relation and lineage-edge tests passed');
+console.log('Canonical one-hop knowledge navigator and scene-edge tests passed');
