@@ -25,6 +25,8 @@ jobs:
       - run: npm run test:download
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
+      - name: Verify Current Personal All visibility cycle on the built page
+        run: node scripts/verify-visibility-mode-browser.mjs
       - name: Verify cloud-only public state with two already-open real pages
         run: npm run test:browser-cloud
       - run: npm run test:browser-mobile

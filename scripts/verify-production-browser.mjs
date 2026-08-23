@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
 const target = process.argv[2];
-if (!target) throw new Error('Usage: node scripts/verify-production-browser.mjs <deployed-url>');
+const expectedBuildCommit = process.argv[3] ?? null;
+if (!target) throw new Error('Usage: node scripts/verify-production-browser.mjs <deployed-url> [expected-build-commit]');
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
 
@@ -37,7 +38,9 @@ try {
     if (url.includes('/rest/v1/public_knowledge_events')) publicEventsStatus = response.status();
   });
 
-  await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  const verificationUrl = new URL(target);
+  verificationUrl.searchParams.set('kb_verify', expectedBuildCommit ?? String(Date.now()));
+  await page.goto(verificationUrl.toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.locator('#aiInput').waitFor({ state: 'visible', timeout: 20_000 });
   assert.equal(await page.locator('.ai-add').count(), 0, 'search bar must not expose the old add-node button');
   await page.waitForTimeout(8_000);
@@ -45,6 +48,7 @@ try {
   const diagnostics = await page.evaluate(() => {
     const debug = window.__debug;
     const engine = debug?.syncEngine;
+    const visibilityButton = document.querySelector('#btnPersonal');
     return {
       datasetSyncStatus: document.documentElement.dataset.syncStatus ?? null,
       debugPresent: Boolean(debug),
@@ -54,12 +58,24 @@ try {
       pendingCount: typeof engine?.pendingCount === 'function' ? engine.pendingCount() : null,
       nodeCount: Object.keys(debug?.projection?.state?.nodesById ?? {}).length,
       modalClass: document.querySelector('#modalOverlay')?.className ?? null,
+      buildCommit: document.querySelector('meta[name="knowledge-ball-build"]')?.getAttribute('content') ?? null,
+      visibilityText: visibilityButton?.textContent?.trim() ?? null,
+      visibilityMode: visibilityButton?.dataset?.visibilityMode ?? null,
     };
   });
 
   console.log('Production browser diagnostics:');
   console.log(JSON.stringify({ ...diagnostics, signupStatus, publicEventsStatus, supabaseRequests, networkFailures, pageErrors, consoleMessages }, null, 2));
 
+  if (expectedBuildCommit) {
+    assert.equal(
+      diagnostics.buildCommit,
+      expectedBuildCommit,
+      `deployed Pages artifact is stale or from the wrong commit (expected ${expectedBuildCommit}, got ${diagnostics.buildCommit ?? 'missing'})`,
+    );
+  }
+  assert.equal(diagnostics.visibilityText, '当前', 'deployed header must boot in Current mode');
+  assert.equal(diagnostics.visibilityMode, 'current', 'deployed header must expose Current as its canonical initial visibility mode');
   assert.ok(diagnostics.datasetSyncStatus === 'idle' || diagnostics.datasetSyncStatus === 'conflict', `hosted sync did not become usable (status: ${diagnostics.datasetSyncStatus ?? 'missing'})`);
   assert.equal(signupStatus, 200, `anonymous Supabase signup did not succeed (status: ${signupStatus})`);
   assert.equal(publicEventsStatus, 200, `public event pull did not succeed (status: ${publicEventsStatus})`);
@@ -88,11 +104,28 @@ try {
   await page.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'));
 
   const personal = page.locator('#btnPersonal');
-  if (await personal.count()) { await personal.click(); await personal.click(); }
+  const assertVisibilityState = async (text, mode) => {
+    const state = await personal.evaluate(button => ({
+      text: button.textContent?.trim() ?? '',
+      mode: button.dataset.visibilityMode ?? '',
+    }));
+    assert.equal(state.text, text, `visibility button text must be ${text}`);
+    assert.equal(state.mode, mode, `visibility button mode must be ${mode}`);
+  };
+
+  assert.equal(await personal.count(), 1, 'deployed header must expose exactly one visibility-mode control');
+  await assertVisibilityState('当前', 'current');
+  await personal.click();
+  await assertVisibilityState('个人', 'personal');
+  await personal.click();
+  await assertVisibilityState('全部', 'all');
+  await personal.click();
+  await assertVisibilityState('当前', 'current');
 
   assert.deepEqual(publicAppendRequests, [], 'production smoke test must never call the public knowledge append RPC');
 
   console.log(`Read-only production browser smoke test passed: ${target}`);
+  console.log(`Build commit: ${diagnostics.buildCommit ?? 'unknown'}; visibility cycle: current -> personal -> all -> current`);
   console.log(`Supabase signup: ${signupStatus}; public event pull: ${publicEventsStatus}; authoritative public writes: 0`);
 } finally {
   await browser.close();
