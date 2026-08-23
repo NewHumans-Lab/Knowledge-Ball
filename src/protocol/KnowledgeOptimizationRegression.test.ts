@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import type { DomainEvent } from '../event/Event';
+import type { DomainEvent, NodeType } from '../event/Event';
 import { EventStore, type EventPersistence } from '../event/EventStore';
 import { validateDomainEventAgainstState } from '../event/EventValidation';
 import { GraphProjection } from '../projection/GraphProjection';
@@ -9,6 +9,7 @@ import {
   KnowledgeOptimizationValidationError,
 } from '../command/KnowledgeOptimization';
 import { lineageRoleFor, stableLineageChain, topicIdFor } from '../domain/KnowledgeLineage';
+import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
 
 class MemoryPersistence implements EventPersistence {
   events: DomainEvent[] = [];
@@ -27,7 +28,15 @@ function boot(persistence: MemoryPersistence) {
   return { store, projection };
 }
 
-function importVerified(runtime: ReturnType<typeof boot>, id: string, title: string, reasoning: string): void {
+function importVerified(
+  runtime: ReturnType<typeof boot>,
+  id: string,
+  title: string,
+  reasoning: string,
+  nodeType: NodeType = 'theorem',
+  declaredLayer: UserKnowledgeLayer = 'middle',
+  premises: string[] = [],
+): void {
   runtime.store.append({
     id: `import-${id}`,
     type: 'NodeCreated',
@@ -37,12 +46,12 @@ function importVerified(runtime: ReturnType<typeof boot>, id: string, title: str
     payload: {
       nodeId: id,
       title,
-      nodeType: 'theorem',
+      nodeType,
       reasoning,
-      premises: [],
+      premises,
       initialStatus: 'verified',
       source: 'import',
-      declaredLayer: 'middle',
+      declaredLayer,
     },
   });
 }
@@ -85,7 +94,7 @@ async function run(): Promise<void> {
   assert.equal(runtime.projection.state.nodesById.v1.reasoning, 'Original immutable content', 'optimization must never mutate target content');
   assert.equal(runtime.projection.state.nodesById['v2-rejected'].type, 'theorem', 'candidate inherits structural node type');
   assert.deepEqual(runtime.projection.state.nodesById['v2-rejected'].premises, [], 'candidate inherits target premises');
-  assert.equal(runtime.projection.state.nodesById['v2-rejected'].declaredLayer, 'outer', 'layer is the only structural classification the author may change');
+  assert.equal(runtime.projection.state.nodesById['v2-rejected'].declaredLayer, 'outer', 'ordinary knowledge optimization may still change layer');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById.v1), 'current');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById['v2-rejected']), 'candidate-history');
 
@@ -149,6 +158,36 @@ async function run(): Promise<void> {
     'linear version ordering must survive event replay',
   );
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById['v2-rejected']), 'rejected', 'failed candidate remains audit-only after replay');
+
+  const reasoningPersistence = new MemoryPersistence();
+  const reasoningRuntime = boot(reasoningPersistence);
+  importVerified(reasoningRuntime, 'premise-r', 'Premise', 'Premise content', 'fact', 'inner');
+  importVerified(reasoningRuntime, 'reasoning-v1', 'Reasoning V1', 'Original reasoning steps', 'reasoning', 'middle', ['premise-r']);
+  importVerified(reasoningRuntime, 'conclusion-r', 'Conclusion', 'Conclusion content', 'theorem', 'middle', ['reasoning-v1']);
+
+  await assert.rejects(
+    executeKnowledgeOptimization(reasoningRuntime.store, reasoningRuntime.projection, {
+      targetId: 'reasoning-v1',
+      candidateId: 'reasoning-bad-layer',
+      title: 'Reasoning V2',
+      reasoning: 'Improved reasoning steps',
+      declaredLayer: 'outer',
+    }),
+    (error: unknown) => error instanceof KnowledgeOptimizationValidationError
+      && error.errors.some(message => message.includes('只能修改名字和推理过程')),
+    'reasoning optimization must reject any layer change',
+  );
+
+  const reasoningEvent = await executeKnowledgeOptimization(reasoningRuntime.store, reasoningRuntime.projection, {
+    targetId: 'reasoning-v1',
+    candidateId: 'reasoning-v2',
+    title: 'Reasoning V2',
+    reasoning: 'Improved reasoning steps',
+    declaredLayer: 'middle',
+  });
+  assert.equal(reasoningEvent.payload.declaredLayers?.['reasoning-v2'], 'middle', 'reasoning optimization must inherit the current layer');
+  assert.deepEqual(reasoningRuntime.projection.state.nodesById['reasoning-v2'].premises, ['premise-r'], 'reasoning optimization must inherit premises');
+  assert.equal(reasoningRuntime.projection.state.nodesById['reasoning-v2'].reasoning, 'Improved reasoning steps');
 
   console.log('Knowledge optimization regression tests passed');
 }
