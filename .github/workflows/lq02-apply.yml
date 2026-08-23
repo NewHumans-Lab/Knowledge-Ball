@@ -4,13 +4,17 @@ on:
   push:
     branches:
       - fix/explicit-node-detail-actions
+  pull_request:
+    types: [opened, synchronize]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'chore: apply LQ-02 explicit action routing'
+    if: >-
+      (github.event_name == 'push' && github.event.head_commit.message == 'chore: apply LQ-02 explicit action routing') ||
+      (github.event_name == 'pull_request' && github.head_ref == 'fix/explicit-node-detail-actions')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,11 +43,10 @@ jobs:
               "type LineageCandidateKind = 'optimization' | 'opposition';\n",
               "export type PanelNodeAction = 'edit' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';\n\ntype LineageCandidateKind = 'optimization' | 'opposition';\n",
           )
-
           replace_once(
               panel,
               "  closeNodePanel(): void {\n    this.panel.classList.remove('open');\n    this.onOverlayVisibilityChange?.(false);\n    this.selectedId = null;\n  }\n\n  openCreateModal",
-              "  closeNodePanel(): void {\n    this.panel.classList.remove('open');\n    this.onOverlayVisibilityChange?.(false);\n    this.selectedId = null;\n  }\n\n  openNodeAction(id: string, action: PanelNodeAction): boolean {\n    const nodes = this.getNodes();\n    const byId = new Map(nodes.map(node => [node.id, node] as const));\n    const node = byId.get(id);\n    if (!node || !this.supportsNodeAction(node, action, nodes, byId)) return false;\n\n    this.openNodePanel(id);\n    this.executeNodeAction(id, action);\n    return true;\n  }\n\n  openCreateModal",
+              "  closeNodePanel(): void {\n    this.panel.classList.remove('open');\n    this.onOverlayVisibilityChange?.(false);\n    this.selectedId = null;\n  }\n\n  openNodeAction(id: string, action: PanelNodeAction): boolean {\n    const nodes = this.getNodes();\n    const byId = new Map(nodes.map(node => [node.id, node] as const));\n    const node = byId.get(id);\n    if (!node || !this.supportsNodeAction(node, action, nodes, byId)) return false;\n    this.openNodePanel(id);\n    this.executeNodeAction(id, action);\n    return true;\n  }\n\n  openCreateModal",
           )
 
           old_bind = """  private bindPanelRuntimeEvents(id: string): void {
@@ -76,40 +79,23 @@ jobs:
     byId: ReadonlyMap<string, PanelNodeSummary> = new Map(nodes.map(item => [item.id, item] as const)),
   ): boolean {
     switch (action) {
-      case 'edit':
-        return true;
-      case 'negate':
-        return node.status !== 'falsified' && node.status !== 'suspended';
-      case 'decompose':
-        return node.type === 'reasoning';
-      case 'merge':
-        return this.canMerge(node, nodes, byId);
-      case 'resolve':
-        return node.status === 'suspended';
-      case 'dispute':
-        return node.status === 'disputed';
+      case 'edit': return true;
+      case 'negate': return node.status !== 'falsified' && node.status !== 'suspended';
+      case 'decompose': return node.type === 'reasoning';
+      case 'merge': return this.canMerge(node, nodes, byId);
+      case 'resolve': return node.status === 'suspended';
+      case 'dispute': return node.status === 'disputed';
     }
   }
 
   private executeNodeAction(id: string, action: PanelNodeAction): void {
     switch (action) {
-      case 'edit':
-        this.openLineageCandidateForm(id, 'optimization');
-        return;
-      case 'negate':
-        this.openLineageCandidateForm(id, 'opposition');
-        return;
-      case 'decompose':
-        this.openDecomposeForm(id);
-        return;
-      case 'merge':
-        this.openMergeForm(id);
-        return;
-      case 'resolve':
-        void this.resolveNodeAction(id);
-        return;
-      case 'dispute':
-        void this.disputeNodeAction(id);
+      case 'edit': this.openLineageCandidateForm(id, 'optimization'); return;
+      case 'negate': this.openLineageCandidateForm(id, 'opposition'); return;
+      case 'decompose': this.openDecomposeForm(id); return;
+      case 'merge': this.openMergeForm(id); return;
+      case 'resolve': void this.resolveNodeAction(id); return;
+      case 'dispute': void this.disputeNodeAction(id); return;
     }
   }
 
@@ -161,11 +147,10 @@ jobs:
   }
   button.click();
 """
-          new_bridge = """  if (!panel.openNodeAction(id, action)) {
+          replace_once(app, old_bridge, """  if (!panel.openNodeAction(id, action)) {
     panel.showToast('当前知识节点不支持这个编辑操作');
   }
-"""
-          replace_once(app, old_bridge, new_bridge)
+""")
 
           architecture = 'scripts/verify-scheme7-architecture.mjs'
           replace_once(
@@ -176,7 +161,7 @@ jobs:
           replace_once(
               architecture,
               "assert.match(app, /installAccountUi\\(/, 'app must explicitly own account UI installation');\n\n",
-              "assert.match(app, /installAccountUi\\(/, 'app must explicitly own account UI installation');\n\nconst launchPanelAction = app.slice(app.indexOf('function launchPanelAction'), app.indexOf('async function markNodeViewed'));\nassert.match(launchPanelAction, /panel\\.openNodeAction\\(id, action\\)/,\n  'node detail actions must call the panel controller through an explicit semantic API');\nassert.doesNotMatch(launchPanelAction, /button\\.click\\(|document\\.getElementById\\(targetId\\)|btnEditNode|btnNegate|btnDecompose|btnMerge|btnResolve|btnDispute/,\n  'node detail actions must not use rendered DOM controls as an application API');\nassert.match(panelController, /export type PanelNodeAction = 'edit' \\| 'negate' \\| 'decompose' \\| 'merge' \\| 'resolve' \\| 'dispute'/,\n  'the explicit panel action API must preserve every existing non-create node operation');\nassert.match(panelController, /openNodeAction\\(id: string, action: PanelNodeAction\\): boolean/,\n  'PanelController must expose one explicit entry point for NodeDetail actions');\nfor (const [button, action] of [['optimizeBtn','edit'],['opposeBtn','negate'],['decomposeBtn','decompose'],['mergeBtn','merge'],['resolveBtn','resolve'],['disputeBtn','dispute']]) {\n  assert.match(panelController, new RegExp(`${button}\\\\?\\\\.addEventListener\\\\('click', \\(\\\\) => this\\\\.executeNodeAction\\\\(id, '${action}'\\\\)\\\\)`),\n    `legacy panel button ${button} must share the same explicit action implementation`);\n}\n\n",
+              "assert.match(app, /installAccountUi\\(/, 'app must explicitly own account UI installation');\n\nconst launchPanelAction = app.slice(app.indexOf('function launchPanelAction'), app.indexOf('async function markNodeViewed'));\nassert.match(launchPanelAction, /panel\\.openNodeAction\\(id, action\\)/, 'node detail actions must use an explicit controller API');\nassert.doesNotMatch(launchPanelAction, /button\\.click\\(|document\\.getElementById\\(targetId\\)|btnEditNode|btnNegate|btnDecompose|btnMerge|btnResolve|btnDispute/, 'DOM controls must not be an application API');\nassert.match(panelController, /export type PanelNodeAction = 'edit' \\| 'negate' \\| 'decompose' \\| 'merge' \\| 'resolve' \\| 'dispute'/, 'all existing node operations must remain available');\nassert.match(panelController, /openNodeAction\\(id: string, action: PanelNodeAction\\): boolean/, 'PanelController must expose the semantic action entry point');\nfor (const action of ['edit','negate','decompose','merge','resolve','dispute']) assert.ok(panelController.includes(`executeNodeAction(id, '${action}')`), `panel action ${action} must share the explicit implementation`);\n\n",
           )
 
           Path('.github/workflows/lq02-apply.yml').unlink()
