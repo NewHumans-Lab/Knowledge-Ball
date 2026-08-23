@@ -69,6 +69,15 @@ assert(detail.includes("typeof window === 'undefined'"), 'vote client creation m
 assert(!detail.includes('const voteAccount = createProductionAuthClient()'), 'vote client must not initialize at module import time');
 assert(!detail.includes('setInterval('), 'near-node voting must not add a permanent polling interval');
 
+// Human V1 revalidation must show the stake before confirmation using the
+// authoritative next topic stage. The first 30 stages show 10; later stages
+// are allowed to update the same label from the server quote (20, 30, ...).
+assert(detail.includes('data-reactivation-stake>能量 −10</small>'), 'revalidation entry must visibly start with the first-tier ten-energy cost');
+assert(detail.includes('account.getKnowledgeRevalidationQuote(nodeId)'), 'revalidation entry must read the authoritative next-stage stake before enabling confirmation');
+assert(detail.includes('stakeLabel.textContent = `能量 −${displayEnergy(quote.stake)}`'), 'revalidation entry must replace the visible cost with the server-quoted stage stake');
+assert(detail.includes('intent.disabled = false'), 'revalidation intent must stay disabled until the stake quote is known');
+assert(detail.includes('button.querySelector(\'small\')!.textContent = `能量 −${displayEnergy(snapshot.stake)}`'), 'active revalidation votes must continue to display the exact round stake');
+
 // Automatic dependency cascade is a focused V3 enhancement, not a copied
 // detail controller. It reuses the authoritative pending-vote RPC.
 assert(lineageUi.includes('class NodeDetailLineageUi'), 'lineage detail enhancement must have one narrow owner');
