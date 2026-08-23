@@ -134,6 +134,108 @@ try {
     assert.equal((await previousReasoning.textContent())?.trim(), candidate.previousReasoningTitle, 'button text must be the real white knowledge node title');
     assert.equal((await nextReasoning.textContent())?.trim(), candidate.nextReasoningTitle, 'button text must be the real white knowledge node title');
 
+    // Presentation acceptance for the screenshot-level requirement: neighbour
+    // labels use the same body typography as the middle content and a structural
+    // white relation node uses the exact structural ball colour token.
+    const relationPresentation = await page.evaluate(reasoningId => {
+      const root = document.querySelector('#nodeDetailOverlay.open');
+      const content = root?.querySelector('.node-detail-content');
+      const relation = root?.querySelector(`[data-related-node-id="${reasoningId}"]`);
+      if (!root || !content || !relation) return null;
+      const contentStyle = getComputedStyle(content);
+      const relationStyle = getComputedStyle(relation);
+      return {
+        content: {
+          fontFamily: contentStyle.fontFamily,
+          fontSize: contentStyle.fontSize,
+          fontWeight: contentStyle.fontWeight,
+          lineHeight: contentStyle.lineHeight,
+        },
+        relation: {
+          fontFamily: relationStyle.fontFamily,
+          fontSize: relationStyle.fontSize,
+          fontWeight: relationStyle.fontWeight,
+          lineHeight: relationStyle.lineHeight,
+          color: relationStyle.color,
+          colorToken: relationStyle.getPropertyValue('--relation-node-color').trim().toUpperCase(),
+        },
+        structuralToken: getComputedStyle(document.documentElement).getPropertyValue('--node-structural').trim().toUpperCase(),
+      };
+    }, candidate.previousReasoningId);
+    assert.ok(relationPresentation, 'relation presentation diagnostics must be available');
+    assert.equal(relationPresentation.relation.fontFamily, relationPresentation.content.fontFamily, 'neighbour label font family must equal middle content');
+    assert.equal(relationPresentation.relation.fontSize, relationPresentation.content.fontSize, 'neighbour label font size must equal middle content');
+    assert.equal(relationPresentation.relation.fontWeight, relationPresentation.content.fontWeight, 'neighbour label font weight must equal middle content');
+    assert.equal(relationPresentation.relation.lineHeight, relationPresentation.content.lineHeight, 'neighbour label line height must equal middle content');
+    assert.equal(relationPresentation.relation.colorToken, relationPresentation.structuralToken, 'white reasoning label must use the same structural colour token as its real ball');
+
+    // Layout acceptance is count-independent. Two, three and seven synthetic
+    // labels exercise the actual production CSS without adding fake graph data.
+    // Side rails stay vertically centred on the ellipse and inside the viewport;
+    // top/bottom rails wrap every row around the ellipse centre.
+    const symmetry = await page.evaluate(() => {
+      const root = document.querySelector('#nodeDetailOverlay.open');
+      if (!root) return null;
+      const rootRect = root.getBoundingClientRect();
+      const rootCenterX = rootRect.left + rootRect.width / 2;
+      const rootCenterY = rootRect.top + rootRect.height / 2;
+
+      const measure = (axis, count) => {
+        const group = document.createElement('div');
+        group.className = `node-detail-relations ${axis}`;
+        group.style.visibility = 'hidden';
+        group.style.pointerEvents = 'none';
+        for (let i = 0; i < count; i += 1) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'node-detail-relation';
+          button.textContent = `关联知识节点${i + 1}`;
+          group.appendChild(button);
+        }
+        root.appendChild(group);
+        const groupRect = group.getBoundingClientRect();
+        const buttonRects = Array.from(group.children).map(element => element.getBoundingClientRect());
+        const rows = new Map();
+        for (const rect of buttonRects) {
+          const key = Math.round(rect.top);
+          const row = rows.get(key) ?? [];
+          row.push(rect);
+          rows.set(key, row);
+        }
+        const rowCenterErrors = [...rows.values()].map(row => {
+          const left = Math.min(...row.map(rect => rect.left));
+          const right = Math.max(...row.map(rect => rect.right));
+          return Math.abs((left + right) / 2 - rootCenterX);
+        });
+        const result = {
+          axis,
+          count,
+          centerXError: Math.abs(groupRect.left + groupRect.width / 2 - rootCenterX),
+          centerYError: Math.abs(groupRect.top + groupRect.height / 2 - rootCenterY),
+          maxRowCenterError: rowCenterErrors.length ? Math.max(...rowCenterErrors) : 0,
+          minLeft: Math.min(...buttonRects.map(rect => rect.left)),
+          maxRight: Math.max(...buttonRects.map(rect => rect.right)),
+          viewportWidth: window.innerWidth,
+        };
+        group.remove();
+        return result;
+      };
+
+      return {
+        side: [2, 3, 7].map(count => measure('left', count)),
+        horizontal: [2, 3, 7].map(count => measure('top', count)),
+      };
+    });
+    assert.ok(symmetry, 'relation symmetry diagnostics must be available');
+    for (const sample of symmetry.side) {
+      assert.ok(sample.centerYError <= 1.5, `${sample.count} side labels must be vertically centred on the ellipse (error ${sample.centerYError})`);
+      assert.ok(sample.minLeft >= -1 && sample.maxRight <= sample.viewportWidth + 1, `${sample.count} side labels must stay inside the mobile viewport`);
+    }
+    for (const sample of symmetry.horizontal) {
+      assert.ok(sample.centerXError <= 1.5, `${sample.count} top labels must be horizontally centred on the ellipse (error ${sample.centerXError})`);
+      assert.ok(sample.maxRowCenterError <= 1.5, `${sample.count} wrapped top labels must centre every row on the ellipse (error ${sample.maxRowCenterError})`);
+    }
+
     // A relation button is only another entrance to the same real ball. One tap
     // must keep the navigator open, switch its content, and move that physical
     // white reasoning ball to the centre of the 3D scene.
@@ -311,6 +413,18 @@ try {
     assert.equal(await detail.locator(`[data-related-node-id="${lineageFixture.historyOlderId}"]`).count(), 0, 'current detail must not jump across the gray rank-1 line to rank 2');
     assert.equal(await detail.locator(`[data-related-node-id="${lineageFixture.oppositionOlderId}"]`).count(), 0, 'current detail must not jump across the red rank-1 line to rank 2');
 
+    const lineageColors = await page.evaluate(({ historyId, oppositionId }) => {
+      const root = document.querySelector('#nodeDetailOverlay.open');
+      const history = root?.querySelector(`[data-related-node-id="${historyId}"]`);
+      const opposition = root?.querySelector(`[data-related-node-id="${oppositionId}"]`);
+      return {
+        history: history ? getComputedStyle(history).getPropertyValue('--relation-node-color').trim().toUpperCase() : null,
+        opposition: opposition ? getComputedStyle(opposition).getPropertyValue('--relation-node-color').trim().toUpperCase() : null,
+      };
+    }, lineageFixture);
+    assert.equal(lineageColors.history, '#8A949E', 'gray history button text must match the gray history ball');
+    assert.equal(lineageColors.opposition, '#EE5B63', 'red opposition button text must match the red opposition ball');
+
     const afterLineageDetail = await page.evaluate(({ historyId, historyOlderId, oppositionId, oppositionOlderId }) => ({
       visibleEdges: window.__debug.scene.getVisibleEdgeCount(),
       historyPoint: window.__debug.scene.screenPositionForNode(historyId),
@@ -357,7 +471,7 @@ try {
     );
 
     assert.deepEqual(pageErrors, [], `canonical one-hop detail navigation produced page errors:\n${pageErrors.join('\n')}`);
-    console.log(`One-hop local knowledge navigation browser regression passed: real white button + real white ball + progressive gray/red lineage around ${candidate.id}`);
+    console.log(`One-hop local knowledge navigation browser regression passed: readable colour-matched symmetric labels + real white button + real white ball + progressive gray/red lineage around ${candidate.id}`);
   } finally {
     await browser.close();
   }
