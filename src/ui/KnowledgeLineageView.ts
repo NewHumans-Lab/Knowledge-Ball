@@ -36,9 +36,27 @@ export function isPendingLineageCandidate(node: KnowledgeLineageViewNode): boole
 }
 
 /**
+ * The near-node detail is a temporary presentation lens, not a fourth global
+ * visibility mode. When it is open, the selected ball and every canonical
+ * related ball rendered around that detail are allowed into the 3D scene. The
+ * scene's existing endpoint rule then makes their relation lines appear too.
+ * Closing the detail removes this override and Current/Personal/All immediately
+ * owns visibility again.
+ */
+export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
+  if (typeof document === 'undefined') return false;
+  const root = document.getElementById('nodeDetailOverlay');
+  if (!root?.classList.contains('open')) return false;
+  if (root.dataset.nodeId === nodeId) return true;
+  return Array.from(root.querySelectorAll<HTMLElement>('[data-related-node-id]'))
+    .some(element => element.dataset.relatedNodeId === nodeId);
+}
+
+/**
  * Scene data must retain formal lineage balls even when the legacy `hidden`
  * compatibility flag is true; the Current/Personal/All mode is the sole owner
- * of whether gray/red formal balls are actually visible.
+ * of whether gray/red formal balls are normally visible. An open detail may
+ * temporarily reveal only its own canonical relation context.
  */
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
   const role = lineageRoleFor(node);
@@ -56,8 +74,12 @@ export function nodeVisibleInKnowledgeMode(
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
 
-  // Pending gray/red proposals are the deliberate exception: users must see a
-  // proposal that is currently being judged regardless of the selected mode.
+  // Detail context is intentionally evaluated after the rejected guard: audit-
+  // only rejected proposals must never be resurrected by presentation state.
+  if (nodeVisibleBecauseDetailIsOpen(node.id)) return true;
+
+  // Pending gray/red proposals are the deliberate mode exception: users must see
+  // a proposal that is currently being judged regardless of the selected mode.
   if (isPendingLineageCandidate(node)) return true;
 
   if (mode === 'all') {
