@@ -316,7 +316,7 @@ html.node-detail-labels-off .node-label{
   .node-detail-relations{gap:6px;}
   .node-detail-relation{max-width:min(30vw,112px);min-height:36px;padding:5px 7px;}
   .node-detail-relations.left,
-  .node-detail-relations.right{width:min(20vw,84px);max-height:min(54vh,300px);}
+  .node-detail-relations.right{width:min(18vw,84px);max-height:min(54vh,300px);}
   .node-detail-relations.top,
   .node-detail-relations.bottom{max-width:min(90vw,390px);max-height:min(22vh,170px);}
 }
