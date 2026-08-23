@@ -208,11 +208,14 @@ html.node-detail-labels-off .node-label{
  * items are naturally centred around the axis midpoint; larger sets keep the
  * same centre and either wrap (top/bottom) or scroll in one centred rail
  * (left/right) instead of drifting to one corner of the ellipse.
+ *
+ * The rail itself is touch-transparent. Only its buttons receive pointer input,
+ * so empty layout space never blocks a real WebGL neighbour behind it.
  */
 .node-detail-relations{
   position:absolute;
   z-index:2;
-  pointer-events:auto;
+  pointer-events:none;
   display:flex;
   gap:8px;
   color:var(--ink);
