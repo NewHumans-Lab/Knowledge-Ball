@@ -35,6 +35,7 @@ export function protocolNodesFromState(state: GraphState): ProtocolNode[] {
     logicRuleId: node.logicRuleId,
     negatedBy: node.negatedBy ? [...node.negatedBy] : undefined,
     semanticKey: node.semanticKey,
+    lineage: node.lineage ? structuredClone(node.lineage) : undefined,
   }));
 }
 

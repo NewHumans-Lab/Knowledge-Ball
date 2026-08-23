@@ -18,7 +18,8 @@ export function createdNodeIdsFromEvent(event: DomainEvent): string[] {
   if (event.type !== 'KnowledgeAdded' || event.payload.edit.kind !== 'add') return [];
   const edit = event.payload.edit;
   if (edit.mode === 'atomic') return edit.node.id ? [edit.node.id] : [];
-  return [edit.reasoning.id, edit.conclusion.id].filter(Boolean);
+  if (edit.mode === 'theory') return [edit.reasoning.id, edit.conclusion.id].filter(Boolean);
+  return edit.reasoning.id ? [edit.reasoning.id] : [];
 }
 
 export class SupabaseSyncAdapter implements SyncAdapter {

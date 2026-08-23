@@ -58,6 +58,12 @@ import {
   type PanelNodeSummary,
 } from './panels/PanelController';
 import {
+  KnowledgeCreateController,
+  type CreateReasoningKnowledgePayload,
+  type CreateStandaloneKnowledgePayload,
+  type KnowledgeCreateNode,
+} from './panels/KnowledgeCreateController';
+import {
   NodeDetailController,
   type NodeDetailAction,
   type NodeDetailNode,
@@ -84,6 +90,7 @@ let layoutNodes: KnowledgeSceneNode[] = [];
 let renderNodes: KnowledgeSceneNode[] = [];
 let scene: KnowledgeSceneRuntime;
 let panel: PanelController;
+let knowledgeCreate: KnowledgeCreateController;
 let nodeDetail: NodeDetailController | null = null;
 let nodeDetailLineageUi: NodeDetailLineageUi | null = null;
 let interaction: InteractionController;
@@ -205,6 +212,16 @@ function getPanelNodes(): PanelNodeSummary[] {
     }));
 }
 
+function getKnowledgeCreateNodes(): KnowledgeCreateNode[] {
+  return nodeList(projection.state).map(node => ({
+    id: node.id,
+    title: node.title,
+    type: node.type as KnowledgeNodeType,
+    status: node.status,
+    lineage: node.lineage,
+  }));
+}
+
 function getInteractionNodes(): InteractionNodeSummary[] {
   return renderNodes.map(n => ({
     id: n.id,
@@ -252,7 +269,7 @@ function canMergeFromDetail(node: KnowledgeSceneNode): boolean {
 function getNodeDetailActions(id: string): NodeDetailAction[] {
   const node = getNodeById(id);
   if (!node || lineageRoleFor(node) !== 'current') return [];
-  const actions: NodeDetailAction[] = ['edit', 'derive'];
+  const actions: NodeDetailAction[] = ['edit', 'derive', 'derive-reasoning'];
   if (node.type === 'reasoning') actions.push('decompose');
   if (canMergeFromDetail(node)) actions.push('merge');
   if (node.status !== 'falsified' && node.status !== 'suspended') actions.push('negate');
@@ -264,7 +281,11 @@ function getNodeDetailActions(id: string): NodeDetailAction[] {
 function launchPanelAction(id: string, action: NodeDetailAction): void {
   currentPanelId = id;
   if (action === 'derive') {
-    panel.openCreateModal(id);
+    knowledgeCreate.openStandalone();
+    return;
+  }
+  if (action === 'derive-reasoning') {
+    knowledgeCreate.openReasoning(id);
     return;
   }
   panel.openNodePanel(id);
@@ -381,6 +402,42 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
   }
   currentPanelId = null;
   await applyKnowledgeEdit(edit, declaredLayers);
+}
+
+async function createStandaloneKnowledge(payload: CreateStandaloneKnowledgePayload): Promise<void> {
+  const nodeId = generateNodeId();
+  const edit: AddEdit = {
+    kind: 'add',
+    mode: 'atomic',
+    node: {
+      id: nodeId,
+      title: payload.title,
+      type: internalAtomicTypeForLayer(payload.layer),
+      reasoning: payload.description,
+    },
+  };
+  currentPanelId = null;
+  await applyKnowledgeEdit(edit, { [nodeId]: payload.layer });
+}
+
+async function createReasoningKnowledge(payload: CreateReasoningKnowledgePayload): Promise<void> {
+  const reasoningId = generateNodeId();
+  const edit: AddEdit = {
+    kind: 'add',
+    mode: 'reasoning-link',
+    requiredPremiseIds: payload.premiseIds,
+    reasoning: {
+      id: reasoningId,
+      title: payload.title,
+      type: 'reasoning',
+      reasoning: payload.reasoning,
+    },
+    conclusionIds: payload.conclusionIds,
+  };
+  currentPanelId = null;
+  // Reasoning is structurally a white ball; its semantic layer is the rigorous
+  // reasoning layer. The type, not the layer palette, owns its white appearance.
+  await applyKnowledgeEdit(edit, { [reasoningId]: 'middle' });
 }
 
 async function applyKnowledgeEdit(
@@ -533,7 +590,8 @@ scene = createKnowledgeScene({
       nodeDetailLineageUi?.close();
       nodeDetail?.close();
       currentPanelId = premiseId;
-      panel.openCreateModal(premiseId);
+      if (premiseId) knowledgeCreate.openReasoning(premiseId);
+      else knowledgeCreate.openStandalone();
     },
   },
 });
@@ -598,6 +656,14 @@ panel = new PanelController({
   toast: opt<HTMLElement>('toast'),
 });
 
+knowledgeCreate = new KnowledgeCreateController({
+  getNodes: getKnowledgeCreateNodes,
+  onCreateStandalone: createStandaloneKnowledge,
+  onCreateReasoning: createReasoningKnowledge,
+  onOverlayVisibilityChange: updateSceneOverlayState,
+  onToast: message => panel.showToast(message),
+});
+
 if (!Capacitor.isNativePlatform()) {
   nodeDetail = new NodeDetailController({
     getNodeById: getNodeDetailById,
@@ -632,7 +698,7 @@ interaction = new InteractionController({
   nodeRadiusInput: opt<HTMLInputElement>('setNodeRadius'),
   labelBrightnessInput: opt<HTMLInputElement>('setLabelBrightness'),
   onPickNode: id => scene.focusNode(id),
-  onOpenCreateNode: () => panel.openCreateModal(currentPanelId),
+  onOpenCreateNode: () => currentPanelId ? knowledgeCreate.openReasoning(currentPanelId) : knowledgeCreate.openStandalone(),
   onOpenSettings: () => panel.openSettingsOverlay(),
 });
 
@@ -706,7 +772,7 @@ const accountButton = qOpt<HTMLButtonElement>('.avatar-btn');
 accountButton?.addEventListener('click', () => panel.openAccountOverlay());
 
 const createButton = qOpt<HTMLButtonElement>('.ai-add');
-createButton?.addEventListener('click', () => panel.openCreateModal(currentPanelId));
+createButton?.addEventListener('click', () => currentPanelId ? knowledgeCreate.openReasoning(currentPanelId) : knowledgeCreate.openStandalone());
 
 const sendButton = qOpt<HTMLButtonElement>('.ai-send');
 const searchInput = must<HTMLInputElement>('aiInput');
@@ -775,9 +841,12 @@ void setupMobileShell();
   },
   interaction,
   panel,
+  knowledgeCreate,
   nodeDetail,
   nodeDetailLineageUi,
   scene,
   createKnowledgeNode,
+  createStandaloneKnowledge,
+  createReasoningKnowledge,
   get syncEngine() { return syncEngine; },
 };

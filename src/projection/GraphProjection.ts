@@ -122,10 +122,18 @@ export class GraphProjection implements Projection<GraphState> {
           logicRuleId: draft.logicRuleId,
         };
       };
-      if (edit.mode === 'atomic') append(edit.node, []);
-      else {
+      if (edit.mode === 'atomic') {
+        append(edit.node, []);
+      } else if (edit.mode === 'theory') {
         append(edit.reasoning, edit.requiredPremiseIds);
         append(edit.conclusion, [edit.reasoning.id]);
+      } else {
+        append(edit.reasoning, edit.requiredPremiseIds);
+        for (const conclusionId of edit.conclusionIds) {
+          const conclusion = this.state.nodesById[conclusionId];
+          if (!conclusion) throw new Error(`Reasoning-link conclusion missing during projection: ${conclusionId}`);
+          conclusion.premises = [...new Set([...conclusion.premises, edit.reasoning.id])];
+        }
       }
       return;
     }
@@ -145,6 +153,7 @@ export class GraphProjection implements Projection<GraphState> {
       logicRuleId: node.logicRuleId,
       negatedBy: node.negatedBy ? [...node.negatedBy] : undefined,
       semanticKey: node.semanticKey,
+      lineage: node.lineage ? structuredClone(node.lineage) : undefined,
     }));
     const result = applyKnowledgeEdit(protocolNodes, edit);
     if (result.errors.length) throw new Error(`Invalid ${edit.kind} event: ${result.errors.join('；')}`);
@@ -155,7 +164,7 @@ export class GraphProjection implements Projection<GraphState> {
         ...node,
         mastery: masteryById.get(node.id) ?? 'none',
         declaredLayer: declaredLayerById.get(node.id),
-        lineage: lineageById.get(node.id),
+        lineage: lineageById.get(node.id) ?? node.lineage,
         premises: [...node.premises],
       },
     ]));
