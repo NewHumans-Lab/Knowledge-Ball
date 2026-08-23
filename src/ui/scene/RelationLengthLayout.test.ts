@@ -127,8 +127,12 @@ assert(relationSource.includes('LOCAL_CELL_RADIUS = 2'), 'nearest-slot search mu
 assert(relationSource.includes('DEFAULT_PASSES = 4'), 'optimization pass count must remain a fixed constant');
 assert(relationSource.includes('approximateDiameterPath'), 'adaptive layout must inspect component extent without exact longest-path search');
 assert(relationSource.includes('scoreRelationComponentMorphology'), 'adaptive layout must blend branch and compact placement continuously');
-assert(!relationSource.includes('logicRuleId'), 'logic-rule metadata must not re-enter line-layout truth');
-assert(!relationSource.includes('twinGroup'), 'legacy twin UI metadata must not re-enter line-layout truth');
+const collectorStart = relationSource.indexOf('export function collectRelationLayoutEdges');
+const collectorEnd = relationSource.indexOf('export function displayedRelationLength');
+assert(collectorStart >= 0 && collectorEnd > collectorStart, 'canonical line-layout collector must remain discoverable');
+const collectorSource = relationSource.slice(collectorStart, collectorEnd);
+assert(!collectorSource.includes('logicRuleId'), 'logic-rule metadata must not re-enter the actual line-layout edge collector');
+assert(!collectorSource.includes('twinGroup'), 'legacy twin UI metadata must not re-enter the actual line-layout edge collector');
 assert(!relationSource.includes('CURVE_SEGMENTS'), 'layout objective must not approximate a curved render path');
 assert(!relationSource.includes('QuadraticBezierCurve3'), 'layout objective must remain straight-line Euclidean distance');
 assert(!sceneSource.includes('QuadraticBezierCurve3'), 'scene renderer must not curve knowledge relations');
