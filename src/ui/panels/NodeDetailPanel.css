@@ -203,16 +203,29 @@ html.node-detail-labels-off .node-label{
   font:500 11px/1.3 'Noto Sans SC','Inter',sans-serif;
   overflow:hidden;
 }
-.node-detail-relations span{
+.node-detail-relation{
+  appearance:none;
+  pointer-events:auto;
   flex:0 0 auto;
   max-width:132px;
+  min-height:30px;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  padding:3px 6px;
+  padding:4px 7px;
   border-radius:10px;
   background:rgba(3,5,18,.72);
   border:1px solid rgba(120,190,255,.18);
+  color:inherit;
+  font:inherit;
+  cursor:pointer;
+}
+.node-detail-relation:hover,
+.node-detail-relation:focus-visible{
+  color:#fff;
+  border-color:rgba(85,236,255,.58);
+  background:rgba(85,236,255,.08);
+  outline:none;
 }
 .node-detail-relations.left,
 .node-detail-relations.right{
@@ -267,7 +280,7 @@ html.node-detail-labels-off .node-label{
   .node-detail-content{max-height:116px;font-size:15px;}
   .node-detail-meta{font-size:11px;}
   .node-detail-relations{font-size:10px;gap:3px;}
-  .node-detail-relations span{max-width:92px;padding:2px 5px;}
+  .node-detail-relation{max-width:92px;min-height:30px;padding:3px 6px;}
   .node-detail-relations.left{right:calc(100% + 8px);}
   .node-detail-relations.right{left:calc(100% + 8px);}
   .node-detail-relations.top{bottom:calc(100% + 8px);}
