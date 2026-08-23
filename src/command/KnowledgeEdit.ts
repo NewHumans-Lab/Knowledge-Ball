@@ -4,8 +4,10 @@ import {
   type DomainEvent,
 } from '../event/Event';
 import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
+import { lineageRoleFor, topicIdFor } from '../domain/KnowledgeLineage';
 import type { EventCommitter } from '../event/EventCommitter';
 import type { EventStore } from '../event/EventStore';
+import type { GraphNode } from '../graph/Node';
 import type { GraphState } from '../state/GraphState';
 import type { GraphProjection } from '../projection/GraphProjection';
 import {
@@ -39,6 +41,45 @@ export function protocolNodesFromState(state: GraphState): ProtocolNode[] {
   }));
 }
 
+function canonicalTopicSet(state: GraphState, ids: readonly string[]): string[] {
+  return [...new Set(ids.map(id => {
+    const node = state.nodesById[id];
+    return node ? topicIdFor(node) : id;
+  }))].sort();
+}
+
+function sameCanonicalSet(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+/**
+ * A reasoning node is identified by its endpoint topics, not by its prose.
+ * Historical/current versions of the same endpoint knowledge collapse to the same
+ * topic identity, so changing wording can never create a parallel inference node.
+ */
+export function findExistingReasoningForLink(
+  state: GraphState,
+  premiseIds: readonly string[],
+  conclusionIds: readonly string[],
+): GraphNode | null {
+  const expectedPremises = canonicalTopicSet(state, premiseIds);
+  const expectedConclusions = canonicalTopicSet(state, conclusionIds);
+  const nodes = Object.values(state.nodesById);
+
+  for (const reasoning of nodes) {
+    if (reasoning.type !== 'reasoning' || lineageRoleFor(reasoning) !== 'current') continue;
+    const actualPremises = canonicalTopicSet(state, reasoning.premises);
+    if (!sameCanonicalSet(actualPremises, expectedPremises)) continue;
+
+    const directConclusionIds = nodes
+      .filter(node => node.type !== 'reasoning' && node.premises.includes(reasoning.id))
+      .map(node => node.id);
+    const actualConclusions = canonicalTopicSet(state, directConclusionIds);
+    if (sameCanonicalSet(actualConclusions, expectedConclusions)) return reasoning;
+  }
+  return null;
+}
+
 function eventTypeFor(edit: KnowledgeEdit): DomainEvent['type'] {
   if (edit.kind === 'add') return 'KnowledgeAdded';
   if (edit.kind === 'negate') return 'KnowledgeNegated';
@@ -62,9 +103,19 @@ export async function executeKnowledgeEdit(
 ): Promise<DomainEvent> {
   performance.mark?.('knowledge-edit-validate-start');
   const errors = validateKnowledgeEdit(protocolNodesFromState(projection.state), edit);
+  if (edit.kind === 'add' && edit.mode === 'reasoning-link') {
+    const existing = findExistingReasoningForLink(
+      projection.state,
+      edit.requiredPremiseIds,
+      edit.conclusionIds,
+    );
+    if (existing) {
+      errors.push(`推理节点已存在：${existing.title}（同样的前提与结论只能有一个推理节点）`);
+    }
+  }
   performance.mark?.('knowledge-edit-validate-end');
   performance.measure?.('knowledge-edit-validate', 'knowledge-edit-validate-start', 'knowledge-edit-validate-end');
-  if (errors.length) throw new KnowledgeEditValidationError(errors);
+  if (errors.length) throw new KnowledgeEditValidationError([...new Set(errors)]);
 
   const type = eventTypeFor(edit);
   const timestamp = Date.now();

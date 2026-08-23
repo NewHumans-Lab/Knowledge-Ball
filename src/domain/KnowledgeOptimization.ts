@@ -1,4 +1,5 @@
 import type { GraphNode } from '../graph/Node';
+import type { UserKnowledgeLayer } from './KnowledgeLayerPolicy';
 import {
   currentNodeForTopic,
   isPendingHeadCandidate,
@@ -15,6 +16,7 @@ export interface KnowledgeOptimizationProposalInput {
   candidateId: string;
   title: string;
   reasoning: string;
+  declaredLayer?: UserKnowledgeLayer;
 }
 
 type OptimizationCandidateNode = GraphNode & {
@@ -51,6 +53,11 @@ export function isOptimizationCandidate(node: GraphNode | undefined): node is Op
  * Product-level optimization guard. It intentionally permits the candidate to
  * keep exactly the current target title, while every genuinely new title still
  * participates in the repository-wide uniqueness rule.
+ *
+ * Reasoning balls have a stricter invariant: their endpoint structure and layer
+ * define the same inference object, so optimization may change only title and
+ * inference prose. Premises, conclusions, type, logic-rule identity and layer are
+ * inherited and cannot be edited through optimization.
  */
 export function validateOptimizationProposal(
   nodes: readonly GraphNode[],
@@ -73,7 +80,16 @@ export function validateOptimizationProposal(
   else if (byId.has(candidateId)) errors.push(`优化候选节点 ID 已存在: ${candidateId}`);
 
   if (!title) errors.push('优化候选必须有名字');
-  if (!reasoning) errors.push('优化候选必须有内容');
+  if (!reasoning) errors.push(target.type === 'reasoning' ? '优化推理节点必须填写推理过程' : '优化候选必须有内容');
+
+  if (
+    target.type === 'reasoning'
+    && target.declaredLayer
+    && input.declaredLayer
+    && input.declaredLayer !== target.declaredLayer
+  ) {
+    errors.push('推理节点优化只能修改名字和推理过程，知识层级必须保持不变');
+  }
 
   const targetTitle = canonicalText(target.title);
   if (title && title !== targetTitle) {

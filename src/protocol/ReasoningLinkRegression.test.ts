@@ -1,4 +1,6 @@
 import { strict as assert } from 'node:assert';
+import { findExistingReasoningForLink } from '../command/KnowledgeEdit';
+import type { GraphState } from '../state/GraphState';
 import {
   applyKnowledgeEdit,
   validateKnowledgeEdit,
@@ -22,7 +24,7 @@ const node = (
   ...extras,
 });
 
-const current = (id: string): ProtocolNode['lineage'] => ({
+const current = (id: string): NonNullable<ProtocolNode['lineage']> => ({
   topicId: id,
   proposal: 'new',
   role: 'current',
@@ -92,5 +94,35 @@ const cyclic = [
   node('b', 'theorem', ['a']),
 ];
 assert(validateKnowledgeEdit(cyclic, edit({ requiredPremiseIds: ['b'], conclusionIds: ['a'] })).some(error => error.includes('依赖环')));
+
+const identityNodes: ProtocolNode[] = [
+  node('identity-premise', 'fact', [], { lineage: { ...current('identity-premise'), topicId: 'premise-topic' } }),
+  node('identity-conclusion-old', 'theorem', ['identity-reasoning'], {
+    hidden: true,
+    lineage: { topicId: 'conclusion-topic', proposal: 'new', role: 'history', rank: 1 },
+  }),
+  node('identity-conclusion-current', 'theorem', ['identity-reasoning'], {
+    lineage: { ...current('identity-conclusion-current'), topicId: 'conclusion-topic' },
+  }),
+  node('identity-reasoning', 'reasoning', ['identity-premise'], {
+    title: 'Existing endpoint reasoning',
+    reasoning: 'Completely different prose does not change identity.',
+    lineage: { ...current('identity-reasoning'), topicId: 'reasoning-topic' },
+  }),
+];
+const identityState: GraphState = {
+  nodesById: Object.fromEntries(identityNodes.map(item => [item.id, { ...item, mastery: 'none' as const }])),
+};
+const duplicate = findExistingReasoningForLink(
+  identityState,
+  ['identity-premise'],
+  ['identity-conclusion-current'],
+);
+assert.equal(duplicate?.id, 'identity-reasoning', 'same premise/conclusion topics must resolve to the existing reasoning regardless of prose');
+assert.equal(
+  findExistingReasoningForLink(identityState, ['identity-premise'], ['conclusion']),
+  null,
+  'different conclusions remain a different reasoning identity',
+);
 
 console.log('Explicit reasoning-link protocol regression tests passed');

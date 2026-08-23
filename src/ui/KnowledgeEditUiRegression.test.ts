@@ -65,7 +65,13 @@ assert(panel.includes('type: node.type'), 'theory merge must preserve the source
 assert(panel.includes('Optimize · 优化'), 'current-node edit action must be immutable optimization');
 assert(panel.includes('Oppose · 提出对立观点'), 'current-node negate action must be pending opposition');
 assert(panel.includes('IMMUTABLE OPTIMIZATION') && panel.includes('IMMUTABLE OPPOSITION'), 'single controller must expose both immutable candidate forms');
-assert(panel.includes('节点类型、前提关系和逻辑规则身份全部沿用当前球'), 'lineage candidate form must not expose structural mutation');
+assert(panel.includes("const reasoningOptimization = optimization && node.type === 'reasoning'"), 'optimization form must branch explicitly for reasoning nodes');
+assert(panel.includes("${reasoningOptimization ? '' : `<div class=\"field\"><label>知识层级</label><select id=\"lineageCandidateLayer\">"), 'reasoning optimization must not render the layer selector');
+assert(panel.includes("<label>${reasoningOptimization ? '推理过程' : '内容'}</label>"), 'reasoning optimization must label its editable body as inference process');
+assert(panel.includes('推理节点优化只允许修改名称和推理过程。前提、结论、节点类型、逻辑规则和知识层级全部继承当前推理节点。'), 'reasoning optimization UI must state the frozen structural invariant');
+assert(panel.includes('reasoningOptimization\n        ? defaultLayer'), 'reasoning optimization must inherit the current layer instead of reading a hidden input');
+assert(panel.includes("return !['axiom', 'definition', 'fact', 'logic-symbol', 'reasoning'].includes(type)"), 'reasoning nodes must not qualify for merge UI');
+assert(panel.includes('节点类型、前提关系和逻辑规则身份全部沿用当前球'), 'ordinary lineage candidate form must not expose structural mutation');
 assert(panel.includes('onOptimizeNode') && panel.includes('onOpposeNode'), 'candidate submission must use typed callbacks');
 assert(!panel.includes('encodeLineageIntent') && !panel.includes('decodeLineageIntent') && !panel.includes('KBL3:'), 'candidate submission must not encode commands in user text');
 
