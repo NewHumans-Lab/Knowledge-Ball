@@ -6,6 +6,8 @@ const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
 const lineageUi = readFileSync('src/ui/panels/NodeDetailLineageUi.ts', 'utf8');
 const css = readFileSync('src/ui/panels/NodeDetailPanel.css', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
+const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
+const relationDomain = readFileSync('src/domain/KnowledgeRelations.ts', 'utf8');
 
 assert.equal(existsSync('src/ui/panels/NodeDetailControllerLegacy.ts'), false, 'there must be one NodeDetailController implementation');
 assert.equal(formatNodeContributionTime(undefined), '—');
@@ -26,14 +28,26 @@ assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit 
 assert(!lineageUi.includes('relabelActions'), 'cascade helper must not rewrite ordinary detail action labels after render');
 assert(!lineageUi.includes('data-node-detail-action="edit"') && !lineageUi.includes('data-node-detail-action="negate"'), 'cascade helper must not own ordinary edit/opposition presentation');
 
-// Four-direction related-node controls must preserve relation identity and reuse
-// the app's one canonical openNode navigation path. Projection stays in
-// NodeDetailRelations; the detail controller only renders and forwards IDs.
+// One canonical relation model owns the scene line and the detail axes. A
+// reasoning-process ball is a real node in previous/next, not a hidden edge
+// label or a separate logic relation.
+assert(relationDomain.includes('export interface KnowledgeRelations'), 'four-direction relation contract must live in the domain layer');
+for (const direction of ['previous', 'next', 'history', 'opposition']) {
+  assert(relationDomain.includes(`${direction}: KnowledgeRelationItem[]`), `canonical relation model must expose ${direction}`);
+  assert(detail.includes(`'${direction}'`), `detail must render the canonical ${direction} axis`);
+}
+assert(relationDomain.includes('collectKnowledgeChainEdges'), 'scene and detail must share canonical chain ownership');
+assert(relationDomain.includes('logicRuleId is metadata'), 'logic rule identity must be explicitly separated from visual chain truth');
+assert(!relationDomain.includes('twinGroup'), 'legacy twin UI metadata must not enter canonical relation truth');
+assert(app.includes('buildKnowledgeRelations(id, nodeList(projection.state))'), 'detail must consume the canonical domain relation projection');
+assert(scene.includes('collectKnowledgeChainEdges(nodes)'), 'scene lines must consume the same canonical domain chain');
+assert(!scene.includes('n.logicRuleId ? [n.logicRuleId]'), 'scene must not redraw logic metadata as a relation line');
+assert(!scene.includes("join('<->')"), 'scene must not redraw legacy twin links');
 assert(detail.includes('data-related-node-id='), 'near-node relations must preserve each projected related node id in the DOM');
-assert(detail.includes('data-relation-kind='), 'near-node relations must preserve premise/history/conclusion/opposition semantics');
+assert(detail.includes('data-relation-kind='), 'near-node relations must preserve the four canonical directions');
 assert(detail.includes('this.onSelectRelatedNode(relatedId)'), 'relation controls must delegate navigation instead of opening nodes locally');
 assert(!detail.includes('items.map(item => `<span>'), 'related nodes must not regress to non-interactive decorative spans');
-assert.equal((app.match(/onSelectRelatedNode:\s*openNode/g) ?? []).length, 2, 'legacy panel and near-node detail must share the same openNode navigation authority');
+assert.equal((app.match(/onSelectRelatedNode:\s*openNode/g) ?? []).length, 2, 'editing panel and near-node detail must share the same openNode navigation authority');
 assert(css.includes('.node-detail-relation{'), 'related nodes must have one explicit button style');
 assert(css.includes('pointer-events:auto'), 'related-node buttons must remain pointer-interactive while empty relation containers stay transparent');
 assert(css.includes('.node-detail-relation:hover') && css.includes('.node-detail-relation:focus-visible'), 'related-node controls must expose pointer and keyboard interaction affordances');
@@ -46,7 +60,7 @@ assert(detail.includes('account.getPendingKnowledgeVote(nodeId)'), 'near-node vo
 assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'near-node vote controls must reuse the real existing vote RPC');
 assert(detail.includes("knowledge-ball:verdict-finalized"), 'near-node finalization must reuse the existing graph reconciliation signal');
 assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'near-node vote tally must retain the existing prompt refresh cadence');
-assert(app.includes('actorId: metadata.actorId'), 'near-node detail must receive the authoritative creator actor id');
+assert(app.includes('actorId: metadata.actorId'), 'near-node detail must receive contributor metadata through the authoritative adapter');
 assert(detail.includes('await account.currentUserId()'), 'initial pending detail must compare the current account with the node creator');
 assert(detail.includes("this.root.dataset.voteCreator = '1'"), 'initial creator identity must lock the first-round vote controls');
 assert(detail.includes('你是该知识的提交者，不能参与本轮投票'), 'first-round creator must see an explicit no-self-vote explanation');
@@ -106,4 +120,4 @@ assert(css.includes('html.node-detail-labels-off .node-label'), 'the detail labe
 assert(css.includes('display:none!important'), 'the detail label switch must override per-frame inline label visibility while active');
 assert(detail.includes('this.onDetailNodeChange(null);'), 'closing detail must also release selected-node detail ownership');
 
-console.log('Near-node detail regression tests passed');
+console.log('Near-node detail canonical relation regression tests passed');
