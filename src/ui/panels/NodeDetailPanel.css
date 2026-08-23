@@ -264,6 +264,8 @@ html.node-detail-labels-off .node-label{
   overflow-x:hidden;
   overflow-y:auto;
 }
+.node-detail-relations.left .node-detail-relation,
+.node-detail-relations.right .node-detail-relation{max-width:100%;}
 .node-detail-relations.left{
   right:calc(100% + var(--detail-relation-offset));
   align-items:flex-end;
