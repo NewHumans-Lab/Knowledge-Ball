@@ -31,10 +31,15 @@ import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
 import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
 import { SyncEngine } from '../sync/SyncEngine';
 import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
-import { createProductionAuthClient } from '../auth/AuthClient';
+import {
+  createProductionAuthClient,
+  type PersonalKnowledgeStateSnapshot,
+  type PersonalMastery,
+} from '../auth/AuthClient';
 
 import { type KnowledgeNodeType } from './config/KnowledgeUiConfig';
 import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
+import { installAccountUi } from './AccountUi';
 
 import {
   createKnowledgeScene,
@@ -324,6 +329,22 @@ async function markNodeViewed(id: string): Promise<void> {
   } finally {
     if (markingViewedNodeId === id) markingViewedNodeId = null;
   }
+}
+
+function latestLocalPersonalStates(): Array<{ nodeId: string; mastery: PersonalMastery }> {
+  const latest = new Map<string, PersonalMastery>();
+  for (const event of store.allEvents()) {
+    if (event.type !== 'NodeMasterySet') continue;
+    latest.set(event.payload.nodeId, event.payload.mastery);
+  }
+  return [...latest].map(([nodeId, mastery]) => ({ nodeId, mastery }));
+}
+
+function applyPersonalKnowledgeSnapshot(states: PersonalKnowledgeStateSnapshot[]): void {
+  const masteryById = Object.fromEntries(states.map(state => [state.nodeId, state.mastery])) as Record<string, PersonalMastery>;
+  projection.replacePersonalMastery(masteryById);
+  syncNodesFromProjection();
+  scene.markDirty();
 }
 
 function openNode(id: string): void {
@@ -635,11 +656,11 @@ panel = new PanelController({
   fLogicRule: must<HTMLSelectElement>('fLogicRule'),
   fLogicRuleField: must<HTMLElement>('fLogicRuleField'),
 
-  accountOverlay: opt<HTMLElement>('accountOverlay'),
-  accountClose: opt<HTMLElement>('accountClose'),
-  statRep: opt<HTMLElement>('statRep'),
-  statLit: opt<HTMLElement>('statLit'),
-  statContrib: opt<HTMLElement>('statContrib'),
+  accountOverlay: Capacitor.isNativePlatform() ? opt<HTMLElement>('accountOverlay') : undefined,
+  accountClose: Capacitor.isNativePlatform() ? opt<HTMLElement>('accountClose') : undefined,
+  statRep: Capacitor.isNativePlatform() ? opt<HTMLElement>('statRep') : undefined,
+  statLit: Capacitor.isNativePlatform() ? opt<HTMLElement>('statLit') : undefined,
+  statContrib: Capacitor.isNativePlatform() ? opt<HTMLElement>('statContrib') : undefined,
 
   settingsOverlay: opt<HTMLElement>('settingsOverlay'),
   settingsClose: opt<HTMLElement>('settingsClose'),
@@ -724,6 +745,17 @@ store.subscribe((event) => {
 
 syncNodesFromProjection();
 
+const accountUi = !Capacitor.isNativePlatform()
+  ? installAccountUi({
+      avatarButton: qOpt<HTMLElement>('.avatar-btn') ?? null,
+      accountOverlay: opt<HTMLElement>('accountOverlay') ?? null,
+      accountClose: opt<HTMLElement>('accountClose') ?? null,
+      toast: opt<HTMLElement>('toast') ?? null,
+      getLocalPersonalStates: latestLocalPersonalStates,
+      applyPersonalSnapshot: applyPersonalKnowledgeSnapshot,
+    })
+  : null;
+
 panel.setSettingsValues({
   nodeRadius: 7.2,
   labelSize: 11.5,
@@ -768,8 +800,10 @@ if (legend) {
   `;
 }
 
-const accountButton = qOpt<HTMLButtonElement>('.avatar-btn');
-accountButton?.addEventListener('click', () => panel.openAccountOverlay());
+if (Capacitor.isNativePlatform()) {
+  const accountButton = qOpt<HTMLButtonElement>('.avatar-btn');
+  accountButton?.addEventListener('click', () => panel.openAccountOverlay());
+}
 
 const createButton = qOpt<HTMLButtonElement>('.ai-add');
 createButton?.addEventListener('click', () => currentPanelId ? knowledgeCreate.openReasoning(currentPanelId) : knowledgeCreate.openStandalone());
@@ -844,6 +878,7 @@ void setupMobileShell();
   knowledgeCreate,
   nodeDetail,
   nodeDetailLineageUi,
+  accountUi,
   scene,
   createKnowledgeNode,
   createStandaloneKnowledge,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 
 const app = await readFile('src/ui/app.ts', 'utf8');
-const authUi = await readFile('src/ui/AuthUi.ts', 'utf8');
+const accountUi = await readFile('src/ui/AccountUi.ts', 'utf8');
 const syncEngine = await readFile('src/sync/SyncEngine.ts', 'utf8');
 const syncCoordinator = await readFile('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
 const supabaseAdapter = await readFile('src/sync/SupabaseSyncAdapter.ts', 'utf8');
@@ -39,9 +39,11 @@ assert.match(syncCoordinator, /addEventListener\('knowledge-ball:verdict-finaliz
 assert.match(syncCoordinator, /addEventListener\('visibilitychange'/, 'foreground resume must request public convergence');
 assert.doesNotMatch(syncCoordinator, /localStorage|sessionStorage|indexedDB|IndexedDB/, 'public convergence coordinator must remain storage-free');
 
-assert.doesNotMatch(authUi, /syncEngine/, 'AuthUi must not reach through debug state to drive the public graph');
-assert.doesNotMatch(authUi, /requestGraphSync|scheduleRemoteGraphSync|REMOTE_GRAPH_SYNC_MS|graphSyncTimer/, 'account UI must not own public graph polling');
-assert.match(authUi, /knowledge-ball:verdict-finalized/, 'AuthUi may publish a server-state-change signal without owning synchronization');
+assert.doesNotMatch(accountUi, /syncEngine/, 'account UI must not drive the public graph');
+assert.doesNotMatch(accountUi, /window\.__debug|MutationObserver|currentPanelNode|requestGraphSync|scheduleRemoteGraphSync|REMOTE_GRAPH_SYNC_MS|graphSyncTimer/,
+  'account UI must use explicit application ports and remain outside graph synchronization ownership');
+assert.match(accountUi, /knowledge-ball:verdict-finalized/, 'account UI may publish a server-state-change signal without owning synchronization');
+assert.match(app, /installAccountUi\(/, 'app must explicitly own account UI installation');
 
 assert.doesNotMatch(app, /saveNode|KnowledgeNodeRecord|KnowledgeRepository/, 'app must not persist node snapshots');
 assert.ok(sources.every(source => !source.includes('GitHubKnowledgeGateway')), 'legacy gateway must not be referenced');

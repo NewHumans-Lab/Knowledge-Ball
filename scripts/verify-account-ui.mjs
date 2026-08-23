@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [auth, ui, sync, migration, profileGate, publicWriteGate, accuracyMigration, productionBrowser, deploy] = await Promise.all([
+const [auth, ui, app, vite, sync, migration, profileGate, publicWriteGate, accuracyMigration, productionBrowser, deploy] = await Promise.all([
   readFile('src/auth/AuthClient.ts','utf8'),
-  readFile('src/ui/AuthUi.ts','utf8'),
+  readFile('src/ui/AccountUi.ts','utf8'),
+  readFile('src/ui/app.ts','utf8'),
+  readFile('vite.config.ts','utf8'),
   readFile('src/sync/SupabaseSyncAdapter.ts','utf8'),
   readFile('supabase/migrations/202608140001_remove_phone_auth.sql','utf8'),
   readFile('supabase/migrations/202608200003_profile_edit_requires_account.sql','utf8'),
@@ -13,9 +15,6 @@ const [auth, ui, sync, migration, profileGate, publicWriteGate, accuracyMigratio
   readFile('.github/workflows/deploy.yml','utf8'),
 ]);
 
-// Public viewing remains phone-free. Pending-vote policy is intentionally left
-// unchanged here; authoritative public knowledge creation now requires a real,
-// recoverable account and the database owns that authorization decision.
 for (const source of [auth, ui, sync]) assert.doesNotMatch(source, /phone|sms|otp|verified_phone|验证码/i);
 assert.match(auth, /body: '\{\}'/);
 assert.match(auth, /ensure_anonymous_profile/);
@@ -45,7 +44,7 @@ assert.match(auth, /passwordLoginEnabled: boolean/,
   'client account state must distinguish a recoverable registered account from an anonymous profile');
 assert.match(auth, /password_login_enabled === true/,
   'registered state must come from the server account projection');
-assert.match(ui, /if \(!cached\?\.passwordLoginEnabled\)[\s\S]*flashLoginRequired\(\)/,
+assert.match(ui, /if \(!this\.cached\?\.passwordLoginEnabled\)[\s\S]*this\.flashLoginRequired\(\)/,
   'profile edits must be blocked in guest state');
 assert.match(ui, /toast\.textContent = '请先登录账户'/,
   'guest edit attempts must show the requested message');
@@ -64,6 +63,17 @@ assert.match(ui, />保存资料</,
   'profile form must save all fields together');
 assert.doesNotMatch(ui, /\bprompt\s*\(/,
   'account UI must not use sequential browser prompt dialogs');
+
+assert.match(app, /installAccountUi\(/,
+  'web app must install account presentation through an explicit application integration point');
+assert.match(app, /getLocalPersonalStates: latestLocalPersonalStates/,
+  'account UI must receive local personal state through an explicit read port');
+assert.match(app, /applyPersonalSnapshot: applyPersonalKnowledgeSnapshot/,
+  'account UI must apply cloud personal state through an explicit application write port');
+assert.doesNotMatch(ui, /window\.__debug|MutationObserver|currentPanelNode|stopImmediatePropagation/,
+  'account UI must not infer business identity from DOM mutations or debug internals');
+assert.match(vite, /if \(nativeBuild\)[^\n]*AuthUi\.ts/,
+  'legacy AuthUi injection may remain only on the frozen native build path');
 
 assert.match(profileGate, /'password_login_enabled', p\.password_login_enabled/,
   'get_my_account must expose the authoritative permanent-login state');
@@ -117,4 +127,4 @@ assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Registered public-write gate, authoritative accuracy, read-only production smoke, account UI, and profile authorization checks passed');
+console.log('Registered public-write gate, explicit account ownership, authoritative accuracy, and account UI checks passed');
