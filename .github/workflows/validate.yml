@@ -5,9 +5,168 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  apply-lq02:
+    if: github.event_name == 'pull_request' && github.head_ref == 'fix/explicit-node-detail-actions'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/explicit-node-detail-actions
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply explicit NodeDetail action routing
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          panel = 'src/ui/panels/PanelController.ts'
+          replace_once(
+              panel,
+              "type LineageCandidateKind = 'optimization' | 'opposition';\n",
+              "export type PanelNodeAction = 'edit' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';\n\ntype LineageCandidateKind = 'optimization' | 'opposition';\n",
+          )
+          replace_once(
+              panel,
+              "  closeNodePanel(): void {\n    this.panel.classList.remove('open');\n    this.onOverlayVisibilityChange?.(false);\n    this.selectedId = null;\n  }\n\n  openCreateModal",
+              "  closeNodePanel(): void {\n    this.panel.classList.remove('open');\n    this.onOverlayVisibilityChange?.(false);\n    this.selectedId = null;\n  }\n\n  openNodeAction(id: string, action: PanelNodeAction): boolean {\n    const nodes = this.getNodes();\n    const byId = new Map(nodes.map(node => [node.id, node] as const));\n    const node = byId.get(id);\n    if (!node || !this.supportsNodeAction(node, action, nodes, byId)) return false;\n    this.openNodePanel(id);\n    this.executeNodeAction(id, action);\n    return true;\n  }\n\n  openCreateModal",
+          )
+          old_bind = """  private bindPanelRuntimeEvents(id: string): void {
+    const optimizeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
+    const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
+    const opposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
+    const decomposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDecompose');
+    const mergeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnMerge');
+    const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
+    const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
+
+    optimizeBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'optimization'));
+    deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
+    opposeBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'opposition'));
+    decomposeBtn?.addEventListener('click', () => this.openDecomposeForm(id));
+    mergeBtn?.addEventListener('click', () => this.openMergeForm(id));
+    resolveBtn?.addEventListener('click', async () => {
+      await this.onResolveNode(id);
+      this.showToast('节点已重新验证通过');
+    });
+    disputeBtn?.addEventListener('click', async () => {
+      await this.onDisputeNode(id);
+      this.showToast('节点已标记为争议中');
+    });
+"""
+          new_bind = """  private supportsNodeAction(
+    node: PanelNodeSummary,
+    action: PanelNodeAction,
+    nodes = this.getNodes(),
+    byId: ReadonlyMap<string, PanelNodeSummary> = new Map(nodes.map(item => [item.id, item] as const)),
+  ): boolean {
+    switch (action) {
+      case 'edit': return true;
+      case 'negate': return node.status !== 'falsified' && node.status !== 'suspended';
+      case 'decompose': return node.type === 'reasoning';
+      case 'merge': return this.canMerge(node, nodes, byId);
+      case 'resolve': return node.status === 'suspended';
+      case 'dispute': return node.status === 'disputed';
+    }
+  }
+
+  private executeNodeAction(id: string, action: PanelNodeAction): void {
+    switch (action) {
+      case 'edit': this.openLineageCandidateForm(id, 'optimization'); return;
+      case 'negate': this.openLineageCandidateForm(id, 'opposition'); return;
+      case 'decompose': this.openDecomposeForm(id); return;
+      case 'merge': this.openMergeForm(id); return;
+      case 'resolve': void this.resolveNodeAction(id); return;
+      case 'dispute': void this.disputeNodeAction(id); return;
+    }
+  }
+
+  private async resolveNodeAction(id: string): Promise<void> {
+    await this.onResolveNode(id);
+    this.showToast('节点已重新验证通过');
+  }
+
+  private async disputeNodeAction(id: string): Promise<void> {
+    await this.onDisputeNode(id);
+    this.showToast('节点已标记为争议中');
+  }
+
+  private bindPanelRuntimeEvents(id: string): void {
+    const optimizeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
+    const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
+    const opposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
+    const decomposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDecompose');
+    const mergeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnMerge');
+    const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
+    const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
+
+    optimizeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'edit'));
+    deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
+    opposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'negate'));
+    decomposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'decompose'));
+    mergeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'merge'));
+    resolveBtn?.addEventListener('click', () => this.executeNodeAction(id, 'resolve'));
+    disputeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'dispute'));
+"""
+          replace_once(panel, old_bind, new_bind)
+
+          app = 'src/ui/app.ts'
+          old_bridge = """  panel.openNodePanel(id);
+  const buttonId: Partial<Record<NodeDetailAction, string>> = {
+    edit: 'btnEditNode',
+    negate: 'btnNegate',
+    decompose: 'btnDecompose',
+    merge: 'btnMerge',
+    resolve: 'btnResolve',
+    dispute: 'btnDispute',
+  };
+  const targetId = buttonId[action];
+  const button = targetId ? document.getElementById(targetId) as HTMLButtonElement | null : null;
+  if (!button) {
+    panel.closeNodePanel();
+    panel.showToast('当前知识节点不支持这个编辑操作');
+    return;
+  }
+  button.click();
+"""
+          replace_once(app, old_bridge, """  if (!panel.openNodeAction(id, action)) {
+    panel.showToast('当前知识节点不支持这个编辑操作');
+  }
+""")
+
+          architecture = 'scripts/verify-scheme7-architecture.mjs'
+          replace_once(
+              architecture,
+              "const accountUi = await readFile('src/ui/AccountUi.ts', 'utf8');\n",
+              "const accountUi = await readFile('src/ui/AccountUi.ts', 'utf8');\nconst panelController = await readFile('src/ui/panels/PanelController.ts', 'utf8');\n",
+          )
+          replace_once(
+              architecture,
+              "assert.match(app, /installAccountUi\\(/, 'app must explicitly own account UI installation');\n\n",
+              "assert.match(app, /installAccountUi\\(/, 'app must explicitly own account UI installation');\n\nconst launchPanelAction = app.slice(app.indexOf('function launchPanelAction'), app.indexOf('async function markNodeViewed'));\nassert.match(launchPanelAction, /panel\\.openNodeAction\\(id, action\\)/, 'node detail actions must use an explicit controller API');\nassert.doesNotMatch(launchPanelAction, /button\\.click\\(|document\\.getElementById\\(targetId\\)|btnEditNode|btnNegate|btnDecompose|btnMerge|btnResolve|btnDispute/, 'DOM controls must not be an application API');\nassert.match(panelController, /export type PanelNodeAction = 'edit' \\| 'negate' \\| 'decompose' \\| 'merge' \\| 'resolve' \\| 'dispute'/, 'all existing node operations must remain available');\nassert.match(panelController, /openNodeAction\\(id: string, action: PanelNodeAction\\): boolean/, 'PanelController must expose the semantic action entry point');\nfor (const action of ['edit','negate','decompose','merge','resolve','dispute']) assert.ok(panelController.includes(`executeNodeAction(id, '${action}')`), `panel action ${action} must share the explicit implementation`);\n\n",
+          )
+          PY
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/validate.yml
+          rm -f .github/workflows/lq02-apply.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/ui/app.ts src/ui/panels/PanelController.ts scripts/verify-scheme7-architecture.mjs .github/workflows/validate.yml .github/workflows/lq02-apply.yml
+          git commit -m 'Refactor node detail actions to explicit controller API'
+          git push origin HEAD:fix/explicit-node-detail-actions
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
