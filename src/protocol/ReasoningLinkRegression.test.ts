@@ -24,7 +24,7 @@ const node = (
   ...extras,
 });
 
-const current = (id: string): ProtocolNode['lineage'] => ({
+const current = (id: string): NonNullable<ProtocolNode['lineage']> => ({
   topicId: id,
   proposal: 'new',
   role: 'current',
