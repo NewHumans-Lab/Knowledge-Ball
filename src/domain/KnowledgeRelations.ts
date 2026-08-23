@@ -92,6 +92,7 @@ function appendCanonicalEdge(
  * Internal authoritative edge projection shared by scene geometry and the
  * opened-node neighbour buttons. This prevents the detail UI from inventing a
  * relation that has no corresponding line, or omitting a real line endpoint.
+ * logicRuleId is metadata on a white reasoning node, never another visual edge.
  */
 function collectCanonicalKnowledgeEdges(
   nodes: readonly KnowledgeRelationNode[],
