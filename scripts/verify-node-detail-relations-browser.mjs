@@ -28,7 +28,7 @@ try {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
 
-    await page.goto(`${origin}?node-detail-relations-regression=1`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    await page.goto(`${origin}?canonical-reasoning-chain-regression=1`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
     await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.renderNodes?.length), null, { timeout: 10_000 });
 
     const candidate = await page.evaluate(() => {
@@ -36,79 +36,100 @@ try {
       const nodes = debug.renderNodes;
       const byId = new Map(nodes.map(node => [node.id, node]));
       const core = new Set(['n1', 'n2', 'n16']);
-      const hasDirectRelation = node => node.premises?.some(id => byId.has(id) && !core.has(id))
-        || nodes.some(other => other.id !== node.id && other.premises?.includes(node.id));
-      const choices = nodes
-        .filter(node => !core.has(node.id) && !node.hidden && hasDirectRelation(node))
-        .map(node => {
-          const point = debug.scene.screenPositionForNode(node.id);
-          return point ? { id: node.id, title: node.title, ...point } : null;
-        })
-        .filter(item => item && item.x > 24 && item.x < 366 && item.y > 88 && item.y < 808);
+      const choices = nodes.flatMap(node => {
+        if (core.has(node.id) || node.hidden || node.type === 'reasoning' || node.type === 'logic-symbol') return [];
+        const previousReasoning = node.premises
+          ?.map(id => byId.get(id))
+          .find(previous => previous?.type === 'reasoning');
+        const nextReasoning = nodes.find(next => next.type === 'reasoning' && next.premises?.includes(node.id));
+        if (!previousReasoning || !nextReasoning) return [];
+        const point = debug.scene.screenPositionForNode(node.id);
+        if (!point || point.x <= 24 || point.x >= 366 || point.y <= 88 || point.y >= 808) return [];
+        return [{
+          id: node.id,
+          title: node.title,
+          previousReasoningId: previousReasoning.id,
+          previousReasoningTitle: previousReasoning.title,
+          nextReasoningId: nextReasoning.id,
+          nextReasoningTitle: nextReasoning.title,
+          ...point,
+        }];
+      });
       return choices[0] ?? null;
     });
-    assert.ok(candidate, 'scene must expose an on-screen ordinary node with a direct related node');
+    assert.ok(candidate, 'fixture must expose a conclusion that is between two real reasoning-process nodes');
 
-    // Exercise the real focus-then-second-tap flow rather than opening the detail
-    // controller directly. First tap focuses the ball; second tap opens its detail.
+    // Real first tap focuses the ball; real second tap opens its detail.
     await page.touchscreen.tap(candidate.x, candidate.y);
     await page.waitForTimeout(900);
     const centered = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), candidate.id);
-    assert.ok(centered, 'focused related-node fixture must remain renderable');
+    assert.ok(centered, 'focused conclusion must remain renderable');
     await page.touchscreen.tap(centered.x, centered.y);
 
     const detail = page.locator('#nodeDetailOverlay.open');
     await detail.waitFor({ state: 'visible', timeout: 5_000 });
-    assert.equal(await detail.getAttribute('data-node-id'), candidate.id, 'second tap must open the focused node detail');
-    assert.equal(await page.locator('#panel.open').count(), 0, 'near-node related navigation must not restore the legacy large panel');
+    assert.equal(await detail.getAttribute('data-node-id'), candidate.id, 'second tap must open the conclusion detail');
+    assert.equal(await page.locator('#panel.open').count(), 0, 'near-node flow must not restore the legacy large panel');
 
-    const relationControls = detail.locator('.node-detail-relation[data-related-node-id]');
-    const controlCount = await relationControls.count();
-    assert.ok(controlCount > 0, 'second-tap detail must render at least one related-node control for a connected node');
+    const allControls = detail.locator('.node-detail-relation[data-related-node-id]');
+    const controls = await allControls.evaluateAll(elements => elements.map(element => ({
+      tag: element.tagName,
+      id: element.dataset.relatedNodeId ?? '',
+      kind: element.dataset.relationKind ?? '',
+      text: element.textContent?.trim() ?? '',
+      pointerEvents: getComputedStyle(element).pointerEvents,
+    })));
+    assert.ok(controls.length > 0, 'connected conclusion detail must not be a blank relation surface');
+    assert.ok(controls.every(control => control.tag === 'BUTTON'), 'all relation entries must remain semantic buttons');
+    assert.ok(controls.every(control => control.pointerEvents === 'auto'), 'all relation buttons must accept pointer input');
+    assert.ok(controls.every(control => ['previous', 'next', 'history', 'opposition'].includes(control.kind)), 'no legacy premise/logic/twin relation kind may reach the detail DOM');
 
-    const controls = await relationControls.evaluateAll(elements => elements.map(element => {
-      const rect = element.getBoundingClientRect();
-      const style = getComputedStyle(element);
-      return {
-        tag: element.tagName,
-        id: element.dataset.relatedNodeId ?? '',
-        kind: element.dataset.relationKind ?? '',
-        text: element.textContent?.trim() ?? '',
-        pointerEvents: style.pointerEvents,
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      };
-    }));
-    assert.ok(controls.every(control => control.tag === 'BUTTON'), 'related-node entries must be semantic buttons, not decorative text');
-    assert.ok(controls.every(control => control.id && control.kind && control.text), 'related-node controls must preserve target identity, relation kind and label');
-    assert.ok(controls.every(control => control.pointerEvents === 'auto'), 'related-node buttons must accept pointer input');
+    const previousReasoning = detail.locator(`.node-detail-relation[data-relation-kind="previous"][data-related-node-id="${candidate.previousReasoningId}"]`);
+    const nextReasoning = detail.locator(`.node-detail-relation[data-relation-kind="next"][data-related-node-id="${candidate.nextReasoningId}"]`);
+    assert.equal(await previousReasoning.count(), 1, 'a conclusion must expose its real reasoning-process ball on the left');
+    assert.equal(await nextReasoning.count(), 1, 'a conclusion reused later must expose the next reasoning-process ball on the right');
+    assert.equal((await previousReasoning.textContent())?.trim(), candidate.previousReasoningTitle);
+    assert.equal((await nextReasoning.textContent())?.trim(), candidate.nextReasoningTitle);
 
-    const tappable = controls.find(control => {
-      const cx = control.x + control.width / 2;
-      const cy = control.y + control.height / 2;
-      return control.width > 0 && control.height > 0 && cx >= 0 && cx <= 390 && cy >= 0 && cy <= 844;
-    });
-    assert.ok(tappable, 'at least one related-node button must expose a real on-screen touch target');
-
-    const targetNode = await page.evaluate(id => {
-      const node = window.__debug.renderNodes.find(candidate => candidate.id === id);
-      return node ? { id: node.id, title: node.title } : null;
-    }, tappable.id);
-    assert.ok(targetNode, 'related-node button must point to a node retained by the scene/detail model');
-
-    await page.touchscreen.tap(tappable.x + tappable.width / 2, tappable.y + tappable.height / 2);
+    // Tap the white reasoning-process node itself. It is not an edge label: it
+    // becomes the current real detail node, with its own premises on the left
+    // and its conclusion on the right.
+    await previousReasoning.tap();
     await page.waitForFunction(
       id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
-      tappable.id,
+      candidate.previousReasoningId,
       { timeout: 5_000 },
     );
-    assert.equal((await page.locator('#nodeDetailOverlay .node-detail-title').textContent())?.trim(), targetNode.title, 'related-node tap must navigate to the target detail');
-    assert.equal(await page.locator('#panel.open').count(), 0, 'related-node navigation must remain inside the near-node detail flow');
+    assert.equal((await page.locator('#nodeDetailOverlay .node-detail-title').textContent())?.trim(), candidate.previousReasoningTitle, 'reasoning-process relation tap must open the reasoning ball itself');
 
-    assert.deepEqual(pageErrors, [], `related-node detail flow produced page errors:\n${pageErrors.join('\n')}`);
-    console.log(`Near-node related navigation browser regression passed: ${candidate.id} -> ${tappable.id}`);
+    const reasoningShape = await page.evaluate(({ reasoningId, conclusionId }) => {
+      const debug = window.__debug;
+      const nodes = debug.renderNodes;
+      const reasoning = nodes.find(node => node.id === reasoningId);
+      const root = document.querySelector('#nodeDetailOverlay.open');
+      return {
+        premiseIds: reasoning?.premises ?? [],
+        previousIds: Array.from(root?.querySelectorAll('[data-relation-kind="previous"]') ?? []).map(element => element.dataset.relatedNodeId),
+        nextIds: Array.from(root?.querySelectorAll('[data-relation-kind="next"]') ?? []).map(element => element.dataset.relatedNodeId),
+        conclusionId,
+      };
+    }, { reasoningId: candidate.previousReasoningId, conclusionId: candidate.id });
+    assert.ok(reasoningShape.premiseIds.length > 0, 'reasoning-process fixture must have real premises');
+    assert.ok(reasoningShape.premiseIds.every(id => reasoningShape.previousIds.includes(id)), 'reasoning-process left side must contain its real premise nodes');
+    assert.ok(reasoningShape.nextIds.includes(candidate.id), 'reasoning-process right side must contain its real conclusion node');
+
+    // Navigate back through the canonical next direction to prove both directions
+    // share one node navigation path.
+    await detail.locator(`.node-detail-relation[data-relation-kind="next"][data-related-node-id="${candidate.id}"]`).tap();
+    await page.waitForFunction(
+      id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
+      candidate.id,
+      { timeout: 5_000 },
+    );
+    assert.equal(await page.locator('#panel.open').count(), 0, 'canonical chain navigation must remain in the near-node detail flow');
+
+    assert.deepEqual(pageErrors, [], `canonical reasoning-chain detail flow produced page errors:\n${pageErrors.join('\n')}`);
+    console.log(`Canonical reasoning-chain browser regression passed: ${candidate.previousReasoningId} -> ${candidate.id} -> ${candidate.nextReasoningId}`);
   } finally {
     await browser.close();
   }
