@@ -8,14 +8,12 @@ type NonCoreLayer = Exclude<KnowledgeLayer, 'core'>;
 
 export interface RelationLayoutNode extends UniformLayoutNode {
   premises?: string[];
-  logicRuleId?: string;
-  twinGroup?: string;
 }
 
 export interface RelationLayoutEdge {
   fromId: string;
   toId: string;
-  kind: 'premise' | 'logic' | 'twin';
+  kind: 'chain';
 }
 
 export interface RelationLayoutResult {
@@ -60,39 +58,24 @@ function lineEligible(fromId: string, toId: string): boolean {
     && !isSystemCoreNodeId(toId);
 }
 
+/**
+ * Layout optimizes only the same real node-to-node chain that the scene draws.
+ * logicRuleId is reasoning metadata, not a visual line. Legacy twinGroup UI
+ * metadata is no longer a graph relation.
+ */
 export function collectRelationLayoutEdges(nodes: RelationLayoutNode[]): RelationLayoutEdge[] {
   const ids = new Set(nodes.map(node => node.id));
   const seenDirected = new Set<string>();
   const edges: RelationLayoutEdge[] = [];
 
   for (const node of nodes) {
-    const sources = [
-      ...(node.premises ?? []).map(id => ({ id, kind: 'premise' as const })),
-      ...(node.logicRuleId ? [{ id: node.logicRuleId, kind: 'logic' as const }] : []),
-    ];
-    for (const source of sources) {
-      if (!ids.has(source.id) || !lineEligible(source.id, node.id)) continue;
-      const key = `${source.id}->${node.id}`;
+    for (const sourceId of node.premises ?? []) {
+      if (!ids.has(sourceId) || !lineEligible(sourceId, node.id)) continue;
+      const key = `${sourceId}->${node.id}`;
       if (seenDirected.has(key)) continue;
       seenDirected.add(key);
-      edges.push({ fromId: source.id, toId: node.id, kind: source.kind });
+      edges.push({ fromId: sourceId, toId: node.id, kind: 'chain' });
     }
-  }
-
-  const twinFirst = new Map<string, string>();
-  const seenTwins = new Set<string>();
-  for (const node of nodes) {
-    if (!node.twinGroup || isSystemCoreNodeId(node.id)) continue;
-    const first = twinFirst.get(node.twinGroup);
-    if (!first) {
-      twinFirst.set(node.twinGroup, node.id);
-      continue;
-    }
-    if (!lineEligible(first, node.id)) continue;
-    const pair = first < node.id ? `${first}<->${node.id}` : `${node.id}<->${first}`;
-    if (seenTwins.has(pair)) continue;
-    seenTwins.add(pair);
-    edges.push({ fromId: first, toId: node.id, kind: 'twin' });
   }
 
   return edges;

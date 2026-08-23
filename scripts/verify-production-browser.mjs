@@ -87,7 +87,6 @@ try {
 
   const tappable = await page.evaluate(() => {
     const debug = window.__debug;
-    debug?.scene?.stop?.();
     const node = debug?.renderNodes?.find(candidate => !['n1','n2','n16'].includes(candidate.id)) ?? debug?.renderNodes?.[0];
     const point = node ? debug?.scene?.screenPositionForNode?.(node.id) : null;
     return point && node ? { ...point, id: node.id, title: node.title } : null;
@@ -122,10 +121,69 @@ try {
   await personal.click();
   await assertVisibilityState('当前', 'current');
 
+  // Hosted-data acceptance: prove that an actual Supabase-loaded conclusion and
+  // its reasoning-process ball share one canonical scene/detail chain. This is
+  // deliberately a real first tap -> focus -> second tap interaction; no detail
+  // controller method is called directly.
+  const chainFixture = await page.evaluate(() => {
+    const debug = window.__debug;
+    const nodes = debug?.renderNodes ?? [];
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const core = new Set(['n1', 'n2', 'n16']);
+    for (const node of nodes) {
+      if (core.has(node.id) || node.hidden || node.type === 'reasoning' || node.type === 'logic-symbol') continue;
+      const reasoning = node.premises?.map(id => byId.get(id)).find(previous => previous?.type === 'reasoning');
+      if (!reasoning) continue;
+      const point = debug.scene?.screenPositionForNode?.(node.id);
+      if (!point || point.x <= 24 || point.x >= 366 || point.y <= 88 || point.y >= 808) continue;
+      return { id: node.id, title: node.title, reasoningId: reasoning.id, reasoningTitle: reasoning.title, ...point };
+    }
+    return null;
+  });
+  assert.ok(chainFixture, 'hosted projection must expose an on-screen conclusion with a real reasoning-process predecessor');
+
+  await page.touchscreen.tap(chainFixture.x, chainFixture.y);
+  await page.waitForTimeout(900);
+  const centered = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), chainFixture.id);
+  assert.ok(centered, 'focused hosted conclusion must remain renderable');
+  await page.touchscreen.tap(centered.x, centered.y);
+
+  const detail = page.locator('#nodeDetailOverlay.open');
+  await detail.waitFor({ state: 'visible', timeout: 5_000 });
+  assert.equal(await detail.getAttribute('data-node-id'), chainFixture.id, 'second tap must open the hosted conclusion detail');
+  const previousReasoning = detail.locator(`.node-detail-relation[data-relation-kind="previous"][data-related-node-id="${chainFixture.reasoningId}"]`);
+  assert.equal(await previousReasoning.count(), 1, 'hosted conclusion must expose its real reasoning-process ball on the left');
+  const relationKinds = await detail.locator('.node-detail-relation[data-relation-kind]').evaluateAll(elements => elements.map(element => element.dataset.relationKind));
+  assert.ok(relationKinds.every(kind => ['previous','next','history','opposition'].includes(kind)), 'deployed detail must not expose legacy premise/logic/twin relation kinds');
+
+  await previousReasoning.tap();
+  await page.waitForFunction(
+    id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
+    chainFixture.reasoningId,
+    { timeout: 5_000 },
+  );
+  const reasoningShape = await page.evaluate(({ reasoningId, conclusionId }) => {
+    const nodes = window.__debug.renderNodes;
+    const reasoning = nodes.find(node => node.id === reasoningId);
+    const root = document.querySelector('#nodeDetailOverlay.open');
+    return {
+      premiseIds: reasoning?.premises ?? [],
+      previousIds: Array.from(root?.querySelectorAll('[data-relation-kind="previous"]') ?? []).map(element => element.dataset.relatedNodeId),
+      nextIds: Array.from(root?.querySelectorAll('[data-relation-kind="next"]') ?? []).map(element => element.dataset.relatedNodeId),
+      conclusionId,
+    };
+  }, { reasoningId: chainFixture.reasoningId, conclusionId: chainFixture.id });
+  assert.ok(reasoningShape.premiseIds.length > 0, 'hosted reasoning-process ball must retain real premise nodes');
+  assert.ok(reasoningShape.premiseIds.every(id => reasoningShape.previousIds.includes(id)), 'hosted reasoning left side must match its real premises');
+  assert.ok(reasoningShape.nextIds.includes(chainFixture.id), 'hosted reasoning right side must contain its real conclusion');
+  await page.locator('#nodeDetailOverlay .node-detail-close').click();
+
   assert.deepEqual(publicAppendRequests, [], 'production smoke test must never call the public knowledge append RPC');
+  assert.deepEqual(pageErrors, [], `browser page errors after canonical-chain interaction:\n${pageErrors.join('\n')}`);
 
   console.log(`Read-only production browser smoke test passed: ${target}`);
   console.log(`Build commit: ${diagnostics.buildCommit ?? 'unknown'}; visibility cycle: current -> personal -> all -> current`);
+  console.log(`Canonical hosted reasoning chain: ${chainFixture.reasoningId} -> ${chainFixture.id}`);
   console.log(`Supabase signup: ${signupStatus}; public event pull: ${publicEventsStatus}; authoritative public writes: 0`);
 } finally {
   await browser.close();

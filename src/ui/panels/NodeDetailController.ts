@@ -7,8 +7,8 @@ import {
 } from '../../auth/AuthClient';
 import type { KnowledgeLineageMeta } from '../../domain/KnowledgeLineage';
 import { lineageRoleFor } from '../../domain/KnowledgeLineage';
+import type { KnowledgeRelations } from '../../domain/KnowledgeRelations';
 import type { KnowledgeNodeStatus, KnowledgeNodeType } from '../config/KnowledgeUiConfig';
-import type { NodeDetailRelations } from './NodeDetailRelations';
 
 export type NodeDetailAction = 'edit' | 'derive' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
 
@@ -30,7 +30,7 @@ export interface NodeDetailMetadata {
 export interface NodeDetailControllerOptions {
   getNodeById: (id: string) => NodeDetailNode | null;
   getMetadata: (id: string) => NodeDetailMetadata | null;
-  getRelations: (id: string) => NodeDetailRelations;
+  getRelations: (id: string) => KnowledgeRelations;
   getScreenPosition: (id: string) => { x: number; y: number } | null;
   getActions: (id: string) => NodeDetailAction[];
   onAction: (id: string, action: NodeDetailAction) => void;
@@ -72,10 +72,10 @@ function displayEnergy(value: string): string {
   return value.replace(/\.0+$/, '').replace(/(\.\d*?[1-9])0+$/, '$1');
 }
 
-function relationMarkup(relations: NodeDetailRelations): string {
+function relationMarkup(relations: KnowledgeRelations): string {
   const render = (
     className: string,
-    relationKind: keyof NodeDetailRelations,
+    relationKind: keyof KnowledgeRelations,
     label: string,
   ) => {
     const items = relations[relationKind];
@@ -83,10 +83,10 @@ function relationMarkup(relations: NodeDetailRelations): string {
     return `<div class="node-detail-relations ${className}" role="group" aria-label="${label}">${items.map(item => `<button type="button" class="node-detail-relation" data-relation-kind="${relationKind}" data-related-node-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</button>`).join('')}</div>`;
   };
   return [
-    render('left', 'premises', '前置知识'),
+    render('left', 'previous', '上一个节点'),
     render('top', 'history', '历史版本'),
-    render('right', 'conclusions', '直接结论'),
-    render('bottom', 'opposition', '对立观点'),
+    render('right', 'next', '下一个节点'),
+    render('bottom', 'opposition', '否定历史'),
   ].join('');
 }
 
@@ -203,7 +203,6 @@ export class NodeDetailController {
 
     let interaction: string;
     if (node.status === 'pending') {
-      // First-round node/candidate validation remains V2 and one energy.
       interaction = `
         <div class="node-detail-vote node-detail-interaction">
           <div class="node-detail-vote-title">投票</div>
