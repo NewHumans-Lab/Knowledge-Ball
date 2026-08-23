@@ -2,6 +2,11 @@ html.node-detail-labels-off .node-label{
   display:none!important;
 }
 #nodeDetailOverlay{
+  --detail-body-font-family:'Noto Sans SC','Inter',sans-serif;
+  --detail-body-font-size:16px;
+  --detail-body-font-weight:400;
+  --detail-body-line-height:1.58;
+  --detail-relation-offset:14px;
   position:fixed;
   left:50%;
   top:50%;
@@ -76,8 +81,10 @@ html.node-detail-labels-off .node-label{
   scrollbar-width:thin;
   padding:0 5px;
   color:var(--ink);
-  font-size:16px;
-  line-height:1.58;
+  font-family:var(--detail-body-font-family);
+  font-size:var(--detail-body-font-size);
+  font-weight:var(--detail-body-font-weight);
+  line-height:var(--detail-body-line-height);
   white-space:pre-wrap;
   overflow-wrap:anywhere;
 }
@@ -194,65 +201,95 @@ html.node-detail-labels-off .node-label{
   font-size:10.5px;
   line-height:1.45;
 }
+
+/*
+ * Relation labels are the local navigator around the ellipse. The four rails use
+ * one equal offset, so opposite axes stay geometrically symmetric. One/two/three
+ * items are naturally centred around the axis midpoint; larger sets keep the
+ * same centre and either wrap (top/bottom) or scroll in one centred rail
+ * (left/right) instead of drifting to one corner of the ellipse.
+ *
+ * The rail itself is touch-transparent. Only its compact visible buttons receive
+ * pointer input, so empty layout space and long wrapped hit boxes cannot mask a
+ * real WebGL neighbour behind the navigator.
+ */
 .node-detail-relations{
   position:absolute;
+  z-index:2;
   pointer-events:none;
   display:flex;
-  gap:5px;
-  color:var(--ink-dim);
-  font:500 11px/1.3 'Noto Sans SC','Inter',sans-serif;
-  overflow:hidden;
+  gap:8px;
+  color:var(--ink);
+  font-family:var(--detail-body-font-family);
+  font-size:var(--detail-body-font-size);
+  font-weight:var(--detail-body-font-weight);
+  line-height:var(--detail-body-line-height);
+  scrollbar-width:none;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
 }
+.node-detail-relations::-webkit-scrollbar{display:none;}
 .node-detail-relation{
   appearance:none;
   pointer-events:auto;
   flex:0 0 auto;
-  max-width:132px;
-  min-height:30px;
+  max-width:148px;
+  min-height:34px;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  padding:4px 7px;
-  border-radius:10px;
-  background:rgba(3,5,18,.72);
-  border:1px solid rgba(120,190,255,.18);
-  color:inherit;
+  padding:5px 8px;
+  border-radius:12px;
+  background:rgba(3,5,18,.76);
+  border:1px solid rgba(120,190,255,.24);
+  color:var(--relation-node-color,var(--ink));
   font:inherit;
+  text-align:center;
   cursor:pointer;
 }
 .node-detail-relation:hover,
 .node-detail-relation:focus-visible{
-  color:#fff;
-  border-color:rgba(85,236,255,.58);
-  background:rgba(85,236,255,.08);
+  color:var(--relation-node-color,var(--ink));
+  border-color:currentColor;
+  background:rgba(85,236,255,.09);
   outline:none;
 }
 .node-detail-relations.left,
 .node-detail-relations.right{
   top:50%;
-  max-height:min(52vh,280px);
-  max-width:min(38vw,180px);
+  width:min(34vw,150px);
+  max-height:min(58vh,330px);
   flex-direction:column;
   transform:translateY(-50%);
+  overflow-x:hidden;
+  overflow-y:auto;
 }
+.node-detail-relations.left .node-detail-relation,
+.node-detail-relations.right .node-detail-relation{max-width:100%;}
 .node-detail-relations.left{
-  right:calc(100% + 18px);
+  right:calc(100% + var(--detail-relation-offset));
   align-items:flex-end;
 }
 .node-detail-relations.right{
-  left:calc(100% + 18px);
+  left:calc(100% + var(--detail-relation-offset));
   align-items:flex-start;
 }
 .node-detail-relations.top,
 .node-detail-relations.bottom{
   left:50%;
-  max-width:min(72vw,520px);
+  width:max-content;
+  max-width:min(86vw,560px);
+  max-height:min(25vh,200px);
   transform:translateX(-50%);
-  flex-direction:row;
+  flex-flow:row wrap;
   justify-content:center;
+  align-items:center;
+  align-content:center;
+  overflow-x:hidden;
+  overflow-y:auto;
 }
-.node-detail-relations.top{bottom:calc(100% + 13px);}
-.node-detail-relations.bottom{top:calc(100% + 13px);}
+.node-detail-relations.top{bottom:calc(100% + var(--detail-relation-offset));}
+.node-detail-relations.bottom{top:calc(100% + var(--detail-relation-offset));}
 .node-detail-meta{
   display:flex;
   flex-direction:column;
@@ -271,18 +308,20 @@ html.node-detail-labels-off .node-label{
 }
 @media(max-width:640px){
   #nodeDetailOverlay{
+    --detail-body-font-size:15px;
+    --detail-relation-offset:10px;
     width:min(56vw,214px);
     min-height:320px;
     padding:30px 16px 24px;
   }
   #nodeDetailOverlay::before{inset:-16px -12px;}
   .node-detail-title{font-size:19px;}
-  .node-detail-content{max-height:116px;font-size:15px;}
+  .node-detail-content{max-height:116px;}
   .node-detail-meta{font-size:11px;}
-  .node-detail-relations{font-size:10px;gap:3px;}
-  .node-detail-relation{max-width:92px;min-height:30px;padding:3px 6px;}
-  .node-detail-relations.left{right:calc(100% + 8px);}
-  .node-detail-relations.right{left:calc(100% + 8px);}
-  .node-detail-relations.top{bottom:calc(100% + 8px);}
-  .node-detail-relations.bottom{top:calc(100% + 8px);}
+  .node-detail-relations{gap:6px;}
+  .node-detail-relation{max-width:min(30vw,112px);min-height:32px;padding:4px 6px;}
+  .node-detail-relations.left,
+  .node-detail-relations.right{width:min(18vw,84px);max-height:min(54vh,300px);}
+  .node-detail-relations.top,
+  .node-detail-relations.bottom{max-width:min(90vw,390px);max-height:min(22vh,170px);}
 }

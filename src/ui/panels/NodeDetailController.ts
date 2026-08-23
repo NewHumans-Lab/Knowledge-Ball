@@ -5,10 +5,20 @@ import {
   type PendingKnowledgeVoteSnapshot,
   type PendingVoteSide,
 } from '../../auth/AuthClient';
+import { inferLegacyDeclaredLayer } from '../../domain/KnowledgeLayerPolicy';
 import type { KnowledgeLineageMeta } from '../../domain/KnowledgeLineage';
 import { lineageRoleFor } from '../../domain/KnowledgeLineage';
-import type { KnowledgeRelations } from '../../domain/KnowledgeRelations';
-import type { KnowledgeNodeStatus, KnowledgeNodeType } from '../config/KnowledgeUiConfig';
+import type { KnowledgeRelationItem, KnowledgeRelations } from '../../domain/KnowledgeRelations';
+import {
+  KNOWLEDGE_HISTORY_COLOR,
+  KNOWLEDGE_OPPOSITION_COLOR,
+} from '../KnowledgeLineageView';
+import {
+  NODE_LAYER_COLOR_HEX,
+  NODE_SPECIAL_COLOR_HEX,
+  type KnowledgeNodeStatus,
+  type KnowledgeNodeType,
+} from '../config/KnowledgeUiConfig';
 
 export type NodeDetailAction = 'edit' | 'derive' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
 
@@ -72,6 +82,29 @@ function displayEnergy(value: string): string {
   return value.replace(/\.0+$/, '').replace(/(\.\d*?[1-9])0+$/, '$1');
 }
 
+function toHex(value: number): string {
+  return `#${value.toString(16).padStart(6, '0').toUpperCase()}`;
+}
+
+/**
+ * The text around the ellipse is another presentation of the exact same real
+ * node ball. Preserve the scene colour priority instead of assigning relation-
+ * direction colours: lineage role, falsified state, structural white, then the
+ * authoritative declared/effective layer.
+ */
+export function relationNodeTextColor(item: KnowledgeRelationItem): string | null {
+  const role = lineageRoleFor(item);
+  if (role === 'history' || role === 'candidate-history') return toHex(KNOWLEDGE_HISTORY_COLOR);
+  if (role === 'opposition' || role === 'candidate-opposition') return toHex(KNOWLEDGE_OPPOSITION_COLOR);
+  if (item.status === 'falsified') return NODE_SPECIAL_COLOR_HEX.falsified;
+  if (item.type === 'reasoning' || item.type === 'logic-symbol') return NODE_SPECIAL_COLOR_HEX.structural;
+  if (!item.type) return null;
+  const layer = item.status === 'disputed'
+    ? 'outer'
+    : item.declaredLayer ?? inferLegacyDeclaredLayer({ type: item.type });
+  return NODE_LAYER_COLOR_HEX[layer];
+}
+
 function relationMarkup(relations: KnowledgeRelations): string {
   const render = (
     className: string,
@@ -80,7 +113,11 @@ function relationMarkup(relations: KnowledgeRelations): string {
   ) => {
     const items = relations[relationKind];
     if (items.length === 0) return '';
-    return `<div class="node-detail-relations ${className}" role="group" aria-label="${label}">${items.map(item => `<button type="button" class="node-detail-relation" data-relation-kind="${relationKind}" data-related-node-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</button>`).join('')}</div>`;
+    return `<div class="node-detail-relations ${className}" role="group" aria-label="${label}" data-relation-count="${items.length}">${items.map(item => {
+      const color = relationNodeTextColor(item);
+      const colorStyle = color ? ` style="--relation-node-color:${color}"` : '';
+      return `<button type="button" class="node-detail-relation" data-relation-kind="${relationKind}" data-related-node-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}"${colorStyle}>${escapeHtml(item.title)}</button>`;
+    }).join('')}</div>`;
   };
   return [
     render('left', 'previous', '上一个节点'),

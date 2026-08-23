@@ -1,3 +1,5 @@
+import type { NodeStatus, NodeType } from '../event/Event';
+import type { KnowledgeLayer } from './KnowledgeLayerPolicy';
 import {
   currentNodeForTopic,
   lineageRoleFor,
@@ -10,12 +12,24 @@ export interface KnowledgeRelationNode {
   id: string;
   title: string;
   premises: readonly string[];
+  type?: NodeType;
+  status?: NodeStatus;
+  declaredLayer?: KnowledgeLayer;
   lineage?: KnowledgeLineageMeta;
 }
 
 export interface KnowledgeRelationItem {
   id: string;
   title: string;
+  /**
+   * These semantic fields let presentation use the same visual identity as the
+   * real node ball without inventing a second relation lookup or colour table.
+   * They do not change relation topology.
+   */
+  type?: NodeType;
+  status?: NodeStatus;
+  declaredLayer?: KnowledgeLayer;
+  lineage?: KnowledgeLineageMeta;
 }
 
 /**
@@ -48,8 +62,15 @@ interface CanonicalKnowledgeEdge extends KnowledgeChainEdge {
   axis: KnowledgeRelationAxis;
 }
 
-function item(node: Pick<KnowledgeRelationNode, 'id' | 'title'>): KnowledgeRelationItem {
-  return { id: node.id, title: node.title };
+function item(node: KnowledgeRelationNode): KnowledgeRelationItem {
+  return {
+    id: node.id,
+    title: node.title,
+    type: node.type,
+    status: node.status,
+    declaredLayer: node.declaredLayer,
+    lineage: node.lineage,
+  };
 }
 
 function effectiveNode(
