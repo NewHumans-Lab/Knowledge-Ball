@@ -128,8 +128,84 @@ try {
     );
     assert.equal(await page.locator('#panel.open').count(), 0, 'canonical chain navigation must remain in the near-node detail flow');
 
-    assert.deepEqual(pageErrors, [], `canonical reasoning-chain detail flow produced page errors:\n${pageErrors.join('\n')}`);
-    console.log(`Canonical reasoning-chain browser regression passed: ${candidate.previousReasoningId} -> ${candidate.id} -> ${candidate.nextReasoningId}`);
+    // Close the reasoning fixture before validating the lineage lifecycle.
+    await page.locator('#nodeDetailOverlay .node-detail-close').tap();
+    await page.waitForFunction(() => !document.querySelector('#nodeDetailOverlay.open'), null, { timeout: 5_000 });
+    await page.waitForTimeout(250);
+
+    // Find a real stable gray/red lineage relation. In Current mode the related
+    // historical/opposing ball is absent. Opening the current ball's detail must
+    // temporarily render that ball and therefore its scene line; closing detail
+    // must hide both again.
+    const lineageFixture = await page.evaluate(() => {
+      const debug = window.__debug;
+      const nodes = debug.renderNodes;
+      const core = new Set(['n1', 'n2', 'n16']);
+      for (const current of nodes) {
+        const currentRole = current.lineage?.role ?? 'current';
+        if (currentRole !== 'current' || core.has(current.id)) continue;
+        const topicId = current.lineage?.topicId ?? current.id;
+        const related = nodes.find(node => {
+          const role = node.lineage?.role;
+          return node.id !== current.id
+            && node.lineage?.topicId === topicId
+            && (role === 'history' || role === 'opposition');
+        });
+        if (!related) continue;
+        const point = debug.scene.screenPositionForNode(current.id);
+        if (!point || point.x <= 24 || point.x >= 366 || point.y <= 88 || point.y >= 808) continue;
+        return {
+          currentId: current.id,
+          currentTitle: current.title,
+          relatedId: related.id,
+          relatedTitle: related.title,
+          relationKind: related.lineage.role,
+          ...point,
+        };
+      }
+      return null;
+    });
+    assert.ok(lineageFixture, 'hosted/browser fixture must expose at least one stable history or opposition relation');
+
+    const beforeLineageDetail = await page.evaluate(relatedId => ({
+      visibleEdges: window.__debug.scene.getVisibleEdgeCount(),
+      relatedPoint: window.__debug.scene.screenPositionForNode(relatedId),
+    }), lineageFixture.relatedId);
+    assert.equal(beforeLineageDetail.relatedPoint, null, 'Current mode must hide the stable gray/red relation ball before detail opens');
+
+    await page.touchscreen.tap(lineageFixture.x, lineageFixture.y);
+    await page.waitForTimeout(900);
+    const lineageCentered = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), lineageFixture.currentId);
+    assert.ok(lineageCentered, 'lineage current ball must remain renderable after focus');
+    await page.touchscreen.tap(lineageCentered.x, lineageCentered.y);
+    await page.waitForFunction(
+      ({ currentId, relatedId }) => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === currentId
+        && Boolean(window.__debug.scene.screenPositionForNode(relatedId)),
+      { currentId: lineageFixture.currentId, relatedId: lineageFixture.relatedId },
+      { timeout: 5_000 },
+    );
+
+    const lineageRelationControl = page.locator(`#nodeDetailOverlay.open .node-detail-relation[data-relation-kind="${lineageFixture.relationKind}"][data-related-node-id="${lineageFixture.relatedId}"]`);
+    assert.equal(await lineageRelationControl.count(), 1, 'detail must expose the same stable gray/red lineage ball it temporarily reveals in 3D');
+    const afterLineageDetail = await page.evaluate(relatedId => ({
+      visibleEdges: window.__debug.scene.getVisibleEdgeCount(),
+      relatedPoint: window.__debug.scene.screenPositionForNode(relatedId),
+    }), lineageFixture.relatedId);
+    assert.ok(afterLineageDetail.relatedPoint, 'opening detail must automatically render the related gray/red ball');
+    assert.ok(afterLineageDetail.visibleEdges > beforeLineageDetail.visibleEdges, 'opening detail must automatically add at least one visible lineage edge');
+
+    await page.locator('#nodeDetailOverlay .node-detail-close').tap();
+    await page.waitForFunction(() => !document.querySelector('#nodeDetailOverlay.open'), null, { timeout: 5_000 });
+    await page.waitForFunction(
+      relatedId => window.__debug.scene.screenPositionForNode(relatedId) === null,
+      lineageFixture.relatedId,
+      { timeout: 5_000 },
+    );
+    const afterLineageClose = await page.evaluate(() => window.__debug.scene.getVisibleEdgeCount());
+    assert.ok(afterLineageClose < afterLineageDetail.visibleEdges, 'closing detail must hide the lineage edge together with its gray/red endpoint ball');
+
+    assert.deepEqual(pageErrors, [], `canonical relation detail flow produced page errors:\n${pageErrors.join('\n')}`);
+    console.log(`Canonical reasoning + lineage browser regression passed: ${candidate.previousReasoningId} -> ${candidate.id} -> ${candidate.nextReasoningId}; ${lineageFixture.currentId} -> ${lineageFixture.relatedId}`);
   } finally {
     await browser.close();
   }
