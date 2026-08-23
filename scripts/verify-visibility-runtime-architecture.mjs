@@ -48,7 +48,7 @@ assert(schemaGate.includes("discoverSchemaVersion('knowledge_classification_sche
 assert(!schemaGate.includes("?? '202608210002'"), 'release gate must never restore the stale manually copied app schema constant');
 const appSchema = await discoverSchemaVersion('knowledge_ball_schema_version');
 const classificationSchema = await discoverSchemaVersion('knowledge_classification_schema_version');
-assert.equal(appSchema.version, '202608220010', 'migration parser must resolve the current canonical app schema declaration');
-assert.equal(classificationSchema.version, '202608200002', 'migration parser must resolve the classification schema declaration');
+assert(appSchema.file.startsWith(`${appSchema.version}_`), 'app schema function must declare the version of the migration that owns it');
+assert(classificationSchema.file.startsWith(`${classificationSchema.version}_`), 'classification schema function must declare the version of the migration that owns it');
 
 console.log(`Three-state visibility architecture checks passed; schema gate follows ${appSchema.file} (${appSchema.version}).`);
