@@ -165,7 +165,7 @@
   justify-content:space-between;
   gap:12px;
   width:100%;
-  min-height:42px;
+  min-height:44px;
   padding:8px 10px;
   border:1px solid rgba(78,128,204,.2);
   border-radius:8px;
@@ -197,7 +197,7 @@
   .knowledge-create-modal{width:100%;max-height:84vh;border-radius:13px;}
   .knowledge-create-header{padding:15px 18px;}
   .knowledge-create-header h3{font-size:17px;}
-  .knowledge-create-close{width:42px;height:42px;flex-basis:42px;}
+  .knowledge-create-close{width:44px;height:44px;flex-basis:44px;}
   .knowledge-create-body{padding:16px 18px 20px;}
   .knowledge-create-field{margin-bottom:18px;}
   .knowledge-create-field input,.knowledge-create-field select{min-height:46px;}
