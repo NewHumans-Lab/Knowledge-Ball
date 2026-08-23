@@ -3,6 +3,7 @@ import { access, readFile } from 'node:fs/promises';
 
 const app = await readFile('src/ui/app.ts', 'utf8');
 const accountUi = await readFile('src/ui/AccountUi.ts', 'utf8');
+const panelController = await readFile('src/ui/panels/PanelController.ts', 'utf8');
 const syncEngine = await readFile('src/sync/SyncEngine.ts', 'utf8');
 const syncCoordinator = await readFile('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
 const supabaseAdapter = await readFile('src/sync/SupabaseSyncAdapter.ts', 'utf8');
@@ -45,9 +46,40 @@ assert.doesNotMatch(accountUi, /window\.__debug|MutationObserver|currentPanelNod
 assert.match(accountUi, /knowledge-ball:verdict-finalized/, 'account UI may publish a server-state-change signal without owning synchronization');
 assert.match(app, /installAccountUi\(/, 'app must explicitly own account UI installation');
 
+const launchPanelAction = app.slice(
+  app.indexOf('function launchPanelAction'),
+  app.indexOf('async function markNodeViewed'),
+);
+assert.match(
+  launchPanelAction,
+  /panel\.openNodeAction\(id, action\)/,
+  'node detail actions must call the panel controller through an explicit semantic API',
+);
+assert.doesNotMatch(
+  launchPanelAction,
+  /button\.click\(|document\.getElementById\(targetId\)|btnEditNode|btnNegate|btnDecompose|btnMerge|btnResolve|btnDispute/,
+  'node detail actions must not use rendered DOM controls as an application API',
+);
+assert.match(
+  panelController,
+  /export type PanelNodeAction = 'edit' \| 'negate' \| 'decompose' \| 'merge' \| 'resolve' \| 'dispute'/,
+  'all existing non-create node operations must remain available',
+);
+assert.match(
+  panelController,
+  /openNodeAction\(id: string, action: PanelNodeAction\): boolean/,
+  'PanelController must expose one explicit semantic entry point for NodeDetail actions',
+);
+for (const action of ['edit', 'negate', 'decompose', 'merge', 'resolve', 'dispute']) {
+  assert.ok(
+    panelController.includes(`executeNodeAction(id, '${action}')`),
+    `legacy panel action ${action} must share the explicit implementation`,
+  );
+}
+
 assert.doesNotMatch(app, /saveNode|KnowledgeNodeRecord|KnowledgeRepository/, 'app must not persist node snapshots');
 assert.ok(sources.every(source => !source.includes('GitHubKnowledgeGateway')), 'legacy gateway must not be referenced');
 assert.ok(sources.every(source => !source.includes('/api/knowledge')), 'legacy API must not be referenced');
 await assert.rejects(access('server'), 'production Node server must be deleted');
 await assert.rejects(access('src/storage/GitHubKnowledgeGateway.ts'), 'legacy gateway must be deleted');
-console.log('Cloud-only server-authoritative public-data architecture regression tests passed');
+console.log('Cloud-only server-authoritative public-data and explicit NodeDetail action architecture regression tests passed');
