@@ -1,4 +1,5 @@
 import type { NodeStatus, NodeType } from '../event/Event';
+import { lineageRoleFor, type KnowledgeLineageMeta } from '../domain/KnowledgeLineage';
 
 /**
  * Canonical protocol representation used by command validation and deterministic
@@ -18,6 +19,7 @@ export interface ProtocolNode {
   logicRuleId?: string;
   negatedBy?: string[];
   semanticKey?: string;
+  lineage?: KnowledgeLineageMeta;
 }
 
 export interface ReasoningChain {
@@ -32,7 +34,7 @@ export interface NewProtocolNode {
   type: NodeType;
   /** Description for a knowledge conclusion; inference text for a reasoning node. */
   reasoning: string;
-  /** Every new reasoning process must classify itself with an existing logic-symbol node. */
+  /** Every new reasoning process may classify itself with an existing logic-symbol node. */
   logicRuleId?: string;
 }
 
@@ -83,6 +85,7 @@ export interface AddAtomicEdit {
   node: NewProtocolNode;
 }
 
+/** Legacy complete-chain add retained for replay compatibility. */
 export interface AddTheoryEdit {
   kind: 'add';
   mode: 'theory';
@@ -91,7 +94,19 @@ export interface AddTheoryEdit {
   conclusion: NewProtocolNode;
 }
 
-export type AddEdit = AddAtomicEdit | AddTheoryEdit;
+/**
+ * Create one real reasoning-process ball between already-existing knowledge balls.
+ * No premise or conclusion text can be materialized as a new node by this edit.
+ */
+export interface AddReasoningLinkEdit {
+  kind: 'add';
+  mode: 'reasoning-link';
+  requiredPremiseIds: string[];
+  reasoning: NewProtocolNode;
+  conclusionIds: string[];
+}
+
+export type AddEdit = AddAtomicEdit | AddTheoryEdit | AddReasoningLinkEdit;
 export type KnowledgeEdit = NegateEdit | DecomposeEdit | MergeEdit | AddEdit;
 
 export interface KnowledgeEditResult {
@@ -125,6 +140,19 @@ function active(node: ProtocolNode | undefined): boolean {
 
 function validOrdinaryPremise(node: ProtocolNode | undefined): boolean {
   return active(node) && node!.type !== 'reasoning' && node!.type !== 'logic-symbol';
+}
+
+function validReasoningLinkPremise(node: ProtocolNode | undefined): boolean {
+  return Boolean(
+    node &&
+    node.type !== 'reasoning' &&
+    node.status !== 'pending' &&
+    node.status !== 'falsified' &&
+    node.status !== 'suspended' &&
+    !node.hidden &&
+    !node.supersededBy &&
+    lineageRoleFor(node) === 'current'
+  );
 }
 
 function nodeFromDraft(draft: NewProtocolNode, premises: string[]): ProtocolNode {
@@ -199,6 +227,67 @@ function validateCounterexamples(nodes: ProtocolNode[], edit: NegateEdit): strin
   return errors;
 }
 
+function reachesDownstream(nodes: ProtocolNode[], fromId: string, targetId: string): boolean {
+  if (fromId === targetId) return true;
+  const downstream = new Map<string, string[]>();
+  for (const node of nodes) {
+    for (const premiseId of node.premises) {
+      const list = downstream.get(premiseId) ?? [];
+      list.push(node.id);
+      downstream.set(premiseId, list);
+    }
+  }
+  const seen = new Set<string>([fromId]);
+  const queue = [fromId];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const nextId of downstream.get(current) ?? []) {
+      if (nextId === targetId) return true;
+      if (seen.has(nextId)) continue;
+      seen.add(nextId);
+      queue.push(nextId);
+    }
+  }
+  return false;
+}
+
+function validateReasoningLink(nodes: ProtocolNode[], edit: AddReasoningLinkEdit): string[] {
+  const errors: string[] = [];
+  const byId = indexNodes(nodes);
+  if (edit.requiredPremiseIds.length === 0) errors.push('新增推理至少需要选择一个已有前提');
+  if (unique(edit.requiredPremiseIds).length !== edit.requiredPremiseIds.length) errors.push('新增推理的前提不能重复');
+  if (edit.conclusionIds.length === 0) errors.push('新增推理至少需要选择一个已有结论');
+  if (unique(edit.conclusionIds).length !== edit.conclusionIds.length) errors.push('新增推理的结论不能重复');
+
+  for (const id of edit.requiredPremiseIds) {
+    const premise = byId.get(id);
+    if (!premise) errors.push(`前提不存在: ${id}`);
+    else if (!validReasoningLinkPremise(premise)) {
+      errors.push(`前提必须是当前且已通过验证的非推理节点: ${id}`);
+    }
+  }
+
+  for (const id of edit.conclusionIds) {
+    const conclusion = byId.get(id);
+    if (!conclusion) errors.push(`结论不存在: ${id}`);
+    else if (conclusion.type === 'reasoning') errors.push(`结论不能是推理节点: ${id}`);
+  }
+
+  const overlap = edit.requiredPremiseIds.find(id => edit.conclusionIds.includes(id));
+  if (overlap) errors.push(`同一节点不能同时作为前提和结论: ${overlap}`);
+  if (edit.reasoning.type !== 'reasoning') errors.push('新增推理必须创建 reasoning 类型白球');
+  errors.push(...validateDraftBatch(nodes, [edit.reasoning]));
+
+  for (const conclusionId of edit.conclusionIds) {
+    for (const premiseId of edit.requiredPremiseIds) {
+      if (reachesDownstream(nodes, conclusionId, premiseId)) {
+        errors.push(`新增推理会形成依赖环: ${premiseId} → ${conclusionId}`);
+      }
+    }
+  }
+  return errors;
+}
+
 export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningChain): string[] {
   const byId = indexNodes(nodes);
   const reasoning = byId.get(chain.reasoningId);
@@ -228,8 +317,8 @@ export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningCh
   else {
     if (!active(conclusion)) errors.push(`结论当前不可用: ${conclusion.id}`);
     if (conclusion.type === 'reasoning') errors.push('推理链结论不能是 reasoning 类型');
-    if (conclusion.premises.length !== 1 || conclusion.premises[0] !== chain.reasoningId) {
-      errors.push('结论必须直接且只依赖一个推理过程节点');
+    if (!conclusion.premises.includes(chain.reasoningId)) {
+      errors.push('结论必须直接依赖该推理过程节点');
     }
   }
   return errors;
@@ -245,7 +334,7 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
         errors.push('公理、定义、事实和逻辑符号可以独立增加；其他结论必须提交完整推理链');
       }
       errors.push(...validateDraftBatch(nodes, [edit.node]));
-    } else {
+    } else if (edit.mode === 'theory') {
       if (edit.requiredPremiseIds.length === 0) errors.push('增加理论必须标记至少一个已有知识前提');
       if (unique(edit.requiredPremiseIds).length !== edit.requiredPremiseIds.length) errors.push('所需前提不能重复');
       for (const id of edit.requiredPremiseIds) {
@@ -260,6 +349,8 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
         errors.push('理论结论必须是定理、假说、预测、观点或价值判断');
       }
       errors.push(...validateDraftBatch(nodes, [edit.reasoning, edit.conclusion]));
+    } else {
+      errors.push(...validateReasoningLink(nodes, edit));
     }
   }
 
@@ -412,9 +503,15 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
   if (edit.kind === 'add') {
     if (edit.mode === 'atomic') {
       append(nodeFromDraft(edit.node, []));
-    } else {
+    } else if (edit.mode === 'theory') {
       append(nodeFromDraft(edit.reasoning, edit.requiredPremiseIds));
       append(nodeFromDraft(edit.conclusion, [edit.reasoning.id]));
+    } else {
+      append(nodeFromDraft(edit.reasoning, edit.requiredPremiseIds));
+      for (const conclusionId of edit.conclusionIds) {
+        const conclusion = byId.get(conclusionId)!;
+        conclusion.premises = unique([...conclusion.premises, edit.reasoning.id]);
+      }
     }
   }
 
