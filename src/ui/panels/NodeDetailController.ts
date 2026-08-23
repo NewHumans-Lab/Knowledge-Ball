@@ -218,7 +218,7 @@ export class NodeDetailController {
         <div class="node-detail-reactivation node-detail-interaction">
           <div class="node-detail-vote-title">设为当前最优</div>
           <div class="node-detail-vote-actions">
-            <button type="button" class="node-detail-vote-button agree" data-reactivate-intent="1" ${account ? '' : 'disabled'}><span>同意</span><small>重新验证</small></button>
+            <button type="button" class="node-detail-vote-button agree" data-reactivate-intent="1" disabled><span>同意</span><small data-reactivation-stake>能量 −10</small></button>
             <button type="button" class="node-detail-vote-button disagree" disabled><span>反对</span><small>此处不可用</small></button>
           </div>
           <div class="node-detail-confirm" hidden>
@@ -228,7 +228,7 @@ export class NodeDetailController {
               <button type="button" data-reactivate-confirm>确认</button>
             </div>
           </div>
-          <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '确认后按当前 ORIGINAL_DESIGN_V1 阶段启动重新验证' : '共享服务未配置，暂不能重新验证'}</div>
+          <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '正在同步本轮能量…' : '共享服务未配置，暂不能重新验证'}</div>
         </div>
       `;
     } else if (oldLineage && node.status === 'disputed') {
@@ -276,7 +276,7 @@ export class NodeDetailController {
     }
 
     if (oldLineage && node.status === 'verified') {
-      this.bindReactivation(node.id, token, account);
+      void this.bindReactivation(node.id, token, account);
       return;
     }
 
@@ -309,17 +309,31 @@ export class NodeDetailController {
     }
   }
 
-  private bindReactivation(
+  private async bindReactivation(
     nodeId: string,
     token: number,
     account: ReturnType<typeof createProductionAuthClient>,
-  ): void {
+  ): Promise<void> {
     const intent = this.root.querySelector<HTMLButtonElement>('[data-reactivate-intent]');
+    const stakeLabel = this.root.querySelector<HTMLElement>('[data-reactivation-stake]');
     const confirm = this.root.querySelector<HTMLElement>('.node-detail-confirm');
     const cancel = this.root.querySelector<HTMLButtonElement>('[data-reactivate-cancel]');
     const submit = this.root.querySelector<HTMLButtonElement>('[data-reactivate-confirm]');
     const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
-    if (!account || !intent || !confirm || !submit) return;
+    if (!account || !intent || !stakeLabel || !confirm || !submit) return;
+
+    try {
+      const quote = await account.getKnowledgeRevalidationQuote(nodeId);
+      if (!this.isCurrentVote(nodeId, token)) return;
+      stakeLabel.textContent = `能量 −${displayEnergy(quote.stake)}`;
+      intent.disabled = false;
+      if (status) status.textContent = '确认后启动重新验证';
+    } catch (error) {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      intent.disabled = true;
+      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '本轮能量同步失败';
+      return;
+    }
 
     intent.addEventListener('click', () => { confirm.hidden = false; });
     cancel?.addEventListener('click', () => { confirm.hidden = true; });
