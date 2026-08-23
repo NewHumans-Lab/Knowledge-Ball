@@ -137,6 +137,8 @@ export interface PanelControllerElements {
   toast?: HTMLElement;
 }
 
+export type PanelNodeAction = 'edit' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
+
 type LineageCandidateKind = 'optimization' | 'opposition';
 
 function escapeHtml(input: string): string {
@@ -462,6 +464,17 @@ export class PanelController {
     this.selectedId = null;
   }
 
+  openNodeAction(id: string, action: PanelNodeAction): boolean {
+    const nodes = this.getNodes();
+    const byId = new Map(nodes.map(node => [node.id, node] as const));
+    const node = byId.get(id);
+    if (!node || !this.supportsNodeAction(node, action, nodes, byId)) return false;
+
+    this.openNodePanel(id);
+    this.executeNodeAction(id, action);
+    return true;
+  }
+
   openCreateModal(prefillPremiseId: string | null = null): void {
     this.prefillPremise = prefillPremiseId;
     this.modalTitle.textContent = prefillPremiseId ? '基于现有知识提交新节点' : '提交新知识节点';
@@ -640,6 +653,54 @@ export class PanelController {
     this.bindSettingsControls();
   }
 
+  private supportsNodeAction(
+    node: PanelNodeSummary,
+    action: PanelNodeAction,
+    nodes = this.getNodes(),
+    byId: ReadonlyMap<string, PanelNodeSummary> = new Map(nodes.map(item => [item.id, item] as const)),
+  ): boolean {
+    switch (action) {
+      case 'edit': return true;
+      case 'negate': return node.status !== 'falsified' && node.status !== 'suspended';
+      case 'decompose': return node.type === 'reasoning';
+      case 'merge': return this.canMerge(node, nodes, byId);
+      case 'resolve': return node.status === 'suspended';
+      case 'dispute': return node.status === 'disputed';
+    }
+  }
+
+  private executeNodeAction(id: string, action: PanelNodeAction): void {
+    switch (action) {
+      case 'edit':
+        this.openLineageCandidateForm(id, 'optimization');
+        return;
+      case 'negate':
+        this.openLineageCandidateForm(id, 'opposition');
+        return;
+      case 'decompose':
+        this.openDecomposeForm(id);
+        return;
+      case 'merge':
+        this.openMergeForm(id);
+        return;
+      case 'resolve':
+        void this.resolveNodeAction(id);
+        return;
+      case 'dispute':
+        void this.disputeNodeAction(id);
+    }
+  }
+
+  private async resolveNodeAction(id: string): Promise<void> {
+    await this.onResolveNode(id);
+    this.showToast('节点已重新验证通过');
+  }
+
+  private async disputeNodeAction(id: string): Promise<void> {
+    await this.onDisputeNode(id);
+    this.showToast('节点已标记为争议中');
+  }
+
   private bindPanelRuntimeEvents(id: string): void {
     const optimizeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
     const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
@@ -649,19 +710,13 @@ export class PanelController {
     const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
     const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
 
-    optimizeBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'optimization'));
+    optimizeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'edit'));
     deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
-    opposeBtn?.addEventListener('click', () => this.openLineageCandidateForm(id, 'opposition'));
-    decomposeBtn?.addEventListener('click', () => this.openDecomposeForm(id));
-    mergeBtn?.addEventListener('click', () => this.openMergeForm(id));
-    resolveBtn?.addEventListener('click', async () => {
-      await this.onResolveNode(id);
-      this.showToast('节点已重新验证通过');
-    });
-    disputeBtn?.addEventListener('click', async () => {
-      await this.onDisputeNode(id);
-      this.showToast('节点已标记为争议中');
-    });
+    opposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'negate'));
+    decomposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'decompose'));
+    mergeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'merge'));
+    resolveBtn?.addEventListener('click', () => this.executeNodeAction(id, 'resolve'));
+    disputeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'dispute'));
 
     this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
       el.addEventListener('click', () => {
@@ -780,7 +835,11 @@ export class PanelController {
     return [...new Set(left.premises)].sort().join('\0') === [...new Set(right.premises)].sort().join('\0');
   }
 
-  private canMerge(node: PanelNodeSummary, nodes = this.getNodes(), byId = new Map(nodes.map(item => [item.id, item]))): boolean {
+  private canMerge(
+    node: PanelNodeSummary,
+    nodes = this.getNodes(),
+    byId: ReadonlyMap<string, PanelNodeSummary> = new Map(nodes.map(item => [item.id, item] as const)),
+  ): boolean {
     if (node.type === 'definition') {
       return nodes.some(candidate => candidate.id !== node.id && candidate.type === 'definition');
     }
