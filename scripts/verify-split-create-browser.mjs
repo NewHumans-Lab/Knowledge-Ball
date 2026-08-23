@@ -176,8 +176,40 @@ try {
     const finalEdges = await page.evaluate(() => { window.__debug.scene.stop(); return window.__debug.scene.getVisibleEdgeCount(); });
     assert.ok(finalEdges >= baselineEdges + 2, `real scene must add the two requested lines (before=${baselineEdges}, after=${finalEdges})`);
 
+    // Same premise-topic set + conclusion-topic set is the same reasoning identity.
+    // A completely different title and inference prose must still be rejected as a duplicate.
+    await page.evaluate(() => window.__debug.knowledgeCreate.openReasoning('n3'));
+    await overlay.waitFor({ state: 'visible' });
+    const duplicateConclusionPicker = overlay.locator('[data-picker="conclusion"]');
+    await duplicateConclusionPicker.locator('[data-picker-search]').fill(standaloneTitle);
+    await duplicateConclusionPicker.locator(`[data-picker-node-id="${standalone.id}"]`).click();
+    const nodeCountBeforeDuplicate = await page.evaluate(() => Object.keys(window.__debug.projection.state.nodesById).length);
+    await overlay.locator('[data-create-title]').fill('完全不同名字也不能重复');
+    await overlay.locator('[data-create-reasoning]').fill('这段推理文字与原推理完全不同，但前提和结论没有变化。');
+    await overlay.locator('[data-create-submit]').click();
+    await page.waitForFunction(() => document.querySelector('#toast')?.textContent?.includes('推理节点已存在'));
+    assert.equal(await page.locator('#knowledgeCreateOverlay.show').count(), 1, 'duplicate reasoning must keep the create form open for correction');
+    assert.equal(await page.evaluate(() => Object.keys(window.__debug.projection.state.nodesById).length), nodeCountBeforeDuplicate, 'duplicate reasoning must not create another white ball');
+    assert.match((await page.locator('#toast').textContent()) ?? '', /推理节点已存在.*验收白色推理球/, 'duplicate feedback must identify the existing reasoning node');
+    await overlay.locator('[data-create-cancel]').click();
+    await page.locator('#knowledgeCreateOverlay.show').waitFor({ state: 'hidden' });
+
+    // A reasoning node itself has no merge action. Its optimization form has exactly
+    // two semantic inputs: name and inference process. Layer/endpoints are inherited.
+    await page.evaluate(reasoningId => window.__debug.panel.openNodePanel(reasoningId), reasoningResult.id);
+    await page.locator('#panel.open').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#panelActions #btnMerge').count(), 0, 'reasoning node must not expose Merge');
+    await page.locator('#panelActions #btnEditNode').click();
+    await page.locator('#lineageCandidateTitle').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#lineageCandidateTitle').count(), 1, 'reasoning optimization must expose name');
+    assert.equal(await page.locator('#lineageCandidateDescription').count(), 1, 'reasoning optimization must expose inference process');
+    assert.equal(await page.locator('#lineageCandidateLayer').count(), 0, 'reasoning optimization must not expose knowledge layer');
+    assert.equal(await page.locator('#panelBody input').count(), 1, 'reasoning optimization must contain no additional text inputs beyond name');
+    assert.equal(await page.locator('#panelBody textarea').count(), 1, 'reasoning optimization must contain exactly one inference textarea');
+    assert.match((await page.locator('#panelBody').textContent()) ?? '', /推理节点优化只允许修改名称和推理过程/, 'reasoning optimization must explain the frozen endpoint structure');
+
     assert.deepEqual(errors, [], `split-create browser path must not emit page errors: ${errors.join(' | ')}`);
-    console.log('Split standalone/reasoning real mobile browser acceptance passed');
+    console.log('Split standalone/reasoning uniqueness and reasoning-optimization real mobile acceptance passed');
   } finally {
     await browser.close();
   }
