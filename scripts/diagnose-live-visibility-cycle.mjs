@@ -22,8 +22,9 @@ try {
   const button = page.locator('#btnPersonal');
   await button.waitFor({ state: 'visible', timeout: 20_000 });
 
-  // Let the production app finish remote-first bootstrap, but do not require the
-  // canonical dataset yet: an old binary build is exactly what this probe must expose.
+  // Let remote-first bootstrap finish far enough for normal app listeners to bind.
+  // Do not wait on a build marker: its absence is itself evidence of an obsolete
+  // deployed shell and must be reported rather than hidden behind a locator timeout.
   await page.waitForTimeout(8_000);
 
   const snapshot = async () => button.evaluate(element => ({
@@ -44,13 +45,18 @@ try {
     states.push(await snapshot());
   }
 
-  const build = await page.locator('meta[name="knowledge-ball-build"]').getAttribute('content');
-  const diagnostics = { target, expectedBuild, build, states, pageErrors };
+  const pageIdentity = await page.evaluate(() => ({
+    build: document.querySelector('meta[name="knowledge-ball-build"]')?.getAttribute('content') ?? null,
+    appScripts: [...document.querySelectorAll('script[src]')].map(script => script.getAttribute('src')),
+    visibilityButtons: document.querySelectorAll('#btnPersonal').length,
+  }));
+  const diagnostics = { target, expectedBuild, ...pageIdentity, states, pageErrors };
   console.log('LIVE_VISIBILITY_DIAGNOSTICS');
   console.log(JSON.stringify(diagnostics, null, 2));
 
+  assert.equal(pageIdentity.visibilityButtons, 1, 'live page must contain exactly one Personal visibility control');
   if (expectedBuild) {
-    assert.equal(build, expectedBuild, `live Pages build drift: expected ${expectedBuild}, got ${build ?? 'missing'}`);
+    assert.equal(pageIdentity.build, expectedBuild, `live Pages build drift: expected ${expectedBuild}, got ${pageIdentity.build ?? 'missing'}`);
   }
   assert.deepEqual(
     states.map(state => [state.text, state.mode]),
