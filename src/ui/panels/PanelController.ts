@@ -686,6 +686,7 @@ export class PanelController {
     const node = this.getNodeById(id);
     if (!node) return;
     const optimization = kind === 'optimization';
+    const reasoningOptimization = optimization && node.type === 'reasoning';
     const candidateLayer = node.declaredLayer ?? node.effectiveLayer ?? 'outer';
     const defaultLayer = isUserKnowledgeLayer(candidateLayer) ? candidateLayer : 'outer';
 
@@ -697,13 +698,15 @@ export class PanelController {
         ? '提交会生成新的灰色闪烁候选球；最终判定前当前球保持不变。'
         : '提交会生成新的红色闪烁候选球；最终判定前当前球不会被证伪、隐藏或换边。'}</div>
       <div class="field"><label>名称</label><input type="text" id="lineageCandidateTitle" value="${optimization ? escapeHtml(node.title) : ''}" placeholder="${optimization ? '可保留当前名称，也可改为新的唯一名称' : '请输入新的唯一名称'}"></div>
-      <div class="field"><label>知识层级</label><select id="lineageCandidateLayer">
+      ${reasoningOptimization ? '' : `<div class="field"><label>知识层级</label><select id="lineageCandidateLayer">
         <option value="inner" ${defaultLayer === 'inner' ? 'selected' : ''}>第一层 · 语义与基础事实</option>
         <option value="middle" ${defaultLayer === 'middle' ? 'selected' : ''}>第二层 · 严谨推理</option>
         <option value="outer" ${defaultLayer === 'outer' ? 'selected' : ''}>第三层 · 概率与争议</option>
-      </select></div>
-      <div class="field"><label>内容</label><textarea id="lineageCandidateDescription" placeholder="填写新的完整内容">${optimization ? escapeHtml(node.reasoning || '') : ''}</textarea></div>
-      <p class="note-small" style="text-align:left;">节点类型、前提关系和逻辑规则身份全部沿用当前球。这里仅允许修改名称、层级和内容。</p>
+      </select></div>`}
+      <div class="field"><label>${reasoningOptimization ? '推理过程' : '内容'}</label><textarea id="lineageCandidateDescription" placeholder="${reasoningOptimization ? '填写优化后的推理过程' : '填写新的完整内容'}">${optimization ? escapeHtml(node.reasoning || '') : ''}</textarea></div>
+      <p class="note-small" style="text-align:left;">${reasoningOptimization
+        ? '推理节点优化只允许修改名称和推理过程。前提、结论、节点类型、逻辑规则和知识层级全部继承当前推理节点。'
+        : '节点类型、前提关系和逻辑规则身份全部沿用当前球。这里仅允许修改名称、层级和内容。'}</p>
     `;
     this.panelActions.innerHTML = `
       <button class="btn ${optimization ? 'primary' : 'danger'}" id="submitLineageCandidate">${optimization ? '提交优化候选' : '提交对立候选'}</button>
@@ -713,10 +716,12 @@ export class PanelController {
     this.panelActions.querySelector<HTMLButtonElement>('#cancelLineageCandidate')?.addEventListener('click', () => this.openNodePanel(id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitLineageCandidate')?.addEventListener('click', async () => {
       const title = this.panelBody.querySelector<HTMLInputElement>('#lineageCandidateTitle')?.value.trim() ?? '';
-      const layerValue = this.panelBody.querySelector<HTMLSelectElement>('#lineageCandidateLayer')?.value ?? '';
+      const layerValue = reasoningOptimization
+        ? defaultLayer
+        : this.panelBody.querySelector<HTMLSelectElement>('#lineageCandidateLayer')?.value ?? '';
       const description = this.panelBody.querySelector<HTMLTextAreaElement>('#lineageCandidateDescription')?.value.trim() ?? '';
       if (!title || !description || !isUserKnowledgeLayer(layerValue)) {
-        this.showToast('请完整填写名称、知识层级和内容。');
+        this.showToast(reasoningOptimization ? '请完整填写名称和推理过程。' : '请完整填写名称、知识层级和内容。');
         return;
       }
       const payload: LineageCandidatePayload = { title, layer: layerValue, description };
