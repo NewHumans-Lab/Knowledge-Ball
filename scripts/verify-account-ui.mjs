@@ -128,3 +128,4 @@ for (const item of ['drop function public.register_verified_phone','legacy_phone
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
 console.log('Registered public-write gate, explicit account ownership, authoritative accuracy, and account UI checks passed');
+// This regression intentionally guards the web account ownership boundary.
