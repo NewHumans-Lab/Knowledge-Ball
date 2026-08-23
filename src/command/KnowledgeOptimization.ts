@@ -25,8 +25,9 @@ export class KnowledgeOptimizationValidationError extends Error {
 
 /**
  * Validate the product-level optimization invariant without mutating the target.
- * The only editable semantic fields are title, declared layer, and content.
- * Node type, premises, and logic-rule identity are inherited from the current ball.
+ * Ordinary knowledge may optimize title, layer and content. A reasoning ball is
+ * stricter: only its title and inference prose are editable; its layer and all
+ * structural identity are inherited from the current version.
  */
 export function validateKnowledgeOptimization(
   state: GraphState,
@@ -47,6 +48,9 @@ export async function executeKnowledgeOptimization(
   const target = projection.state.nodesById[input.targetId]!;
   const topicId = topicIdFor(target);
   const timestamp = Date.now();
+  const candidateLayer = target.type === 'reasoning'
+    ? (target.declaredLayer ?? input.declaredLayer)
+    : input.declaredLayer;
   const edit = {
     kind: 'add' as const,
     mode: 'atomic' as const,
@@ -60,7 +64,7 @@ export async function executeKnowledgeOptimization(
   };
   const payload: KnowledgeAddedEvent['payload'] = {
     edit,
-    declaredLayers: { [input.candidateId]: input.declaredLayer },
+    declaredLayers: { [input.candidateId]: candidateLayer },
     optimization: { targetId: target.id, topicId },
   };
   const id = await fingerprint('KnowledgeAdded', payload, timestamp);
