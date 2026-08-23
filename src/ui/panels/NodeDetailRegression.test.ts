@@ -26,6 +26,18 @@ assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit 
 assert(!lineageUi.includes('relabelActions'), 'cascade helper must not rewrite ordinary detail action labels after render');
 assert(!lineageUi.includes('data-node-detail-action="edit"') && !lineageUi.includes('data-node-detail-action="negate"'), 'cascade helper must not own ordinary edit/opposition presentation');
 
+// Four-direction related-node controls must preserve relation identity and reuse
+// the app's one canonical openNode navigation path. Projection stays in
+// NodeDetailRelations; the detail controller only renders and forwards IDs.
+assert(detail.includes('data-related-node-id='), 'near-node relations must preserve each projected related node id in the DOM');
+assert(detail.includes('data-relation-kind='), 'near-node relations must preserve premise/history/conclusion/opposition semantics');
+assert(detail.includes('this.onSelectRelatedNode(relatedId)'), 'relation controls must delegate navigation instead of opening nodes locally');
+assert(!detail.includes('items.map(item => `<span>'), 'related nodes must not regress to non-interactive decorative spans');
+assert.equal((app.match(/onSelectRelatedNode:\s*openNode/g) ?? []).length, 2, 'legacy panel and near-node detail must share the same openNode navigation authority');
+assert(css.includes('.node-detail-relation{'), 'related nodes must have one explicit button style');
+assert(css.includes('pointer-events:auto'), 'related-node buttons must remain pointer-interactive while empty relation containers stay transparent');
+assert(css.includes('.node-detail-relation:hover') && css.includes('.node-detail-relation:focus-visible'), 'related-node controls must expose pointer and keyboard interaction affordances');
+
 assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
 assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
 assert(detail.includes('data-vote-side="AGREE" disabled><span>同意</span><small>能量 −1</small>'), 'pending detail must expose the agree one-energy action');
