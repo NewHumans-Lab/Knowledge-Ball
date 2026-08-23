@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const migration = readFileSync('supabase/migrations/202608200001_username_password_personal_state.sql', 'utf8');
 const edge = readFileSync('supabase/functions/username-password-auth/index.ts', 'utf8');
 const authClient = readFileSync('src/auth/AuthClient.ts', 'utf8');
-const authUi = readFileSync('src/ui/AuthUi.ts', 'utf8');
+const accountUi = readFileSync('src/ui/AccountUi.ts', 'utf8');
 const projection = readFileSync('src/projection/GraphProjection.ts', 'utf8');
 
 assert.match(migration, /personal_knowledge_states[\s\S]*user_id uuid not null references auth\.users\(id\) on delete cascade/,
@@ -46,12 +46,14 @@ assert.match(authClient, /claimUsernamePassword/);
 assert.match(authClient, /loginUsernamePassword/);
 assert.match(authClient, /getPersonalKnowledgeStates/);
 assert.match(authClient, /markKnowledgeTouched/);
-assert.match(authUi, /syncPersonalKnowledgeCloud/,
+assert.match(accountUi, /syncPersonalKnowledgeCloud/,
   'account UI must hydrate personal mastery from cloud state');
-assert.match(authUi, /PERSONAL_CLOUD_MIGRATION_PREFIX/,
+assert.match(accountUi, /PERSONAL_CLOUD_MIGRATION_PREFIX/,
   'legacy personal local state must be migrated only once per user id');
-assert.match(authUi, /LOCAL_PERSONAL_OWNER_KEY/,
+assert.match(accountUi, /LOCAL_PERSONAL_OWNER_KEY/,
   'legacy browser state must not be imported into a different signed-in user');
+assert.doesNotMatch(accountUi, /window\.__debug|MutationObserver|currentPanelNode/,
+  'account UI must use explicit application ports instead of DOM/debug-derived graph identity');
 assert.match(projection, /replacePersonalMastery/,
   'cloud snapshot must be able to replace stale local mastery rather than merely append over it');
 
