@@ -41,15 +41,12 @@ export const KNOWLEDGE_SCENE_THEME = {
   edge: {
     normal: 0xB9D8F5,
     active: 0xD9ECFF,
-    logic: 0xB9D8F5,
-    twin: 0xB9D8F5,
     normalOpacity: 0.50,
     activeOpacity: 0.50,
     inactiveFactor: 1.00,
     falsifiedOpacity: 0.50,
     suspendedOpacity: 0.50,
     disputedOpacity: 0.50,
-    twinOpacity: 0.50,
   },
   sun: {
     core: 0xFFFFFF,
