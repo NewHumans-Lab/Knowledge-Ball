@@ -26,7 +26,10 @@ export interface KnowledgeRelationItem {
  * its left, and the same conclusion can have another reasoning-process ball on
  * its right when it becomes input to a later inference.
  *
- * history / opposition are the two stable lineage chains for the same topic.
+ * history / opposition are the two lineage axes for the same topic. Every item
+ * exposed here is a real one-hop node joined to the opened ball by a live scene
+ * edge. White reasoning / relation balls therefore participate exactly like any
+ * other knowledge node instead of becoming edge labels.
  */
 export interface KnowledgeRelations {
   previous: KnowledgeRelationItem[];
@@ -38,6 +41,11 @@ export interface KnowledgeRelations {
 export interface KnowledgeChainEdge {
   fromId: string;
   toId: string;
+}
+
+type KnowledgeRelationAxis = 'logical' | 'history' | 'opposition';
+interface CanonicalKnowledgeEdge extends KnowledgeChainEdge {
+  axis: KnowledgeRelationAxis;
 }
 
 function item(node: Pick<KnowledgeRelationNode, 'id' | 'title'>): KnowledgeRelationItem {
@@ -63,67 +71,132 @@ function uniqueItems(nodes: readonly KnowledgeRelationNode[]): KnowledgeRelation
   return result;
 }
 
+function appendCanonicalEdge(
+  edges: CanonicalKnowledgeEdge[],
+  seen: Set<string>,
+  fromId: string,
+  toId: string,
+  axis: KnowledgeRelationAxis,
+): void {
+  if (!fromId || !toId || fromId === toId) return;
+  // The scene owns one physical line for a node pair. If the same pair is ever
+  // reachable through two semantic families, the first canonical family wins
+  // rather than drawing or exposing duplicate relations.
+  const key = `${fromId}->${toId}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  edges.push({ fromId, toId, axis });
+}
+
 /**
- * One authoritative relation projection for scene lines and node detail.
+ * Internal authoritative edge projection shared by scene geometry and the
+ * opened-node neighbour buttons. This prevents the detail UI from inventing a
+ * relation that has no corresponding line, or omitting a real line endpoint.
+ */
+function collectCanonicalKnowledgeEdges(
+  nodes: readonly KnowledgeRelationNode[],
+): CanonicalKnowledgeEdge[] {
+  const byId = new Map(nodes.map(node => [node.id, node] as const));
+  const seen = new Set<string>();
+  const edges: CanonicalKnowledgeEdge[] = [];
+
+  // Effective logical knowledge chain. Reasoning-process / relation balls are
+  // ordinary first-class nodes in this chain.
+  for (const node of nodes) {
+    if (lineageRoleFor(node) !== 'current') continue;
+    for (const previousId of node.premises) {
+      const previous = effectiveNode(byId.get(previousId), nodes);
+      if (!previous || lineageRoleFor(previous) !== 'current' || previous.id === node.id) continue;
+      appendCanonicalEdge(edges, seen, previous.id, node.id, 'logical');
+    }
+  }
+
+  // Formal version/opposition axes.
+  const topicIds = [...new Set(
+    nodes
+      .filter(node => lineageRoleFor(node) !== 'rejected')
+      .map(topicIdFor),
+  )];
+
+  for (const topicId of topicIds) {
+    const current = currentNodeForTopic(nodes, topicId);
+    if (!current) continue;
+
+    let previous = current;
+    for (const history of stableLineageChain(nodes, topicId, 'history')) {
+      appendCanonicalEdge(edges, seen, previous.id, history.id, 'history');
+      previous = history;
+    }
+
+    previous = current;
+    for (const opposition of stableLineageChain(nodes, topicId, 'opposition')) {
+      appendCanonicalEdge(edges, seen, previous.id, opposition.id, 'opposition');
+      previous = opposition;
+    }
+
+    for (const candidate of nodes) {
+      const role = lineageRoleFor(candidate);
+      if (topicIdFor(candidate) !== topicId
+        || (role !== 'candidate-history' && role !== 'candidate-opposition')) continue;
+      const target = candidate.lineage?.targetId
+        ? byId.get(candidate.lineage.targetId)
+        : current;
+      if (!target || lineageRoleFor(target) === 'rejected') continue;
+      appendCanonicalEdge(
+        edges,
+        seen,
+        target.id,
+        candidate.id,
+        role === 'candidate-history' ? 'history' : 'opposition',
+      );
+    }
+  }
+
+  return edges;
+}
+
+/**
+ * One authoritative one-hop relation projection for node detail.
  *
- * Horizontal knowledge-chain truth comes from real node-to-node premise
- * references. Reasoning-process balls are ordinary nodes in that chain:
- *
- *   premise -> reasoning process -> conclusion -> next reasoning process -> ...
- *
- * The same domain model also owns the vertical history/opposition axes. Those
- * lineage relations are real graph relations, not logical premises.
- *
- * logicRuleId is metadata on a reasoning node, not a second visual edge type.
- * Legacy twin UI metadata is intentionally absent from this model.
+ * A button exists iff the opened node is an endpoint of the same canonical edge
+ * used by the 3D scene. Logical edges keep their left/right direction; lineage
+ * edges are navigable in either direction on their vertical axis. This makes
+ * opening a neighbour equivalent to clicking the real connected ball.
  */
 export function buildKnowledgeRelations(
   openedId: string,
   nodes: readonly KnowledgeRelationNode[],
 ): KnowledgeRelations {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
-  const opened = byId.get(openedId);
-  if (!opened) return { previous: [], next: [], history: [], opposition: [] };
+  if (!byId.has(openedId)) return { previous: [], next: [], history: [], opposition: [] };
 
-  const previousNodes = opened.premises
-    .map(id => effectiveNode(byId.get(id), nodes))
-    .filter((node): node is KnowledgeRelationNode => Boolean(node && lineageRoleFor(node) !== 'rejected'));
+  const previous: KnowledgeRelationNode[] = [];
+  const next: KnowledgeRelationNode[] = [];
+  const history: KnowledgeRelationNode[] = [];
+  const opposition: KnowledgeRelationNode[] = [];
 
-  const nextNodes = nodes.filter(candidate => {
-    if (candidate.id === opened.id || lineageRoleFor(candidate) !== 'current') return false;
-    return candidate.premises.some(previousId => {
-      const effective = effectiveNode(byId.get(previousId), nodes);
-      return effective?.id === opened.id;
-    });
-  });
+  for (const edge of collectCanonicalKnowledgeEdges(nodes)) {
+    if (edge.fromId !== openedId && edge.toId !== openedId) continue;
+    const otherId = edge.fromId === openedId ? edge.toId : edge.fromId;
+    const other = byId.get(otherId);
+    if (!other || lineageRoleFor(other) === 'rejected') continue;
 
-  const topicId = topicIdFor(opened);
-  const history = stableLineageChain(nodes, topicId, 'history')
-    .filter(node => node.id !== opened.id)
-    .map(item);
-  const opposition = stableLineageChain(nodes, topicId, 'opposition')
-    .filter(node => node.id !== opened.id)
-    .map(item);
+    if (edge.axis === 'logical') {
+      if (edge.toId === openedId) previous.push(other);
+      else next.push(other);
+    } else if (edge.axis === 'history') {
+      history.push(other);
+    } else {
+      opposition.push(other);
+    }
+  }
 
   return {
-    previous: uniqueItems(previousNodes),
-    next: uniqueItems(nextNodes),
-    history,
-    opposition,
+    previous: uniqueItems(previous),
+    next: uniqueItems(next),
+    history: uniqueItems(history),
+    opposition: uniqueItems(opposition),
   };
-}
-
-function appendEdge(
-  edges: KnowledgeChainEdge[],
-  seen: Set<string>,
-  fromId: string,
-  toId: string,
-): void {
-  if (!fromId || !toId || fromId === toId) return;
-  const key = `${fromId}->${toId}`;
-  if (seen.has(key)) return;
-  seen.add(key);
-  edges.push({ fromId, toId });
 }
 
 /**
@@ -148,54 +221,5 @@ function appendEdge(
 export function collectKnowledgeChainEdges(
   nodes: readonly KnowledgeRelationNode[],
 ): KnowledgeChainEdge[] {
-  const byId = new Map(nodes.map(node => [node.id, node] as const));
-  const seen = new Set<string>();
-  const edges: KnowledgeChainEdge[] = [];
-
-  // Effective logical knowledge chain.
-  for (const node of nodes) {
-    if (lineageRoleFor(node) !== 'current') continue;
-    for (const previousId of node.premises) {
-      const previous = effectiveNode(byId.get(previousId), nodes);
-      if (!previous || lineageRoleFor(previous) !== 'current' || previous.id === node.id) continue;
-      appendEdge(edges, seen, previous.id, node.id);
-    }
-  }
-
-  // Formal version/opposition axes.
-  const topicIds = [...new Set(
-    nodes
-      .filter(node => lineageRoleFor(node) !== 'rejected')
-      .map(topicIdFor),
-  )];
-
-  for (const topicId of topicIds) {
-    const current = currentNodeForTopic(nodes, topicId);
-    if (!current) continue;
-
-    let previous = current;
-    for (const history of stableLineageChain(nodes, topicId, 'history')) {
-      appendEdge(edges, seen, previous.id, history.id);
-      previous = history;
-    }
-
-    previous = current;
-    for (const opposition of stableLineageChain(nodes, topicId, 'opposition')) {
-      appendEdge(edges, seen, previous.id, opposition.id);
-      previous = opposition;
-    }
-
-    for (const candidate of nodes) {
-      const role = lineageRoleFor(candidate);
-      if (topicIdFor(candidate) !== topicId
-        || (role !== 'candidate-history' && role !== 'candidate-opposition')) continue;
-      const target = candidate.lineage?.targetId
-        ? byId.get(candidate.lineage.targetId)
-        : current;
-      if (!target || lineageRoleFor(target) === 'rejected') continue;
-      appendEdge(edges, seen, target.id, candidate.id);
-    }
-  }
-
-  return edges;
+  return collectCanonicalKnowledgeEdges(nodes).map(({ fromId, toId }) => ({ fromId, toId }));
 }
