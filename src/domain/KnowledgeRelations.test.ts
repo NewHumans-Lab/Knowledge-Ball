@@ -12,7 +12,12 @@ function node(
 }
 
 function allRelatedIds(relations: KnowledgeRelations): string[] {
-  return Object.values(relations).flatMap(items => items.map(item => item.id));
+  return [
+    ...relations.previous,
+    ...relations.next,
+    ...relations.history,
+    ...relations.opposition,
+  ].map(item => item.id);
 }
 
 const nodes: KnowledgeRelationNode[] = [
