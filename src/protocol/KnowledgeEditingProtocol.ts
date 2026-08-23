@@ -320,6 +320,9 @@ export function validateReasoningChain(nodes: ProtocolNode[], chain: ReasoningCh
     if (!conclusion.premises.includes(chain.reasoningId)) {
       errors.push('结论必须直接依赖该推理过程节点');
     }
+    if (conclusion.premises.some(id => byId.get(id)?.type !== 'reasoning')) {
+      errors.push('结论的直接逻辑父节点必须全部是 reasoning 节点');
+    }
   }
   return errors;
 }
