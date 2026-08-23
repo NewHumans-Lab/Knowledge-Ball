@@ -184,6 +184,7 @@ try {
     await duplicateConclusionPicker.locator('[data-picker-search]').fill(standaloneTitle);
     await duplicateConclusionPicker.locator(`[data-picker-node-id="${standalone.id}"]`).click();
     const nodeCountBeforeDuplicate = await page.evaluate(() => Object.keys(window.__debug.projection.state.nodesById).length);
+    const errorCountBeforeDuplicate = errors.length;
     await overlay.locator('[data-create-title]').fill('完全不同名字也不能重复');
     await overlay.locator('[data-create-reasoning]').fill('这段推理文字与原推理完全不同，但前提和结论没有变化。');
     await overlay.locator('[data-create-submit]').click();
@@ -191,6 +192,9 @@ try {
     assert.equal(await page.locator('#knowledgeCreateOverlay.show').count(), 1, 'duplicate reasoning must keep the create form open for correction');
     assert.equal(await page.evaluate(() => Object.keys(window.__debug.projection.state.nodesById).length), nodeCountBeforeDuplicate, 'duplicate reasoning must not create another white ball');
     assert.match((await page.locator('#toast').textContent()) ?? '', /推理节点已存在.*验收白色推理球/, 'duplicate feedback must identify the existing reasoning node');
+    const duplicateErrors = errors.splice(errorCountBeforeDuplicate);
+    assert.equal(duplicateErrors.length, 1, `duplicate rejection must emit exactly one expected error, got: ${duplicateErrors.join(' | ')}`);
+    assert.match(duplicateErrors[0], /knowledge creation failed:.*推理节点已存在：验收白色推理球/s, 'duplicate rejection console error must be the expected business validation, not an unrelated page failure');
     await overlay.locator('[data-create-cancel]').click();
     await page.locator('#knowledgeCreateOverlay.show').waitFor({ state: 'hidden' });
 
