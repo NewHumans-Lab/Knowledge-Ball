@@ -43,18 +43,20 @@ const diagonal3d = displayedRelationLength(
 );
 assert(Math.abs(diagonal3d - 13) < 1e-12, '3D relation length must equal Euclidean endpoint distance');
 
+// Historical hidden records still occupy slots, but layout relation ownership is
+// now only the real node-to-node chain. No logic metadata or twin UI link can
+// create an extra optimization edge.
 const historical = [
   node('visible-a', -100),
   node('hidden-b', 100, ['visible-a'], true),
   node('hidden-c', -95, ['hidden-b'], true),
   node('visible-d', 95, ['hidden-c']),
 ];
-historical[3].logicRuleId = 'visible-a';
 const historicalEdges = collectRelationLayoutEdges(historical);
-assert(historicalEdges.some(edge => edge.fromId === 'visible-a' && edge.toId === 'hidden-b'), 'visible -> hidden line must remain in the objective');
-assert(historicalEdges.some(edge => edge.fromId === 'hidden-b' && edge.toId === 'hidden-c'), 'hidden -> hidden line must remain in the objective');
-assert(historicalEdges.some(edge => edge.fromId === 'hidden-c' && edge.toId === 'visible-d'), 'hidden -> visible line must remain in the objective');
-assert(historicalEdges.some(edge => edge.kind === 'logic' && edge.fromId === 'visible-a' && edge.toId === 'visible-d'), 'logic relation must remain in the objective');
+assert(historicalEdges.some(edge => edge.fromId === 'visible-a' && edge.toId === 'hidden-b'), 'visible -> hidden chain edge must remain in the objective');
+assert(historicalEdges.some(edge => edge.fromId === 'hidden-b' && edge.toId === 'hidden-c'), 'hidden -> hidden chain edge must remain in the objective');
+assert(historicalEdges.some(edge => edge.fromId === 'hidden-c' && edge.toId === 'visible-d'), 'hidden -> visible chain edge must remain in the objective');
+assert(historicalEdges.every(edge => edge.kind === 'chain'), 'layout must expose only the canonical chain edge class');
 
 const chain = [
   node('a', -100),
@@ -73,7 +75,7 @@ const slotsAfter = chain.map(item => item.pos!.x).sort((a, b) => a - b);
 assert.deepEqual(slotsAfter, slotsBefore, 'optimizer must preserve the exact fixed slot set');
 assert(lengthAfter <= lengthBefore + 1e-6, 'accepted optimization must never increase total straight 3D line length');
 assert(lengthAfter < lengthBefore * 0.5, 'adaptive branch layout should materially shorten an obviously bad chain');
-assert.equal(result.edgeCount, 5, 'hidden historical chain edges must be counted');
+assert.equal(result.edgeCount, 5, 'all real chain edges must be counted');
 assert(result.acceptedPasses > 0, 'the bad chain should accept at least one improving pass');
 assert(Math.abs(result.before - lengthBefore) < 1e-6 && Math.abs(result.after - lengthAfter) < 1e-6, 'reported objective must match the actual straight 3D line total');
 
@@ -125,9 +127,11 @@ assert(relationSource.includes('LOCAL_CELL_RADIUS = 2'), 'nearest-slot search mu
 assert(relationSource.includes('DEFAULT_PASSES = 4'), 'optimization pass count must remain a fixed constant');
 assert(relationSource.includes('approximateDiameterPath'), 'adaptive layout must inspect component extent without exact longest-path search');
 assert(relationSource.includes('scoreRelationComponentMorphology'), 'adaptive layout must blend branch and compact placement continuously');
+assert(!relationSource.includes('logicRuleId'), 'logic-rule metadata must not re-enter line-layout truth');
+assert(!relationSource.includes('twinGroup'), 'legacy twin UI metadata must not re-enter line-layout truth');
 assert(!relationSource.includes('CURVE_SEGMENTS'), 'layout objective must not approximate a curved render path');
 assert(!relationSource.includes('QuadraticBezierCurve3'), 'layout objective must remain straight-line Euclidean distance');
 assert(!sceneSource.includes('QuadraticBezierCurve3'), 'scene renderer must not curve knowledge relations');
 assert(/\.geometry\.setFromPoints\(\[a!\.clone\(\),\s*b!\.clone\(\)\]\)/.test(sceneSource), 'scene relation geometry must contain exactly the two 3D endpoints');
 
-console.log('Adaptive uniform branch relation-layout regression tests passed.');
+console.log('Canonical-chain adaptive relation-layout regression tests passed.');
