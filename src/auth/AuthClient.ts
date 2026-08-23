@@ -35,6 +35,16 @@ export interface PendingKnowledgeVoteSnapshot {
 
 export type KnowledgeRevalidationScope = 'GLOBAL' | 'LOCAL_10';
 export type KnowledgeRevalidationRole = 'history' | 'opposition';
+export interface KnowledgeRevalidationQuote {
+  nodeId: string;
+  topicId: string;
+  stage: number;
+  stake: string;
+  scope: KnowledgeRevalidationScope;
+  accuracyGate?: number;
+  localHopLimit?: number;
+  policyVersion: 'ORIGINAL_DESIGN_V1';
+}
 export interface KnowledgeRevalidationSnapshot {
   nodeId: string;
   topicId: string;
@@ -204,6 +214,14 @@ export class KnowledgeBallAuthClient {
     const processed = Number(response);
     if (!Number.isSafeInteger(processed) || processed < 0) throw new Error('服务端返回了无效结算数量');
     return processed;
+  }
+
+  async getKnowledgeRevalidationQuote(nodeId: string): Promise<KnowledgeRevalidationQuote> {
+    const current = await this.publicSession();
+    const response = await this.restRequest('/rest/v1/rpc/get_knowledge_revalidation_quote', current, {
+      method: 'POST', body: JSON.stringify({ target_node_id: nodeId }),
+    });
+    return parseKnowledgeRevalidationQuote(response, nodeId);
   }
 
   /** Start a human V1 challenge. The server additionally enforces permanent registration. */
@@ -406,6 +424,28 @@ export function parsePendingKnowledgeVote(value: unknown, nodeId: string): Pendi
     deadline: optionalString(response.deadline),
     closedAt: optionalString(response.closed_at),
     policyVersion: optionalString(response.policy_version),
+  };
+}
+
+export function parseKnowledgeRevalidationQuote(value: unknown, nodeId: string): KnowledgeRevalidationQuote {
+  const response = value as Record<string, unknown>;
+  const responseNodeId = typeof response.node_id === 'string' ? response.node_id : '';
+  const topicId = typeof response.topic_id === 'string' ? response.topic_id : '';
+  const scope = response.scope;
+  const policyVersion = response.policy_version;
+  if (responseNodeId !== nodeId) throw new Error('重新验证报价节点不匹配');
+  if (!topicId) throw new Error('服务端返回了无效重新验证主题');
+  if (scope !== 'GLOBAL' && scope !== 'LOCAL_10') throw new Error('服务端返回了无效重新验证范围');
+  if (policyVersion !== 'ORIGINAL_DESIGN_V1') throw new Error('服务端返回了无效重新验证协议版本');
+  return {
+    nodeId,
+    topicId,
+    stage: countValue(response.stage, '重新验证阶段'),
+    stake: exactEnergy(response.stake),
+    scope,
+    accuracyGate: optionalInteger(response.accuracy_gate, '重新验证准确率门槛', 0, 100),
+    localHopLimit: optionalInteger(response.local_hop_limit, '重新验证局部距离', 1, Number.MAX_SAFE_INTEGER),
+    policyVersion,
   };
 }
 
