@@ -21,6 +21,9 @@ const nodes: KnowledgeRelationNode[] = [
   node('conclusion-1-old', 'Conclusion 1 old', ['reasoning-1'], { topicId: 'conclusion-topic', proposal: 'optimization', targetId: 'conclusion-1', role: 'history', rank: 1 }),
   node('conclusion-1-older', 'Conclusion 1 older', ['reasoning-1'], { topicId: 'conclusion-topic', proposal: 'optimization', targetId: 'conclusion-1-old', role: 'history', rank: 2 }),
   node('conclusion-1-opposition', 'Conclusion 1 opposition', ['reasoning-1'], { topicId: 'conclusion-topic', proposal: 'opposition', targetId: 'conclusion-1', role: 'opposition', rank: 1 }),
+  node('conclusion-1-opposition-older', 'Conclusion 1 older opposition', ['reasoning-1'], { topicId: 'conclusion-topic', proposal: 'opposition', targetId: 'conclusion-1-opposition', role: 'opposition', rank: 2 }),
+  node('conclusion-1-candidate-history', 'Conclusion 1 candidate history', ['reasoning-1'], { topicId: 'conclusion-topic', proposal: 'optimization', targetId: 'conclusion-1', role: 'candidate-history', rank: 0 }),
+  node('conclusion-1-candidate-opposition', 'Conclusion 1 candidate opposition', ['reasoning-1'], { topicId: 'conclusion-topic', proposal: 'opposition', targetId: 'conclusion-1', role: 'candidate-opposition', rank: 0 }),
 ];
 
 const reasoning = buildKnowledgeRelations('reasoning-1', nodes);
@@ -31,30 +34,40 @@ const conclusion = buildKnowledgeRelations('conclusion-1', nodes);
 assert.deepEqual(conclusion.previous.map(item => item.id), ['reasoning-1'], 'a conclusion sees the reasoning-process ball itself on the left');
 assert.deepEqual(conclusion.next.map(item => item.id), ['reasoning-2'], 'a conclusion used later sees the next reasoning-process ball on the right');
 assert.deepEqual(conclusion.history.map(item => item.id), ['conclusion-1-old', 'conclusion-1-older'], 'history stays on the top axis nearest-first');
-assert.deepEqual(conclusion.opposition.map(item => item.id), ['conclusion-1-opposition'], 'opposition history stays on the bottom axis');
+assert.deepEqual(conclusion.opposition.map(item => item.id), ['conclusion-1-opposition', 'conclusion-1-opposition-older'], 'opposition history stays on the bottom axis nearest-first');
 
 const secondReasoning = buildKnowledgeRelations('reasoning-2', nodes);
 assert.deepEqual(secondReasoning.previous.map(item => item.id), ['conclusion-1']);
 assert.deepEqual(secondReasoning.next.map(item => item.id), ['conclusion-2']);
 
 const edges = collectKnowledgeChainEdges(nodes);
-assert.deepEqual(edges, [
+const logicalEdges = edges.slice(0, 5);
+assert.deepEqual(logicalEdges, [
   { fromId: 'premise-a', toId: 'reasoning-1' },
   { fromId: 'premise-b', toId: 'reasoning-1' },
   { fromId: 'reasoning-1', toId: 'conclusion-1' },
   { fromId: 'conclusion-1', toId: 'reasoning-2' },
   { fromId: 'reasoning-2', toId: 'conclusion-2' },
-], 'live horizontal lines are only the real current-node reasoning chain; history/opposition are not duplicate horizontal edges');
+], 'logical lines remain the real current-node reasoning chain');
 
-for (const edge of edges) {
+for (const edge of logicalEdges) {
   const from = buildKnowledgeRelations(edge.fromId, nodes);
   const to = buildKnowledgeRelations(edge.toId, nodes);
-  assert.ok(from.next.some(item => item.id === edge.toId), `scene edge ${edge.fromId}->${edge.toId} must exist as a right-side detail relation`);
-  assert.ok(to.previous.some(item => item.id === edge.fromId), `scene edge ${edge.fromId}->${edge.toId} must exist as a left-side detail relation`);
+  assert.ok(from.next.some(item => item.id === edge.toId), `logical scene edge ${edge.fromId}->${edge.toId} must exist as a right-side detail relation`);
+  assert.ok(to.previous.some(item => item.id === edge.fromId), `logical scene edge ${edge.fromId}->${edge.toId} must exist as a left-side detail relation`);
 }
+
+assert.deepEqual(edges.slice(5), [
+  { fromId: 'conclusion-1', toId: 'conclusion-1-old' },
+  { fromId: 'conclusion-1-old', toId: 'conclusion-1-older' },
+  { fromId: 'conclusion-1', toId: 'conclusion-1-opposition' },
+  { fromId: 'conclusion-1-opposition', toId: 'conclusion-1-opposition-older' },
+  { fromId: 'conclusion-1', toId: 'conclusion-1-candidate-history' },
+  { fromId: 'conclusion-1', toId: 'conclusion-1-candidate-opposition' },
+], 'history/opposition are live rank-ordered chains and pending candidates connect to their target');
 
 assert.deepEqual(buildKnowledgeRelations('missing', nodes), {
   previous: [], next: [], history: [], opposition: [],
 });
 
-console.log('Canonical four-direction knowledge relation tests passed');
+console.log('Canonical four-direction knowledge relation and lineage-edge tests passed');

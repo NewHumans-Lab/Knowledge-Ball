@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import {
   KNOWLEDGE_HISTORY_COLOR,
   KNOWLEDGE_OPPOSITION_COLOR,
+  edgeVisibleInKnowledgeMode,
   lineageColorForNode,
   nextKnowledgeVisibilityMode,
   nodeBelongsInLineageScene,
   nodeShouldPulse,
+  nodeVisibleBecauseDetailIsOpen,
   nodeVisibleInKnowledgeMode,
   visibilityModeLabel,
   type KnowledgeLineageViewNode,
@@ -67,6 +69,44 @@ for (const pending of [pendingHistory, pendingOpposition]) {
   assert.equal(nodeVisibleInKnowledgeMode(pending, 'all'), true);
 }
 
+// Opening detail is a temporary context lens. Related gray/red balls become
+// visible even in Current mode, and edge visibility follows exactly the same
+// endpoint predicate. Closing detail removes both ball and line visibility.
+const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+let detailOpen = true;
+const relatedElements = [
+  { dataset: { relatedNodeId: 'history' } },
+  { dataset: { relatedNodeId: 'opposition' } },
+];
+const fakeDetailRoot = {
+  classList: { contains: (name: string) => name === 'open' && detailOpen },
+  dataset: { nodeId: 'current' },
+  querySelectorAll: () => relatedElements,
+};
+Object.defineProperty(globalThis, 'document', {
+  configurable: true,
+  value: { getElementById: (id: string) => id === 'nodeDetailOverlay' ? fakeDetailRoot : null },
+});
+try {
+  assert.equal(nodeVisibleBecauseDetailIsOpen('current'), true);
+  assert.equal(nodeVisibleBecauseDetailIsOpen('history'), true);
+  assert.equal(nodeVisibleBecauseDetailIsOpen('opposition'), true);
+  assert.equal(nodeVisibleBecauseDetailIsOpen('unrelated'), false);
+  assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), true, 'open detail must temporarily reveal related gray history');
+  assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), true, 'open detail must temporarily reveal related red opposition');
+  assert.equal(nodeVisibleInKnowledgeMode(rejected, 'current'), false, 'detail context must never resurrect rejected audit-only nodes');
+  assert.equal(edgeVisibleInKnowledgeMode(current, history, 'current', true, () => false), true, 'gray lineage line appears with its two visible endpoint balls');
+  assert.equal(edgeVisibleInKnowledgeMode(current, opposition, 'current', true, () => false), true, 'red lineage line appears with its two visible endpoint balls');
+  detailOpen = false;
+  assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), false, 'closing detail restores Current-mode gray-ball hiding');
+  assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), false, 'closing detail restores Current-mode red-ball hiding');
+  assert.equal(edgeVisibleInKnowledgeMode(current, history, 'current', true, () => false), false, 'gray lineage line hides with its endpoint ball');
+  assert.equal(edgeVisibleInKnowledgeMode(current, opposition, 'current', true, () => false), false, 'red lineage line hides with its endpoint ball');
+} finally {
+  if (originalDocumentDescriptor) Object.defineProperty(globalThis, 'document', originalDocumentDescriptor);
+  else Reflect.deleteProperty(globalThis, 'document');
+}
+
 assert.equal(nodeBelongsInLineageScene(history), true, 'legacy hidden flag must not delete formal history from scene data');
 assert.equal(nodeBelongsInLineageScene(opposition), true);
 assert.equal(nodeBelongsInLineageScene(rejected), false, 'rejected candidate remains audit-only');
@@ -81,4 +121,4 @@ assert.equal(nodeShouldPulse({ status:'pending' }), true);
 assert.equal(nodeShouldPulse({ status:'disputed' }), true, 'gray/red or cascade revalidation must blink without changing role color');
 assert.equal(nodeShouldPulse({ status:'verified' }), false);
 
-console.log('Knowledge Lineage Current/Personal/All view tests passed');
+console.log('Knowledge Lineage Current/Personal/All and detail-line visibility tests passed');
