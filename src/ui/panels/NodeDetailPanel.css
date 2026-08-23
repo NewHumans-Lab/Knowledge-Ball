@@ -209,8 +209,9 @@ html.node-detail-labels-off .node-label{
  * same centre and either wrap (top/bottom) or scroll in one centred rail
  * (left/right) instead of drifting to one corner of the ellipse.
  *
- * The rail itself is touch-transparent. Only its buttons receive pointer input,
- * so empty layout space never blocks a real WebGL neighbour behind it.
+ * The rail itself is touch-transparent. Only its compact visible buttons receive
+ * pointer input, so empty layout space and long wrapped hit boxes cannot mask a
+ * real WebGL neighbour behind the navigator.
  */
 .node-detail-relations{
   position:absolute;
@@ -233,10 +234,11 @@ html.node-detail-labels-off .node-label{
   pointer-events:auto;
   flex:0 0 auto;
   max-width:148px;
-  min-height:38px;
-  overflow-wrap:anywhere;
-  white-space:normal;
-  padding:7px 10px;
+  min-height:34px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  padding:5px 8px;
   border-radius:12px;
   background:rgba(3,5,18,.76);
   border:1px solid rgba(120,190,255,.24);
@@ -262,8 +264,6 @@ html.node-detail-labels-off .node-label{
   overflow-x:hidden;
   overflow-y:auto;
 }
-.node-detail-relations.left .node-detail-relation,
-.node-detail-relations.right .node-detail-relation{width:100%;max-width:100%;}
 .node-detail-relations.left{
   right:calc(100% + var(--detail-relation-offset));
   align-items:flex-end;
@@ -317,7 +317,7 @@ html.node-detail-labels-off .node-label{
   .node-detail-content{max-height:116px;}
   .node-detail-meta{font-size:11px;}
   .node-detail-relations{gap:6px;}
-  .node-detail-relation{max-width:min(30vw,112px);min-height:36px;padding:5px 7px;}
+  .node-detail-relation{max-width:min(30vw,112px);min-height:32px;padding:4px 6px;}
   .node-detail-relations.left,
   .node-detail-relations.right{width:min(18vw,84px);max-height:min(54vh,300px);}
   .node-detail-relations.top,
