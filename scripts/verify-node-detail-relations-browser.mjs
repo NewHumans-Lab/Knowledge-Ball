@@ -106,6 +106,9 @@ try {
       const nodes = debug.renderNodes;
       const byId = new Map(nodes.map(node => [node.id, node]));
       const core = new Set(['n1', 'n2', 'n16']);
+      const canvas = document.querySelector('#canvasHost canvas');
+      if (!canvas) return null;
+      const canvasRect = canvas.getBoundingClientRect();
       const choices = nodes.flatMap(node => {
         if (core.has(node.id) || node.hidden || node.type === 'reasoning' || node.type === 'logic-symbol') return [];
         const previousReasoning = node.premises
@@ -114,7 +117,9 @@ try {
         const nextReasoning = nodes.find(next => next.type === 'reasoning' && next.premises?.includes(node.id));
         if (!previousReasoning || !nextReasoning) return [];
         const point = debug.scene.screenPositionForNode(node.id);
-        if (!point || point.x <= 24 || point.x >= 366 || point.y <= 88 || point.y >= 808) return [];
+        if (!point) return [];
+        if (point.x < canvasRect.left + 26 || point.x > canvasRect.right - 26 || point.y < canvasRect.top + 26 || point.y > canvasRect.bottom - 26) return [];
+        if (document.elementFromPoint(point.x, point.y) !== canvas) return [];
         return [{
           id: node.id,
           title: node.title,
@@ -127,7 +132,7 @@ try {
       });
       return choices[0] ?? null;
     });
-    assert.ok(candidate, 'fixture must expose a conclusion that is between two real reasoning-process nodes');
+    assert.ok(candidate, 'fixture must expose a canvas-addressable conclusion that is between two real reasoning-process nodes');
 
     // Before detail opens, preserve the approved two-step gesture: first touch
     // focuses the physical ball and the second touch opens its local navigator.
