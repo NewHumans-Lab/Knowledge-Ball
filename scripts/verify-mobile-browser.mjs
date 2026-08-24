@@ -24,15 +24,6 @@ async function assertCreateExit(locator,name){
   assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
 }
 
-async function assertNodeDetailExit(locator,name){
-  await locator.waitFor({state:'visible'});
-  assert.equal((await locator.textContent())?.trim(),'×',`${name} must use the neutral X close control`);
-  const box=await locator.boundingBox();
-  assert.ok(box,`${name} must have a mobile bounding box`);
-  assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
-  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
-}
-
 async function analyzeScreenshot(page,screenshot,regions=[]){
   const screenshotUrl=`data:image/png;base64,${screenshot.toString('base64')}`;
   return page.evaluate(async ({src,regions})=>{
@@ -212,6 +203,8 @@ try{
     await page.locator('#accountClose').click();
     await page.locator('#accountOverlay').waitFor({state:'hidden'});
 
+    // Product acceptance intentionally stops at first-tap focus. The former second-tap
+    // NodeDetail route was retired; layout validation must not depend on reopening details.
     const target=targets[0];
     await page.evaluate(()=>window.__debug.scene.start());
     await page.touchscreen.tap(target.x,target.y);
@@ -221,45 +214,6 @@ try{
     const centered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
     assert.ok(centered,'focused node must remain renderable');
     assert.ok(Math.hypot(centered.x-(hostBox.x+hostBox.width/2),centered.y-(hostBox.y+hostBox.height/2))<4,'first node tap must rotate the whole graph until the node reaches screen center');
-    const coreOverlap=await page.evaluate(({centered})=>['n1','n2','n16']
-      .map(id=>{const point=window.__debug.scene.screenPositionForNode(id);return point?{...point,id,distance:Math.hypot(point.x-centered.x,point.y-centered.y)}:null;})
-      .filter(Boolean).sort((a,b)=>a.distance-b.distance)[0],{centered});
-    assert.ok(coreOverlap,'core triad must expose a projected point for overlap regression');
-    assert.ok(coreOverlap.distance<=24,`nearest core node must overlap the focused node touch radius (distance=${coreOverlap.distance})`);
-    await page.touchscreen.tap(coreOverlap.x,coreOverlap.y);
-    const detail=page.locator('#nodeDetailOverlay.open');
-    await detail.waitFor({state:'visible'});
-    assert.equal(await page.locator('#panel.open').count(),0,'second tap must not restore the old large rectangular detail panel');
-    assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'focused ordinary node must win the second tap inside its existing hit radius even when a core node is closer');
-    assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('贡献者'),'near-node detail must expose contributor metadata');
-    assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('时间'),'near-node detail must expose server creation time');
-    assert.equal(await detail.locator('.node-detail-content-label').count(),0,'near-node detail must not restore the removed standalone content label');
-    assert.ok((await detail.locator('.node-detail-content').textContent())?.trim().length,'near-node detail must place knowledge content directly beneath the title');
-    assert.equal(await detail.locator('.node-detail-meta span').count(),2,'contributor and time must remain two separate metadata rows');
-    const detailBox=await detail.boundingBox();
-    assert.ok(detailBox,'near-node detail must have a visible mobile box');
-    assert.ok(detailBox.height>detailBox.width,'near-node detail must use a narrow vertical ellipse so premise/conclusion context can occupy the side space');
-    assert.ok(centered.x>=detailBox.x&&centered.x<=detailBox.x+detailBox.width&&centered.y>=detailBox.y&&centered.y<=detailBox.y+detailBox.height,'near-node detail must sit in front of and visually occlude the selected sphere');
-    const selectedLabelHidden=await page.evaluate(title=>[...document.querySelectorAll('.node-label')].find(label=>label.textContent?.trim()===title)?.style.display==='none',target.title);
-    assert.equal(selectedLabelHidden,true,'near-node detail must hide only the selected sphere label');
-    await assertNodeDetailExit(detail.locator('.node-detail-close'),'node detail exit');
-    await detail.locator('.node-detail-close').click();
-    await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
-    await page.waitForFunction(title=>[...document.querySelectorAll('.node-label')].some(label=>label.textContent?.trim()===title&&label.style.display!=='none'),target.title);
-
-    // Re-open the focused node and verify all edit variants are entered through one text control.
-    await page.touchscreen.tap(centered.x,centered.y);
-    await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
-    await page.locator('#nodeDetailOverlay .node-detail-edit').click();
-    await page.locator('#nodeDetailOverlay [data-node-detail-action="edit"]').click();
-    await page.locator('#panelTitle').filter({hasText:'编辑节点'}).waitFor({state:'visible'});
-    assert.equal(await page.locator('#nodeDetailOverlay.open').count(),0,'choosing an edit operation must close the near-node viewer before opening the editor');
-    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'),'返回节点详情','legacy editor subview keeps its existing safe back semantics');
-    await page.locator('#panelClose').click();
-    await page.waitForFunction(title=>document.getElementById('panelTitle')?.textContent?.trim()===title,target.title);
-    assert.ok(await page.locator('#panel').evaluate(element=>element.classList.contains('open')),'editor back must return to the existing operation host');
-    await page.locator('#panelClose').click();
-    await page.waitForFunction(()=>!document.getElementById('panel')?.classList.contains('open'));
 
     const searchTarget=targets[1];
     await page.evaluate(()=>window.__debug.scene.start());
@@ -273,10 +227,6 @@ try{
     const searchCentered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),searchTarget.id);
     assert.ok(searchCentered,'search-focused node must remain renderable');
     assert.ok(Math.hypot(searchCentered.x-(hostBox.x+hostBox.width/2),searchCentered.y-(hostBox.y+hostBox.height/2))<4,'search selection must use the same center-focus behavior as a node tap');
-    await page.touchscreen.tap(searchCentered.x,searchCentered.y);
-    await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
-    await page.locator('#nodeDetailOverlay .node-detail-close').click();
-    await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
 
     await page.goto(new URL('ios-install.html',origin).href,{waitUntil:'domcontentloaded'});
     await assertExit(page.locator('.exit'),'iOS install exit');
@@ -284,5 +234,5 @@ try{
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, split create exit, focus-before-details, near-node details, search focus, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, split create exit, first-tap focus, search focus, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}
