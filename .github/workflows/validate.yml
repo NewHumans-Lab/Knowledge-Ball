@@ -31,8 +31,6 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
-      - name: Diagnose standalone layout submit
-        run: node scripts/debug-layout-create-browser.mjs
       - name: Verify split standalone/reasoning creation on a real mobile page
         run: node scripts/verify-split-create-browser.mjs
       - name: Verify real-touch Current Personal All cycle on the built page
