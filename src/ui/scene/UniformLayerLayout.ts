@@ -30,10 +30,11 @@ export type FccCoord = [number, number, number];
 
 /**
  * Ordinary knowledge-node centres prefer exactly this distance from a related
- * ordinary neighbour. The value is intentionally a single visual-layout
- * constant so it can be tuned later without changing graph semantics.
+ * ordinary neighbour, directly in Three.js world units. The value is
+ * intentionally a single visual-layout constant so it can be tuned later
+ * without changing graph semantics.
  */
-export const FCC_NEIGHBOR_DISTANCE = 5;
+export const FCC_NEIGHBOR_DISTANCE = 35;
 const FCC_SCALE = FCC_NEIGHBOR_DISTANCE / Math.SQRT2;
 export const CORE_LAYOUT_CLEARANCE_RADIUS = CORE_SUN_RADIUS + 2 * FCC_NEIGHBOR_DISTANCE;
 const MAX_FCC_SEARCH_DEPTH = 6;
@@ -683,9 +684,10 @@ export function resetUniformLayoutCacheForTests(): void {
 /**
  * Legacy entry-point name retained so the app wiring stays narrow. The actual
  * projection is now an incrementally stable FCC knowledge tree: ordinary balls
- * occupy FCC slots, related ordinary neighbours prefer x=5, reasoning balls do
- * not consume ordinary slots, long component spines prefer straight growth, and
- * layer changes bias branch direction rather than impose hard shells.
+ * occupy FCC slots, related ordinary neighbours prefer x=35 world units,
+ * reasoning balls do not consume ordinary slots, long component spines prefer
+ * straight growth, and layer changes bias branch direction rather than impose
+ * hard shells.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   const ordinaryCoords = placeOrdinaryNodes(nodes);
