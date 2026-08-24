@@ -61,7 +61,7 @@ function assertNearly(actual: number, expected: number, message: string, epsilon
   assert(Math.abs(actual - expected) <= epsilon, `${message}: expected ${expected}, got ${actual}`);
 }
 
-assert.equal(FCC_NEIGHBOR_DISTANCE, 5, 'the first FCC trial must use x = 5');
+assert.equal(FCC_NEIGHBOR_DISTANCE, 35, 'FCC x must be 35 directly in Three.js world units');
 assert.equal(FCC_NEIGHBOR_STEPS.length, 12, 'FCC must expose exactly twelve nearest x-neighbours');
 for (const step of FCC_NEIGHBOR_STEPS) {
   assertNearly(fccPositionForCoord(step).length(), FCC_NEIGHBOR_DISTANCE, 'every FCC nearest step must equal x');
@@ -76,14 +76,15 @@ const straightChain = [
   ordinary('chain-d', ['chain-c'], 'middle'),
 ];
 applyUniformLayerLayout(straightChain);
-assertNearly(distance(straightChain[0], straightChain[1]), 5, 'first main-chain edge must use x');
-assertNearly(distance(straightChain[1], straightChain[2]), 5, 'second main-chain edge must use x');
-assertNearly(distance(straightChain[2], straightChain[3]), 5, 'third main-chain edge must use x');
+assertNearly(distance(straightChain[0], straightChain[1]), FCC_NEIGHBOR_DISTANCE, 'first main-chain edge must use x');
+assertNearly(distance(straightChain[1], straightChain[2]), FCC_NEIGHBOR_DISTANCE, 'second main-chain edge must use x');
+assertNearly(distance(straightChain[2], straightChain[3]), FCC_NEIGHBOR_DISTANCE, 'third main-chain edge must use x');
 const ab = straightChain[1].pos!.clone().sub(straightChain[0].pos!);
 const bc = straightChain[2].pos!.clone().sub(straightChain[1].pos!);
 const cd = straightChain[3].pos!.clone().sub(straightChain[2].pos!);
-assert(ab.dot(bc) > 24.999999, 'main-chain continuation should keep the same direction when the x-slot is free');
-assert(bc.dot(cd) > 24.999999, 'long main chains should remain straight while free FCC slots exist');
+const straightDot = FCC_NEIGHBOR_DISTANCE * FCC_NEIGHBOR_DISTANCE - 1e-6;
+assert(ab.dot(bc) > straightDot, 'main-chain continuation should keep the same direction when the x-slot is free');
+assert(bc.dot(cd) > straightDot, 'long main chains should remain straight while free FCC slots exist');
 
 // A normal fork should consume different exact-x slots around its parent.
 resetUniformLayoutCacheForTests();
@@ -94,10 +95,10 @@ const fork = [
   ordinary('fork-c', ['fork-root'], 'outer'),
 ];
 applyUniformLayerLayout(fork);
-for (const child of fork.slice(1)) assertNearly(distance(fork[0], child), 5, 'free fork child must stay exactly x from parent');
+for (const child of fork.slice(1)) assertNearly(distance(fork[0], child), FCC_NEIGHBOR_DISTANCE, 'free fork child must stay exactly x from parent');
 for (let i = 0; i < fork.length; i++) {
   for (let j = i + 1; j < fork.length; j++) {
-    assert(distance(fork[i], fork[j]) >= 5 - 1e-8, 'distinct ordinary FCC nodes must never be closer than x');
+    assert(distance(fork[i], fork[j]) >= FCC_NEIGHBOR_DISTANCE - 1e-8, 'distinct ordinary FCC nodes must never be closer than x');
   }
 }
 
@@ -107,11 +108,11 @@ const crowded = [ordinary('crowded-root', [], 'outer')];
 for (let i = 0; i < 13; i++) crowded.push(ordinary(`crowded-${i}`, ['crowded-root'], 'outer'));
 applyUniformLayerLayout(crowded);
 const childDistances = crowded.slice(1).map(child => distance(crowded[0], child));
-assert.equal(childDistances.filter(value => Math.abs(value - 5) <= 1e-8).length, 12, 'all twelve exact-x FCC neighbours must be used before a longer edge is allowed');
-assert(childDistances.some(value => value > 5 + 1e-8), 'the thirteenth crowded child may grow beyond x');
+assert.equal(childDistances.filter(value => Math.abs(value - FCC_NEIGHBOR_DISTANCE) <= 1e-8).length, 12, 'all twelve exact-x FCC neighbours must be used before a longer edge is allowed');
+assert(childDistances.some(value => value > FCC_NEIGHBOR_DISTANCE + 1e-8), 'the thirteenth crowded child may grow beyond x');
 for (let i = 0; i < crowded.length; i++) {
   for (let j = i + 1; j < crowded.length; j++) {
-    assert(distance(crowded[i], crowded[j]) >= 5 - 1e-8, 'crowded ordinary nodes must still keep the FCC >= x invariant');
+    assert(distance(crowded[i], crowded[j]) >= FCC_NEIGHBOR_DISTANCE - 1e-8, 'crowded ordinary nodes must still keep the FCC >= x invariant');
   }
 }
 
@@ -136,7 +137,7 @@ const reasoningChain = [
 const contracted = collectFccOrdinaryEdges(reasoningChain);
 assert.deepEqual(contracted, [{ fromId: 'premise', toId: 'conclusion' }], 'reasoning must contract to the real ordinary endpoints for FCC occupancy');
 applyUniformLayerLayout(reasoningChain);
-assertNearly(distance(reasoningChain[0], reasoningChain[2]), 5, 'ordinary endpoints across reasoning should still prefer x');
+assertNearly(distance(reasoningChain[0], reasoningChain[2]), FCC_NEIGHBOR_DISTANCE, 'ordinary endpoints across reasoning should still prefer one x, not two x');
 const midpoint = reasoningChain[0].pos!.clone().add(reasoningChain[2].pos!).multiplyScalar(0.5);
 assert(reasoningChain[1].pos!.distanceTo(midpoint) < 1e-8, 'single reasoning ball should sit on the ordinary chain instead of consuming an FCC slot');
 
@@ -149,7 +150,7 @@ const dualReasoning = [
   ordinary('dual-conclusion', ['red-head'], 'middle'),
 ];
 applyUniformLayerLayout(dualReasoning);
-assertNearly(distance(dualReasoning[0], dualReasoning[3]), 5, 'dominant reasoning camp must not lengthen the ordinary chain when an x-slot exists');
+assertNearly(distance(dualReasoning[0], dualReasoning[3]), FCC_NEIGHBOR_DISTANCE, 'dominant reasoning camp must not multiply x across the reasoning ball');
 const dualMidpoint = dualReasoning[0].pos!.clone().add(dualReasoning[3].pos!).multiplyScalar(0.5);
 assert(dualReasoning[2].pos!.distanceTo(dualMidpoint) < 1e-8, 'dominant reasoning head should occupy the live chain axis');
 assert(dualReasoning[1].pos!.distanceTo(dualMidpoint) > 0, 'non-dominant reasoning head should remain separately visible without occupying an ordinary slot');
@@ -159,7 +160,7 @@ resetUniformLayoutCacheForTests();
 const hiddenHistory = [ordinary('visible-history-root', [], 'outer'), ordinary('hidden-history', ['visible-history-root'], 'outer', true)];
 applyUniformLayerLayout(hiddenHistory);
 assert(hiddenHistory[1].pos, 'hidden history must still receive a stable FCC projection position');
-assertNearly(distance(hiddenHistory[0], hiddenHistory[1]), 5, 'hidden history participates in occupancy before visibility filtering');
+assertNearly(distance(hiddenHistory[0], hiddenHistory[1]), FCC_NEIGHBOR_DISTANCE, 'hidden history participates in occupancy before visibility filtering');
 
 // Normal additions are incremental: surviving node IDs keep their previous coordinates.
 resetUniformLayoutCacheForTests();
@@ -175,7 +176,7 @@ const extended = [
 applyUniformLayerLayout(extended);
 assert.deepEqual(xyz(extended[0]), stableA, 'adding knowledge must not move an already placed ordinary node');
 assert.deepEqual(xyz(extended[1]), stableB, 'adding knowledge must preserve the existing chain geometry');
-assertNearly(distance(extended[1], extended[2]), 5, 'new node should use an exact-x local slot when available');
+assertNearly(distance(extended[1], extended[2]), FCC_NEIGHBOR_DISTANCE, 'new node should use an exact-x local slot when available');
 
 // A full reconstruction is deterministic for the same graph.
 resetUniformLayoutCacheForTests();
@@ -188,7 +189,9 @@ applyUniformLayerLayout(deterministicB);
 assert.deepEqual(deterministicB.map(xyz), rebuiltA, 'FCC projection must reconstruct deterministically from the same graph');
 
 const uniformSource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
-assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = 5;'), 'x=5 must remain an explicit tunable visual-layout constant');
+assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = 35;'), 'x=35 world units must remain the explicit tunable visual-layout constant');
+assert(!uniformSource.includes('FCC_WORLD_UNITS_PER_DISTANCE_UNIT'), 'x must remain a direct Three.js world distance without a second scale multiplier');
+assert(!uniformSource.includes('stepSpan: 1 | 2'), 'reasoning occupancy must not reintroduce a two-x span');
 assert(uniformSource.includes('FCC_NEIGHBOR_STEPS'), 'FCC nearest-neighbour directions must remain explicit');
 assert(uniformSource.includes('Only after every exact-x neighbour is unavailable may an edge grow longer.'), 'longer-edge fallback must remain subordinate to exact-x placement');
 assert(!uniformSource.includes('LAYER_BANDS'), 'new layout must not restore hard inner/middle/outer shells');
