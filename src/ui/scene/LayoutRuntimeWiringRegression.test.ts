@@ -40,8 +40,6 @@ assert(sceneSource.includes("if (typeof id === 'string' && distance <= 24 && (!n
 assert(!sceneSource.includes('detailReasoningPresentationPositions'));
 assert(!sceneSource.includes('detailDisplayPositions'));
 
-// Spatial contract: 72 is immutable first; chain capacity and radial envelope are
-// handled at whole-chain level rather than by per-node semantic proximity hacks.
 assert(uniformSource.includes('export const ORDINARY_NODE_RADIUS = 7.2;'));
 assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;'));
 assert(uniformSource.includes('export const INITIAL_LAYOUT_RADIUS = FCC_NEIGHBOR_DISTANCE * 3;'));
@@ -53,11 +51,13 @@ assert(uniformSource.includes('conclusionFirstSpine'), 'main chain must be laid 
 assert(uniformSource.includes('directed.incomingIds.get(id)'), 'main spine must only walk semantic edges inward toward premises');
 assert(uniformSource.includes("if (layer === 'outer') return sphereRadius;"), 'purple root must sit on the current outer surface');
 assert(uniformSource.includes('BASE_ANCHOR_DIRECTIONS'), 'front/back/up/down/left/right must remain first insertion directions');
-assert(uniformSource.includes('angularGapScore'), 'later chains must fill the largest remaining spherical gap');
-assert(uniformSource.includes('requiredSphereRadiusForSpine'), 'insufficient depth must grow the whole sphere');
-assert(uniformSource.includes('expandSphere'), 'width/depth growth must use the same rigid expansion operation');
-assert(uniformSource.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'sphere growth must translate each existing chain as one rigid body');
-assert(uniformSource.includes('parentDegree > 12'), 'only geometrically impossible local crowding may immediately relax the 72 edge');
+assert(uniformSource.includes('orderedAnchorDirections'), 'every new component must recompute the current insertion order');
+assert(uniformSource.includes('angularGapScore(b, used) - angularGapScore(a, used)'), 'live placement must rank current largest angular gaps');
+assert(!uniformSource.includes('requiredSphereRadiusForSpine'), 'layer depth must never pre-expand R before current gaps are tried');
+assert(uniformSource.includes('if (!candidate && allowLongEdges) candidate = chooseLongCandidate'), 'blocked straight inward steps must try other exact-72 directions before relaxation');
+assert(uniformSource.includes('expandSphere'), 'real capacity failure must use rigid expansion');
+assert(uniformSource.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'real sphere growth must translate each existing chain as one rigid body');
+assert(uniformSource.includes('parentDegree > 12'), 'geometrically impossible local crowding may relax the 72 edge');
 assert(!uniformSource.includes('ordinarySlotCache'));
 assert(!uniformSource.includes('reasoningPerpendicular'));
 assert(!uniformSource.includes('reasoningDominant'));
@@ -65,4 +65,4 @@ assert(!uniformSource.includes('reasoningSide'));
 assert(!uniformSource.includes('optimizeRelationLengthLayout'));
 assert(!uniformSource.includes('Fibonacci'));
 
-console.log('User-page five-diameter rigid-chain sphere-capacity wiring regression tests passed.');
+console.log('User-page five-diameter live-gap chain-capacity wiring regression tests passed.');
