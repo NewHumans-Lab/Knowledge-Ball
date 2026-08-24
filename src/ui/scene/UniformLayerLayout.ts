@@ -266,14 +266,15 @@ function approximateDiameterPath(
   return path.reverse();
 }
 
-function endpointUpstreamScore(id: string, directed: DirectedIndex): number {
-  return (directed.outgoingCount.get(id) ?? 0) - (directed.incomingCount.get(id) ?? 0);
+function endpointDownstreamScore(id: string, directed: DirectedIndex): number {
+  return (directed.incomingCount.get(id) ?? 0) - (directed.outgoingCount.get(id) ?? 0);
 }
 
 /**
- * Orient the cheap long spine so its semantic arrows point outward as often as
- * possible. This replaces the old centre-out schedule that could reverse half a
- * reasoning chain.
+ * The layout anchor is the conclusion side, not the premise side. Orient the cheap
+ * main spine so semantic arrows run toward index 0: conclusion -> ... -> premise.
+ * If direction is tied, prefer the higher colour layer as the outer anchor
+ * (purple/outer, then blue/middle, then cyan/inner).
  */
 function orientSpine(
   spine: readonly string[],
@@ -285,23 +286,23 @@ function orientSpine(
   for (let i = 1; i < spine.length; i++) {
     directionScore += directedRelation(spine[i - 1], spine[i], directed);
   }
-  if (directionScore < 0) return [...spine].reverse();
-  if (directionScore > 0) return [...spine];
+  if (directionScore > 0) return [...spine].reverse();
+  if (directionScore < 0) return [...spine];
 
   const first = spine[0];
   const last = spine[spine.length - 1];
-  const firstUpstream = endpointUpstreamScore(first, directed);
-  const lastUpstream = endpointUpstreamScore(last, directed);
-  if (lastUpstream > firstUpstream) return [...spine].reverse();
-  if (firstUpstream > lastUpstream) return [...spine];
+  const firstDownstream = endpointDownstreamScore(first, directed);
+  const lastDownstream = endpointDownstreamScore(last, directed);
+  if (lastDownstream > firstDownstream) return [...spine].reverse();
+  if (firstDownstream > lastDownstream) return [...spine];
 
   const firstLayer = byId.get(first);
   const lastLayer = byId.get(last);
   if (firstLayer && lastLayer) {
     const firstRank = LAYER_RANK[userLayerOf(firstLayer)];
     const lastRank = LAYER_RANK[userLayerOf(lastLayer)];
-    if (lastRank < firstRank) return [...spine].reverse();
-    if (firstRank < lastRank) return [...spine];
+    if (lastRank > firstRank) return [...spine].reverse();
+    if (firstRank > lastRank) return [...spine];
   }
   return first <= last ? [...spine] : [...spine].reverse();
 }
@@ -312,9 +313,9 @@ type ComponentSchedule = {
 };
 
 /**
- * Lay the oriented main spine from its upstream end toward its downstream end,
- * then grow branches. Outgoing semantic neighbours are scheduled before incoming
- * ones so direction remains stable even outside the main spine.
+ * Place the conclusion side first and walk backward toward premises. Incoming
+ * semantic neighbours are therefore scheduled before outgoing neighbours. Within
+ * a direction tie, higher colour layers are placed first as the outer side.
  */
 function scheduleComponent(
   component: readonly string[],
@@ -341,11 +342,11 @@ function scheduleComponent(
   const neighbourOrder = (fromId: string, a: string, b: string) => {
     const aDirection = directedRelation(fromId, a, directed);
     const bDirection = directedRelation(fromId, b, directed);
-    if (aDirection !== bDirection) return bDirection - aDirection;
+    if (aDirection !== bDirection) return aDirection - bDirection;
     const aNode = byId.get(a);
     const bNode = byId.get(b);
     if (aNode && bNode) {
-      const layerDifference = LAYER_RANK[userLayerOf(aNode)] - LAYER_RANK[userLayerOf(bNode)];
+      const layerDifference = LAYER_RANK[userLayerOf(bNode)] - LAYER_RANK[userLayerOf(aNode)];
       if (layerDifference !== 0) return layerDifference;
     }
     return a.localeCompare(b);
@@ -382,6 +383,15 @@ function minimumDistanceSqToAssigned(
   return minimum;
 }
 
+function rootRadiusScore(
+  node: UniformLayoutNode,
+  candidate: FccCoord,
+  minimumPreferredRadius: number,
+): number {
+  const target = Math.max(LAYER_TARGET_RADIUS[userLayerOf(node)], minimumPreferredRadius);
+  return -Math.abs(coordRadius(candidate) - target) / FCC_NEIGHBOR_DISTANCE;
+}
+
 function layerRadiusScore(node: UniformLayoutNode, candidate: FccCoord): number {
   const target = LAYER_TARGET_RADIUS[userLayerOf(node)];
   return -Math.abs(coordRadius(candidate) - target) / FCC_NEIGHBOR_DISTANCE;
@@ -391,13 +401,14 @@ function chooseRootCandidate(
   node: UniformLayoutNode,
   candidates: readonly FccCoord[],
   assigned: ReadonlyMap<string, FccCoord>,
+  minimumPreferredRadius: number,
 ): FccCoord {
   let best = candidates[0];
   let bestLayer = Number.NEGATIVE_INFINITY;
   let bestGap = Number.NEGATIVE_INFINITY;
   let bestKey = coordKey(best);
   for (const candidate of candidates) {
-    const layer = layerRadiusScore(node, candidate);
+    const layer = rootRadiusScore(node, candidate, minimumPreferredRadius);
     const gap = minimumDistanceSqToAssigned(candidate, assigned);
     const key = coordKey(candidate);
     const better = layer > bestLayer + 1e-9
@@ -413,15 +424,18 @@ function chooseRootCandidate(
 }
 
 /**
- * Disconnected component roots get only a soft colour-layer tendency: inner aims
- * near 1x, middle near 2x, outer near 3x. No hard radial boundary is created.
+ * A component root is its conclusion-side anchor. Colour supplies its soft target,
+ * but a long chain may push that anchor farther out so all earlier premises have
+ * room to walk inward by exact 72-unit steps.
  */
 function rootSlot(
   node: UniformLayoutNode,
   occupied: ReadonlySet<string>,
   assigned: ReadonlyMap<string, FccCoord>,
+  minimumPreferredRadius = FCC_NEIGHBOR_DISTANCE,
 ): FccCoord {
-  const targetDepth = LAYER_RANK[userLayerOf(node)] + 1;
+  const targetRadius = Math.max(LAYER_TARGET_RADIUS[userLayerOf(node)], minimumPreferredRadius);
+  const targetDepth = Math.max(1, Math.ceil(targetRadius / FCC_NEIGHBOR_DISTANCE));
   const visited = new Set<string>([coordKey([0, 0, 0])]);
   let frontier: FccCoord[] = [[0, 0, 0]];
   const candidates: FccCoord[] = [];
@@ -440,7 +454,7 @@ function rootSlot(
     frontier = [...nextByKey.values()];
     candidates.push(...frontier.filter(coord => validFreeSlot(coord, occupied)));
   }
-  if (candidates.length > 0) return chooseRootCandidate(node, candidates, assigned);
+  if (candidates.length > 0) return chooseRootCandidate(node, candidates, assigned, minimumPreferredRadius);
 
   for (;;) {
     const nextByKey = new Map<string, FccCoord>();
@@ -455,7 +469,7 @@ function rootSlot(
     }
     frontier = [...nextByKey.values()];
     const free = frontier.filter(coord => validFreeSlot(coord, occupied));
-    if (free.length > 0) return chooseRootCandidate(node, free, assigned);
+    if (free.length > 0) return chooseRootCandidate(node, free, assigned, minimumPreferredRadius);
   }
 }
 
@@ -504,9 +518,10 @@ function continuityScore(candidate: FccCoord, parent: FccCoord, previousStep: Fc
 }
 
 /**
- * Second constraint: for a directed source -> target relation, prefer the target
- * farther from the centre. If placement happens in reverse schedule order, prefer
- * the source inward instead. This score is evaluated before straightness/layer.
+ * Second constraint: semantic source must lie inward of its target. Because layout
+ * starts at the conclusion side, a target -> source placement therefore receives
+ * the best score when the new source moves toward the centre. The formula also
+ * remains correct for the rarer forward-scheduled branch.
  */
 function directedRadialScore(
   parentId: string,
@@ -645,7 +660,11 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
     const rootId = schedule.order[0];
     const rootNode = rootId ? byId.get(rootId) : undefined;
     if (!rootId || !rootNode) continue;
-    assign(rootId, rootSlot(rootNode, occupied, assigned), assigned, occupied);
+
+    // The first node is the conclusion-side anchor. Reserve enough radial depth
+    // for the whole main spine to walk inward one exact x at a time.
+    const mainSpineRadialBudget = Math.max(1, spine.length) * FCC_NEIGHBOR_DISTANCE;
+    assign(rootId, rootSlot(rootNode, occupied, assigned, mainSpineRadialBudget), assigned, occupied);
 
     for (const id of schedule.order.slice(1)) {
       const node = byId.get(id);
@@ -694,9 +713,10 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
 /**
  * One live layout algorithm with lexicographic constraints:
  * 1) keep direct real graph neighbours at x=72 whenever a legal exact FCC slot exists;
- * 2) within that geometry, orient inference from centre toward surface;
- * 3) then softly bias inner/middle/outer toward roughly 1x/2x/3x radii;
- * 4) finally use continuity and gap filling without continuous physics.
+ * 2) anchor each chain at its conclusion side, then place reasoning/premises inward;
+ * 3) within the 72 geometry, require semantic source to be inward of target when possible;
+ * 4) softly prefer purple/outer, blue/middle, cyan/inner at increasing radii;
+ * 5) use continuity and gap filling only after the higher-priority rules.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   const coords = placeGraphNodes(nodes);
