@@ -1,5 +1,7 @@
+import { withFetchDeadline } from '../net/FetchDeadline';
+
 export interface AuthSession { access_token: string; refresh_token?: string; expires_at?: number; }
-export interface AuthConfig { url: string; publishableKey: string; storage?: Storage | null; fetch?: typeof fetch; }
+export interface AuthConfig { url: string; publishableKey: string; storage?: Storage | null; fetch?: typeof fetch; requestTimeoutMs?: number; }
 export interface AccountProfile {
   username: string | null; displayName: string | null; avatarUrl: string | null; bio: string | null;
   passwordLoginEnabled: boolean;
@@ -85,9 +87,11 @@ function freshOperationKey(prefix: string, nodeId: string): string {
 export class KnowledgeBallAuthClient {
   private readonly request: typeof fetch;
   private readonly storage: Storage | null;
+  private sessionInFlight: Promise<AuthSession> | null = null;
 
   constructor(private readonly config: AuthConfig) {
-    this.request = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    const baseRequest = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.request = withFetchDeadline(baseRequest, config.requestTimeoutMs);
     this.storage = config.storage === undefined ? browserStorage() : config.storage;
   }
 
@@ -98,10 +102,17 @@ export class KnowledgeBallAuthClient {
   async publicSession(): Promise<AuthSession> {
     const saved = this.readSession();
     if (saved?.access_token && (!saved.expires_at || saved.expires_at > Date.now() / 1000 + 60)) return saved;
-    if (saved?.refresh_token) {
-      try { return await this.refresh(saved.refresh_token); } catch { /* replace expired anonymous session */ }
+    if (!this.sessionInFlight) {
+      this.sessionInFlight = (async () => {
+        if (saved?.refresh_token) {
+          try { return await this.refresh(saved.refresh_token); } catch { /* replace expired anonymous session */ }
+        }
+        return this.createSession();
+      })().finally(() => {
+        this.sessionInFlight = null;
+      });
     }
-    return this.createSession();
+    return this.sessionInFlight;
   }
 
   async currentUserId(): Promise<string> {
@@ -502,7 +513,12 @@ export function compactEnergy(value: string): string {
   return whole === '-0' ? '0' : whole;
 }
 
+let productionAuthClient: KnowledgeBallAuthClient | null | undefined;
+
 export function createProductionAuthClient(): KnowledgeBallAuthClient | null {
-  const url = import.meta.env.VITE_SUPABASE_URL?.trim(); const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
-  return url && publishableKey ? new KnowledgeBallAuthClient({ url, publishableKey }) : null;
+  if (productionAuthClient !== undefined) return productionAuthClient;
+  const url = import.meta.env.VITE_SUPABASE_URL?.trim();
+  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  productionAuthClient = url && publishableKey ? new KnowledgeBallAuthClient({ url, publishableKey }) : null;
+  return productionAuthClient;
 }
