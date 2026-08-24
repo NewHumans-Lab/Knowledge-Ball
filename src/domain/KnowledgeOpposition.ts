@@ -89,8 +89,7 @@ export function validateOppositionProposal(
   const topicId = topicIdFor(target);
   if (target.type === 'reasoning') {
     const dominant = dominantNodeForTopic(nodes, topicId);
-    const validHead = isReasoningSideHead(target) || lineageRoleFor(target) === 'current';
-    if (!validHead || dominant?.id !== target.id) {
+    if (!isReasoningSideHead(target) || dominant?.id !== target.id) {
       errors.push('推理对立只能针对当前主导的白色或红色推理头');
     }
   } else if (lineageRoleFor(target) !== 'current') {
@@ -128,14 +127,15 @@ export function rejectOppositionCandidate(nodes: GraphNode[], candidateId: strin
   assertValidLineage(nodes);
 }
 
+/** Upgrade legacy single-head reasoning lineage into two persistent camp heads. */
 function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): void {
-  const current = currentNodeForTopic(nodes, topicId);
-  if (!current) throw new Error(`Reasoning topic has no white current head: ${topicId}`);
+  const white = currentNodeForTopic(nodes, topicId);
+  if (!white) throw new Error(`Reasoning topic has no white current head: ${topicId}`);
 
   const normalHistory = nodes
     .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'history')
     .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
-  const opposition = nodes
+  const legacyRedChain = nodes
     .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'opposition')
     .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
 
@@ -144,17 +144,17 @@ function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): vo
       && isReasoningSideHead(node)
       && node.lineage?.reasoningDominant === true,
   );
-  const currentMeta = current.lineage ?? { topicId, proposal: 'new' as const, role: 'current' as const, rank: 0 };
-  current.lineage = {
-    ...currentMeta,
+  const whiteMeta = white.lineage ?? { topicId, proposal: 'new' as const, role: 'current' as const, rank: 0 };
+  white.lineage = {
+    ...whiteMeta,
     topicId,
     role: 'current',
     rank: 0,
     reasoningSide: 'normal',
     reasoningSideRank: 0,
-    reasoningDominant: existingDominant ? existingDominant.id === current.id : true,
+    reasoningDominant: existingDominant ? existingDominant.id === white.id : true,
   };
-  current.hidden = false;
+  white.hidden = false;
 
   normalHistory.forEach((node, index) => {
     if (!node.lineage) throw new Error(`Historical lineage metadata missing: ${node.id}`);
@@ -169,17 +169,18 @@ function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): vo
     node.hidden = true;
   });
 
-  opposition.forEach((node, index) => {
+  legacyRedChain.forEach((node, index) => {
     if (!node.lineage) throw new Error(`Opposition lineage metadata missing: ${node.id}`);
+    const isHead = index === 0;
     node.lineage = {
       ...node.lineage,
-      role: 'opposition',
-      rank: index + 1,
+      role: isHead ? 'current' : 'opposition',
+      rank: isHead ? 0 : index,
       reasoningSide: 'opposition',
       reasoningSideRank: index,
-      reasoningDominant: existingDominant ? existingDominant.id === node.id && index === 0 : false,
+      reasoningDominant: isHead && existingDominant ? existingDominant.id === node.id : false,
     };
-    node.hidden = index !== 0;
+    node.hidden = !isHead;
   });
 }
 
@@ -250,7 +251,7 @@ function promoteReasoningOppositionCandidate(
       node.lineage = {
         ...node.lineage,
         role: 'opposition',
-        rank: index + 2,
+        rank: index + 1,
         reasoningSide: 'opposition',
         reasoningSideRank: index + 1,
         reasoningDominant: false,
@@ -259,8 +260,8 @@ function promoteReasoningOppositionCandidate(
     });
     candidateNode.lineage = {
       ...candidate.lineage,
-      role: 'opposition',
-      rank: 1,
+      role: 'current',
+      rank: 0,
       reasoningSide: 'opposition',
       reasoningSideRank: 0,
       reasoningDominant: true,
@@ -274,10 +275,10 @@ function promoteReasoningOppositionCandidate(
 }
 
 /**
- * Reasoning nodes keep two persistent camps. White means “this inference is
- * valid”; red means “this inference is invalid”. Acceptance switches only
- * logical-chain dominance. Neither stable camp head changes color, and each camp
- * keeps its own gray version history behind it.
+ * Reasoning nodes keep two persistent current camp heads. White means “this
+ * inference is valid”; red means “this inference is invalid”. Acceptance
+ * switches only logical-chain dominance. Neither stable head changes color, and
+ * each camp keeps its own gray version history behind it.
  */
 export function promoteOppositionCandidate(nodes: GraphNode[], candidateId: string): string {
   const candidate = nodes.find(node => node.id === candidateId);
