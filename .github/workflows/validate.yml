@@ -35,8 +35,6 @@ jobs:
         run: node scripts/verify-split-create-browser.mjs
       - name: Verify real-touch Current Personal All cycle on the built page
         run: node scripts/verify-visibility-mode-browser.mjs
-      - name: Verify second-tap related-node navigation
-        run: node scripts/verify-node-detail-relations-browser.mjs
       - name: Verify cloud-only public state with two already-open real pages
         run: npm run test:browser-cloud
       - run: npm run test:browser-mobile

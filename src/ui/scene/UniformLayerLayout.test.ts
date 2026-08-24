@@ -7,6 +7,9 @@ import {
   FCC_NEIGHBOR_DISTANCE,
   FCC_NEIGHBOR_STEPS,
   fccPositionForCoord,
+  INITIAL_LAYOUT_RADIUS,
+  LAYER_TARGET_RADIUS,
+  LAYOUT_RADIUS_INCREMENT,
   ORDINARY_NODE_DIAMETER,
   ORDINARY_NODE_RADIUS,
   type UniformLayoutNode,
@@ -22,152 +25,223 @@ function node(
   return { id, premises, effectiveLayer: layer, type, hidden };
 }
 
-function xyz(item: UniformLayoutNode): [number, number, number] {
-  assert(item.pos, `node ${item.id} is missing a layout position`);
-  return [item.pos.x, item.pos.y, item.pos.z];
-}
-
-function distance(a: UniformLayoutNode, b: UniformLayoutNode): number {
-  assert(a.pos && b.pos, 'distance endpoints must be laid out');
-  return a.pos.distanceTo(b.pos);
-}
-
-function assertNearly(actual: number, expected: number, message: string, epsilon = 1e-8): void {
+function radius(item: UniformLayoutNode): number { assert(item.pos); return item.pos.length(); }
+function distance(a: UniformLayoutNode, b: UniformLayoutNode): number { assert(a.pos && b.pos); return a.pos.distanceTo(b.pos); }
+function xyz(item: UniformLayoutNode): [number, number, number] { assert(item.pos); return [item.pos.x, item.pos.y, item.pos.z]; }
+function assertNearly(actual: number, expected: number, message: string, epsilon = 1e-7): void {
   assert(Math.abs(actual - expected) <= epsilon, `${message}: expected ${expected}, got ${actual}`);
 }
 
-assertNearly(ORDINARY_NODE_RADIUS, 7.2, 'ordinary ball radius must match the live scene default');
-assertNearly(ORDINARY_NODE_DIAMETER, 14.4, 'ordinary ball diameter must be 14.4 world units');
-assertNearly(FCC_NEIGHBOR_DISTANCE, ORDINARY_NODE_DIAMETER * 5, 'direct-neighbour spacing must be five ordinary-ball diameters');
-assertNearly(FCC_NEIGHBOR_DISTANCE, 72, 'five-diameter centre distance must currently be 72 world units');
-assert.equal(FCC_NEIGHBOR_STEPS.length, 12, 'FCC must expose exactly twelve nearest neighbours');
-for (const step of FCC_NEIGHBOR_STEPS) {
-  assertNearly(fccPositionForCoord(step).length(), FCC_NEIGHBOR_DISTANCE, 'every FCC nearest step must equal x');
-}
+assertNearly(ORDINARY_NODE_RADIUS, 7.2, 'ordinary ball radius must remain the live scene radius');
+assertNearly(ORDINARY_NODE_DIAMETER, 14.4, 'ordinary ball diameter must remain 14.4');
+assertNearly(FCC_NEIGHBOR_DISTANCE, 72, 'first constraint must remain exactly 72 world units');
+assertNearly(INITIAL_LAYOUT_RADIUS, 216, 'knowledge sphere must start at 3x');
+assertNearly(LAYOUT_RADIUS_INCREMENT, 216, 'every capacity expansion must be exactly 3x');
+assert.equal(FCC_NEIGHBOR_STEPS.length, 12, 'reference FCC nearest-neighbour set stays intact');
+for (const step of FCC_NEIGHBOR_STEPS) assertNearly(fccPositionForCoord(step).length(), 72, 'every reference FCC step remains one x');
+assertNearly(LAYER_TARGET_RADIUS.inner, 72, 'initial cyan target is inner third');
+assertNearly(LAYER_TARGET_RADIUS.middle, 144, 'initial blue target is middle third');
+assertNearly(LAYER_TARGET_RADIUS.outer, 216, 'initial purple target is the outer surface');
 
-// A real premise -> reasoning -> conclusion chain contains two real one-x edges.
 const reasoningChain = [
+  node('conclusion', ['reasoning'], 'outer'),
   node('premise', [], 'inner'),
   node('reasoning', ['premise'], 'middle', 'reasoning'),
-  node('conclusion', ['reasoning'], 'outer'),
 ];
-assert.deepEqual(
-  collectDirectLayoutEdges(reasoningChain),
-  [
-    { fromId: 'premise', toId: 'reasoning' },
-    { fromId: 'reasoning', toId: 'conclusion' },
-  ],
-  'reasoning must remain a real layout node instead of being contracted away',
-);
+assert.deepEqual(collectDirectLayoutEdges(reasoningChain), [
+  { fromId: 'reasoning', toId: 'conclusion' },
+  { fromId: 'premise', toId: 'reasoning' },
+]);
 applyUniformLayerLayout(reasoningChain);
-assertNearly(distance(reasoningChain[0], reasoningChain[1]), FCC_NEIGHBOR_DISTANCE, 'premise -> reasoning must be one x');
-assertNearly(distance(reasoningChain[1], reasoningChain[2]), FCC_NEIGHBOR_DISTANCE, 'reasoning -> conclusion must be one x');
+const premise = reasoningChain.find(item => item.id === 'premise')!;
+const reasoning = reasoningChain.find(item => item.id === 'reasoning')!;
+const conclusion = reasoningChain.find(item => item.id === 'conclusion')!;
+assertNearly(distance(premise, reasoning), 72, 'premise -> reasoning must stay one x');
+assertNearly(distance(reasoning, conclusion), 72, 'reasoning -> conclusion must stay one x');
+assertNearly(radius(conclusion), 216, 'purple conclusion anchor must sit on the current outer surface');
+assertNearly(radius(reasoning), 144, 'middle reasoning should follow one inward x');
+assertNearly(radius(premise), 72, 'inner premise should follow the second inward x');
+assert(radius(premise) < radius(reasoning) && radius(reasoning) < radius(conclusion), 'semantic inference direction must point outward');
 
-// A simple main chain grows from its middle, uses exact-x edges and stays straight.
-const straightChain = [
-  node('chain-a'),
-  node('chain-b', ['chain-a']),
-  node('chain-c', ['chain-b']),
-  node('chain-d', ['chain-c']),
+// Shared premise is a branch point, never permission to turn through it into a
+// different conclusion and call the combined path one main chain. This mirrors
+// demo n3 -> r-n6/n6, r-n15/n15 and r-n7/n7, the structure that previously made
+// two reasoning balls collide at the same coordinate no matter how large R grew.
+const sharedPremise = [
+  node('n3', [], 'inner'),
+  node('r-n6', ['n3'], 'middle', 'reasoning'),
+  node('n6', ['r-n6'], 'middle'),
+  node('r-n15', ['n3'], 'middle', 'reasoning'),
+  node('n15', ['r-n15'], 'middle'),
+  node('r-n7', ['n3'], 'middle', 'reasoning'),
+  node('n7', ['r-n7'], 'outer'),
 ];
-applyUniformLayerLayout(straightChain);
-for (let i = 1; i < straightChain.length; i++) {
-  assertNearly(distance(straightChain[i - 1], straightChain[i]), FCC_NEIGHBOR_DISTANCE, 'main-chain edge must use one x');
+applyUniformLayerLayout(sharedPremise);
+for (const [left, right] of [
+  ['n3', 'r-n6'], ['r-n6', 'n6'],
+  ['n3', 'r-n15'], ['r-n15', 'n15'],
+  ['n3', 'r-n7'], ['r-n7', 'n7'],
+] as const) {
+  assertNearly(
+    distance(sharedPremise.find(item => item.id === left)!, sharedPremise.find(item => item.id === right)!),
+    72,
+    `${left} -> ${right} shared-premise branch must remain one x`,
+  );
 }
-const ab = straightChain[1].pos!.clone().sub(straightChain[0].pos!);
-const bc = straightChain[2].pos!.clone().sub(straightChain[1].pos!);
-const cd = straightChain[3].pos!.clone().sub(straightChain[2].pos!);
-const straightDot = FCC_NEIGHBOR_DISTANCE ** 2 - 1e-6;
-assert(ab.dot(bc) > straightDot, 'main chain should continue straight when the slot is free');
-assert(bc.dot(cd) > straightDot, 'long main chain should keep the same straight direction');
-
-// Branches fill distinct exact-x gaps around their parent.
-const fork = [node('fork-root')];
-for (let i = 0; i < 8; i++) fork.push(node(`fork-${i}`, ['fork-root']));
-applyUniformLayerLayout(fork);
-for (const child of fork.slice(1)) {
-  assertNearly(distance(fork[0], child), FCC_NEIGHBOR_DISTANCE, 'free branch child must stay exactly one x from its parent');
-}
-for (let i = 0; i < fork.length; i++) {
-  for (let j = i + 1; j < fork.length; j++) {
-    assert(distance(fork[i], fork[j]) >= FCC_NEIGHBOR_DISTANCE - 1e-8, 'distinct FCC balls must never be closer than x');
+assertNearly(radius(sharedPremise.find(item => item.id === 'n7')!), 216, 'purple branch conclusion stays on the current sphere surface');
+assertNearly(radius(sharedPremise.find(item => item.id === 'r-n7')!), 144, 'chosen purple chain walks inward through reasoning');
+assertNearly(radius(sharedPremise.find(item => item.id === 'n3')!), 72, 'shared premise stops the main chain at the inner side');
+for (const item of sharedPremise) {
+  for (const other of sharedPremise) {
+    if (item.id >= other.id) continue;
+    assert(distance(item, other) >= 72 - 1e-7, `shared-premise branches ${item.id}/${other.id} must not overlap`);
   }
 }
 
-// The root sits one x from the physical Sun, so its inward FCC slot is illegal.
-// Every remaining legal exact-x gap must be consumed before a child grows farther.
-const crowded = [node('crowded-root')];
-for (let i = 0; i < 13; i++) crowded.push(node(`crowded-${i}`, ['crowded-root']));
-applyUniformLayerLayout(crowded);
-const childDistances = crowded.slice(1).map(child => distance(crowded[0], child));
-assert.equal(
-  childDistances.filter(value => Math.abs(value - FCC_NEIGHBOR_DISTANCE) <= 1e-8).length,
-  11,
-  'all eleven legal exact-x gaps beside the physical Sun must fill before a longer edge is allowed',
-);
-assert(childDistances.some(value => value > FCC_NEIGHBOR_DISTANCE + 1e-8), 'only children without a legal exact slot may exceed x');
+// Depth capacity is solved by growing the whole sphere in 216-unit steps, not by
+// stretching any direct relation. Four blue nodes require one expansion: 216 -> 432.
+const blueLong = [
+  node('blue-a'),
+  node('blue-b', ['blue-a']),
+  node('blue-c', ['blue-b']),
+  node('blue-d', ['blue-c']),
+];
+applyUniformLayerLayout(blueLong);
+const blueOrder = ['blue-a', 'blue-b', 'blue-c', 'blue-d'].map(id => blueLong.find(item => item.id === id)!);
+for (let index = 1; index < blueOrder.length; index++) assertNearly(distance(blueOrder[index - 1], blueOrder[index]), 72, 'expanded long chain must preserve every x');
+assertNearly(radius(blueOrder[3]), 288, 'blue conclusion uses the middle third of expanded radius 432');
+assertNearly(radius(blueOrder[2]), 216, 'expanded chain walks inward by one x');
+assertNearly(radius(blueOrder[1]), 144, 'expanded chain walks inward by two x');
+assertNearly(radius(blueOrder[0]), 72, 'expanded chain walks inward by three x');
 
-// Disconnected roots use geometric gap filling: the first twelve fit the nearest FCC shell evenly.
-const isolated = Array.from({ length: 12 }, (_, index) => node(`isolated-${String(index).padStart(2, '0')}`));
-applyUniformLayerLayout(isolated);
-const isolatedPositions = new Set(isolated.map(item => xyz(item).join('|')));
-assert.equal(isolatedPositions.size, isolated.length, 'isolated roots must occupy distinct lattice gaps');
-for (const item of isolated) {
-  assertNearly(item.pos!.length(), FCC_NEIGHBOR_DISTANCE, 'the first twelve isolated roots should fill the nearest one-x shell');
+// If a later, smaller chain needs more room, every already-placed node in an older
+// chain receives the same rigid +216 translation. Internal geometry is unchanged.
+const firstOnly = [
+  node('a0', [], 'outer'),
+  node('a1', ['a0'], 'outer'),
+  node('a2', ['a1'], 'outer'),
+  node('a3', ['a2'], 'outer'),
+];
+applyUniformLayerLayout(firstOnly);
+const combined = [
+  node('a0', [], 'outer'),
+  node('a1', ['a0'], 'outer'),
+  node('a2', ['a1'], 'outer'),
+  node('a3', ['a2'], 'outer'),
+  node('b0', [], 'inner'),
+  node('b1', ['b0'], 'inner'),
+  node('b2', ['b1'], 'inner'),
+];
+applyUniformLayerLayout(combined);
+const deltas = ['a0', 'a1', 'a2', 'a3'].map(id => {
+  const before = firstOnly.find(item => item.id === id)!.pos!;
+  const after = combined.find(item => item.id === id)!.pos!;
+  return after.clone().sub(before);
+});
+for (const delta of deltas) assertNearly(delta.length(), 216, 'capacity expansion must move the whole older chain outward by exactly 3x');
+for (const delta of deltas.slice(1)) assert(delta.distanceTo(deltas[0]) <= 1e-7, 'every node of one chain must receive the exact same rigid translation');
+for (const [left, right] of [['a0', 'a1'], ['a1', 'a2'], ['a2', 'a3']] as const) {
+  assertNearly(distance(combined.find(item => item.id === left)!, combined.find(item => item.id === right)!), 72, 'rigid expansion must not alter direct spacing');
 }
 
-// Layer colours/classification must not steer geometry anymore.
-const layersA = [
-  node('layer-a', [], 'inner'),
-  node('layer-b', ['layer-a'], 'middle'),
-  node('layer-c', ['layer-b'], 'outer'),
+// Components are chains for envelope placement: larger chains claim the large
+// directions first, regardless of lexicographic node ids.
+const sizePriority = [
+  node('big-a', [], 'outer'),
+  node('big-b', ['big-a'], 'outer'),
+  node('big-c', ['big-b'], 'outer'),
+  node('aaa-isolated', [], 'outer'),
 ];
-const layersB = [
-  node('layer-a', [], 'outer'),
-  node('layer-b', ['layer-a'], 'inner'),
-  node('layer-c', ['layer-b'], 'middle'),
-];
-applyUniformLayerLayout(layersA);
-applyUniformLayerLayout(layersB);
-assert.deepEqual(layersB.map(xyz), layersA.map(xyz), 'inner/middle/outer classification must not change FCC positions');
-assert(layersA[0].pos!.length() >= CORE_LAYOUT_CLEARANCE_RADIUS, 'first graph root must stay outside the physical Sun');
+applyUniformLayerLayout(sizePriority);
+assert(sizePriority.find(item => item.id === 'big-c')!.pos!.z > 0, 'larger chain must receive the first front direction');
+assert(sizePriority.find(item => item.id === 'aaa-isolated')!.pos!.z < 0, 'smaller later chain must receive the back direction next');
 
-// Hidden/history nodes still get real geometry before visibility filtering.
+// The first six independent chains occupy front/back/up/down/right/left. The next
+// chain is inserted into the largest angular gap created by those six directions.
+const directionRoots = Array.from({ length: 7 }, (_, index) => node(`dir-${index}`, [], 'outer'));
+applyUniformLayerLayout(directionRoots);
+const normalized = directionRoots.map(item => item.pos!.clone().normalize());
+const expectedAxes = [
+  [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0], [1, 0, 0], [-1, 0, 0],
+];
+for (let index = 0; index < expectedAxes.length; index++) {
+  const [x, y, z] = expectedAxes[index];
+  assertNearly(normalized[index].x, x, `chain ${index} axis x`);
+  assertNearly(normalized[index].y, y, `chain ${index} axis y`);
+  assertNearly(normalized[index].z, z, `chain ${index} axis z`);
+}
+assert(Math.abs(normalized[6].x) > 0.5 && Math.abs(normalized[6].y) > 0.5 && Math.abs(normalized[6].z) > 0.5, 'seventh chain must fill an octant-sized largest gap rather than crowd an existing axis');
+
+const isolatedInner = [node('isolated-inner', [], 'inner')];
+const isolatedMiddle = [node('isolated-middle', [], 'middle')];
+const isolatedOuter = [node('isolated-outer', [], 'outer')];
+applyUniformLayerLayout(isolatedInner);
+applyUniformLayerLayout(isolatedMiddle);
+applyUniformLayerLayout(isolatedOuter);
+assertNearly(radius(isolatedInner[0]), 72, 'cyan starts in the inner third');
+assertNearly(radius(isolatedMiddle[0]), 144, 'blue starts in the middle third');
+assertNearly(radius(isolatedOuter[0]), 216, 'purple starts on the outer surface');
+assert(radius(isolatedInner[0]) >= CORE_LAYOUT_CLEARANCE_RADIUS, 'inner placement stays outside the physical Sun');
+
+const forkChildren = Array.from({ length: 6 }, (_, index) => node(`fork-${index}`, [], 'inner'));
+const fork = [node('fork-root', forkChildren.map(item => item.id), 'middle'), ...forkChildren];
+applyUniformLayerLayout(fork);
+for (const child of forkChildren) assertNearly(distance(fork[0], child), 72, 'a legal branch relation must remain exactly one x');
+for (const item of fork) {
+  for (const other of fork) {
+    if (item.id >= other.id) continue;
+    assert(distance(item, other) >= 72 - 1e-7, 'non-identical balls must not overlap the 72 minimum spacing');
+  }
+}
+
+// Thirteen neighbours cannot all kiss one equal sphere with pairwise >=72. The
+// impossible remainder may use >72, but no edge may become shorter than x.
+const crowdedChildren = Array.from({ length: 13 }, (_, index) => node(`crowded-${index}`, [], 'inner'));
+const crowded = [node('crowded-root', crowdedChildren.map(item => item.id), 'middle'), ...crowdedChildren];
+applyUniformLayerLayout(crowded);
+const crowdedDistances = crowdedChildren.map(child => distance(crowded[0], child));
+assert(crowdedDistances.every(value => value >= 72 - 1e-7), 'crowded fallback must never make a relation shorter than x');
+assert(crowdedDistances.some(value => value > 72 + 1e-7), 'only an intrinsically impossible crowded relation may exceed x');
+
 const hidden = [node('visible-root'), node('hidden-node', ['visible-root'], 'outer', 'fact', true)];
 applyUniformLayerLayout(hidden);
-assertNearly(distance(hidden[0], hidden[1]), FCC_NEIGHBOR_DISTANCE, 'hidden nodes still participate in real direct-edge spacing');
+assertNearly(distance(hidden[0], hidden[1]), 72, 'hidden real nodes still participate in direct spacing');
 
-// Full reconstruction is deterministic and does not depend on a session slot cache.
-const deterministicA = [node('det-a'), node('det-b', ['det-a']), node('det-c', ['det-b']), node('det-branch', ['det-b'])];
-const deterministicB = [node('det-a'), node('det-b', ['det-a']), node('det-c', ['det-b']), node('det-branch', ['det-b'])];
+const deterministicA = [node('det-a', [], 'inner'), node('det-b', ['det-a']), node('det-c', ['det-b'], 'outer'), node('det-branch', ['det-b'])];
+const deterministicB = [node('det-a', [], 'inner'), node('det-b', ['det-a']), node('det-c', ['det-b'], 'outer'), node('det-branch', ['det-b'])];
 applyUniformLayerLayout(deterministicA);
 applyUniformLayerLayout(deterministicB);
-assert.deepEqual(deterministicB.map(xyz), deterministicA.map(xyz), 'same graph must reconstruct to the same FCC coordinates');
+assert.deepEqual(deterministicB.map(xyz), deterministicA.map(xyz), 'same graph must reconstruct to the same chain-envelope coordinates');
 
-const uniformSource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
-assert(uniformSource.includes('export const ORDINARY_NODE_RADIUS = 7.2;'), 'layout must state the real ordinary-ball radius it is using');
-assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;'), 'spacing must be visibly derived from five diameters');
-assert(uniformSource.includes('collectDirectLayoutEdges'), 'layout must use only direct real graph edges');
-assert(uniformSource.includes('gapScore'), 'branch placement must retain geometric gap filling');
-assert(uniformSource.includes('approximateDiameterPath'), 'main-chain straightness may use one cheap graph spine');
-assert(uniformSource.includes('Start a long spine at its middle and grow toward both ends.'), 'long chains must use the compact centre-out geometric schedule');
-assert(uniformSource.includes('Only after every exact-x neighbour is occupied may a direct edge grow longer.'), 'longer edges must remain a strict fallback');
-assert(!uniformSource.includes('LAYER_RANK'), 'layer-direction scoring must be removed');
-assert(!uniformSource.includes('layerDelta'), 'inner/middle/outer must not steer candidate choice');
-assert(!uniformSource.includes('ordinarySlotCache'), 'session slot caching must be removed from the simple first version');
-assert(!uniformSource.includes('reasoningPerpendicular'), 'reasoning-specific spatial offsets must be removed');
-assert(!uniformSource.includes('reasoningDominant'), 'reasoning camp dominance must not affect layout');
-assert(!uniformSource.includes('reasoningSide'), 'reasoning camp side must not affect layout');
-assert(!uniformSource.includes('LAYER_BANDS'), 'hard radial layer shells must remain absent');
-assert(!uniformSource.includes('Fibonacci'), 'Fibonacci shell distribution must remain absent');
-assert(!uniformSource.includes('optimizeRelationLengthLayout'), 'old semantic/relation optimizer must not re-enter the live layout');
+const source = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
+assert(source.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;'));
+assert(source.includes('export const INITIAL_LAYOUT_RADIUS = FCC_NEIGHBOR_DISTANCE * 3;'));
+assert(source.includes('export const LAYOUT_RADIUS_INCREMENT = FCC_NEIGHBOR_DISTANCE * 3;'));
+assert(source.includes('components.sort((a, b) => b.length - a.length'), 'larger chains must be scheduled first');
+assert(source.includes('chooseConclusionAnchor'), 'layout must choose the conclusion/outer side before premises');
+assert(source.includes("if (layer === 'outer') return sphereRadius;"), 'purple anchor must use the current outer surface');
+assert(source.includes('BASE_ANCHOR_DIRECTIONS'), 'six large cardinal insertion directions must remain explicit');
+assert(source.includes('angularGapScore'), 'later chains must fill the largest spherical gap');
+assert(source.includes('requiredSphereRadiusForSpine'), 'depth must trigger sphere capacity expansion');
+assert(source.includes('expandSphere'), 'width/depth capacity must share one expansion path');
+assert(source.includes('multiplyScalar(LAYOUT_RADIUS_INCREMENT)'), 'whole-chain outward translation must be exactly 3x');
+assert(source.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'expansion must translate a whole chain rigidly');
+assert(source.includes('One semantic inference chain only: conclusion -> reasoning -> premise, inward.'));
+assert(source.includes('directed.incomingIds.get(id)'), 'main spine must only walk incoming semantic edges toward premises');
+assert(source.includes('parentDegree > 12'), 'only intrinsically overfull local stars may immediately relax x');
+assert(!source.includes('ordinarySlotCache'));
+assert(!source.includes('reasoningPerpendicular'));
+assert(!source.includes('reasoningDominant'));
+assert(!source.includes('reasoningSide'));
+assert(!source.includes('Fibonacci'));
+assert(!source.includes('optimizeRelationLengthLayout'));
 
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const physicsMatch = /const\s+physics\s*=/.exec(sceneSource);
 const labelsMatch = /const\s+labels\s*=/.exec(sceneSource);
-assert(physicsMatch && labelsMatch && labelsMatch.index > physicsMatch.index, 'scene physics implementation must remain discoverable');
+assert(physicsMatch && labelsMatch && labelsMatch.index > physicsMatch.index);
 const physicsSource = sceneSource.slice(physicsMatch.index, labelsMatch.index);
 assert(/n\.pos!\.copy\(n\.homePos!\)/.test(physicsSource), 'scene motion must return to the fixed projection coordinate');
 assert(!physicsSource.includes('applyUniformLayerLayout'), 'camera/physics frames must never trigger relayout');
 
-console.log('Simple five-diameter FCC layout regression tests passed.');
+console.log('Five-diameter rigid-chain sphere-capacity layout regression tests passed.');
