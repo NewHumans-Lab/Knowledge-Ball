@@ -127,23 +127,42 @@ export function rejectOppositionCandidate(nodes: GraphNode[], candidateId: strin
   assertValidLineage(nodes);
 }
 
-/** Upgrade legacy single-head reasoning lineage into two persistent camp heads. */
+/**
+ * Normalize legacy reasoning lineage into two persistent current camp heads.
+ * Canonical red histories are never promoted back into the red head. The only
+ * time rank-1 legacy opposition is promoted is when no canonical red head exists.
+ * A #131 suppressed snapshot with no current white head is also recoverable:
+ * its nearest gray history becomes the white head while the winning red stays
+ * dominant.
+ */
 function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): void {
-  const white = currentNodeForTopic(nodes, topicId);
-  if (!white) throw new Error(`Reasoning topic has no white current head: ${topicId}`);
-
-  const normalHistory = nodes
+  const allHistory = nodes
     .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'history')
-    .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
-  const legacyRedChain = nodes
-    .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'opposition')
-    .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
+    .sort((left, right) => (left.lineage?.reasoningSideRank ?? left.lineage?.rank ?? 0)
+      - (right.lineage?.reasoningSideRank ?? right.lineage?.rank ?? 0));
+
+  let white = currentNodeForTopic(nodes, topicId);
+  const recoveredSuppressedWhite = !white;
+  if (!white) white = allHistory.shift();
+  if (!white) throw new Error(`Reasoning topic has no recoverable white head: ${topicId}`);
 
   const existingDominant = nodes.find(node =>
     topicIdFor(node) === topicId
       && isReasoningSideHead(node)
       && node.lineage?.reasoningDominant === true,
   );
+  const canonicalRed = nodes.find(node =>
+    topicIdFor(node) === topicId
+      && lineageRoleFor(node) === 'current'
+      && node.lineage?.reasoningSide === 'opposition'
+      && node.lineage.reasoningSideRank === 0,
+  );
+  const redLegacyOrHistory = nodes
+    .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'opposition')
+    .sort((left, right) => (left.lineage?.reasoningSideRank ?? left.lineage?.rank ?? 0)
+      - (right.lineage?.reasoningSideRank ?? right.lineage?.rank ?? 0));
+  const red = canonicalRed ?? redLegacyOrHistory.shift();
+
   const whiteMeta = white.lineage ?? { topicId, proposal: 'new' as const, role: 'current' as const, rank: 0 };
   white.lineage = {
     ...whiteMeta,
@@ -152,10 +171,13 @@ function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): vo
     rank: 0,
     reasoningSide: 'normal',
     reasoningSideRank: 0,
-    reasoningDominant: existingDominant ? existingDominant.id === white.id : true,
+    reasoningDominant: existingDominant
+      ? existingDominant.id === white.id
+      : !(recoveredSuppressedWhite && red),
   };
   white.hidden = false;
 
+  const normalHistory = allHistory.filter(node => node.id !== white!.id && node.lineage?.reasoningSide !== 'opposition');
   normalHistory.forEach((node, index) => {
     if (!node.lineage) throw new Error(`Historical lineage metadata missing: ${node.id}`);
     node.lineage = {
@@ -169,19 +191,35 @@ function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): vo
     node.hidden = true;
   });
 
-  legacyRedChain.forEach((node, index) => {
-    if (!node.lineage) throw new Error(`Opposition lineage metadata missing: ${node.id}`);
-    const isHead = index === 0;
-    node.lineage = {
-      ...node.lineage,
-      role: isHead ? 'current' : 'opposition',
-      rank: isHead ? 0 : index,
+  if (red) {
+    if (!red.lineage) throw new Error(`Reasoning red head metadata missing: ${red.id}`);
+    red.lineage = {
+      ...red.lineage,
+      role: 'current',
+      rank: 0,
       reasoningSide: 'opposition',
-      reasoningSideRank: index,
-      reasoningDominant: isHead && existingDominant ? existingDominant.id === node.id : false,
+      reasoningSideRank: 0,
+      reasoningDominant: existingDominant
+        ? existingDominant.id === red.id
+        : recoveredSuppressedWhite,
     };
-    node.hidden = !isHead;
-  });
+    red.hidden = false;
+  }
+
+  redLegacyOrHistory
+    .filter(node => node.id !== red?.id)
+    .forEach((node, index) => {
+      if (!node.lineage) throw new Error(`Opposition lineage metadata missing: ${node.id}`);
+      node.lineage = {
+        ...node.lineage,
+        role: 'opposition',
+        rank: index + 1,
+        reasoningSide: 'opposition',
+        reasoningSideRank: index + 1,
+        reasoningDominant: false,
+      };
+      node.hidden = true;
+    });
 }
 
 function promoteReasoningOppositionCandidate(
