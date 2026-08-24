@@ -26,13 +26,14 @@ const visibilityStart = sceneSource.indexOf('const applyVisibility =');
 assert(syncEdgesStart >= 0 && visibilityStart > syncEdgesStart, 'canonical scene-edge implementation must remain discoverable');
 const syncEdgesSource = sceneSource.slice(syncEdgesStart, visibilityStart);
 assert(/edgeMap\[key\]\.userData\.edgeEndpoints\s*=\s*\[from\.id,\s*to\.id\]/.test(syncEdgesSource), 'every canonical chain edge must retain its two real node IDs for visibility filtering');
-assert(/updateLineGeometry\(edgeMap\[key\],\s*from\.pos,\s*to\.pos\)/.test(syncEdgesSource), 'canonical chain geometry must use authoritative endpoint positions even when an endpoint has no rendered mesh');
+assert(syncEdgesSource.includes('displayPositions?.get(from.id) ?? from.pos'), 'detail-only visual offsets must fall back to the authoritative from.pos when no display override exists');
+assert(syncEdgesSource.includes('displayPositions?.get(to.id) ?? to.pos'), 'detail-only visual offsets must fall back to the authoritative to.pos when no display override exists');
 assert(syncEdgesSource.includes('collectKnowledgeChainEdges(nodes)'), 'scene edge lifecycle must come from the canonical real-node chain');
 assert(!syncEdgesSource.includes('logicRuleId'), 'visibility/runtime edge ownership must not restore logic metadata as a line');
 assert(!syncEdgesSource.includes('twinGroup'), 'visibility/runtime edge ownership must not restore legacy twin links');
 assert(/\.userData\.geometryVisible\s*=\s*true/.test(sceneSource), 'edge geometry validity must be stored independently from mode visibility');
-assert(sceneSource.includes('syncEdges(allNodes)'), 'relation lifecycle and geometry must be derived from the complete graph, not the current mobile LOD node subset');
-assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD membership must never create, remove, or restore relation lines');
+assert(sceneSource.includes('syncEdges(allNodes, detailDisplayPositions)'), 'relation lifecycle must remain derived from the complete graph while detail-only presentation positions affect geometry only');
+assert(!sceneSource.includes('syncEdges(activeNodes'), 'mobile LOD membership must never create, remove, or restore relation lines');
 assert(/setVisibilityMode:\s*mode\s*=>\s*\{\s*visibilityMode\s*=\s*mode;\s*applyVisibility\(\);\s*largeGraphDirty\s*=\s*true;\s*\}/.test(sceneSource), 'Current/Personal/All mode changes must apply endpoint visibility immediately and then invalidate LOD membership');
 assert(!/setVisibilityMode:[^}]*syncEdges\(/s.test(sceneSource), 'visibility mode changes must never synchronously rebuild relation geometry');
 
