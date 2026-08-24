@@ -20,16 +20,33 @@ export interface UniformLayoutNode {
 }
 
 export type FccCoord = [number, number, number];
+type UserLayoutLayer = Exclude<KnowledgeLayer, 'core'>;
 
 /** The live ordinary ball radius in KnowledgeScene, in Three.js world units. */
 export const ORDINARY_NODE_RADIUS = 7.2;
 export const ORDINARY_NODE_DIAMETER = ORDINARY_NODE_RADIUS * 2;
-/** Direct graph neighbours prefer five ordinary-ball diameters centre-to-centre. */
+/** First constraint: direct graph neighbours prefer exactly five ball diameters. */
 export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;
 const FCC_SCALE = FCC_NEIGHBOR_DISTANCE / Math.SQRT2;
 /** The Sun only owns its physical centre space; no extra semantic shell is reserved. */
 export const CORE_LAYOUT_CLEARANCE_RADIUS = CORE_SUN_RADIUS + ORDINARY_NODE_RADIUS;
 const POSITION_EPSILON_SQ = 1e-12;
+
+/**
+ * Soft radial targets only. They are deliberately exact multiples of x so the
+ * semantic colour tendency never needs a second geometry scale or hard shell.
+ */
+export const LAYER_TARGET_RADIUS: Readonly<Record<UserLayoutLayer, number>> = Object.freeze({
+  inner: FCC_NEIGHBOR_DISTANCE,
+  middle: FCC_NEIGHBOR_DISTANCE * 2,
+  outer: FCC_NEIGHBOR_DISTANCE * 3,
+});
+
+const LAYER_RANK: Readonly<Record<UserLayoutLayer, number>> = Object.freeze({
+  inner: 0,
+  middle: 1,
+  outer: 2,
+});
 
 /** Every FCC step has Euclidean length sqrt(2), therefore exactly one x after scaling. */
 export const FCC_NEIGHBOR_STEPS: readonly FccCoord[] = Object.freeze([
@@ -43,6 +60,12 @@ function layerOf(node: UniformLayoutNode): KnowledgeLayer {
     ?? node.layer
     ?? (isSystemCoreNodeId(node.id) ? 'core' : undefined);
   if (!layer) throw new Error(`Missing effective layer for layout node ${node.id}`);
+  return layer;
+}
+
+function userLayerOf(node: UniformLayoutNode): UserLayoutLayer {
+  const layer = layerOf(node);
+  if (layer === 'core') throw new Error(`Core node ${node.id} does not use user-layer placement`);
   return layer;
 }
 
@@ -64,6 +87,10 @@ function subtractCoord(a: FccCoord, b: FccCoord): FccCoord {
 
 function coordLengthSq(coord: FccCoord): number {
   return coord[0] ** 2 + coord[1] ** 2 + coord[2] ** 2;
+}
+
+function coordRadius(coord: FccCoord): number {
+  return Math.sqrt(coordLengthSq(coord)) * FCC_SCALE;
 }
 
 function directionDot(a: FccCoord, b: FccCoord): number {
@@ -97,9 +124,8 @@ export interface FccLayoutEdge {
 }
 
 /**
- * Layout uses only real direct premise edges. Reasoning balls are real nodes here,
- * so premise -> reasoning -> conclusion is two real one-x edges. No lineage,
- * colour layer, semantic similarity, or reasoning-camp metadata affects placement.
+ * Layout uses only real direct premise edges. Reasoning balls remain real nodes:
+ * premise -> reasoning -> conclusion is two real edges, each preferring one x.
  */
 export function collectDirectLayoutEdges(nodes: readonly UniformLayoutNode[]): FccLayoutEdge[] {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
@@ -132,6 +158,39 @@ function buildAdjacency(
   }
   for (const neighbours of adjacency.values()) neighbours.sort();
   return adjacency;
+}
+
+type DirectedIndex = {
+  edgeKeys: Set<string>;
+  incomingCount: Map<string, number>;
+  outgoingCount: Map<string, number>;
+};
+
+function buildDirectedIndex(
+  nodes: readonly UniformLayoutNode[],
+  edges: readonly FccLayoutEdge[],
+): DirectedIndex {
+  const edgeKeys = new Set<string>();
+  const incomingCount = new Map<string, number>();
+  const outgoingCount = new Map<string, number>();
+  for (const node of nodes) {
+    if (!isLayoutNode(node)) continue;
+    incomingCount.set(node.id, 0);
+    outgoingCount.set(node.id, 0);
+  }
+  for (const edge of edges) {
+    edgeKeys.add(`${edge.fromId}->${edge.toId}`);
+    incomingCount.set(edge.toId, (incomingCount.get(edge.toId) ?? 0) + 1);
+    outgoingCount.set(edge.fromId, (outgoingCount.get(edge.fromId) ?? 0) + 1);
+  }
+  return { edgeKeys, incomingCount, outgoingCount };
+}
+
+function directedRelation(parentId: string, childId: string, directed: DirectedIndex): -1 | 0 | 1 {
+  const forward = directed.edgeKeys.has(`${parentId}->${childId}`);
+  const reverse = directed.edgeKeys.has(`${childId}->${parentId}`);
+  if (forward === reverse) return 0;
+  return forward ? 1 : -1;
 }
 
 function connectedComponents(adjacency: ReadonlyMap<string, string[]>): string[][] {
@@ -188,7 +247,7 @@ function bfsWithin(
   return { farthest, parent, distance };
 }
 
-/** Cheap main-chain estimate; it only controls straightness, never node proximity. */
+/** Cheap main-chain estimate; it controls straightness, never the one-x contract. */
 function approximateDiameterPath(
   component: readonly string[],
   adjacency: ReadonlyMap<string, string[]>,
@@ -207,50 +266,95 @@ function approximateDiameterPath(
   return path.reverse();
 }
 
+function endpointUpstreamScore(id: string, directed: DirectedIndex): number {
+  return (directed.outgoingCount.get(id) ?? 0) - (directed.incomingCount.get(id) ?? 0);
+}
+
+/**
+ * Orient the cheap long spine so its semantic arrows point outward as often as
+ * possible. This replaces the old centre-out schedule that could reverse half a
+ * reasoning chain.
+ */
+function orientSpine(
+  spine: readonly string[],
+  directed: DirectedIndex,
+  byId: ReadonlyMap<string, UniformLayoutNode>,
+): string[] {
+  if (spine.length <= 1) return [...spine];
+  let directionScore = 0;
+  for (let i = 1; i < spine.length; i++) {
+    directionScore += directedRelation(spine[i - 1], spine[i], directed);
+  }
+  if (directionScore < 0) return [...spine].reverse();
+  if (directionScore > 0) return [...spine];
+
+  const first = spine[0];
+  const last = spine[spine.length - 1];
+  const firstUpstream = endpointUpstreamScore(first, directed);
+  const lastUpstream = endpointUpstreamScore(last, directed);
+  if (lastUpstream > firstUpstream) return [...spine].reverse();
+  if (firstUpstream > lastUpstream) return [...spine];
+
+  const firstLayer = byId.get(first);
+  const lastLayer = byId.get(last);
+  if (firstLayer && lastLayer) {
+    const firstRank = LAYER_RANK[userLayerOf(firstLayer)];
+    const lastRank = LAYER_RANK[userLayerOf(lastLayer)];
+    if (lastRank < firstRank) return [...spine].reverse();
+    if (firstRank < lastRank) return [...spine];
+  }
+  return first <= last ? [...spine] : [...spine].reverse();
+}
+
 type ComponentSchedule = {
   order: string[];
   parentById: Map<string, string>;
-  spineCenterIndex: number;
 };
 
 /**
- * Start a long spine at its middle and grow toward both ends. This is purely a
- * geometric compactness rule: it halves one-sided extent without changing x.
+ * Lay the oriented main spine from its upstream end toward its downstream end,
+ * then grow branches. Outgoing semantic neighbours are scheduled before incoming
+ * ones so direction remains stable even outside the main spine.
  */
 function scheduleComponent(
   component: readonly string[],
   spine: readonly string[],
   adjacency: ReadonlyMap<string, string[]>,
+  directed: DirectedIndex,
+  byId: ReadonlyMap<string, UniformLayoutNode>,
 ): ComponentSchedule {
   const allowed = new Set(component);
   const scheduled = new Set<string>();
   const parentById = new Map<string, string>();
   const order: string[] = [];
   const queue: string[] = [];
-  const spineCenterIndex = Math.floor((spine.length - 1) / 2);
 
-  const scheduleSpineNode = (index: number, parentIndex?: number) => {
+  for (let index = 0; index < spine.length; index++) {
     const id = spine[index];
-    if (!id || scheduled.has(id)) return;
+    if (scheduled.has(id)) continue;
     scheduled.add(id);
     order.push(id);
     queue.push(id);
-    if (parentIndex !== undefined) parentById.set(id, spine[parentIndex]);
-  };
-
-  if (spine.length > 0) {
-    scheduleSpineNode(spineCenterIndex);
-    for (let offset = 1; offset < spine.length; offset++) {
-      const right = spineCenterIndex + offset;
-      const left = spineCenterIndex - offset;
-      if (right < spine.length) scheduleSpineNode(right, right - 1);
-      if (left >= 0) scheduleSpineNode(left, left + 1);
-    }
+    if (index > 0) parentById.set(id, spine[index - 1]);
   }
+
+  const neighbourOrder = (fromId: string, a: string, b: string) => {
+    const aDirection = directedRelation(fromId, a, directed);
+    const bDirection = directedRelation(fromId, b, directed);
+    if (aDirection !== bDirection) return bDirection - aDirection;
+    const aNode = byId.get(a);
+    const bNode = byId.get(b);
+    if (aNode && bNode) {
+      const layerDifference = LAYER_RANK[userLayerOf(aNode)] - LAYER_RANK[userLayerOf(bNode)];
+      if (layerDifference !== 0) return layerDifference;
+    }
+    return a.localeCompare(b);
+  };
 
   for (let head = 0; head < queue.length; head++) {
     const id = queue[head];
-    for (const neighbourId of adjacency.get(id) ?? []) {
+    const neighbours = [...(adjacency.get(id) ?? [])].sort((a, b) => neighbourOrder(id, a, b));
+    for (const neighbourId of neighbours) {
       if (!allowed.has(neighbourId) || scheduled.has(neighbourId)) continue;
       scheduled.add(neighbourId);
       parentById.set(neighbourId, id);
@@ -258,7 +362,7 @@ function scheduleComponent(
       queue.push(neighbourId);
     }
   }
-  return { order, parentById, spineCenterIndex };
+  return { order, parentById };
 }
 
 function validFreeSlot(coord: FccCoord, occupied: ReadonlySet<string>): boolean {
@@ -278,17 +382,65 @@ function minimumDistanceSqToAssigned(
   return minimum;
 }
 
+function layerRadiusScore(node: UniformLayoutNode, candidate: FccCoord): number {
+  const target = LAYER_TARGET_RADIUS[userLayerOf(node)];
+  return -Math.abs(coordRadius(candidate) - target) / FCC_NEIGHBOR_DISTANCE;
+}
+
+function chooseRootCandidate(
+  node: UniformLayoutNode,
+  candidates: readonly FccCoord[],
+  assigned: ReadonlyMap<string, FccCoord>,
+): FccCoord {
+  let best = candidates[0];
+  let bestLayer = Number.NEGATIVE_INFINITY;
+  let bestGap = Number.NEGATIVE_INFINITY;
+  let bestKey = coordKey(best);
+  for (const candidate of candidates) {
+    const layer = layerRadiusScore(node, candidate);
+    const gap = minimumDistanceSqToAssigned(candidate, assigned);
+    const key = coordKey(candidate);
+    const better = layer > bestLayer + 1e-9
+      || (Math.abs(layer - bestLayer) <= 1e-9 && gap > bestGap)
+      || (Math.abs(layer - bestLayer) <= 1e-9 && gap === bestGap && key < bestKey);
+    if (!better) continue;
+    best = candidate;
+    bestLayer = layer;
+    bestGap = gap;
+    bestKey = key;
+  }
+  return best;
+}
+
 /**
- * Disconnected roots fill the nearest available lattice shell first. Within that
- * shell, the largest empty geometric gap wins. This keeps the cloud compact and
- * even without any semantic-region heuristic.
+ * Disconnected component roots get only a soft colour-layer tendency: inner aims
+ * near 1x, middle near 2x, outer near 3x. No hard radial boundary is created.
  */
 function rootSlot(
+  node: UniformLayoutNode,
   occupied: ReadonlySet<string>,
   assigned: ReadonlyMap<string, FccCoord>,
 ): FccCoord {
+  const targetDepth = LAYER_RANK[userLayerOf(node)] + 1;
   const visited = new Set<string>([coordKey([0, 0, 0])]);
   let frontier: FccCoord[] = [[0, 0, 0]];
+  const candidates: FccCoord[] = [];
+
+  for (let depth = 1; depth <= targetDepth; depth++) {
+    const nextByKey = new Map<string, FccCoord>();
+    for (const coord of frontier) {
+      for (const step of FCC_NEIGHBOR_STEPS) {
+        const next = addCoord(coord, step);
+        const key = coordKey(next);
+        if (visited.has(key)) continue;
+        visited.add(key);
+        nextByKey.set(key, next);
+      }
+    }
+    frontier = [...nextByKey.values()];
+    candidates.push(...frontier.filter(coord => validFreeSlot(coord, occupied)));
+  }
+  if (candidates.length > 0) return chooseRootCandidate(node, candidates, assigned);
 
   for (;;) {
     const nextByKey = new Map<string, FccCoord>();
@@ -301,24 +453,9 @@ function rootSlot(
         nextByKey.set(key, next);
       }
     }
-    const next = [...nextByKey.values()];
-    const free = next.filter(coord => validFreeSlot(coord, occupied));
-    if (free.length > 0) {
-      let best = free[0];
-      let bestGap = minimumDistanceSqToAssigned(best, assigned);
-      let bestKey = coordKey(best);
-      for (const candidate of free.slice(1)) {
-        const gap = minimumDistanceSqToAssigned(candidate, assigned);
-        const key = coordKey(candidate);
-        if (gap > bestGap || (gap === bestGap && key < bestKey)) {
-          best = candidate;
-          bestGap = gap;
-          bestKey = key;
-        }
-      }
-      return best;
-    }
-    frontier = next;
+    frontier = [...nextByKey.values()];
+    const free = frontier.filter(coord => validFreeSlot(coord, occupied));
+    if (free.length > 0) return chooseRootCandidate(node, free, assigned);
   }
 }
 
@@ -366,57 +503,67 @@ function continuityScore(candidate: FccCoord, parent: FccCoord, previousStep: Fc
   return directionDot(direction, previousStep) / (a * b);
 }
 
-/** Choose an FCC direction most tangent to the centre; prefer screen-x extent on ties. */
-function tangentStepAt(coord: FccCoord): FccCoord {
-  let best = FCC_NEIGHBOR_STEPS[0];
-  let bestRadial = Math.abs(directionDot(coord, best));
-  let bestHorizontal = Math.abs(best[0]);
-  let bestKey = coordKey(best);
-  for (const step of FCC_NEIGHBOR_STEPS.slice(1)) {
-    const radial = Math.abs(directionDot(coord, step));
-    const horizontal = Math.abs(step[0]);
-    const key = coordKey(step);
-    if (radial < bestRadial
-      || (radial === bestRadial && horizontal > bestHorizontal)
-      || (radial === bestRadial && horizontal === bestHorizontal && key < bestKey)) {
-      best = step;
-      bestRadial = radial;
-      bestHorizontal = horizontal;
-      bestKey = key;
-    }
-  }
-  return best;
+/**
+ * Second constraint: for a directed source -> target relation, prefer the target
+ * farther from the centre. If placement happens in reverse schedule order, prefer
+ * the source inward instead. This score is evaluated before straightness/layer.
+ */
+function directedRadialScore(
+  parentId: string,
+  id: string,
+  parentCoord: FccCoord,
+  candidate: FccCoord,
+  directed: DirectedIndex,
+): number {
+  const relation = directedRelation(parentId, id, directed);
+  if (relation === 0) return 0;
+  const outwardDelta = coordRadius(candidate) - coordRadius(parentCoord);
+  return relation * outwardDelta / FCC_NEIGHBOR_DISTANCE;
 }
 
 function chooseCandidate(
   candidates: readonly FccCoord[],
-  id: string,
+  node: UniformLayoutNode,
+  parentId: string,
   parentCoord: FccCoord,
   preserveContinuity: boolean,
   previousStep: FccCoord | null,
   occupied: ReadonlySet<string>,
   adjacency: ReadonlyMap<string, string[]>,
   assigned: ReadonlyMap<string, FccCoord>,
+  directed: DirectedIndex,
 ): FccCoord {
   let best = candidates[0];
   let bestExact = -1;
+  let bestRadial = Number.NEGATIVE_INFINITY;
   let bestContinuity = Number.NEGATIVE_INFINITY;
+  let bestLayer = Number.NEGATIVE_INFINITY;
   let bestGap = Number.NEGATIVE_INFINITY;
   let bestKey = coordKey(best);
 
   for (const candidate of candidates) {
-    const exact = exactAssignedNeighbourCount(id, candidate, adjacency, assigned);
+    const exact = exactAssignedNeighbourCount(node.id, candidate, adjacency, assigned);
+    const radial = directedRadialScore(parentId, node.id, parentCoord, candidate, directed);
     const continuity = preserveContinuity ? continuityScore(candidate, parentCoord, previousStep) : 0;
+    const layer = layerRadiusScore(node, candidate);
     const gap = gapScore(parentCoord, candidate, occupied);
     const key = coordKey(candidate);
+    const sameExact = exact === bestExact;
+    const sameRadial = Math.abs(radial - bestRadial) <= 1e-9;
+    const sameContinuity = Math.abs(continuity - bestContinuity) <= 1e-9;
+    const sameLayer = Math.abs(layer - bestLayer) <= 1e-9;
     const better = exact > bestExact
-      || (exact === bestExact && continuity > bestContinuity + 1e-9)
-      || (exact === bestExact && Math.abs(continuity - bestContinuity) <= 1e-9 && gap > bestGap + 1e-9)
-      || (exact === bestExact && Math.abs(continuity - bestContinuity) <= 1e-9 && Math.abs(gap - bestGap) <= 1e-9 && key < bestKey);
+      || (sameExact && radial > bestRadial + 1e-9)
+      || (sameExact && sameRadial && continuity > bestContinuity + 1e-9)
+      || (sameExact && sameRadial && sameContinuity && layer > bestLayer + 1e-9)
+      || (sameExact && sameRadial && sameContinuity && sameLayer && gap > bestGap + 1e-9)
+      || (sameExact && sameRadial && sameContinuity && sameLayer && Math.abs(gap - bestGap) <= 1e-9 && key < bestKey);
     if (!better) continue;
     best = candidate;
     bestExact = exact;
+    bestRadial = radial;
     bestContinuity = continuity;
+    bestLayer = layer;
     bestGap = gap;
     bestKey = key;
   }
@@ -424,22 +571,24 @@ function chooseCandidate(
 }
 
 function nearestFreeSlot(
-  id: string,
+  node: UniformLayoutNode,
+  parentId: string,
   parentCoord: FccCoord,
   preserveContinuity: boolean,
   previousStep: FccCoord | null,
   occupied: ReadonlySet<string>,
   adjacency: ReadonlyMap<string, string[]>,
   assigned: ReadonlyMap<string, FccCoord>,
+  directed: DirectedIndex,
 ): FccCoord {
   const exact = FCC_NEIGHBOR_STEPS
     .map(step => addCoord(parentCoord, step))
     .filter(coord => validFreeSlot(coord, occupied));
   if (exact.length > 0) {
-    return chooseCandidate(exact, id, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned);
+    return chooseCandidate(exact, node, parentId, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned, directed);
   }
 
-  // Only after every exact-x neighbour is occupied may a direct edge grow longer.
+  // Only after every legal exact-x neighbour is unavailable may a direct edge grow longer.
   const visited = new Set<string>([coordKey(parentCoord)]);
   let frontier: FccCoord[] = [parentCoord];
   for (let depth = 1; ; depth++) {
@@ -462,7 +611,7 @@ function nearestFreeSlot(
           minimumDistanceSq = Math.min(minimumDistanceSq, coordLengthSq(subtractCoord(candidate, parentCoord)));
         }
         const closest = free.filter(candidate => coordLengthSq(subtractCoord(candidate, parentCoord)) === minimumDistanceSq);
-        return chooseCandidate(closest, id, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned);
+        return chooseCandidate(closest, node, parentId, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned, directed);
       }
     }
     frontier = next;
@@ -480,25 +629,31 @@ function assign(
 }
 
 function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCoord> {
+  const byId = new Map(nodes.map(node => [node.id, node] as const));
   const edges = collectDirectLayoutEdges(nodes);
   const adjacency = buildAdjacency(nodes, edges);
+  const directed = buildDirectedIndex(nodes, edges);
   const components = connectedComponents(adjacency);
   const assigned = new Map<string, FccCoord>();
   const occupied = new Set<string>();
 
   for (const component of components) {
-    const spine = approximateDiameterPath(component, adjacency);
+    const rawSpine = approximateDiameterPath(component, adjacency);
+    const spine = orientSpine(rawSpine, directed, byId);
     const spineIndex = new Map(spine.map((id, index) => [id, index] as const));
-    const schedule = scheduleComponent(component, spine, adjacency);
+    const schedule = scheduleComponent(component, spine, adjacency, directed, byId);
     const rootId = schedule.order[0];
-    if (!rootId) continue;
-    assign(rootId, rootSlot(occupied, assigned), assigned, occupied);
+    const rootNode = rootId ? byId.get(rootId) : undefined;
+    if (!rootId || !rootNode) continue;
+    assign(rootId, rootSlot(rootNode, occupied, assigned), assigned, occupied);
 
     for (const id of schedule.order.slice(1)) {
+      const node = byId.get(id);
       const parentId = schedule.parentById.get(id);
       const parentCoord = parentId ? assigned.get(parentId) : undefined;
+      if (!node) continue;
       if (!parentId || !parentCoord) {
-        assign(id, rootSlot(occupied, assigned), assigned, occupied);
+        assign(id, rootSlot(node, occupied, assigned), assigned, occupied);
         continue;
       }
 
@@ -506,30 +661,20 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
       const childIndex = spineIndex.get(id);
       const isSpine = parentIndex !== undefined
         && childIndex !== undefined
-        && Math.abs(childIndex - parentIndex) === 1;
+        && childIndex === parentIndex + 1;
       let previousStep: FccCoord | null = null;
-      let preserveContinuity = isSpine;
+      let preserveContinuity = false;
 
-      if (isSpine && parentIndex !== undefined && childIndex !== undefined) {
-        const center = schedule.spineCenterIndex;
-        if (parentIndex === center) {
-          const siblingIndex = childIndex < center ? center + 1 : center - 1;
-          const siblingCoord = siblingIndex >= 0 && siblingIndex < spine.length
-            ? assigned.get(spine[siblingIndex])
-            : undefined;
-          previousStep = siblingCoord
-            ? subtractCoord(parentCoord, siblingCoord)
-            : tangentStepAt(parentCoord);
-        } else {
-          const towardCenterIndex = parentIndex < center ? parentIndex + 1 : parentIndex - 1;
-          const towardCenterCoord = assigned.get(spine[towardCenterIndex]);
-          if (towardCenterCoord) previousStep = subtractCoord(parentCoord, towardCenterCoord);
+      if (isSpine && childIndex !== undefined && childIndex >= 2) {
+        const previousCoord = assigned.get(spine[childIndex - 2]);
+        if (previousCoord) {
+          previousStep = subtractCoord(parentCoord, previousCoord);
+          preserveContinuity = true;
         }
       }
 
-      // Any degree-two direct graph path is a chain, even if the cheap diameter
-      // spine did not select it. Continue away from its already placed neighbour
-      // before considering branch gap aesthetics.
+      // Any degree-two direct graph path remains a chain even when it is not on
+      // the cheap diameter spine. Its already placed segment supplies continuity.
       if (!previousStep && (adjacency.get(parentId)?.length ?? 0) === 2) {
         const otherId = (adjacency.get(parentId) ?? []).find(neighbourId => neighbourId !== id && assigned.has(neighbourId));
         const otherCoord = otherId ? assigned.get(otherId) : undefined;
@@ -539,7 +684,7 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
         }
       }
 
-      const coord = nearestFreeSlot(id, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned);
+      const coord = nearestFreeSlot(node, parentId, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned, directed);
       assign(id, coord, assigned, occupied);
     }
   }
@@ -547,10 +692,11 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
 }
 
 /**
- * One live layout algorithm: direct graph nodes occupy FCC slots at five ordinary
- * ball diameters. Main/degree-two chains grow compactly and stay straight when
- * possible; branches fill the largest local geometric gap. No semantic/layer
- * proximity policy participates.
+ * One live layout algorithm with lexicographic constraints:
+ * 1) keep direct real graph neighbours at x=72 whenever a legal exact FCC slot exists;
+ * 2) within that geometry, orient inference from centre toward surface;
+ * 3) then softly bias inner/middle/outer toward roughly 1x/2x/3x radii;
+ * 4) finally use continuity and gap filling without continuous physics.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   const coords = placeGraphNodes(nodes);
