@@ -532,7 +532,7 @@ function placeOrdinaryNodes(nodes: UniformLayoutNode[]): Map<string, FccCoord> {
       const schedule = scheduleFreshComponent(component, diameterPath, adjacency);
       const rootId = schedule.order[0];
       const root = byId.get(rootId);
-      if (root) assignOrdinaryCoord(rootId, rootCoordForNode(root, occupied), assigned, occupied);
+      if (rootId && root) assignOrdinaryCoord(rootId, rootCoordForNode(root, occupied), assigned, occupied);
 
       for (const id of schedule.order.slice(1)) {
         if (assigned.has(id)) continue;
@@ -540,7 +540,7 @@ function placeOrdinaryNodes(nodes: UniformLayoutNode[]): Map<string, FccCoord> {
         const parentId = schedule.parentById.get(id);
         const parent = parentId ? byId.get(parentId) : undefined;
         const parentCoord = parentId ? assigned.get(parentId) : undefined;
-        if (!node || !parent || !parentCoord) {
+        if (!parentId || !node || !parent || !parentCoord) {
           if (node) assignOrdinaryCoord(id, rootCoordForNode(node, occupied), assigned, occupied);
           continue;
         }
@@ -574,6 +574,7 @@ function placeOrdinaryNodes(nodes: UniformLayoutNode[]): Map<string, FccCoord> {
           return a.localeCompare(b);
         });
         const parentId = assignedNeighbours[0];
+        if (!parentId) continue;
         const parent = byId.get(parentId)!;
         const parentCoord = assigned.get(parentId)!;
         const isSpine = spineIndex.has(parentId) && spineIndex.has(id) && Math.abs(spineIndex.get(parentId)! - spineIndex.get(id)!) === 1;
@@ -586,6 +587,7 @@ function placeOrdinaryNodes(nodes: UniformLayoutNode[]): Map<string, FccCoord> {
 
       if (progressed) continue;
       const id = [...pending].sort()[0];
+      if (!id) break;
       const node = byId.get(id);
       if (node) assignOrdinaryCoord(id, rootCoordForNode(node, occupied), assigned, occupied);
       pending.delete(id);
