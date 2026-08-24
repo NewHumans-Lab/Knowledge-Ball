@@ -125,16 +125,17 @@ for (let i = 0; i < fork.length; i++) {
   }
 }
 
-// A middle root sits near 2x, so all twelve of its FCC neighbours are legal. All
-// twelve exact-x slots must be used before the thirteenth child may grow farther.
+// In a directed star the semantic source is pulled inward before its middle-layer
+// preference is considered. At radius 1x the Sun makes one FCC neighbour illegal,
+// so all eleven legal exact-x gaps must fill before any longer branch is allowed.
 const crowded = [node('crowded-root')];
 for (let i = 0; i < 13; i++) crowded.push(node(`crowded-${i}`, ['crowded-root']));
 applyUniformLayerLayout(crowded);
 const childDistances = crowded.slice(1).map(child => distance(crowded[0], child));
 assert.equal(
   childDistances.filter(value => Math.abs(value - FCC_NEIGHBOR_DISTANCE) <= 1e-8).length,
-  12,
-  'all twelve legal exact-x gaps must fill before a longer edge is allowed',
+  11,
+  'all eleven legal exact-x gaps beside the physical Sun must fill before a longer edge is allowed',
 );
 assert(childDistances.some(value => value > FCC_NEIGHBOR_DISTANCE + 1e-8), 'only a child without any legal exact slot may exceed x');
 
