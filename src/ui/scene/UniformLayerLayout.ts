@@ -25,27 +25,26 @@ type UserLayoutLayer = Exclude<KnowledgeLayer, 'core'>;
 /** The live ordinary ball radius in KnowledgeScene, in Three.js world units. */
 export const ORDINARY_NODE_RADIUS = 7.2;
 export const ORDINARY_NODE_DIAMETER = ORDINARY_NODE_RADIUS * 2;
-/** First constraint: direct graph neighbours prefer exactly five ball diameters. */
+/** First constraint: a direct graph relation is exactly five ball diameters whenever geometrically possible. */
 export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;
 const FCC_SCALE = FCC_NEIGHBOR_DISTANCE / Math.SQRT2;
-/** The Sun only owns its physical centre space; no extra semantic shell is reserved. */
 export const CORE_LAYOUT_CLEARANCE_RADIUS = CORE_SUN_RADIUS + ORDINARY_NODE_RADIUS;
-const POSITION_EPSILON_SQ = 1e-12;
+/** The knowledge sphere starts at three relation units and expands only in whole 3x steps. */
+export const INITIAL_LAYOUT_RADIUS = FCC_NEIGHBOR_DISTANCE * 3;
+export const LAYOUT_RADIUS_INCREMENT = FCC_NEIGHBOR_DISTANCE * 3;
+const POSITION_EPSILON = 1e-7;
+const MAX_WIDTH_EXPANSIONS_BEFORE_RELAXED_EDGE = 6;
 
-/** Soft radial targets only; never hard shells or reasons to break x=72. */
+/** Initial nominal layer radii; live placement scales these as thirds of the current sphere radius. */
 export const LAYER_TARGET_RADIUS: Readonly<Record<UserLayoutLayer, number>> = Object.freeze({
   inner: FCC_NEIGHBOR_DISTANCE,
   middle: FCC_NEIGHBOR_DISTANCE * 2,
   outer: FCC_NEIGHBOR_DISTANCE * 3,
 });
 
-const LAYER_RANK: Readonly<Record<UserLayoutLayer, number>> = Object.freeze({
-  inner: 0,
-  middle: 1,
-  outer: 2,
-});
+const LAYER_RANK: Readonly<Record<UserLayoutLayer, number>> = Object.freeze({ inner: 0, middle: 1, outer: 2 });
 
-/** Every FCC step has Euclidean length sqrt(2), therefore exactly one x after scaling. */
+/** Retained as the exact-x reference lattice used by tests and local branch directions. */
 export const FCC_NEIGHBOR_STEPS: readonly FccCoord[] = Object.freeze([
   [1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0],
   [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],
@@ -53,9 +52,7 @@ export const FCC_NEIGHBOR_STEPS: readonly FccCoord[] = Object.freeze([
 ] as FccCoord[]);
 
 function layerOf(node: UniformLayoutNode): KnowledgeLayer {
-  const layer = node.effectiveLayer
-    ?? node.layer
-    ?? (isSystemCoreNodeId(node.id) ? 'core' : undefined);
+  const layer = node.effectiveLayer ?? node.layer ?? (isSystemCoreNodeId(node.id) ? 'core' : undefined);
   if (!layer) throw new Error(`Missing effective layer for layout node ${node.id}`);
   return layer;
 }
@@ -66,40 +63,7 @@ function userLayerOf(node: UniformLayoutNode): UserLayoutLayer {
   return layer;
 }
 
-function isLayoutNode(node: UniformLayoutNode): boolean {
-  return layerOf(node) !== 'core';
-}
-
-function coordKey(coord: FccCoord): string {
-  return `${coord[0]}|${coord[1]}|${coord[2]}`;
-}
-
-function addCoord(a: FccCoord, b: FccCoord): FccCoord {
-  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-}
-
-function subtractCoord(a: FccCoord, b: FccCoord): FccCoord {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function coordLengthSq(coord: FccCoord): number {
-  return coord[0] ** 2 + coord[1] ** 2 + coord[2] ** 2;
-}
-
-function coordRadius(coord: FccCoord): number {
-  return Math.sqrt(coordLengthSq(coord)) * FCC_SCALE;
-}
-
-function directionDot(a: FccCoord, b: FccCoord): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function isNearestFccStep(delta: FccCoord): boolean {
-  return coordLengthSq(delta) === 2
-    && Math.abs(delta[0]) <= 1
-    && Math.abs(delta[1]) <= 1
-    && Math.abs(delta[2]) <= 1;
-}
+function isLayoutNode(node: UniformLayoutNode): boolean { return layerOf(node) !== 'core'; }
 
 export function fccPositionForCoord(coord: FccCoord): THREE.Vector3 {
   return new THREE.Vector3(coord[0] * FCC_SCALE, coord[1] * FCC_SCALE, coord[2] * FCC_SCALE);
@@ -108,27 +72,16 @@ export function fccPositionForCoord(coord: FccCoord): THREE.Vector3 {
 function coreSlot(id: string): THREE.Vector3 {
   const index = Math.max(0, SUN_TRIAD_IDS.indexOf(id as (typeof SUN_TRIAD_IDS)[number]));
   const angle = index * Math.PI * 2 / SUN_TRIAD_IDS.length;
-  return new THREE.Vector3(
-    Math.cos(angle) * SUN_ORBIT_RADIUS,
-    Math.sin(angle) * SUN_ORBIT_RADIUS,
-    0,
-  );
+  return new THREE.Vector3(Math.cos(angle) * SUN_ORBIT_RADIUS, Math.sin(angle) * SUN_ORBIT_RADIUS, 0);
 }
 
-export interface FccLayoutEdge {
-  fromId: string;
-  toId: string;
-}
+export interface FccLayoutEdge { fromId: string; toId: string; }
 
-/**
- * Layout uses only real direct premise edges. Reasoning balls remain real nodes:
- * premise -> reasoning -> conclusion is two real edges, each preferring one x.
- */
+/** Reasoning remains a real node: premise -> reasoning -> conclusion is two real direct edges. */
 export function collectDirectLayoutEdges(nodes: readonly UniformLayoutNode[]): FccLayoutEdge[] {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
   const seen = new Set<string>();
   const edges: FccLayoutEdge[] = [];
-
   for (const target of nodes) {
     if (!isLayoutNode(target)) continue;
     for (const sourceId of target.premises ?? []) {
@@ -154,7 +107,11 @@ function buildAdjacency(nodes: readonly UniformLayoutNode[], edges: readonly Fcc
   return adjacency;
 }
 
-type DirectedIndex = { edgeKeys: Set<string>; incomingCount: Map<string, number>; outgoingCount: Map<string, number> };
+type DirectedIndex = {
+  edgeKeys: Set<string>;
+  incomingCount: Map<string, number>;
+  outgoingCount: Map<string, number>;
+};
 
 function buildDirectedIndex(nodes: readonly UniformLayoutNode[], edges: readonly FccLayoutEdge[]): DirectedIndex {
   const edgeKeys = new Set<string>();
@@ -183,8 +140,7 @@ function directedRelation(parentId: string, childId: string, directed: DirectedI
 function connectedComponents(adjacency: ReadonlyMap<string, string[]>): string[][] {
   const visited = new Set<string>();
   const components: string[][] = [];
-  const ids = [...adjacency.keys()].sort();
-  for (const seed of ids) {
+  for (const seed of [...adjacency.keys()].sort()) {
     if (visited.has(seed)) continue;
     const component: string[] = [];
     const queue = [seed];
@@ -200,12 +156,30 @@ function connectedComponents(adjacency: ReadonlyMap<string, string[]>): string[]
     }
     components.push(component);
   }
+  components.sort((a, b) => b.length - a.length || a[0].localeCompare(b[0]));
   return components;
 }
 
-type BfsResult = { farthest: string; parent: Map<string, string | null>; distance: Map<string, number> };
+function endpointDownstreamScore(id: string, directed: DirectedIndex): number {
+  return (directed.incomingCount.get(id) ?? 0) - (directed.outgoingCount.get(id) ?? 0);
+}
 
-function bfsWithin(start: string, allowed: ReadonlySet<string>, adjacency: ReadonlyMap<string, string[]>): BfsResult {
+/** Purple wins the outer anchor; within a layer, the more conclusion-like node wins. */
+function chooseConclusionAnchor(component: readonly string[], byId: ReadonlyMap<string, UniformLayoutNode>, directed: DirectedIndex): string {
+  return [...component].sort((a, b) => {
+    const aNode = byId.get(a)!;
+    const bNode = byId.get(b)!;
+    const layerDelta = LAYER_RANK[userLayerOf(bNode)] - LAYER_RANK[userLayerOf(aNode)];
+    if (layerDelta !== 0) return layerDelta;
+    const directionDelta = endpointDownstreamScore(b, directed) - endpointDownstreamScore(a, directed);
+    if (directionDelta !== 0) return directionDelta;
+    return a.localeCompare(b);
+  })[0];
+}
+
+type BfsTree = { parent: Map<string, string | null>; distance: Map<string, number>; farthest: string };
+
+function bfsFrom(start: string, allowed: ReadonlySet<string>, adjacency: ReadonlyMap<string, string[]>): BfsTree {
   const parent = new Map<string, string | null>([[start, null]]);
   const distance = new Map<string, number>([[start, 0]]);
   const queue = [start];
@@ -221,56 +195,31 @@ function bfsWithin(start: string, allowed: ReadonlySet<string>, adjacency: Reado
       if (nextDistance > (distance.get(farthest) ?? 0)) farthest = neighbourId;
     }
   }
-  return { farthest, parent, distance };
+  return { parent, distance, farthest };
 }
 
-/** Cheap main-chain estimate; it controls straightness, never the one-x contract. */
-function approximateDiameterPath(component: readonly string[], adjacency: ReadonlyMap<string, string[]>): string[] {
-  if (component.length <= 1) return [...component];
-  const allowed = new Set(component);
-  const first = bfsWithin(component[0], allowed, adjacency);
-  const second = bfsWithin(first.farthest, allowed, adjacency);
+/** The main spine starts at the conclusion anchor and follows the longest available premise-side depth. */
+function conclusionFirstSpine(anchorId: string, component: readonly string[], adjacency: ReadonlyMap<string, string[]>): string[] {
+  const tree = bfsFrom(anchorId, new Set(component), adjacency);
   const path: string[] = [];
-  let cursor: string | null | undefined = second.farthest;
+  let cursor: string | null | undefined = tree.farthest;
   while (cursor) {
     path.push(cursor);
-    if (cursor === first.farthest) break;
-    cursor = second.parent.get(cursor);
+    if (cursor === anchorId) break;
+    cursor = tree.parent.get(cursor);
   }
   return path.reverse();
 }
 
-function endpointDownstreamScore(id: string, directed: DirectedIndex): number {
-  return (directed.incomingCount.get(id) ?? 0) - (directed.outgoingCount.get(id) ?? 0);
-}
-
-/** Conclusion first; on direction ties prefer purple, then blue, then cyan. */
-function orientSpine(spine: readonly string[], directed: DirectedIndex, byId: ReadonlyMap<string, UniformLayoutNode>): string[] {
-  if (spine.length <= 1) return [...spine];
-  let directionScore = 0;
-  for (let i = 1; i < spine.length; i++) directionScore += directedRelation(spine[i - 1], spine[i], directed);
-  if (directionScore > 0) return [...spine].reverse();
-  if (directionScore < 0) return [...spine];
-  const first = spine[0];
-  const last = spine[spine.length - 1];
-  const firstDownstream = endpointDownstreamScore(first, directed);
-  const lastDownstream = endpointDownstreamScore(last, directed);
-  if (lastDownstream > firstDownstream) return [...spine].reverse();
-  if (firstDownstream > lastDownstream) return [...spine];
-  const firstNode = byId.get(first);
-  const lastNode = byId.get(last);
-  if (firstNode && lastNode) {
-    const firstRank = LAYER_RANK[userLayerOf(firstNode)];
-    const lastRank = LAYER_RANK[userLayerOf(lastNode)];
-    if (lastRank > firstRank) return [...spine].reverse();
-    if (firstRank > lastRank) return [...spine];
-  }
-  return first <= last ? [...spine] : [...spine].reverse();
-}
-
 type ComponentSchedule = { order: string[]; parentById: Map<string, string> };
 
-function scheduleComponent(component: readonly string[], spine: readonly string[], adjacency: ReadonlyMap<string, string[]>, directed: DirectedIndex, byId: ReadonlyMap<string, UniformLayoutNode>): ComponentSchedule {
+function scheduleComponent(
+  component: readonly string[],
+  spine: readonly string[],
+  adjacency: ReadonlyMap<string, string[]>,
+  directed: DirectedIndex,
+  byId: ReadonlyMap<string, UniformLayoutNode>,
+): ComponentSchedule {
   const allowed = new Set(component);
   const scheduled = new Set<string>();
   const parentById = new Map<string, string>();
@@ -278,7 +227,6 @@ function scheduleComponent(component: readonly string[], spine: readonly string[
   const queue: string[] = [];
   for (let index = 0; index < spine.length; index++) {
     const id = spine[index];
-    if (scheduled.has(id)) continue;
     scheduled.add(id);
     order.push(id);
     queue.push(id);
@@ -288,18 +236,15 @@ function scheduleComponent(component: readonly string[], spine: readonly string[
     const aDirection = directedRelation(fromId, a, directed);
     const bDirection = directedRelation(fromId, b, directed);
     if (aDirection !== bDirection) return aDirection - bDirection;
-    const aNode = byId.get(a);
-    const bNode = byId.get(b);
-    if (aNode && bNode) {
-      const layerDifference = LAYER_RANK[userLayerOf(bNode)] - LAYER_RANK[userLayerOf(aNode)];
-      if (layerDifference !== 0) return layerDifference;
-    }
+    const aNode = byId.get(a)!;
+    const bNode = byId.get(b)!;
+    const layerDelta = LAYER_RANK[userLayerOf(aNode)] - LAYER_RANK[userLayerOf(bNode)];
+    if (layerDelta !== 0) return layerDelta;
     return a.localeCompare(b);
   };
   for (let head = 0; head < queue.length; head++) {
     const id = queue[head];
-    const neighbours = [...(adjacency.get(id) ?? [])].sort((a, b) => neighbourOrder(id, a, b));
-    for (const neighbourId of neighbours) {
+    for (const neighbourId of [...(adjacency.get(id) ?? [])].sort((a, b) => neighbourOrder(id, a, b))) {
       if (!allowed.has(neighbourId) || scheduled.has(neighbourId)) continue;
       scheduled.add(neighbourId);
       parentById.set(neighbourId, id);
@@ -310,153 +255,178 @@ function scheduleComponent(component: readonly string[], spine: readonly string[
   return { order, parentById };
 }
 
-function validFreeSlot(coord: FccCoord, occupied: ReadonlySet<string>): boolean {
-  return !occupied.has(coordKey(coord)) && fccPositionForCoord(coord).length() >= CORE_LAYOUT_CLEARANCE_RADIUS;
+function layerRadiusForSphere(node: UniformLayoutNode, sphereRadius: number): number {
+  const layer = userLayerOf(node);
+  if (layer === 'outer') return sphereRadius;
+  if (layer === 'middle') return sphereRadius * 2 / 3;
+  return sphereRadius / 3;
 }
 
-function minimumDistanceSqToAssigned(candidate: FccCoord, assigned: ReadonlyMap<string, FccCoord>): number {
-  let minimum = Number.POSITIVE_INFINITY;
-  for (const coord of assigned.values()) minimum = Math.min(minimum, coordLengthSq(subtractCoord(candidate, coord)));
-  return minimum;
+const BASE_ANCHOR_DIRECTIONS = Object.freeze([
+  new THREE.Vector3(0, 0, 1),
+  new THREE.Vector3(0, 0, -1),
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0, -1, 0),
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(-1, 0, 0),
+]);
+
+function directionKey(direction: THREE.Vector3): string {
+  return `${direction.x.toFixed(6)}|${direction.y.toFixed(6)}|${direction.z.toFixed(6)}`;
 }
 
-function layerRadiusScore(node: UniformLayoutNode, candidate: FccCoord): number {
-  return -Math.abs(coordRadius(candidate) - LAYER_TARGET_RADIUS[userLayerOf(node)]) / FCC_NEIGHBOR_DISTANCE;
-}
-
-function rootRadiusScore(node: UniformLayoutNode, candidate: FccCoord, minimumPreferredRadius: number): number {
-  const target = Math.max(LAYER_TARGET_RADIUS[userLayerOf(node)], minimumPreferredRadius);
-  return -Math.abs(coordRadius(candidate) - target) / FCC_NEIGHBOR_DISTANCE;
-}
-
-function chooseRootCandidate(node: UniformLayoutNode, candidates: readonly FccCoord[], assigned: ReadonlyMap<string, FccCoord>, minimumPreferredRadius: number): FccCoord {
-  let best = candidates[0];
-  let bestLayer = Number.NEGATIVE_INFINITY;
-  let bestGap = Number.NEGATIVE_INFINITY;
-  let bestKey = coordKey(best);
-  for (const candidate of candidates) {
-    const layer = rootRadiusScore(node, candidate, minimumPreferredRadius);
-    const gap = minimumDistanceSqToAssigned(candidate, assigned);
-    const key = coordKey(candidate);
-    const better = layer > bestLayer + 1e-9
-      || (Math.abs(layer - bestLayer) <= 1e-9 && gap > bestGap)
-      || (Math.abs(layer - bestLayer) <= 1e-9 && gap === bestGap && key < bestKey);
-    if (!better) continue;
-    best = candidate;
-    bestLayer = layer;
-    bestGap = gap;
-    bestKey = key;
-  }
-  return best;
-}
-
-/**
- * Colour sets the approximate conclusion radius. A connected conclusion gets only
- * one extra safeguard: at least 2x, so its first premise-side neighbour can prefer
- * one exact inward step. We never multiply radius by total chain length.
- */
-function rootSlot(node: UniformLayoutNode, occupied: ReadonlySet<string>, assigned: ReadonlyMap<string, FccCoord>, minimumPreferredRadius = FCC_NEIGHBOR_DISTANCE): FccCoord {
-  const targetRadius = Math.max(LAYER_TARGET_RADIUS[userLayerOf(node)], minimumPreferredRadius);
-  const targetDepth = Math.max(1, Math.ceil(targetRadius / FCC_NEIGHBOR_DISTANCE));
-  const visited = new Set<string>([coordKey([0, 0, 0])]);
-  let frontier: FccCoord[] = [[0, 0, 0]];
-  const candidates: FccCoord[] = [];
-  for (let depth = 1; depth <= targetDepth; depth++) {
-    const nextByKey = new Map<string, FccCoord>();
-    for (const coord of frontier) {
-      for (const step of FCC_NEIGHBOR_STEPS) {
-        const next = addCoord(coord, step);
-        const key = coordKey(next);
-        if (visited.has(key)) continue;
-        visited.add(key);
-        nextByKey.set(key, next);
+function buildAnchorDirectionPool(): THREE.Vector3[] {
+  const unique = new Map<string, THREE.Vector3>();
+  const add = (direction: THREE.Vector3) => {
+    if (direction.lengthSq() <= POSITION_EPSILON) return;
+    const normalized = direction.clone().normalize();
+    unique.set(directionKey(normalized), normalized);
+  };
+  for (const direction of BASE_ANCHOR_DIRECTIONS) add(direction);
+  for (let x = -4; x <= 4; x++) {
+    for (let y = -4; y <= 4; y++) {
+      for (let z = -4; z <= 4; z++) {
+        if (x === 0 && y === 0 && z === 0) continue;
+        add(new THREE.Vector3(x, y, z));
       }
     }
-    frontier = [...nextByKey.values()];
-    candidates.push(...frontier.filter(coord => validFreeSlot(coord, occupied)));
   }
-  if (candidates.length > 0) return chooseRootCandidate(node, candidates, assigned, minimumPreferredRadius);
-  for (;;) {
-    const nextByKey = new Map<string, FccCoord>();
-    for (const coord of frontier) {
-      for (const step of FCC_NEIGHBOR_STEPS) {
-        const next = addCoord(coord, step);
-        const key = coordKey(next);
-        if (visited.has(key)) continue;
-        visited.add(key);
-        nextByKey.set(key, next);
-      }
-    }
-    frontier = [...nextByKey.values()];
-    const free = frontier.filter(coord => validFreeSlot(coord, occupied));
-    if (free.length > 0) return chooseRootCandidate(node, free, assigned, minimumPreferredRadius);
-  }
+  return [...unique.values()];
 }
 
-function exactAssignedNeighbourCount(id: string, candidate: FccCoord, adjacency: ReadonlyMap<string, string[]>, assigned: ReadonlyMap<string, FccCoord>): number {
+const ANCHOR_DIRECTION_POOL = buildAnchorDirectionPool();
+
+function sameDirection(a: THREE.Vector3, b: THREE.Vector3): boolean { return a.dot(b) > 0.999999; }
+
+function angularGapScore(candidate: THREE.Vector3, used: readonly THREE.Vector3[]): number {
+  if (used.length === 0) return 2;
+  let nearestDot = -1;
+  for (const direction of used) nearestDot = Math.max(nearestDot, candidate.dot(direction));
+  return 1 - nearestDot;
+}
+
+/** First fill front/back/up/down/left/right; afterwards always try the largest remaining spherical gap. */
+function rankedAnchorDirections(used: readonly THREE.Vector3[]): THREE.Vector3[] {
+  const unused = ANCHOR_DIRECTION_POOL.filter(candidate => !used.some(direction => sameDirection(candidate, direction)));
+  const unusedAxes = BASE_ANCHOR_DIRECTIONS.filter(axis => !used.some(direction => sameDirection(axis, direction)));
+  unused.sort((a, b) => {
+    if (unusedAxes.length > 0) {
+      const aAxis = unusedAxes.findIndex(axis => sameDirection(a, axis));
+      const bAxis = unusedAxes.findIndex(axis => sameDirection(b, axis));
+      if ((aAxis >= 0) !== (bAxis >= 0)) return aAxis >= 0 ? -1 : 1;
+      if (aAxis >= 0 && bAxis >= 0 && aAxis !== bAxis) return aAxis - bAxis;
+    }
+    const gapDelta = angularGapScore(b, used) - angularGapScore(a, used);
+    if (Math.abs(gapDelta) > POSITION_EPSILON) return gapDelta;
+    return directionKey(a).localeCompare(directionKey(b));
+  });
+  return unused;
+}
+
+function orthonormalBasis(direction: THREE.Vector3): [THREE.Vector3, THREE.Vector3, THREE.Vector3] {
+  const w = direction.clone().normalize();
+  const reference = Math.abs(w.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const u = reference.clone().cross(w).normalize();
+  const v = w.clone().cross(u).normalize();
+  return [u, v, w];
+}
+
+function localExactDirections(anchorDirection: THREE.Vector3): THREE.Vector3[] {
+  const [u, v, w] = orthonormalBasis(anchorDirection);
+  const unique = new Map<string, THREE.Vector3>();
+  for (let a = -1; a <= 1; a++) {
+    for (let b = -1; b <= 1; b++) {
+      for (let c = -1; c <= 1; c++) {
+        if (a === 0 && b === 0 && c === 0) continue;
+        const direction = u.clone().multiplyScalar(a).add(v.clone().multiplyScalar(b)).add(w.clone().multiplyScalar(c)).normalize();
+        unique.set(directionKey(direction), direction);
+      }
+    }
+  }
+  return [...unique.values()];
+}
+
+function positionLegal(candidate: THREE.Vector3, sphereRadius: number, positions: ReadonlyMap<string, THREE.Vector3>): boolean {
+  const radius = candidate.length();
+  if (radius < CORE_LAYOUT_CLEARANCE_RADIUS - POSITION_EPSILON || radius > sphereRadius + POSITION_EPSILON) return false;
+  for (const position of positions.values()) {
+    if (candidate.distanceTo(position) < FCC_NEIGHBOR_DISTANCE - POSITION_EPSILON) return false;
+  }
+  return true;
+}
+
+function mergedPositions(global: ReadonlyMap<string, THREE.Vector3>, local: ReadonlyMap<string, THREE.Vector3>): Map<string, THREE.Vector3> {
+  const merged = new Map(global);
+  for (const [id, position] of local) merged.set(id, position);
+  return merged;
+}
+
+function exactAssignedNeighbourCount(
+  id: string,
+  candidate: THREE.Vector3,
+  adjacency: ReadonlyMap<string, string[]>,
+  positions: ReadonlyMap<string, THREE.Vector3>,
+): number {
   let count = 0;
   for (const neighbourId of adjacency.get(id) ?? []) {
-    const neighbourCoord = assigned.get(neighbourId);
-    if (neighbourCoord && isNearestFccStep(subtractCoord(candidate, neighbourCoord))) count++;
+    const neighbour = positions.get(neighbourId);
+    if (neighbour && Math.abs(candidate.distanceTo(neighbour) - FCC_NEIGHBOR_DISTANCE) <= POSITION_EPSILON) count++;
   }
   return count;
 }
 
-function gapScore(parentCoord: FccCoord, candidateCoord: FccCoord, occupied: ReadonlySet<string>): number {
-  const candidateDirection = subtractCoord(candidateCoord, parentCoord);
-  const candidateLength = Math.sqrt(coordLengthSq(candidateDirection));
-  let maxAlignment = -1;
-  let found = false;
-  for (const step of FCC_NEIGHBOR_STEPS) {
-    if (!occupied.has(coordKey(addCoord(parentCoord, step)))) continue;
-    found = true;
-    const alignment = directionDot(candidateDirection, step) / (candidateLength * Math.SQRT2);
-    maxAlignment = Math.max(maxAlignment, alignment);
+function geometricGapScore(candidate: THREE.Vector3, parentId: string, positions: ReadonlyMap<string, THREE.Vector3>): number {
+  let minimum = Number.POSITIVE_INFINITY;
+  for (const [id, position] of positions) {
+    if (id === parentId) continue;
+    minimum = Math.min(minimum, candidate.distanceToSquared(position));
   }
-  return found ? -maxAlignment : 1;
+  return minimum;
 }
 
-function continuityScore(candidate: FccCoord, parent: FccCoord, previousStep: FccCoord | null): number {
-  if (!previousStep) return 0;
-  const direction = subtractCoord(candidate, parent);
-  const a = Math.sqrt(coordLengthSq(direction));
-  const b = Math.sqrt(coordLengthSq(previousStep));
-  if (a <= POSITION_EPSILON_SQ || b <= POSITION_EPSILON_SQ) return 0;
-  return directionDot(direction, previousStep) / (a * b);
-}
-
-/** Walking conclusion -> premise, prefer legal exact-x candidates that move inward. */
-function directedRadialScore(parentId: string, id: string, parentCoord: FccCoord, candidate: FccCoord, directed: DirectedIndex): number {
+function candidateRadialScore(parentId: string, id: string, parent: THREE.Vector3, candidate: THREE.Vector3, directed: DirectedIndex): number {
   const relation = directedRelation(parentId, id, directed);
-  if (relation === 0) return 0;
-  return relation * (coordRadius(candidate) - coordRadius(parentCoord)) / FCC_NEIGHBOR_DISTANCE;
+  return relation * (candidate.length() - parent.length());
 }
 
-function chooseCandidate(candidates: readonly FccCoord[], node: UniformLayoutNode, parentId: string, parentCoord: FccCoord, preserveContinuity: boolean, previousStep: FccCoord | null, occupied: ReadonlySet<string>, adjacency: ReadonlyMap<string, string[]>, assigned: ReadonlyMap<string, FccCoord>, directed: DirectedIndex): FccCoord {
-  let best = candidates[0];
+function layerCandidateScore(node: UniformLayoutNode, candidate: THREE.Vector3, sphereRadius: number): number {
+  return -Math.abs(candidate.length() - layerRadiusForSphere(node, sphereRadius));
+}
+
+function chooseExactCandidate(
+  id: string,
+  node: UniformLayoutNode,
+  parentId: string,
+  parent: THREE.Vector3,
+  previousStep: THREE.Vector3 | null,
+  candidates: readonly THREE.Vector3[],
+  sphereRadius: number,
+  adjacency: ReadonlyMap<string, string[]>,
+  positions: ReadonlyMap<string, THREE.Vector3>,
+  directed: DirectedIndex,
+): THREE.Vector3 | null {
+  let best: THREE.Vector3 | null = null;
   let bestExact = -1;
   let bestRadial = Number.NEGATIVE_INFINITY;
   let bestContinuity = Number.NEGATIVE_INFINITY;
   let bestLayer = Number.NEGATIVE_INFINITY;
   let bestGap = Number.NEGATIVE_INFINITY;
-  let bestKey = coordKey(best);
-  for (const candidate of candidates) {
-    const exact = exactAssignedNeighbourCount(node.id, candidate, adjacency, assigned);
-    const radial = directedRadialScore(parentId, node.id, parentCoord, candidate, directed);
-    const continuity = preserveContinuity ? continuityScore(candidate, parentCoord, previousStep) : 0;
-    const layer = layerRadiusScore(node, candidate);
-    const gap = gapScore(parentCoord, candidate, occupied);
-    const key = coordKey(candidate);
-    const sameExact = exact === bestExact;
-    const sameRadial = Math.abs(radial - bestRadial) <= 1e-9;
-    const sameContinuity = Math.abs(continuity - bestContinuity) <= 1e-9;
-    const sameLayer = Math.abs(layer - bestLayer) <= 1e-9;
+  let bestKey = '';
+  for (const direction of candidates) {
+    const candidate = parent.clone().add(direction.clone().multiplyScalar(FCC_NEIGHBOR_DISTANCE));
+    if (!positionLegal(candidate, sphereRadius, positions)) continue;
+    const exact = exactAssignedNeighbourCount(id, candidate, adjacency, positions);
+    const radial = candidateRadialScore(parentId, id, parent, candidate, directed);
+    const continuity = previousStep ? direction.dot(previousStep.clone().normalize()) : 0;
+    const layer = layerCandidateScore(node, candidate, sphereRadius);
+    const gap = geometricGapScore(candidate, parentId, positions);
+    const key = directionKey(direction);
     const better = exact > bestExact
-      || (sameExact && radial > bestRadial + 1e-9)
-      || (sameExact && sameRadial && continuity > bestContinuity + 1e-9)
-      || (sameExact && sameRadial && sameContinuity && layer > bestLayer + 1e-9)
-      || (sameExact && sameRadial && sameContinuity && sameLayer && gap > bestGap + 1e-9)
-      || (sameExact && sameRadial && sameContinuity && sameLayer && Math.abs(gap - bestGap) <= 1e-9 && key < bestKey);
+      || (exact === bestExact && radial > bestRadial + POSITION_EPSILON)
+      || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && continuity > bestContinuity + POSITION_EPSILON)
+      || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && Math.abs(continuity - bestContinuity) <= POSITION_EPSILON && layer > bestLayer + POSITION_EPSILON)
+      || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && Math.abs(continuity - bestContinuity) <= POSITION_EPSILON && Math.abs(layer - bestLayer) <= POSITION_EPSILON && gap > bestGap + POSITION_EPSILON)
+      || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && Math.abs(continuity - bestContinuity) <= POSITION_EPSILON && Math.abs(layer - bestLayer) <= POSITION_EPSILON && Math.abs(gap - bestGap) <= POSITION_EPSILON && key < bestKey);
     if (!better) continue;
     best = candidate;
     bestExact = exact;
@@ -469,100 +439,186 @@ function chooseCandidate(candidates: readonly FccCoord[], node: UniformLayoutNod
   return best;
 }
 
-function nearestFreeSlot(node: UniformLayoutNode, parentId: string, parentCoord: FccCoord, preserveContinuity: boolean, previousStep: FccCoord | null, occupied: ReadonlySet<string>, adjacency: ReadonlyMap<string, string[]>, assigned: ReadonlyMap<string, FccCoord>, directed: DirectedIndex): FccCoord {
-  const exact = FCC_NEIGHBOR_STEPS.map(step => addCoord(parentCoord, step)).filter(coord => validFreeSlot(coord, occupied));
-  if (exact.length > 0) return chooseCandidate(exact, node, parentId, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned, directed);
-  // Only after every legal exact-x neighbour is unavailable may a direct edge grow longer.
-  const visited = new Set<string>([coordKey(parentCoord)]);
-  let frontier: FccCoord[] = [parentCoord];
-  for (let depth = 1; ; depth++) {
-    const nextByKey = new Map<string, FccCoord>();
-    for (const coord of frontier) {
-      for (const step of FCC_NEIGHBOR_STEPS) {
-        const next = addCoord(coord, step);
-        const key = coordKey(next);
-        if (visited.has(key)) continue;
-        visited.add(key);
-        nextByKey.set(key, next);
-      }
+function chooseLongCandidate(
+  parent: THREE.Vector3,
+  directions: readonly THREE.Vector3[],
+  sphereRadius: number,
+  positions: ReadonlyMap<string, THREE.Vector3>,
+): THREE.Vector3 | null {
+  for (let multiplier = 2; multiplier <= 8; multiplier++) {
+    let best: THREE.Vector3 | null = null;
+    let bestGap = Number.NEGATIVE_INFINITY;
+    for (const direction of directions) {
+      const candidate = parent.clone().add(direction.clone().multiplyScalar(FCC_NEIGHBOR_DISTANCE * multiplier));
+      if (!positionLegal(candidate, sphereRadius, positions)) continue;
+      const gap = geometricGapScore(candidate, '', positions);
+      if (gap <= bestGap) continue;
+      bestGap = gap;
+      best = candidate;
     }
-    const next = [...nextByKey.values()];
-    if (depth > 1) {
-      const free = next.filter(coord => validFreeSlot(coord, occupied));
-      if (free.length > 0) {
-        let minimumDistanceSq = Number.POSITIVE_INFINITY;
-        for (const candidate of free) minimumDistanceSq = Math.min(minimumDistanceSq, coordLengthSq(subtractCoord(candidate, parentCoord)));
-        const closest = free.filter(candidate => coordLengthSq(subtractCoord(candidate, parentCoord)) === minimumDistanceSq);
-        return chooseCandidate(closest, node, parentId, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned, directed);
-      }
-    }
-    frontier = next;
+    if (best) return best;
   }
+  return null;
 }
 
-function assign(id: string, coord: FccCoord, assigned: Map<string, FccCoord>, occupied: Set<string>): void {
-  assigned.set(id, coord);
-  occupied.add(coordKey(coord));
+type ComponentPlan = {
+  ids: string[];
+  rootId: string;
+  spine: string[];
+  schedule: ComponentSchedule;
+};
+
+type PlacedComponent = { ids: string[]; anchorDirection: THREE.Vector3 };
+
+function makeComponentPlans(
+  components: readonly string[][],
+  adjacency: ReadonlyMap<string, string[]>,
+  directed: DirectedIndex,
+  byId: ReadonlyMap<string, UniformLayoutNode>,
+): ComponentPlan[] {
+  return components.map(component => {
+    const rootId = chooseConclusionAnchor(component, byId, directed);
+    const spine = conclusionFirstSpine(rootId, component, adjacency);
+    return { ids: [...component], rootId, spine, schedule: scheduleComponent(component, spine, adjacency, directed, byId) };
+  });
 }
 
-function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCoord> {
+function requiredSphereRadiusForSpine(plan: ComponentPlan, byId: ReadonlyMap<string, UniformLayoutNode>): number {
+  const root = byId.get(plan.rootId)!;
+  const requiredRootRadius = CORE_LAYOUT_CLEARANCE_RADIUS + Math.max(0, plan.spine.length - 1) * FCC_NEIGHBOR_DISTANCE;
+  const layer = userLayerOf(root);
+  if (layer === 'outer') return requiredRootRadius;
+  if (layer === 'middle') return requiredRootRadius * 3 / 2;
+  return requiredRootRadius * 3;
+}
+
+function tryPlaceComponent(
+  plan: ComponentPlan,
+  anchorDirection: THREE.Vector3,
+  sphereRadius: number,
+  globalPositions: ReadonlyMap<string, THREE.Vector3>,
+  adjacency: ReadonlyMap<string, string[]>,
+  directed: DirectedIndex,
+  byId: ReadonlyMap<string, UniformLayoutNode>,
+  allowLongEdges: boolean,
+): Map<string, THREE.Vector3> | null {
+  const local = new Map<string, THREE.Vector3>();
+  const rootNode = byId.get(plan.rootId)!;
+  const root = anchorDirection.clone().multiplyScalar(layerRadiusForSphere(rootNode, sphereRadius));
+  if (!positionLegal(root, sphereRadius, globalPositions)) return null;
+  local.set(plan.rootId, root);
+
+  // Long/main chain first: conclusion -> premise, straight toward the centre.
+  for (let index = 1; index < plan.spine.length; index++) {
+    const id = plan.spine[index];
+    const parentId = plan.spine[index - 1];
+    const parent = local.get(parentId)!;
+    const relation = directedRelation(parentId, id, directed);
+    const sign = relation > 0 ? 1 : -1;
+    const candidate = parent.clone().add(anchorDirection.clone().multiplyScalar(sign * FCC_NEIGHBOR_DISTANCE));
+    const positions = mergedPositions(globalPositions, local);
+    if (!positionLegal(candidate, sphereRadius, positions)) return null;
+    local.set(id, candidate);
+  }
+
+  const localDirections = localExactDirections(anchorDirection);
+  const spineSet = new Set(plan.spine);
+  for (const id of plan.schedule.order) {
+    if (spineSet.has(id)) continue;
+    const node = byId.get(id)!;
+    const parentId = plan.schedule.parentById.get(id);
+    if (!parentId) return null;
+    const parent = local.get(parentId);
+    if (!parent) return null;
+    const grandparentId = plan.schedule.parentById.get(parentId);
+    const grandparent = grandparentId ? local.get(grandparentId) : undefined;
+    const previousStep = grandparent ? parent.clone().sub(grandparent) : null;
+    const radial = parent.lengthSq() > POSITION_EPSILON ? parent.clone().normalize() : anchorDirection.clone();
+    const relation = directedRelation(parentId, id, directed);
+    const preferredRadial = radial.multiplyScalar(relation > 0 ? 1 : -1);
+    const directions = [preferredRadial];
+    if (previousStep && previousStep.lengthSq() > POSITION_EPSILON) directions.push(previousStep.clone().normalize());
+    directions.push(...localDirections);
+    const positions = mergedPositions(globalPositions, local);
+    let candidate = chooseExactCandidate(id, node, parentId, parent, previousStep, directions, sphereRadius, adjacency, positions, directed);
+    const parentDegree = adjacency.get(parentId)?.length ?? 0;
+    if (!candidate && (allowLongEdges || parentDegree > 12)) candidate = chooseLongCandidate(parent, directions, sphereRadius, positions);
+    if (!candidate) return null;
+    local.set(id, candidate);
+  }
+  return local;
+}
+
+function expandSphere(
+  sphereRadius: number,
+  placed: readonly PlacedComponent[],
+  positions: Map<string, THREE.Vector3>,
+): number {
+  for (const component of placed) {
+    const delta = component.anchorDirection.clone().multiplyScalar(LAYOUT_RADIUS_INCREMENT);
+    for (const id of component.ids) positions.get(id)?.add(delta);
+  }
+  return sphereRadius + LAYOUT_RADIUS_INCREMENT;
+}
+
+function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, THREE.Vector3> {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
   const edges = collectDirectLayoutEdges(nodes);
   const adjacency = buildAdjacency(nodes, edges);
   const directed = buildDirectedIndex(nodes, edges);
-  const components = connectedComponents(adjacency);
-  const assigned = new Map<string, FccCoord>();
-  const occupied = new Set<string>();
-  for (const component of components) {
-    const spine = orientSpine(approximateDiameterPath(component, adjacency), directed, byId);
-    const spineIndex = new Map(spine.map((id, index) => [id, index] as const));
-    const schedule = scheduleComponent(component, spine, adjacency, directed, byId);
-    const rootId = schedule.order[0];
-    const rootNode = rootId ? byId.get(rootId) : undefined;
-    if (!rootId || !rootNode) continue;
-    const minimumConclusionRadius = component.length > 1 ? FCC_NEIGHBOR_DISTANCE * 2 : FCC_NEIGHBOR_DISTANCE;
-    assign(rootId, rootSlot(rootNode, occupied, assigned, minimumConclusionRadius), assigned, occupied);
-    for (const id of schedule.order.slice(1)) {
-      const node = byId.get(id);
-      const parentId = schedule.parentById.get(id);
-      const parentCoord = parentId ? assigned.get(parentId) : undefined;
-      if (!node) continue;
-      if (!parentId || !parentCoord) {
-        assign(id, rootSlot(node, occupied, assigned), assigned, occupied);
-        continue;
+  const plans = makeComponentPlans(connectedComponents(adjacency), adjacency, directed, byId);
+  const positions = new Map<string, THREE.Vector3>();
+  const placed: PlacedComponent[] = [];
+  let sphereRadius = INITIAL_LAYOUT_RADIUS;
+
+  for (const plan of plans) {
+    const requiredRadius = requiredSphereRadiusForSpine(plan, byId);
+    while (sphereRadius + POSITION_EPSILON < requiredRadius) sphereRadius = expandSphere(sphereRadius, placed, positions);
+
+    let widthExpansions = 0;
+    for (;;) {
+      const directions = rankedAnchorDirections(placed.map(component => component.anchorDirection));
+      let local: Map<string, THREE.Vector3> | null = null;
+      let chosenDirection: THREE.Vector3 | null = null;
+      for (const direction of directions) {
+        local = tryPlaceComponent(
+          plan,
+          direction,
+          sphereRadius,
+          positions,
+          adjacency,
+          directed,
+          byId,
+          widthExpansions >= MAX_WIDTH_EXPANSIONS_BEFORE_RELAXED_EDGE,
+        );
+        if (!local) continue;
+        chosenDirection = direction;
+        break;
       }
-      const parentIndex = spineIndex.get(parentId);
-      const childIndex = spineIndex.get(id);
-      const isSpine = parentIndex !== undefined && childIndex !== undefined && childIndex === parentIndex + 1;
-      let previousStep: FccCoord | null = null;
-      let preserveContinuity = false;
-      if (isSpine && childIndex !== undefined && childIndex >= 2) {
-        const previousCoord = assigned.get(spine[childIndex - 2]);
-        if (previousCoord) {
-          previousStep = subtractCoord(parentCoord, previousCoord);
-          preserveContinuity = true;
-        }
+      if (local && chosenDirection) {
+        for (const [id, position] of local) positions.set(id, position);
+        placed.push({ ids: plan.ids, anchorDirection: chosenDirection.clone() });
+        break;
       }
-      if (!previousStep && (adjacency.get(parentId)?.length ?? 0) === 2) {
-        const otherId = (adjacency.get(parentId) ?? []).find(neighbourId => neighbourId !== id && assigned.has(neighbourId));
-        const otherCoord = otherId ? assigned.get(otherId) : undefined;
-        if (otherCoord) {
-          previousStep = subtractCoord(parentCoord, otherCoord);
-          preserveContinuity = true;
-        }
-      }
-      assign(id, nearestFreeSlot(node, parentId, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned, directed), assigned, occupied);
+      sphereRadius = expandSphere(sphereRadius, placed, positions);
+      widthExpansions++;
+      if (widthExpansions > 24) throw new Error(`Unable to place knowledge chain rooted at ${plan.rootId}`);
     }
   }
-  return assigned;
+  return positions;
 }
 
 /**
- * Priority: exact 72 first; conclusion-side anchor second; premise-side inward
- * direction third; colour radius is soft; continuity/gap aesthetics last.
+ * Layout contract:
+ * 1) direct relation = 72 whenever possible;
+ * 2) larger chains are placed first, conclusion side first, premises toward centre;
+ * 3) purple anchors the current sphere surface, blue/cyan use middle/inner thirds;
+ * 4) front/back/up/down/left/right fill first, then the largest spherical gaps;
+ * 5) if depth/width is insufficient, sphere radius += 3x and every existing chain
+ *    is translated outward by the same 3x vector as a rigid body.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
-  const coords = placeGraphNodes(nodes);
+  const positions = placeGraphNodes(nodes);
   for (const node of nodes) {
     const layer = layerOf(node);
     node.layer = layer;
@@ -573,9 +629,8 @@ export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[])
       node.vel = new THREE.Vector3();
       continue;
     }
-    const coord = coords.get(node.id);
-    if (!coord) throw new Error(`Missing FCC slot for layout node ${node.id}`);
-    const position = fccPositionForCoord(coord);
+    const position = positions.get(node.id);
+    if (!position) throw new Error(`Missing layout position for node ${node.id}`);
     node.pos = position.clone();
     node.homePos = position.clone();
     node.vel ??= new THREE.Vector3();
