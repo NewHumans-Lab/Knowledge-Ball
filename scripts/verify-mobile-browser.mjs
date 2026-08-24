@@ -73,13 +73,13 @@ try{
     const targets=await page.evaluate(()=>{
       window.__debug.scene.stop();
       return window.__debug.renderNodes
-        .filter(node=>!['n1','n2','n16'].includes(node.id))
+        .filter(node=>!['n1','n2','n16'].includes(node.id)&&!node.lineage)
         .map(node=>{const point=window.__debug.scene.screenPositionForNode(node.id);return point?{...point,id:node.id,title:node.title}:null;})
         .filter(target=>target&&target.x>24&&target.x<366&&target.y>88&&target.y<808)
         .slice(0,8);
     });
     console.log(`mobile raycast targets: ${targets.length}`);
-    assert.ok(targets.length>=4,'mobile scene must expose at least four finite on-screen raycast targets for visual calibration');
+    assert.ok(targets.length>=4,'mobile scene must expose at least four finite on-screen ordinary raycast targets for visual calibration');
     assert.ok(targets.every(target=>Number.isFinite(target.x)&&Number.isFinite(target.y)),'mobile raycast targets must be finite');
 
     const canvasHost=page.locator('#canvasHost');
@@ -99,8 +99,9 @@ try{
     assert.ok(visual.trueBluePeak>=.55,'actual true-blue scene signal must remain visibly bright instead of collapsing into near-black blue');
     assert.ok(visual.greenDominant<=5,'old green/teal contamination must not reappear in the actual scene screenshot');
 
-    // Gate B: calibrate semantic colors around four real on-screen nodes. The local peak checks are
-    // deliberate: hue alone is insufficient because a correctly-hued node can still be visually too dark.
+    // Gate B: calibrate semantic colors around four real on-screen ordinary nodes. Lineage nodes
+    // have an intentional higher-priority special palette, so including them would not test the layer palette.
+    // The local peak checks are deliberate: hue alone is insufficient because a correctly-hued node can still be visually too dark.
     // Layer color is now controlled by effectiveLayer, not by NodeType, so the calibration must exercise
     // the same canonical layer input consumed by the production scene.
     const calibrationIds=targets.slice(0,4).map(target=>target.id);
