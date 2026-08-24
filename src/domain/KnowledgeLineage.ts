@@ -68,12 +68,18 @@ export function reasoningSideRankFor(node: KnowledgeLineageNode): number | null 
   return node.lineage?.reasoningSideRank ?? null;
 }
 
-/** Both white and red stable camp heads are current heads; dominance is separate. */
+/**
+ * Canonical white/red stable camp heads are both `current`. A side-rank-zero
+ * red `opposition` role is accepted only as a replay/snapshot compatibility
+ * shape from the immediately preceding model and is normalized on the next
+ * reasoning transition.
+ */
 export function isReasoningSideHead(node: KnowledgeLineageNode): boolean {
+  const role = lineageRoleFor(node);
   return Boolean(
     node.lineage?.reasoningSide
       && node.lineage.reasoningSideRank === 0
-      && lineageRoleFor(node) === 'current',
+      && (role === 'current' || (node.lineage.reasoningSide === 'opposition' && role === 'opposition')),
   );
 }
 
@@ -110,12 +116,13 @@ export function reasoningHeadForTopic<T extends KnowledgeLineageNode>(
   topicId: string,
   side: ReasoningSide,
 ): T | undefined {
-  return nodes.find(node =>
-    topicIdFor(node) === topicId
-      && lineageRoleFor(node) === 'current'
-      && node.lineage?.reasoningSide === side
-      && node.lineage.reasoningSideRank === 0,
-  );
+  return nodes.find(node => {
+    if (topicIdFor(node) !== topicId
+      || node.lineage?.reasoningSide !== side
+      || node.lineage.reasoningSideRank !== 0) return false;
+    const role = lineageRoleFor(node);
+    return role === 'current' || (side === 'opposition' && role === 'opposition');
+  });
 }
 
 /**
@@ -205,8 +212,8 @@ export function validateKnowledgeLineage(nodes: readonly KnowledgeLineageNode[])
       errors.push(`reasoning side rank requires a reasoning side: ${node.id}`);
     }
     if ((meta.reasoningSideRank ?? 0) < 0) errors.push(`reasoning side rank must be non-negative: ${node.id}`);
-    if (meta.reasoningDominant && (!meta.reasoningSide || meta.reasoningSideRank !== 0 || meta.role !== 'current')) {
-      errors.push(`only a current reasoning side head may be dominant: ${node.id}`);
+    if (meta.reasoningDominant && (!meta.reasoningSide || meta.reasoningSideRank !== 0 || !isReasoningSideHead(node))) {
+      errors.push(`only a reasoning side head may be dominant: ${node.id}`);
     }
   }
 
@@ -245,17 +252,26 @@ export function validateKnowledgeLineage(nodes: readonly KnowledgeLineageNode[])
         && node.lineage.reasoningSideRank === 0
         && lineageRoleFor(node) === 'current',
     );
-    const oppositionHead = stableMembers.filter(node =>
+    const canonicalRedHead = stableMembers.filter(node =>
       node.lineage?.reasoningSide === 'opposition'
         && node.lineage.reasoningSideRank === 0
         && lineageRoleFor(node) === 'current',
     );
+    const compatibleLegacyRedHead = stableMembers.filter(node =>
+      node.lineage?.reasoningSide === 'opposition'
+        && node.lineage.reasoningSideRank === 0
+        && lineageRoleFor(node) === 'opposition',
+    );
+    const oppositionHead = canonicalRedHead.length ? canonicalRedHead : compatibleLegacyRedHead;
     if (normalHead.length !== 1) errors.push(`reasoning topic must have exactly one white current head: ${topicId}`);
-    if (oppositionHead.length > 1) errors.push(`reasoning topic may have at most one red current head: ${topicId}`);
+    if (canonicalRedHead.length > 1 || compatibleLegacyRedHead.length > 1 || (canonicalRedHead.length && compatibleLegacyRedHead.length)) {
+      errors.push(`reasoning topic may have at most one red head: ${topicId}`);
+    }
 
     const currents = stableMembers.filter(node => lineageRoleFor(node) === 'current');
-    if (currents.length !== normalHead.length + oppositionHead.length) {
-      errors.push(`reasoning topic current nodes must be side heads only: ${topicId}`);
+    const expectedCurrentCount = normalHead.length + canonicalRedHead.length;
+    if (currents.length !== expectedCurrentCount) {
+      errors.push(`reasoning topic current nodes must be canonical side heads only: ${topicId}`);
     }
 
     const sideHeads = [...normalHead, ...oppositionHead];
