@@ -27,6 +27,13 @@ export interface KnowledgeLineageMeta {
   role: KnowledgeLineageRole;
   /** current/candidates use 0; stable history/opposition use positive distance from current. */
   rank: number;
+  /**
+   * A successful opposition to a reasoning node means that reasoning relation
+   * should not currently exist. The topic therefore intentionally has no white
+   * current head: the winning opposition stays red and every former accepted
+   * reasoning version is gray. Such balls are audit-visible only in All mode.
+   */
+  suppressedByOpposition?: boolean;
 }
 
 export interface KnowledgeLineageNode {
@@ -46,6 +53,10 @@ export function topicIdFor(node: KnowledgeLineageNode): string {
 /** Legacy balls are current heads of their own one-ball topic. */
 export function lineageRoleFor(node: KnowledgeLineageNode): KnowledgeLineageRole {
   return node.lineage?.role ?? 'current';
+}
+
+export function isSuppressedByOpposition(node: KnowledgeLineageNode): boolean {
+  return node.lineage?.suppressedByOpposition === true;
 }
 
 /**
@@ -117,12 +128,30 @@ export function validateKnowledgeLineage(nodes: readonly KnowledgeLineageNode[])
 
   for (const topicId of topicIds) {
     const members = nodes.filter(node => topicIdFor(node) === topicId);
-    const currents = members.filter(node => lineageRoleFor(node) === 'current');
-    if (currents.length !== 1) errors.push(`topic must have exactly one current node: ${topicId}`);
+    const activeMembers = members.filter(node => lineageRoleFor(node) !== 'rejected');
+    const currents = activeMembers.filter(node => lineageRoleFor(node) === 'current');
+    const suppressedCount = activeMembers.filter(isSuppressedByOpposition).length;
+    const suppressedTopic = activeMembers.length > 0 && suppressedCount === activeMembers.length;
+
+    if (suppressedCount > 0 && !suppressedTopic) {
+      errors.push(`suppressed lineage topic must mark every active member: ${topicId}`);
+    }
+
+    if (suppressedTopic) {
+      if (currents.length !== 0) errors.push(`suppressed topic must have no current node: ${topicId}`);
+      const winningOpposition = activeMembers.find(node =>
+        lineageRoleFor(node) === 'opposition'
+        && node.lineage?.rank === 1
+        && node.lineage?.proposal === 'opposition',
+      );
+      if (!winningOpposition) errors.push(`suppressed topic must have a rank-1 winning opposition: ${topicId}`);
+    } else if (currents.length !== 1) {
+      errors.push(`topic must have exactly one current node: ${topicId}`);
+    }
 
     for (const role of ['history', 'opposition'] as const) {
       const usedRanks = new Map<number, string>();
-      for (const node of members.filter(member => lineageRoleFor(member) === role)) {
+      for (const node of activeMembers.filter(member => lineageRoleFor(member) === role)) {
         const rank = node.lineage?.rank ?? 0;
         const previous = usedRanks.get(rank);
         if (previous) errors.push(`${role} lineage cannot fork at rank ${rank}: ${previous}, ${node.id}`);

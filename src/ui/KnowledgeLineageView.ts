@@ -1,5 +1,5 @@
 import type { KnowledgeLineageMeta } from '../domain/KnowledgeLineage';
-import { lineageRoleFor } from '../domain/KnowledgeLineage';
+import { isSuppressedByOpposition, lineageRoleFor } from '../domain/KnowledgeLineage';
 import type { Mastery } from '../domain/KnowledgeModel';
 import type { NodeStatus } from '../event/Event';
 
@@ -73,6 +73,11 @@ export function nodeVisibleInKnowledgeMode(
   if (isCore) return true;
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
+
+  // A successful opposition to a reasoning node removes that reasoning from the
+  // effective graph. Both the winning red opposition and the former gray
+  // reasoning history are audit-only and therefore belong exclusively to All.
+  if (isSuppressedByOpposition(node)) return mode === 'all';
 
   // Detail context is intentionally evaluated after the rejected guard: audit-
   // only rejected proposals must never be resurrected by presentation state.

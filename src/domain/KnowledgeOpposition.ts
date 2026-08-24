@@ -100,12 +100,76 @@ export function rejectOppositionCandidate(nodes: GraphNode[], candidateId: strin
   assertValidLineage(nodes);
 }
 
+function promoteReasoningOppositionCandidate(
+  nodes: GraphNode[],
+  candidate: OppositionCandidateNode,
+  current: GraphNode,
+): string {
+  const topicId = candidate.lineage.topicId;
+  const oldHistory = nodes
+    .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'history')
+    .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
+  const oldOpposition = nodes
+    .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'opposition')
+    .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
+
+  const previousMeta = current.lineage ?? {
+    topicId,
+    proposal: 'new' as const,
+    role: 'current' as const,
+    rank: 0,
+  };
+  current.lineage = {
+    ...previousMeta,
+    topicId,
+    role: 'history',
+    rank: 1,
+    suppressedByOpposition: true,
+  };
+  current.hidden = true;
+
+  oldHistory.forEach((node, index) => {
+    if (!node.lineage) throw new Error(`Historical lineage metadata missing: ${node.id}`);
+    node.lineage = {
+      ...node.lineage,
+      role: 'history',
+      rank: index + 2,
+      suppressedByOpposition: true,
+    };
+    node.hidden = true;
+  });
+
+  const candidateNode: GraphNode = candidate;
+  candidateNode.lineage = {
+    ...candidate.lineage,
+    role: 'opposition',
+    rank: 1,
+    suppressedByOpposition: true,
+  };
+  candidateNode.status = 'verified';
+  candidateNode.hidden = true;
+
+  oldOpposition.forEach((node, index) => {
+    if (!node.lineage) throw new Error(`Opposition lineage metadata missing: ${node.id}`);
+    node.lineage = {
+      ...node.lineage,
+      role: 'opposition',
+      rank: index + 2,
+      suppressedByOpposition: true,
+    };
+    node.hidden = true;
+  });
+
+  assertValidLineage(nodes);
+  return current.id;
+}
+
 /**
- * Final acceptance swaps the two viewpoint roles atomically in projection:
- * - previous current becomes nearest opposition;
- * - its history follows behind it on the opposition chain;
- * - the previously stable opposition chain becomes history of the winning side;
- * - the accepted candidate becomes the unique current head.
+ * Final acceptance normally swaps the two viewpoint roles atomically in
+ * projection. Reasoning nodes are the deliberate exception: a successful
+ * opposition means the reasoning relation should not exist, so the winning
+ * opposition stays red, the former white reasoning becomes gray history, and
+ * the topic intentionally has no current white head.
  */
 export function promoteOppositionCandidate(nodes: GraphNode[], candidateId: string): string {
   const candidate = nodes.find(node => node.id === candidateId);
@@ -116,6 +180,10 @@ export function promoteOppositionCandidate(nodes: GraphNode[], candidateId: stri
   if (!current) throw new Error(`Opposition topic has no current node: ${topicId}`);
   if (current.id !== candidate.lineage.targetId) {
     throw new Error(`Stale opposition target: expected ${current.id}, got ${candidate.lineage.targetId}`);
+  }
+
+  if (current.type === 'reasoning') {
+    return promoteReasoningOppositionCandidate(nodes, candidate, current);
   }
 
   const oldHistory = nodes
