@@ -43,28 +43,36 @@ assert(sceneSource.includes('syncEdges(allNodes)'), 'relation lifecycle must fol
 assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD must not own relation lifecycle');
 assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs must not globally hide relations');
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale checks');
-assert(sceneSource.includes('let graphZoom = 1;'), 'initial graph scale must be neutral so five layout diameters render as five visible diameters');
-assert(!sceneSource.includes('let graphZoom = 1.27;'), 'the old 1.27 initial position-only enlargement must not return');
+assert(sceneSource.includes('let graphZoom = 1;'), 'initial graph scale must remain neutral');
+assert(!sceneSource.includes('let graphZoom = 1.27;'), 'the old 1.27 initial enlargement must not return');
 assert(!sceneSource.includes('if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;'), 'focused mobile node must not steal a tap from a nearer projected neighbour');
 assert(sceneSource.includes("if (typeof id === 'string' && distance <= 24 && (!nearest || distance < nearest.distance))"), 'mobile taps must resolve by the nearest visible projected ball');
-assert(!sceneSource.includes('detailReasoningPresentationPositions'), 'detail-only reasoning displacement must be removed');
+assert(!sceneSource.includes('detailReasoningPresentationPositions'), 'detail-only reasoning displacement must stay removed');
 assert(!sceneSource.includes('detailDisplayPositions'), 'rendered node positions must come directly from authoritative scene coordinates');
 
+// Layout priority is lexicographic, not a blended force simulation:
+// exact x first, directed radial progress second, soft colour layer after that.
 assert(uniformSource.includes('export const ORDINARY_NODE_RADIUS = 7.2;'), 'live layout must state the ordinary-ball radius');
-assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;'), 'live spacing must equal five ordinary-ball diameters');
+assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;'), 'first constraint must remain five ordinary-ball diameters');
+assert(uniformSource.includes('FCC_NEIGHBOR_STEPS'), 'live layout must retain the twelve FCC nearest-neighbour slots');
 assert(uniformSource.includes('collectDirectLayoutEdges'), 'only direct real graph edges may drive adjacency');
-assert(uniformSource.includes('FCC_NEIGHBOR_STEPS'), 'live layout must use the twelve FCC nearest-neighbour slots');
-assert(uniformSource.includes('gapScore'), 'branches must fill the largest local geometric gap');
-assert(uniformSource.includes('approximateDiameterPath'), 'one cheap main spine may preserve straight long chains');
-assert(uniformSource.includes('Only after every exact-x neighbour is occupied may a direct edge grow longer.'), 'greater-than-x placement must remain fallback only');
-assert(!uniformSource.includes('ordinarySlotCache'), 'session slot-cache policy must be absent from the simple layout');
-assert(!uniformSource.includes('LAYER_RANK'), 'layer direction bias must be absent');
-assert(!uniformSource.includes('layerDelta'), 'layer direction scoring must be absent');
-assert(!uniformSource.includes('reasoningPerpendicular'), 'reasoning-specific offsets must be absent');
+assert(uniformSource.includes('exactAssignedNeighbourCount'), 'candidate choice must first preserve as many exact-x real relations as possible');
+assert(uniformSource.includes('directedRadialScore'), 'second constraint must orient semantic source inward and target outward');
+assert(uniformSource.includes('orientSpine'), 'long chains must start from an upstream end instead of the geometric middle');
+assert(uniformSource.includes('LAYER_TARGET_RADIUS'), 'inner/middle/outer must have soft radial targets');
+assert(uniformSource.includes('inner: FCC_NEIGHBOR_DISTANCE'), 'inner target must remain 1x');
+assert(uniformSource.includes('middle: FCC_NEIGHBOR_DISTANCE * 2'), 'middle target must remain 2x');
+assert(uniformSource.includes('outer: FCC_NEIGHBOR_DISTANCE * 3'), 'outer target must remain 3x');
+assert(uniformSource.includes('gapScore'), 'branches must retain geometric gap filling after higher-priority rules');
+assert(uniformSource.includes('approximateDiameterPath'), 'one cheap main spine may preserve long-chain straightness');
+assert(uniformSource.includes('Only after every legal exact-x neighbour is unavailable may a direct edge grow longer.'), 'greater-than-x placement must remain fallback only');
+assert(!uniformSource.includes('Start a long spine at its middle and grow toward both ends.'), 'centre-out chain reversal must stay removed');
+assert(!uniformSource.includes('ordinarySlotCache'), 'session slot-cache policy must stay absent');
+assert(!uniformSource.includes('reasoningPerpendicular'), 'reasoning-specific offsets must stay absent');
 assert(!uniformSource.includes('reasoningDominant'), 'reasoning dominance must not influence coordinates');
 assert(!uniformSource.includes('reasoningSide'), 'reasoning camp must not influence coordinates');
-assert(!uniformSource.includes('LAYER_BANDS'), 'hard radial layer boundaries must stay absent');
+assert(!uniformSource.includes('LAYER_BANDS'), 'soft targets must not become old hard radial shells');
 assert(!uniformSource.includes('optimizeRelationLengthLayout'), 'old relation optimizer must stay out of the live path');
-assert(!uniformSource.includes('Fibonacci'), 'old Fibonacci shell distribution must stay absent');
+assert(!uniformSource.includes('Fibonacci'), 'old Fibonacci distribution must stay absent');
 
-console.log('User-page simple five-diameter FCC layout and mobile wiring regression tests passed.');
+console.log('User-page five-diameter + outward-chain + soft-layer wiring regression tests passed.');
