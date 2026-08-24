@@ -36,7 +36,7 @@ assertNearly(ORDINARY_NODE_RADIUS, 7.2, 'ordinary ball radius must remain the li
 assertNearly(ORDINARY_NODE_DIAMETER, 14.4, 'ordinary ball diameter must remain 14.4');
 assertNearly(FCC_NEIGHBOR_DISTANCE, 72, 'first constraint must remain exactly 72 world units');
 assertNearly(INITIAL_LAYOUT_RADIUS, 216, 'knowledge sphere must start at 3x');
-assertNearly(LAYOUT_RADIUS_INCREMENT, 216, 'every capacity expansion must be exactly 3x');
+assertNearly(LAYOUT_RADIUS_INCREMENT, 216, 'every real capacity expansion must be exactly 3x');
 assert.equal(FCC_NEIGHBOR_STEPS.length, 12, 'reference FCC nearest-neighbour set stays intact');
 for (const step of FCC_NEIGHBOR_STEPS) assertNearly(fccPositionForCoord(step).length(), 72, 'every reference FCC step remains one x');
 assertNearly(LAYER_TARGET_RADIUS.inner, 72, 'initial cyan target is inner third');
@@ -59,14 +59,10 @@ const conclusion = reasoningChain.find(item => item.id === 'conclusion')!;
 assertNearly(distance(premise, reasoning), 72, 'premise -> reasoning must stay one x');
 assertNearly(distance(reasoning, conclusion), 72, 'reasoning -> conclusion must stay one x');
 assertNearly(radius(conclusion), 216, 'purple conclusion anchor must sit on the current outer surface');
-assertNearly(radius(reasoning), 144, 'middle reasoning should follow one inward x');
-assertNearly(radius(premise), 72, 'inner premise should follow the second inward x');
-assert(radius(premise) < radius(reasoning) && radius(reasoning) < radius(conclusion), 'semantic inference direction must point outward');
+assert(radius(premise) < radius(reasoning) && radius(reasoning) < radius(conclusion), 'semantic inference direction should point outward when exact inward slots are legal');
 
 // Shared premise is a branch point, never permission to turn through it into a
-// different conclusion and call the combined path one main chain. This mirrors
-// demo n3 -> r-n6/n6, r-n15/n15 and r-n7/n7, the structure that previously made
-// two reasoning balls collide at the same coordinate no matter how large R grew.
+// different conclusion and call the combined path one main chain.
 const sharedPremise = [
   node('n3', [], 'inner'),
   node('r-n6', ['n3'], 'middle', 'reasoning'),
@@ -88,9 +84,6 @@ for (const [left, right] of [
     `${left} -> ${right} shared-premise branch must remain one x`,
   );
 }
-assertNearly(radius(sharedPremise.find(item => item.id === 'n7')!), 216, 'purple branch conclusion stays on the current sphere surface');
-assertNearly(radius(sharedPremise.find(item => item.id === 'r-n7')!), 144, 'chosen purple chain walks inward through reasoning');
-assertNearly(radius(sharedPremise.find(item => item.id === 'n3')!), 72, 'shared premise stops the main chain at the inner side');
 for (const item of sharedPremise) {
   for (const other of sharedPremise) {
     if (item.id >= other.id) continue;
@@ -98,8 +91,9 @@ for (const item of sharedPremise) {
   }
 }
 
-// Depth capacity is solved by growing the whole sphere in 216-unit steps, not by
-// stretching any direct relation. Four blue nodes require one expansion: 216 -> 432.
+// A long blue chain must first bend through other legal 72-unit directions inside
+// the existing R=216 sphere. It must not pre-expand the entire world merely because
+// strict radial inward continuation would hit the Sun.
 const blueLong = [
   node('blue-a'),
   node('blue-b', ['blue-a']),
@@ -108,14 +102,12 @@ const blueLong = [
 ];
 applyUniformLayerLayout(blueLong);
 const blueOrder = ['blue-a', 'blue-b', 'blue-c', 'blue-d'].map(id => blueLong.find(item => item.id === id)!);
-for (let index = 1; index < blueOrder.length; index++) assertNearly(distance(blueOrder[index - 1], blueOrder[index]), 72, 'expanded long chain must preserve every x');
-assertNearly(radius(blueOrder[3]), 288, 'blue conclusion uses the middle third of expanded radius 432');
-assertNearly(radius(blueOrder[2]), 216, 'expanded chain walks inward by one x');
-assertNearly(radius(blueOrder[1]), 144, 'expanded chain walks inward by two x');
-assertNearly(radius(blueOrder[0]), 72, 'expanded chain walks inward by three x');
+for (let index = 1; index < blueOrder.length; index++) assertNearly(distance(blueOrder[index - 1], blueOrder[index]), 72, 'long blue chain must preserve every x');
+assertNearly(radius(blueOrder[3]), 144, 'blue conclusion starts at the middle target before any proven capacity failure');
+assert(Math.max(...blueLong.map(radius)) <= INITIAL_LAYOUT_RADIUS + 1e-7, 'a bendable long blue chain must fit before radius expansion');
 
-// If a later, smaller chain needs more room, every already-placed node in an older
-// chain receives the same rigid +216 translation. Internal geometry is unchanged.
+// Adding a small independent chain that fits the current live gaps must not move an
+// already-valid chain at all. This catches the old pre-expansion ×1.5/×3 behaviour.
 const firstOnly = [
   node('a0', [], 'outer'),
   node('a1', ['a0'], 'outer'),
@@ -133,19 +125,16 @@ const combined = [
   node('b2', ['b1'], 'inner'),
 ];
 applyUniformLayerLayout(combined);
-const deltas = ['a0', 'a1', 'a2', 'a3'].map(id => {
+for (const id of ['a0', 'a1', 'a2', 'a3']) {
   const before = firstOnly.find(item => item.id === id)!.pos!;
   const after = combined.find(item => item.id === id)!.pos!;
-  return after.clone().sub(before);
-});
-for (const delta of deltas) assertNearly(delta.length(), 216, 'capacity expansion must move the whole older chain outward by exactly 3x');
-for (const delta of deltas.slice(1)) assert(delta.distanceTo(deltas[0]) <= 1e-7, 'every node of one chain must receive the exact same rigid translation');
+  assert(after.distanceTo(before) <= 1e-7, 'fitting a later chain must not trigger unnecessary whole-world expansion');
+}
 for (const [left, right] of [['a0', 'a1'], ['a1', 'a2'], ['a2', 'a3']] as const) {
-  assertNearly(distance(combined.find(item => item.id === left)!, combined.find(item => item.id === right)!), 72, 'rigid expansion must not alter direct spacing');
+  assertNearly(distance(combined.find(item => item.id === left)!, combined.find(item => item.id === right)!), 72, 'existing chain spacing must stay exact');
 }
 
-// Components are chains for envelope placement: larger chains claim the large
-// directions first, regardless of lexicographic node ids.
+// Components are scheduled by size: larger chains claim the first major direction.
 const sizePriority = [
   node('big-a', [], 'outer'),
   node('big-b', ['big-a'], 'outer'),
@@ -154,11 +143,11 @@ const sizePriority = [
 ];
 applyUniformLayerLayout(sizePriority);
 assert(sizePriority.find(item => item.id === 'big-c')!.pos!.z > 0, 'larger chain must receive the first front direction');
-assert(sizePriority.find(item => item.id === 'aaa-isolated')!.pos!.z < 0, 'smaller later chain must receive the back direction next');
+assert(sizePriority.find(item => item.id === 'aaa-isolated')!.pos!.z < 0, 'smaller later chain must receive the next free back direction');
 
-// The first six independent chains occupy front/back/up/down/right/left. The next
-// chain is inserted into the largest angular gap created by those six directions.
-const directionRoots = Array.from({ length: 7 }, (_, index) => node(`dir-${index}`, [], 'outer'));
+// The first six independent chains occupy front/back/up/down/right/left. Every
+// later chain must be placed by recomputing the largest current angular gap.
+const directionRoots = Array.from({ length: 10 }, (_, index) => node(`dir-${index}`, [], 'outer'));
 applyUniformLayerLayout(directionRoots);
 const normalized = directionRoots.map(item => item.pos!.clone().normalize());
 const expectedAxes = [
@@ -170,7 +159,22 @@ for (let index = 0; index < expectedAxes.length; index++) {
   assertNearly(normalized[index].y, y, `chain ${index} axis y`);
   assertNearly(normalized[index].z, z, `chain ${index} axis z`);
 }
-assert(Math.abs(normalized[6].x) > 0.5 && Math.abs(normalized[6].y) > 0.5 && Math.abs(normalized[6].z) > 0.5, 'seventh chain must fill an octant-sized largest gap rather than crowd an existing axis');
+for (let index = 6; index < normalized.length; index++) {
+  const nearestDot = Math.max(...normalized.slice(0, index).map(direction => direction.dot(normalized[index])));
+  assert(nearestDot < 0.95, `later chain ${index} must enter a real remaining angular gap instead of crowding an existing direction`);
+}
+
+// Plenty of unrelated purple roots fit on the initial surface. They must consume
+// live empty directions before any R+216 capacity expansion is considered.
+const roomyOuterRoots = Array.from({ length: 18 }, (_, index) => node(`room-${index}`, [], 'outer'));
+applyUniformLayerLayout(roomyOuterRoots);
+for (const item of roomyOuterRoots) assertNearly(radius(item), 216, 'roomy independent purple roots must remain on the original sphere surface');
+for (const item of roomyOuterRoots) {
+  for (const other of roomyOuterRoots) {
+    if (item.id >= other.id) continue;
+    assert(distance(item, other) >= 72 - 1e-7, 'unrelated roots must keep the non-overlap minimum while filling live gaps');
+  }
+}
 
 const isolatedInner = [node('isolated-inner', [], 'inner')];
 const isolatedMiddle = [node('isolated-middle', [], 'middle')];
@@ -221,14 +225,15 @@ assert(source.includes('components.sort((a, b) => b.length - a.length'), 'larger
 assert(source.includes('chooseConclusionAnchor'), 'layout must choose the conclusion/outer side before premises');
 assert(source.includes("if (layer === 'outer') return sphereRadius;"), 'purple anchor must use the current outer surface');
 assert(source.includes('BASE_ANCHOR_DIRECTIONS'), 'six large cardinal insertion directions must remain explicit');
-assert(source.includes('angularGapScore'), 'later chains must fill the largest spherical gap');
-assert(source.includes('requiredSphereRadiusForSpine'), 'depth must trigger sphere capacity expansion');
-assert(source.includes('expandSphere'), 'width/depth capacity must share one expansion path');
-assert(source.includes('multiplyScalar(LAYOUT_RADIUS_INCREMENT)'), 'whole-chain outward translation must be exactly 3x');
-assert(source.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'expansion must translate a whole chain rigidly');
-assert(source.includes('One semantic inference chain only: conclusion -> reasoning -> premise, inward.'));
+assert(source.includes('orderedAnchorDirections'), 'every component must recompute live insertion order');
+assert(source.includes('angularGapScore(b, used) - angularGapScore(a, used)'), 'later components must actually sort by the current largest spherical gap');
+assert(!source.includes('requiredSphereRadiusForSpine'), 'layer depth must not pre-expand the entire sphere before real placement is attempted');
+assert(source.includes('if (!candidate && allowLongEdges) candidate = chooseLongCandidate'), 'main chain may relax only after repeated real capacity failures');
+assert(source.includes('expandSphere'), 'real width/depth capacity failure must share one expansion path');
+assert(source.includes('multiplyScalar(LAYOUT_RADIUS_INCREMENT)'), 'whole-chain outward translation remains exactly 3x when expansion is truly needed');
+assert(source.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'real expansion must translate a whole chain rigidly');
 assert(source.includes('directed.incomingIds.get(id)'), 'main spine must only walk incoming semantic edges toward premises');
-assert(source.includes('parentDegree > 12'), 'only intrinsically overfull local stars may immediately relax x');
+assert(source.includes('parentDegree > 12'), 'intrinsically overfull local stars may relax x without pointless radius growth');
 assert(!source.includes('ordinarySlotCache'));
 assert(!source.includes('reasoningPerpendicular'));
 assert(!source.includes('reasoningDominant'));
@@ -244,4 +249,4 @@ const physicsSource = sceneSource.slice(physicsMatch.index, labelsMatch.index);
 assert(/n\.pos!\.copy\(n\.homePos!\)/.test(physicsSource), 'scene motion must return to the fixed projection coordinate');
 assert(!physicsSource.includes('applyUniformLayerLayout'), 'camera/physics frames must never trigger relayout');
 
-console.log('Five-diameter rigid-chain sphere-capacity layout regression tests passed.');
+console.log('Five-diameter dynamic-gap chain-capacity layout regression tests passed.');
