@@ -55,8 +55,6 @@ export function optimizationCandidateLineage(target: GraphNode): KnowledgeLineag
     ...base,
     reasoningSide: inferredReasoningSide(target),
     reasoningSideRank: 0,
-    // A pending optimization is not yet a side head; dominance transfers only
-    // if the candidate is accepted.
     reasoningDominant: false,
   };
 }
@@ -85,8 +83,7 @@ export function validateOptimizationProposal(
     errors.push('只能优化当前已验证且可见的有效知识');
   }
   if (target.type === 'reasoning') {
-    const validHead = isReasoningSideHead(target) || lineageRoleFor(target) === 'current';
-    if (!validHead) errors.push('推理节点只能优化白色或红色派系的当前头，不能直接优化灰色历史');
+    if (!isReasoningSideHead(target)) errors.push('推理节点只能优化白色或红色派系的当前头，不能直接优化灰色历史');
   } else if (lineageRoleFor(target) !== 'current') {
     errors.push('只能优化当前版本，不能直接编辑历史、对立或候选版本');
   }
@@ -135,13 +132,14 @@ export function rejectOptimizationCandidate(nodes: GraphNode[], candidateId: str
   assertValidLineage(nodes);
 }
 
+/** Upgrade legacy single-head reasoning lineage into two actionable current heads. */
 function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): void {
-  const current = currentNodeForTopic(nodes, topicId);
-  if (!current) throw new Error(`Reasoning topic has no white current head: ${topicId}`);
+  const white = currentNodeForTopic(nodes, topicId);
+  if (!white) throw new Error(`Reasoning topic has no white current head: ${topicId}`);
   const normalHistory = nodes
     .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'history')
     .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
-  const opposition = nodes
+  const legacyRedChain = nodes
     .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'opposition')
     .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
   const explicitDominant = nodes.find(node =>
@@ -150,17 +148,17 @@ function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): vo
       && node.lineage?.reasoningDominant === true,
   );
 
-  const currentMeta = current.lineage ?? { topicId, proposal: 'new' as const, role: 'current' as const, rank: 0 };
-  current.lineage = {
-    ...currentMeta,
+  const whiteMeta = white.lineage ?? { topicId, proposal: 'new' as const, role: 'current' as const, rank: 0 };
+  white.lineage = {
+    ...whiteMeta,
     topicId,
     role: 'current',
     rank: 0,
     reasoningSide: 'normal',
     reasoningSideRank: 0,
-    reasoningDominant: explicitDominant ? explicitDominant.id === current.id : true,
+    reasoningDominant: explicitDominant ? explicitDominant.id === white.id : true,
   };
-  current.hidden = false;
+  white.hidden = false;
 
   normalHistory.forEach((node, index) => {
     if (!node.lineage) throw new Error(`Historical lineage metadata missing: ${node.id}`);
@@ -175,17 +173,18 @@ function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): vo
     node.hidden = true;
   });
 
-  opposition.forEach((node, index) => {
+  legacyRedChain.forEach((node, index) => {
     if (!node.lineage) throw new Error(`Opposition lineage metadata missing: ${node.id}`);
+    const isHead = index === 0;
     node.lineage = {
       ...node.lineage,
-      role: 'opposition',
-      rank: index + 1,
+      role: isHead ? 'current' : 'opposition',
+      rank: isHead ? 0 : index,
       reasoningSide: 'opposition',
       reasoningSideRank: index,
-      reasoningDominant: explicitDominant ? explicitDominant.id === node.id && index === 0 : false,
+      reasoningDominant: isHead && explicitDominant ? explicitDominant.id === node.id : false,
     };
-    node.hidden = index !== 0;
+    node.hidden = !isHead;
   });
 }
 
@@ -242,7 +241,7 @@ function promoteReasoningOptimizationCandidate(
       node.lineage = {
         ...node.lineage,
         role: 'opposition',
-        rank: index + 3,
+        rank: index + 2,
         reasoningSide: 'opposition',
         reasoningSideRank: index + 2,
         reasoningDominant: false,
@@ -252,7 +251,7 @@ function promoteReasoningOptimizationCandidate(
     head.lineage = {
       ...head.lineage,
       role: 'opposition',
-      rank: 2,
+      rank: 1,
       reasoningSide: 'opposition',
       reasoningSideRank: 1,
       reasoningDominant: false,
@@ -260,8 +259,8 @@ function promoteReasoningOptimizationCandidate(
     head.hidden = true;
     candidateNode.lineage = {
       ...candidate.lineage,
-      role: 'opposition',
-      rank: 1,
+      role: 'current',
+      rank: 0,
       reasoningSide: 'opposition',
       reasoningSideRank: 0,
       reasoningDominant: wasDominant,
