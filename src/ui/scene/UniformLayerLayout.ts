@@ -210,8 +210,13 @@ function approximateDiameterPath(
 type ComponentSchedule = {
   order: string[];
   parentById: Map<string, string>;
+  spineCenterIndex: number;
 };
 
+/**
+ * Start a long spine at its middle and grow toward both ends. This is purely a
+ * geometric compactness rule: it halves one-sided extent without changing x.
+ */
 function scheduleComponent(
   component: readonly string[],
   spine: readonly string[],
@@ -222,14 +227,26 @@ function scheduleComponent(
   const parentById = new Map<string, string>();
   const order: string[] = [];
   const queue: string[] = [];
+  const spineCenterIndex = Math.floor((spine.length - 1) / 2);
 
-  spine.forEach((id, index) => {
-    if (scheduled.has(id)) return;
+  const scheduleSpineNode = (index: number, parentIndex?: number) => {
+    const id = spine[index];
+    if (!id || scheduled.has(id)) return;
     scheduled.add(id);
     order.push(id);
     queue.push(id);
-    if (index > 0) parentById.set(id, spine[index - 1]);
-  });
+    if (parentIndex !== undefined) parentById.set(id, spine[parentIndex]);
+  };
+
+  if (spine.length > 0) {
+    scheduleSpineNode(spineCenterIndex);
+    for (let offset = 1; offset < spine.length; offset++) {
+      const right = spineCenterIndex + offset;
+      const left = spineCenterIndex - offset;
+      if (right < spine.length) scheduleSpineNode(right, right - 1);
+      if (left >= 0) scheduleSpineNode(left, left + 1);
+    }
+  }
 
   for (let head = 0; head < queue.length; head++) {
     const id = queue[head];
@@ -241,7 +258,7 @@ function scheduleComponent(
       queue.push(neighbourId);
     }
   }
-  return { order, parentById };
+  return { order, parentById, spineCenterIndex };
 }
 
 function validFreeSlot(coord: FccCoord, occupied: ReadonlySet<string>): boolean {
@@ -347,6 +364,23 @@ function continuityScore(candidate: FccCoord, parent: FccCoord, previousStep: Fc
   const b = Math.sqrt(coordLengthSq(previousStep));
   if (a <= POSITION_EPSILON_SQ || b <= POSITION_EPSILON_SQ) return 0;
   return directionDot(direction, previousStep) / (a * b);
+}
+
+/** Choose the FCC direction most tangent to the centre, keeping both spine halves compact. */
+function tangentStepAt(coord: FccCoord): FccCoord {
+  let best = FCC_NEIGHBOR_STEPS[0];
+  let bestRadial = Math.abs(directionDot(coord, best));
+  let bestKey = coordKey(best);
+  for (const step of FCC_NEIGHBOR_STEPS.slice(1)) {
+    const radial = Math.abs(directionDot(coord, step));
+    const key = coordKey(step);
+    if (radial < bestRadial || (radial === bestRadial && key < bestKey)) {
+      best = step;
+      bestRadial = radial;
+      bestKey = key;
+    }
+  }
+  return best;
 }
 
 function chooseCandidate(
@@ -467,12 +501,26 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
       const childIndex = spineIndex.get(id);
       const isSpine = parentIndex !== undefined
         && childIndex !== undefined
-        && childIndex === parentIndex + 1;
+        && Math.abs(childIndex - parentIndex) === 1;
       let previousStep: FccCoord | null = null;
-      if (isSpine && parentIndex! > 0) {
-        const previousCoord = assigned.get(spine[parentIndex! - 1]);
-        if (previousCoord) previousStep = subtractCoord(parentCoord, previousCoord);
+
+      if (isSpine && parentIndex !== undefined && childIndex !== undefined) {
+        const center = schedule.spineCenterIndex;
+        if (parentIndex === center) {
+          const siblingIndex = childIndex < center ? center + 1 : center - 1;
+          const siblingCoord = siblingIndex >= 0 && siblingIndex < spine.length
+            ? assigned.get(spine[siblingIndex])
+            : undefined;
+          previousStep = siblingCoord
+            ? subtractCoord(parentCoord, siblingCoord)
+            : tangentStepAt(parentCoord);
+        } else {
+          const towardCenterIndex = parentIndex < center ? parentIndex + 1 : parentIndex - 1;
+          const towardCenterCoord = assigned.get(spine[towardCenterIndex]);
+          if (towardCenterCoord) previousStep = subtractCoord(parentCoord, towardCenterCoord);
+        }
       }
+
       const coord = nearestFreeSlot(id, parentCoord, isSpine, previousStep, occupied, adjacency, assigned);
       assign(id, coord, assigned, occupied);
     }
@@ -482,8 +530,9 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
 
 /**
  * One live layout algorithm: direct graph nodes occupy FCC slots at five ordinary
- * ball diameters. Main chains stay straight when possible; branches fill the
- * largest local geometric gap. No semantic/layer proximity policy participates.
+ * ball diameters. Main chains grow from their middle and stay straight when
+ * possible; branches fill the largest local geometric gap. No semantic/layer
+ * proximity policy participates.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   const coords = placeGraphNodes(nodes);
