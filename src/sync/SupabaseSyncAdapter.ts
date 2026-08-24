@@ -1,9 +1,18 @@
 import { isCanonicalPublicKnowledgeEvent, isPublicKnowledgeEvent, type DomainEvent, type PublicKnowledgeEvent } from '../event/Event';
-import { KnowledgeBallAuthClient } from '../auth/AuthClient';
+import { createProductionAuthClient, KnowledgeBallAuthClient } from '../auth/AuthClient';
+import { withFetchDeadline } from '../net/FetchDeadline';
 import { RemoteHeadConflictError, type PushResult, type SyncAdapter, type SyncBatch } from './SyncAdapter';
 import type { StorageLike } from '../persistence/KnowledgePersistence';
 
-interface SupabaseConfig { url: string; publishableKey: string; pageSize?: number; storage?: StorageLike | null; fetch?: typeof fetch; }
+interface SupabaseConfig {
+  url: string;
+  publishableKey: string;
+  pageSize?: number;
+  storage?: StorageLike | null;
+  fetch?: typeof fetch;
+  auth?: KnowledgeBallAuthClient;
+  requestTimeoutMs?: number;
+}
 interface EventRow { sequence: number; envelope: DomainEvent; actor_id?: string | null; created_at?: string | null; }
 interface ContributorRow { actor_id?: string | null; contributor?: string | null; }
 interface NodeCreationMetadata { actorId: string; createdAt: string; }
@@ -30,9 +39,16 @@ export class SupabaseSyncAdapter implements SyncAdapter {
   private readonly contributorNameById = new Map<string, string>();
 
   constructor(private readonly config: SupabaseConfig) {
-    this.request = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    const baseRequest = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.request = withFetchDeadline(baseRequest, config.requestTimeoutMs);
     this.pageSize = config.pageSize ?? 200;
-    this.auth = new KnowledgeBallAuthClient({ url: config.url, publishableKey: config.publishableKey, storage: config.storage as Storage | null | undefined, fetch: this.request });
+    this.auth = config.auth ?? new KnowledgeBallAuthClient({
+      url: config.url,
+      publishableKey: config.publishableKey,
+      storage: config.storage as Storage | null | undefined,
+      fetch: baseRequest,
+      requestTimeoutMs: config.requestTimeoutMs,
+    });
   }
 
   nodeMetadata(nodeId: string): NodePresentationMetadata | null {
@@ -133,5 +149,6 @@ function parseDetails(details: unknown): Record<string, unknown> | undefined {
 export function createProductionSyncAdapter(): SupabaseSyncAdapter | null {
   const url = import.meta.env.VITE_SUPABASE_URL?.trim();
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
-  return url && publishableKey ? new SupabaseSyncAdapter({ url, publishableKey }) : null;
+  const auth = createProductionAuthClient();
+  return url && publishableKey && auth ? new SupabaseSyncAdapter({ url, publishableKey, auth }) : null;
 }
