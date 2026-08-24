@@ -40,32 +40,29 @@ assert(sceneSource.includes("if (typeof id === 'string' && distance <= 24 && (!n
 assert(!sceneSource.includes('detailReasoningPresentationPositions'));
 assert(!sceneSource.includes('detailDisplayPositions'));
 
-// Lexicographic layout contract: 72 first; conclusion-side direction second;
-// soft colour radius after direction; no chain-length radial inflation.
+// Spatial contract: 72 is immutable first; chain capacity and radial envelope are
+// handled at whole-chain level rather than by per-node semantic proximity hacks.
 assert(uniformSource.includes('export const ORDINARY_NODE_RADIUS = 7.2;'));
 assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;'));
-assert(uniformSource.includes('FCC_NEIGHBOR_STEPS'));
+assert(uniformSource.includes('export const INITIAL_LAYOUT_RADIUS = FCC_NEIGHBOR_DISTANCE * 3;'));
+assert(uniformSource.includes('export const LAYOUT_RADIUS_INCREMENT = FCC_NEIGHBOR_DISTANCE * 3;'));
 assert(uniformSource.includes('collectDirectLayoutEdges'));
-assert(uniformSource.includes('exactAssignedNeighbourCount'));
-assert(uniformSource.includes('endpointDownstreamScore'), 'chain must identify conclusion side');
-assert(uniformSource.includes('orientSpine'), 'chain must be scheduled conclusion-first');
-assert(uniformSource.includes('minimumConclusionRadius'), 'connected conclusion may reserve one inward x step');
-assert(!uniformSource.includes('mainSpineRadialBudget'), 'whole-chain radial expansion must stay absent');
-assert(uniformSource.includes('directedRadialScore'), 'premise-side candidates must prefer inward progress');
-assert(uniformSource.includes('LAYER_TARGET_RADIUS'));
-assert(uniformSource.includes('inner: FCC_NEIGHBOR_DISTANCE'));
-assert(uniformSource.includes('middle: FCC_NEIGHBOR_DISTANCE * 2'));
-assert(uniformSource.includes('outer: FCC_NEIGHBOR_DISTANCE * 3'));
-assert(uniformSource.includes('gapScore'));
-assert(uniformSource.includes('approximateDiameterPath'));
-assert(uniformSource.includes('Only after every legal exact-x neighbour is unavailable may a direct edge grow longer.'));
-assert(!uniformSource.includes('endpointUpstreamScore'));
+assert(uniformSource.includes('components.sort((a, b) => b.length - a.length'), 'larger chains must enter the sphere first');
+assert(uniformSource.includes('chooseConclusionAnchor'), 'a chain must be anchored from its outer/conclusion side');
+assert(uniformSource.includes('conclusionFirstSpine'), 'main chain must be laid conclusion -> premise');
+assert(uniformSource.includes("if (layer === 'outer') return sphereRadius;"), 'purple root must sit on the current outer surface');
+assert(uniformSource.includes('BASE_ANCHOR_DIRECTIONS'), 'front/back/up/down/left/right must remain first insertion directions');
+assert(uniformSource.includes('angularGapScore'), 'later chains must fill the largest remaining spherical gap');
+assert(uniformSource.includes('requiredSphereRadiusForSpine'), 'insufficient depth must grow the whole sphere');
+assert(uniformSource.includes('expandSphere'), 'width/depth growth must use the same rigid expansion operation');
+assert(uniformSource.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'sphere growth must translate each existing chain as one rigid body');
+assert(uniformSource.includes('Long/main chain first: conclusion -> premise, straight toward the centre.'));
+assert(uniformSource.includes('parentDegree > 12'), 'only geometrically impossible local crowding may immediately relax the 72 edge');
 assert(!uniformSource.includes('ordinarySlotCache'));
 assert(!uniformSource.includes('reasoningPerpendicular'));
 assert(!uniformSource.includes('reasoningDominant'));
 assert(!uniformSource.includes('reasoningSide'));
-assert(!uniformSource.includes('LAYER_BANDS'));
 assert(!uniformSource.includes('optimizeRelationLengthLayout'));
 assert(!uniformSource.includes('Fibonacci'));
 
-console.log('User-page five-diameter + bounded conclusion-first direction + soft-layer wiring regression tests passed.');
+console.log('User-page five-diameter rigid-chain sphere-capacity wiring regression tests passed.');
