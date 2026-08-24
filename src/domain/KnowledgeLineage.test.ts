@@ -1,10 +1,14 @@
 import { strict as assert } from 'node:assert';
 import type { GraphNode } from '../graph/Node';
 import { promoteOppositionCandidate } from './KnowledgeOpposition';
+import { promoteOptimizationCandidate } from './KnowledgeOptimization';
 import {
   currentNodeForTopic,
+  dominantNodeForTopic,
   initialLineage,
   lineageRoleFor,
+  reasoningHeadForTopic,
+  reasoningHistoryChain,
   stableLineageChain,
   topicIdFor,
   validateKnowledgeLineage,
@@ -59,69 +63,87 @@ const crossTopicTarget: KnowledgeLineageNode[] = [
 ];
 assert.ok(validateKnowledgeLineage(crossTopicTarget).some(error => error.includes('same topic')));
 
-const suppressed: KnowledgeLineageNode[] = [
-  {
-    id: 'reason-old',
-    lineage: {
-      topicId: 'reason-topic',
-      proposal: 'new',
-      role: 'history',
-      rank: 1,
-      suppressedByOpposition: true,
-    },
-  },
-  {
-    id: 'reason-no',
-    lineage: {
-      topicId: 'reason-topic',
-      proposal: 'opposition',
-      targetId: 'reason-old',
-      role: 'opposition',
-      rank: 1,
-      suppressedByOpposition: true,
-    },
-  },
-];
-assert.deepEqual(validateKnowledgeLineage(suppressed), [], 'accepted reasoning opposition may intentionally leave no current white head');
-assert.equal(currentNodeForTopic(suppressed, 'reason-topic'), undefined);
+function reasoningNode(id: string, title: string, lineage: GraphNode['lineage'], status: GraphNode['status'] = 'verified'): GraphNode {
+  return {
+    id,
+    title,
+    type: 'reasoning',
+    status,
+    mastery: 'none',
+    reasoning: title,
+    premises: ['p'],
+    hidden: false,
+    lineage,
+  };
+}
 
-const partiallySuppressed = structuredClone(suppressed);
-partiallySuppressed[0]!.lineage!.suppressedByOpposition = false;
-assert.ok(validateKnowledgeLineage(partiallySuppressed).some(error => error.includes('mark every active member')));
-
+// Two-camp reasoning invariant: white and red heads are both current/actionable;
+// dominance alone decides which head is on the logical inference chain.
 const reasoningNodes: GraphNode[] = [
-  {
-    id: 'r1',
-    title: 'Reasoning link',
-    type: 'reasoning',
-    status: 'verified',
-    mastery: 'none',
-    reasoning: 'P therefore Q',
-    premises: [],
-    hidden: false,
-    lineage: { topicId: 'r1', proposal: 'new', role: 'current', rank: 0 },
-  },
-  {
-    id: 'r2',
-    title: 'This reasoning should not exist',
-    type: 'reasoning',
-    status: 'pending',
-    mastery: 'none',
-    reasoning: 'The inference is invalid',
-    premises: [],
-    hidden: false,
-    lineage: { topicId: 'r1', proposal: 'opposition', targetId: 'r1', role: 'candidate-opposition', rank: 0 },
-  },
+  reasoningNode('r-white-1', 'White reasoning', { topicId: 'reason-topic', proposal: 'new', role: 'current', rank: 0 }),
+  reasoningNode('r-red-1', 'Red challenge', {
+    topicId: 'reason-topic', proposal: 'opposition', targetId: 'r-white-1', role: 'candidate-opposition', rank: 0,
+    reasoningSide: 'opposition', reasoningSideRank: 0, reasoningDominant: false,
+  }, 'pending'),
 ];
-promoteOppositionCandidate(reasoningNodes, 'r2');
-assert.equal(lineageRoleFor(reasoningNodes[0]!), 'history', 'former white reasoning must become gray history');
-assert.equal(lineageRoleFor(reasoningNodes[1]!), 'opposition', 'winning reasoning opposition must stay red');
-assert.equal(reasoningNodes[0]!.lineage?.suppressedByOpposition, true);
-assert.equal(reasoningNodes[1]!.lineage?.suppressedByOpposition, true);
-assert.equal(reasoningNodes[0]!.hidden, true);
-assert.equal(reasoningNodes[1]!.hidden, true);
-assert.equal(reasoningNodes[1]!.status, 'verified');
-assert.equal(currentNodeForTopic(reasoningNodes, 'r1'), undefined, 'suppressed reasoning has no effective current node');
+promoteOppositionCandidate(reasoningNodes, 'r-red-1');
+assert.equal(lineageRoleFor(reasoningNodes[0]!), 'current', 'white head must stay current when red wins');
+assert.equal(reasoningNodes[0]!.lineage?.reasoningSide, 'normal');
+assert.equal(reasoningNodes[0]!.lineage?.reasoningSideRank, 0);
+assert.equal(reasoningNodes[0]!.lineage?.reasoningDominant, false);
+assert.equal(lineageRoleFor(reasoningNodes[1]!), 'current', 'winning red head must also be a current/actionable camp head');
+assert.equal(reasoningNodes[1]!.lineage?.reasoningSide, 'opposition');
+assert.equal(reasoningNodes[1]!.lineage?.reasoningSideRank, 0);
+assert.equal(reasoningNodes[1]!.lineage?.reasoningDominant, true);
+assert.equal(currentNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-white-1', 'generic current lookup remains the white camp head');
+assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')?.id, 'r-red-1');
+assert.equal(dominantNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-red-1');
 assert.deepEqual(validateKnowledgeLineage(reasoningNodes), []);
+
+// White can optimize independently while red remains dominant.
+reasoningNodes.push(reasoningNode('r-white-2', 'White reasoning v2', {
+  topicId: 'reason-topic', proposal: 'optimization', targetId: 'r-white-1', role: 'candidate-history', rank: 0,
+  reasoningSide: 'normal', reasoningSideRank: 0, reasoningDominant: false,
+}, 'pending'));
+promoteOptimizationCandidate(reasoningNodes, 'r-white-2');
+assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'normal')?.id, 'r-white-2');
+assert.equal(dominantNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-red-1', 'optimizing non-dominant white must not steal dominance');
+assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'normal').map(node => node.id), ['r-white-1']);
+
+// Red can optimize independently; its former red head becomes gray side history.
+reasoningNodes.push(reasoningNode('r-red-2', 'Red challenge v2', {
+  topicId: 'reason-topic', proposal: 'optimization', targetId: 'r-red-1', role: 'candidate-history', rank: 0,
+  reasoningSide: 'opposition', reasoningSideRank: 0, reasoningDominant: false,
+}, 'pending'));
+promoteOptimizationCandidate(reasoningNodes, 'r-red-2');
+assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')?.id, 'r-red-2');
+assert.equal(lineageRoleFor(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')!), 'current');
+assert.equal(dominantNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-red-2');
+assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'opposition').map(node => node.id), ['r-red-1']);
+assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'normal').map(node => node.id), ['r-white-1']);
+assert.deepEqual(validateKnowledgeLineage(reasoningNodes), []);
+
+// Opposing the dominant red head creates a new white head and flips dominance
+// back without recoloring the red head or mixing the two gray histories.
+reasoningNodes.push(reasoningNode('r-white-3', 'White rebuttal', {
+  topicId: 'reason-topic', proposal: 'opposition', targetId: 'r-red-2', role: 'candidate-opposition', rank: 0,
+  reasoningSide: 'normal', reasoningSideRank: 0, reasoningDominant: false,
+}, 'pending'));
+promoteOppositionCandidate(reasoningNodes, 'r-white-3');
+assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'normal')?.id, 'r-white-3');
+assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')?.id, 'r-red-2');
+assert.equal(lineageRoleFor(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')!), 'current', 'red head stays current/actionable after losing dominance');
+assert.equal(dominantNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-white-3');
+assert.equal(reasoningNodes.find(node => node.id === 'r-red-2')?.lineage?.reasoningDominant, false);
+assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'normal').map(node => node.id), ['r-white-2', 'r-white-1']);
+assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'opposition').map(node => node.id), ['r-red-1']);
+assert.deepEqual(validateKnowledgeLineage(reasoningNodes), []);
+
+const doubleDominant = structuredClone(reasoningNodes);
+const whiteHead = reasoningHeadForTopic(doubleDominant, 'reason-topic', 'normal')!;
+const redHead = reasoningHeadForTopic(doubleDominant, 'reason-topic', 'opposition')!;
+whiteHead.lineage!.reasoningDominant = true;
+redHead.lineage!.reasoningDominant = true;
+assert.ok(validateKnowledgeLineage(doubleDominant).some(error => error.includes('exactly one dominant')));
 
 console.log('Knowledge lineage domain regression tests passed');

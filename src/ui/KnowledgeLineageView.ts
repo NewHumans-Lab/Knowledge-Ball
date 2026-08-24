@@ -1,5 +1,5 @@
 import type { KnowledgeLineageMeta } from '../domain/KnowledgeLineage';
-import { isSuppressedByOpposition, lineageRoleFor } from '../domain/KnowledgeLineage';
+import { isReasoningSideHead, lineageRoleFor } from '../domain/KnowledgeLineage';
 import type { Mastery } from '../domain/KnowledgeModel';
 import type { NodeStatus } from '../event/Event';
 
@@ -13,7 +13,6 @@ export interface KnowledgeLineageViewNode {
   lineage?: KnowledgeLineageMeta;
 }
 
-/** Stable presentation colors for relative lineage roles only. */
 export const KNOWLEDGE_HISTORY_COLOR = 0x8A949E;
 export const KNOWLEDGE_OPPOSITION_COLOR = 0xEE5B63;
 
@@ -35,14 +34,6 @@ export function isPendingLineageCandidate(node: KnowledgeLineageViewNode): boole
   return role === 'candidate-history' || role === 'candidate-opposition';
 }
 
-/**
- * The near-node detail is a temporary presentation lens, not a fourth global
- * visibility mode. When it is open, the selected ball and every canonical
- * related ball rendered around that detail are allowed into the 3D scene. The
- * scene's existing endpoint rule then makes their relation lines appear too.
- * Closing the detail removes this override and Current/Personal/All immediately
- * owns visibility again.
- */
 export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
   if (typeof document === 'undefined') return false;
   const root = document.getElementById('nodeDetailOverlay');
@@ -52,12 +43,6 @@ export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
     .some(element => element.dataset.relatedNodeId === nodeId);
 }
 
-/**
- * Scene data must retain formal lineage balls even when the legacy `hidden`
- * compatibility flag is true; the Current/Personal/All mode is the sole owner
- * of whether gray/red formal balls are normally visible. An open detail may
- * temporarily reveal only its own canonical relation context.
- */
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
@@ -74,31 +59,24 @@ export function nodeVisibleInKnowledgeMode(
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
 
-  // A successful opposition to a reasoning node removes that reasoning from the
-  // effective graph. Both the winning red opposition and the former gray
-  // reasoning history are audit-only and therefore belong exclusively to All.
-  if (isSuppressedByOpposition(node)) return mode === 'all';
-
-  // Detail context is intentionally evaluated after the rejected guard: audit-
-  // only rejected proposals must never be resurrected by presentation state.
+  // An opened detail is a temporary presentation lens; it may reveal the gray
+  // histories of either reasoning camp without changing global mode state.
   if (nodeVisibleBecauseDetailIsOpen(node.id)) return true;
 
-  // Pending gray/red proposals are the deliberate mode exception: users must see
-  // a proposal that is currently being judged regardless of the selected mode.
+  // Pending lineage proposals remain visible while they are being judged.
   if (isPendingLineageCandidate(node)) return true;
 
-  if (mode === 'all') {
-    return node.lineage ? true : !node.hidden;
-  }
+  if (mode === 'all') return node.lineage ? true : !node.hidden;
 
   if (mode === 'personal') {
-    // Preserve the existing personal rule: untouched knowledge disappears.
-    // A personally encountered historical/opposing version remains meaningful
-    // personal history and is therefore visible here even though Current hides it.
     return node.mastery !== 'none' && (node.lineage ? true : !node.hidden);
   }
 
-  // Current mode contains only the effective current ball for each topic.
+  // Reasoning is the deliberate Current-mode exception: both stable camp heads
+  // remain visible so white="reasoning valid" and red="reasoning invalid" keep
+  // permanent meaning. Dominance is shown by which head owns the logical chain,
+  // not by recoloring or hiding the other head. Gray histories stay hidden.
+  if (isReasoningSideHead(node)) return true;
   return role === 'current' && (node.lineage ? true : !node.hidden);
 }
 
@@ -118,15 +96,25 @@ export function edgeVisibleInKnowledgeMode(
   );
 }
 
-/** Color role is independent from validation/pending state. */
+/**
+ * Reasoning color is camp-stable at side rank 0: normal is white/structural,
+ * opposition is red. Older versions on either side are gray. Pending
+ * optimization candidates retain the existing gray candidate treatment.
+ */
 export function lineageColorForNode(node: Pick<KnowledgeLineageViewNode, 'id' | 'lineage'>): number | null {
   const role = lineageRoleFor(node);
+  const side = node.lineage?.reasoningSide;
+  const sideRank = node.lineage?.reasoningSideRank;
+  if (side && sideRank !== undefined) {
+    if (sideRank > 0 || role === 'candidate-history') return KNOWLEDGE_HISTORY_COLOR;
+    if (side === 'opposition') return KNOWLEDGE_OPPOSITION_COLOR;
+    return null;
+  }
   if (role === 'history' || role === 'candidate-history') return KNOWLEDGE_HISTORY_COLOR;
   if (role === 'opposition' || role === 'candidate-opposition') return KNOWLEDGE_OPPOSITION_COLOR;
   return null;
 }
 
-/** Pending creation and any active revalidation blink; role/color stays separate. */
 export function nodeShouldPulse(node: Pick<KnowledgeLineageViewNode, 'status'>): boolean {
   return node.status === 'pending' || node.status === 'disputed';
 }
