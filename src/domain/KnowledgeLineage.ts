@@ -70,12 +70,15 @@ export function reasoningSideRankFor(node: KnowledgeLineageNode): number | null 
 
 /**
  * Canonical white/red stable camp heads are both `current`. A side-rank-zero
- * red `opposition` role is accepted only as a replay/snapshot compatibility
- * shape from the immediately preceding model and is normalized on the next
- * reasoning transition.
+ * red `opposition` role is accepted only as replay/snapshot compatibility from
+ * the immediately preceding model. An unclassified current is the pre-two-camp
+ * compatibility shape and is normalized on its first reasoning transition.
  */
 export function isReasoningSideHead(node: KnowledgeLineageNode): boolean {
   const role = lineageRoleFor(node);
+  if (role === 'current' && !node.lineage?.reasoningSide && node.lineage?.reasoningSideRank === undefined) {
+    return true;
+  }
   return Boolean(
     node.lineage?.reasoningSide
       && node.lineage.reasoningSideRank === 0
