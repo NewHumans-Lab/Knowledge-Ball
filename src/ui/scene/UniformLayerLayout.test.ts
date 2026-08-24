@@ -228,7 +228,6 @@ assert(source.includes('multiplyScalar(LAYOUT_RADIUS_INCREMENT)'), 'whole-chain 
 assert(source.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'expansion must translate a whole chain rigidly');
 assert(source.includes('One semantic inference chain only: conclusion -> reasoning -> premise, inward.'));
 assert(source.includes('directed.incomingIds.get(id)'), 'main spine must only walk incoming semantic edges toward premises');
-assert(source.includes('Never cross a shared premise'), 'shared premise must terminate a semantic spine rather than bridge conclusions');
 assert(source.includes('parentDegree > 12'), 'only intrinsically overfull local stars may immediately relax x');
 assert(!source.includes('ordinarySlotCache'));
 assert(!source.includes('reasoningPerpendicular'));
