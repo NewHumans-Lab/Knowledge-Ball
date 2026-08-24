@@ -32,10 +32,7 @@ const FCC_SCALE = FCC_NEIGHBOR_DISTANCE / Math.SQRT2;
 export const CORE_LAYOUT_CLEARANCE_RADIUS = CORE_SUN_RADIUS + ORDINARY_NODE_RADIUS;
 const POSITION_EPSILON_SQ = 1e-12;
 
-/**
- * Soft radial targets only. They are deliberately exact multiples of x so the
- * semantic colour tendency never needs a second geometry scale or hard shell.
- */
+/** Soft radial targets only; never hard shells or reasons to break x=72. */
 export const LAYER_TARGET_RADIUS: Readonly<Record<UserLayoutLayer, number>> = Object.freeze({
   inner: FCC_NEIGHBOR_DISTANCE,
   middle: FCC_NEIGHBOR_DISTANCE * 2,
@@ -383,15 +380,6 @@ function minimumDistanceSqToAssigned(
   return minimum;
 }
 
-function rootRadiusScore(
-  node: UniformLayoutNode,
-  candidate: FccCoord,
-  minimumPreferredRadius: number,
-): number {
-  const target = Math.max(LAYER_TARGET_RADIUS[userLayerOf(node)], minimumPreferredRadius);
-  return -Math.abs(coordRadius(candidate) - target) / FCC_NEIGHBOR_DISTANCE;
-}
-
 function layerRadiusScore(node: UniformLayoutNode, candidate: FccCoord): number {
   const target = LAYER_TARGET_RADIUS[userLayerOf(node)];
   return -Math.abs(coordRadius(candidate) - target) / FCC_NEIGHBOR_DISTANCE;
@@ -401,14 +389,13 @@ function chooseRootCandidate(
   node: UniformLayoutNode,
   candidates: readonly FccCoord[],
   assigned: ReadonlyMap<string, FccCoord>,
-  minimumPreferredRadius: number,
 ): FccCoord {
   let best = candidates[0];
   let bestLayer = Number.NEGATIVE_INFINITY;
   let bestGap = Number.NEGATIVE_INFINITY;
   let bestKey = coordKey(best);
   for (const candidate of candidates) {
-    const layer = rootRadiusScore(node, candidate, minimumPreferredRadius);
+    const layer = layerRadiusScore(node, candidate);
     const gap = minimumDistanceSqToAssigned(candidate, assigned);
     const key = coordKey(candidate);
     const better = layer > bestLayer + 1e-9
@@ -424,18 +411,17 @@ function chooseRootCandidate(
 }
 
 /**
- * A component root is its conclusion-side anchor. Colour supplies its soft target,
- * but a long chain may push that anchor farther out so all earlier premises have
- * room to walk inward by exact 72-unit steps.
+ * The conclusion-side root uses its colour layer as an approximate location only:
+ * purple near 3x, blue near 2x, cyan near 1x. We do not push it outward by chain
+ * length; if a long chain eventually cannot keep moving inward, x=72 wins and the
+ * next legal step may become tangent or less inward.
  */
 function rootSlot(
   node: UniformLayoutNode,
   occupied: ReadonlySet<string>,
   assigned: ReadonlyMap<string, FccCoord>,
-  minimumPreferredRadius = FCC_NEIGHBOR_DISTANCE,
 ): FccCoord {
-  const targetRadius = Math.max(LAYER_TARGET_RADIUS[userLayerOf(node)], minimumPreferredRadius);
-  const targetDepth = Math.max(1, Math.ceil(targetRadius / FCC_NEIGHBOR_DISTANCE));
+  const targetDepth = LAYER_RANK[userLayerOf(node)] + 1;
   const visited = new Set<string>([coordKey([0, 0, 0])]);
   let frontier: FccCoord[] = [[0, 0, 0]];
   const candidates: FccCoord[] = [];
@@ -454,7 +440,7 @@ function rootSlot(
     frontier = [...nextByKey.values()];
     candidates.push(...frontier.filter(coord => validFreeSlot(coord, occupied)));
   }
-  if (candidates.length > 0) return chooseRootCandidate(node, candidates, assigned, minimumPreferredRadius);
+  if (candidates.length > 0) return chooseRootCandidate(node, candidates, assigned);
 
   for (;;) {
     const nextByKey = new Map<string, FccCoord>();
@@ -469,7 +455,7 @@ function rootSlot(
     }
     frontier = [...nextByKey.values()];
     const free = frontier.filter(coord => validFreeSlot(coord, occupied));
-    if (free.length > 0) return chooseRootCandidate(node, free, assigned, minimumPreferredRadius);
+    if (free.length > 0) return chooseRootCandidate(node, free, assigned);
   }
 }
 
@@ -518,10 +504,9 @@ function continuityScore(candidate: FccCoord, parent: FccCoord, previousStep: Fc
 }
 
 /**
- * Second constraint: semantic source must lie inward of its target. Because layout
- * starts at the conclusion side, a target -> source placement therefore receives
- * the best score when the new source moves toward the centre. The formula also
- * remains correct for the rarer forward-scheduled branch.
+ * Second constraint: semantic source should lie inward of its target whenever the
+ * first constraint leaves such an exact-x candidate. Because layout starts from
+ * the conclusion side, target -> source placement prefers a negative radial delta.
  */
 function directedRadialScore(
   parentId: string,
@@ -660,11 +645,7 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
     const rootId = schedule.order[0];
     const rootNode = rootId ? byId.get(rootId) : undefined;
     if (!rootId || !rootNode) continue;
-
-    // The first node is the conclusion-side anchor. Reserve enough radial depth
-    // for the whole main spine to walk inward one exact x at a time.
-    const mainSpineRadialBudget = Math.max(1, spine.length) * FCC_NEIGHBOR_DISTANCE;
-    assign(rootId, rootSlot(rootNode, occupied, assigned, mainSpineRadialBudget), assigned, occupied);
+    assign(rootId, rootSlot(rootNode, occupied, assigned), assigned, occupied);
 
     for (const id of schedule.order.slice(1)) {
       const node = byId.get(id);
@@ -692,8 +673,6 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
         }
       }
 
-      // Any degree-two direct graph path remains a chain even when it is not on
-      // the cheap diameter spine. Its already placed segment supplies continuity.
       if (!previousStep && (adjacency.get(parentId)?.length ?? 0) === 2) {
         const otherId = (adjacency.get(parentId) ?? []).find(neighbourId => neighbourId !== id && assigned.has(neighbourId));
         const otherCoord = otherId ? assigned.get(otherId) : undefined;
@@ -713,10 +692,10 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
 /**
  * One live layout algorithm with lexicographic constraints:
  * 1) keep direct real graph neighbours at x=72 whenever a legal exact FCC slot exists;
- * 2) anchor each chain at its conclusion side, then place reasoning/premises inward;
- * 3) within the 72 geometry, require semantic source to be inward of target when possible;
- * 4) softly prefer purple/outer, blue/middle, cyan/inner at increasing radii;
- * 5) use continuity and gap filling only after the higher-priority rules.
+ * 2) choose the conclusion side first (purple, then blue, then cyan on direction ties);
+ * 3) walking toward premises, prefer exact-x slots that move toward the centre;
+ * 4) use colour layers only as soft approximate radii, never hard shells;
+ * 5) use continuity and gap filling only after those rules.
  */
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   const coords = placeGraphNodes(nodes);
