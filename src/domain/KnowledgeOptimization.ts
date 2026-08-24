@@ -3,10 +3,15 @@ import type { UserKnowledgeLayer } from './KnowledgeLayerPolicy';
 import {
   currentNodeForTopic,
   isPendingHeadCandidate,
+  isReasoningSideHead,
   lineageRoleFor,
+  reasoningHeadForTopic,
+  reasoningHistoryChain,
+  reasoningSideFor,
   topicIdFor,
   validateKnowledgeLineage,
   type KnowledgeLineageMeta,
+  type ReasoningSide,
 } from './KnowledgeLineage';
 
 export type KnowledgeOptimizationVerdict = 'CORRECT' | 'INCORRECT';
@@ -31,13 +36,28 @@ function canonicalText(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
 }
 
+function inferredReasoningSide(node: GraphNode): ReasoningSide {
+  const explicit = reasoningSideFor(node);
+  if (explicit) return explicit;
+  return lineageRoleFor(node) === 'opposition' ? 'opposition' : 'normal';
+}
+
 export function optimizationCandidateLineage(target: GraphNode): KnowledgeLineageMeta {
-  return {
+  const base: KnowledgeLineageMeta = {
     topicId: topicIdFor(target),
     proposal: 'optimization',
     targetId: target.id,
     role: 'candidate-history',
     rank: 0,
+  };
+  if (target.type !== 'reasoning') return base;
+  return {
+    ...base,
+    reasoningSide: inferredReasoningSide(target),
+    reasoningSideRank: 0,
+    // A pending optimization is not yet a side head; dominance transfers only
+    // if the candidate is accepted.
+    reasoningDominant: false,
   };
 }
 
@@ -49,16 +69,6 @@ export function isOptimizationCandidate(node: GraphNode | undefined): node is Op
   );
 }
 
-/**
- * Product-level optimization guard. It intentionally permits the candidate to
- * keep exactly the current target title, while every genuinely new title still
- * participates in the repository-wide uniqueness rule.
- *
- * Reasoning balls have a stricter invariant: their endpoint structure and layer
- * define the same inference object, so optimization may change only title and
- * inference prose. Premises, conclusions, type, logic-rule identity and layer are
- * inherited and cannot be edited through optimization.
- */
 export function validateOptimizationProposal(
   nodes: readonly GraphNode[],
   input: KnowledgeOptimizationProposalInput,
@@ -74,7 +84,12 @@ export function validateOptimizationProposal(
   if (target.status !== 'verified' || target.hidden || target.supersededBy) {
     errors.push('只能优化当前已验证且可见的有效知识');
   }
-  if (lineageRoleFor(target) !== 'current') errors.push('只能优化当前版本，不能直接编辑历史、对立或候选版本');
+  if (target.type === 'reasoning') {
+    const validHead = isReasoningSideHead(target) || lineageRoleFor(target) === 'current';
+    if (!validHead) errors.push('推理节点只能优化白色或红色派系的当前头，不能直接优化灰色历史');
+  } else if (lineageRoleFor(target) !== 'current') {
+    errors.push('只能优化当前版本，不能直接编辑历史、对立或候选版本');
+  }
 
   if (!candidateId || candidateId !== input.candidateId) errors.push('优化候选必须有不含首尾空白的新节点 ID');
   else if (byId.has(candidateId)) errors.push(`优化候选节点 ID 已存在: ${candidateId}`);
@@ -114,15 +129,160 @@ export function rejectOptimizationCandidate(nodes: GraphNode[], candidateId: str
   const candidate = nodes.find(node => node.id === candidateId);
   if (!isOptimizationCandidate(candidate)) throw new Error(`Not an optimization candidate: ${candidateId}`);
   const candidateNode: GraphNode = candidate;
-  candidateNode.lineage = { ...candidate.lineage, role: 'rejected', rank: 0 };
+  candidateNode.lineage = { ...candidate.lineage, role: 'rejected', rank: 0, reasoningDominant: false };
   candidateNode.status = 'falsified';
   candidateNode.hidden = true;
   assertValidLineage(nodes);
 }
 
+function ensureReasoningTwoCampMetadata(nodes: GraphNode[], topicId: string): void {
+  const current = currentNodeForTopic(nodes, topicId);
+  if (!current) throw new Error(`Reasoning topic has no white current head: ${topicId}`);
+  const normalHistory = nodes
+    .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'history')
+    .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
+  const opposition = nodes
+    .filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'opposition')
+    .sort((left, right) => (left.lineage?.rank ?? 0) - (right.lineage?.rank ?? 0));
+  const explicitDominant = nodes.find(node =>
+    topicIdFor(node) === topicId
+      && isReasoningSideHead(node)
+      && node.lineage?.reasoningDominant === true,
+  );
+
+  const currentMeta = current.lineage ?? { topicId, proposal: 'new' as const, role: 'current' as const, rank: 0 };
+  current.lineage = {
+    ...currentMeta,
+    topicId,
+    role: 'current',
+    rank: 0,
+    reasoningSide: 'normal',
+    reasoningSideRank: 0,
+    reasoningDominant: explicitDominant ? explicitDominant.id === current.id : true,
+  };
+  current.hidden = false;
+
+  normalHistory.forEach((node, index) => {
+    if (!node.lineage) throw new Error(`Historical lineage metadata missing: ${node.id}`);
+    node.lineage = {
+      ...node.lineage,
+      role: 'history',
+      rank: index + 1,
+      reasoningSide: 'normal',
+      reasoningSideRank: index + 1,
+      reasoningDominant: false,
+    };
+    node.hidden = true;
+  });
+
+  opposition.forEach((node, index) => {
+    if (!node.lineage) throw new Error(`Opposition lineage metadata missing: ${node.id}`);
+    node.lineage = {
+      ...node.lineage,
+      role: 'opposition',
+      rank: index + 1,
+      reasoningSide: 'opposition',
+      reasoningSideRank: index,
+      reasoningDominant: explicitDominant ? explicitDominant.id === node.id && index === 0 : false,
+    };
+    node.hidden = index !== 0;
+  });
+}
+
+function promoteReasoningOptimizationCandidate(
+  nodes: GraphNode[],
+  candidate: OptimizationCandidateNode,
+  target: GraphNode,
+): string {
+  const topicId = candidate.lineage.topicId;
+  ensureReasoningTwoCampMetadata(nodes, topicId);
+  const side = candidate.lineage.reasoningSide ?? inferredReasoningSide(target);
+  const head = reasoningHeadForTopic(nodes, topicId, side);
+  if (!head || head.id !== target.id || !head.lineage) {
+    throw new Error(`Stale reasoning optimization target: expected ${head?.id ?? 'none'}, got ${candidate.lineage.targetId}`);
+  }
+
+  const wasDominant = head.lineage.reasoningDominant === true;
+  const history = reasoningHistoryChain(nodes, topicId, side);
+  const candidateNode: GraphNode = candidate;
+
+  if (side === 'normal') {
+    history.forEach((node, index) => {
+      if (!node.lineage) throw new Error(`Reasoning normal history metadata missing: ${node.id}`);
+      node.lineage = {
+        ...node.lineage,
+        role: 'history',
+        rank: index + 2,
+        reasoningSide: 'normal',
+        reasoningSideRank: index + 2,
+        reasoningDominant: false,
+      };
+      node.hidden = true;
+    });
+    head.lineage = {
+      ...head.lineage,
+      role: 'history',
+      rank: 1,
+      reasoningSide: 'normal',
+      reasoningSideRank: 1,
+      reasoningDominant: false,
+    };
+    head.hidden = true;
+    candidateNode.lineage = {
+      ...candidate.lineage,
+      role: 'current',
+      rank: 0,
+      reasoningSide: 'normal',
+      reasoningSideRank: 0,
+      reasoningDominant: wasDominant,
+    };
+  } else {
+    history.forEach((node, index) => {
+      if (!node.lineage) throw new Error(`Reasoning opposition history metadata missing: ${node.id}`);
+      node.lineage = {
+        ...node.lineage,
+        role: 'opposition',
+        rank: index + 3,
+        reasoningSide: 'opposition',
+        reasoningSideRank: index + 2,
+        reasoningDominant: false,
+      };
+      node.hidden = true;
+    });
+    head.lineage = {
+      ...head.lineage,
+      role: 'opposition',
+      rank: 2,
+      reasoningSide: 'opposition',
+      reasoningSideRank: 1,
+      reasoningDominant: false,
+    };
+    head.hidden = true;
+    candidateNode.lineage = {
+      ...candidate.lineage,
+      role: 'opposition',
+      rank: 1,
+      reasoningSide: 'opposition',
+      reasoningSideRank: 0,
+      reasoningDominant: wasDominant,
+    };
+  }
+
+  candidateNode.status = 'verified';
+  candidateNode.hidden = false;
+  assertValidLineage(nodes);
+  return target.id;
+}
+
 export function promoteOptimizationCandidate(nodes: GraphNode[], candidateId: string): string {
   const candidate = nodes.find(node => node.id === candidateId);
   if (!isOptimizationCandidate(candidate)) throw new Error(`Not an optimization candidate: ${candidateId}`);
+
+  const target = nodes.find(node => node.id === candidate.lineage.targetId);
+  if (!target) throw new Error(`Optimization target missing: ${candidate.lineage.targetId}`);
+  if (target.type === 'reasoning') {
+    return promoteReasoningOptimizationCandidate(nodes, candidate, target);
+  }
 
   const topicId = candidate.lineage.topicId;
   const current = currentNodeForTopic(nodes, topicId);
