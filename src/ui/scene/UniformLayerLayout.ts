@@ -275,52 +275,60 @@ function directionKey(direction: THREE.Vector3): string {
   return `${direction.x.toFixed(6)}|${direction.y.toFixed(6)}|${direction.z.toFixed(6)}`;
 }
 
-function buildAnchorDirectionPool(): THREE.Vector3[] {
-  const unique = new Map<string, THREE.Vector3>();
-  const add = (direction: THREE.Vector3) => {
-    if (direction.lengthSq() <= POSITION_EPSILON) return;
-    const normalized = direction.clone().normalize();
-    unique.set(directionKey(normalized), normalized);
-  };
-  for (const direction of BASE_ANCHOR_DIRECTIONS) add(direction);
+/**
+ * Build one deterministic insertion order once: front/back/up/down/right/left,
+ * then repeatedly choose the direction in the largest angular gap. Runtime never
+ * re-sorts the entire sphere for every component.
+ */
+function buildAnchorDirectionSequence(): THREE.Vector3[] {
+  const candidates = new Map<string, THREE.Vector3>();
   for (let x = -4; x <= 4; x++) {
     for (let y = -4; y <= 4; y++) {
       for (let z = -4; z <= 4; z++) {
         if (x === 0 && y === 0 && z === 0) continue;
-        add(new THREE.Vector3(x, y, z));
+        const direction = new THREE.Vector3(x, y, z).normalize();
+        candidates.set(directionKey(direction), direction);
       }
     }
   }
-  return [...unique.values()];
+
+  const sequence = BASE_ANCHOR_DIRECTIONS.map(direction => direction.clone());
+  for (const direction of sequence) candidates.delete(directionKey(direction));
+  const maxDot = new Map<string, number>();
+  for (const [key, candidate] of candidates) {
+    let value = -1;
+    for (const selected of sequence) value = Math.max(value, candidate.dot(selected));
+    maxDot.set(key, value);
+  }
+
+  while (candidates.size > 0) {
+    let bestKey = '';
+    let bestDot = Number.POSITIVE_INFINITY;
+    for (const key of candidates.keys()) {
+      const dot = maxDot.get(key) ?? 1;
+      if (dot < bestDot - POSITION_EPSILON || (Math.abs(dot - bestDot) <= POSITION_EPSILON && (!bestKey || key < bestKey))) {
+        bestKey = key;
+        bestDot = dot;
+      }
+    }
+    const selected = candidates.get(bestKey)!;
+    sequence.push(selected);
+    candidates.delete(bestKey);
+    maxDot.delete(bestKey);
+    for (const [key, candidate] of candidates) {
+      maxDot.set(key, Math.max(maxDot.get(key) ?? -1, candidate.dot(selected)));
+    }
+  }
+  return sequence;
 }
 
-const ANCHOR_DIRECTION_POOL = buildAnchorDirectionPool();
-
-function sameDirection(a: THREE.Vector3, b: THREE.Vector3): boolean { return a.dot(b) > 0.999999; }
+const ANCHOR_DIRECTION_SEQUENCE = buildAnchorDirectionSequence();
 
 function angularGapScore(candidate: THREE.Vector3, used: readonly THREE.Vector3[]): number {
   if (used.length === 0) return 2;
   let nearestDot = -1;
   for (const direction of used) nearestDot = Math.max(nearestDot, candidate.dot(direction));
   return 1 - nearestDot;
-}
-
-/** First fill front/back/up/down/left/right; afterwards always try the largest remaining spherical gap. */
-function rankedAnchorDirections(used: readonly THREE.Vector3[]): THREE.Vector3[] {
-  const unused = ANCHOR_DIRECTION_POOL.filter(candidate => !used.some(direction => sameDirection(candidate, direction)));
-  const unusedAxes = BASE_ANCHOR_DIRECTIONS.filter(axis => !used.some(direction => sameDirection(axis, direction)));
-  unused.sort((a, b) => {
-    if (unusedAxes.length > 0) {
-      const aAxis = unusedAxes.findIndex(axis => sameDirection(a, axis));
-      const bAxis = unusedAxes.findIndex(axis => sameDirection(b, axis));
-      if ((aAxis >= 0) !== (bAxis >= 0)) return aAxis >= 0 ? -1 : 1;
-      if (aAxis >= 0 && bAxis >= 0 && aAxis !== bAxis) return aAxis - bAxis;
-    }
-    const gapDelta = angularGapScore(b, used) - angularGapScore(a, used);
-    if (Math.abs(gapDelta) > POSITION_EPSILON) return gapDelta;
-    return directionKey(a).localeCompare(directionKey(b));
-  });
-  return unused;
 }
 
 function orthonormalBasis(direction: THREE.Vector3): [THREE.Vector3, THREE.Vector3, THREE.Vector3] {
@@ -331,34 +339,67 @@ function orthonormalBasis(direction: THREE.Vector3): [THREE.Vector3, THREE.Vecto
   return [u, v, w];
 }
 
+/** Small local direction set: straight axes first, then diagonals that fill their gaps. */
 function localExactDirections(anchorDirection: THREE.Vector3): THREE.Vector3[] {
   const [u, v, w] = orthonormalBasis(anchorDirection);
-  const unique = new Map<string, THREE.Vector3>();
+  const local = [
+    w.clone().negate(), w.clone(), u.clone(), u.clone().negate(), v.clone(), v.clone().negate(),
+  ];
   for (let a = -1; a <= 1; a++) {
     for (let b = -1; b <= 1; b++) {
       for (let c = -1; c <= 1; c++) {
         if (a === 0 && b === 0 && c === 0) continue;
-        const direction = u.clone().multiplyScalar(a).add(v.clone().multiplyScalar(b)).add(w.clone().multiplyScalar(c)).normalize();
-        unique.set(directionKey(direction), direction);
+        const direction = u.clone().multiplyScalar(a).add(v.clone().multiplyScalar(b)).add(w.clone().multiplyScalar(c));
+        if (direction.lengthSq() <= POSITION_EPSILON) continue;
+        direction.normalize();
+        if (!local.some(existing => existing.dot(direction) > 0.999999)) local.push(direction);
       }
     }
   }
-  return [...unique.values()];
+  return local;
 }
 
-function positionLegal(candidate: THREE.Vector3, sphereRadius: number, positions: ReadonlyMap<string, THREE.Vector3>): boolean {
-  const radius = candidate.length();
-  if (radius < CORE_LAYOUT_CLEARANCE_RADIUS - POSITION_EPSILON || radius > sphereRadius + POSITION_EPSILON) return false;
-  for (const position of positions.values()) {
-    if (candidate.distanceTo(position) < FCC_NEIGHBOR_DISTANCE - POSITION_EPSILON) return false;
+function cellCoordinate(value: number): number { return Math.floor(value / FCC_NEIGHBOR_DISTANCE); }
+function cellKey(x: number, y: number, z: number): string { return `${x}|${y}|${z}`; }
+
+/** 72-unit spatial hash: collision queries inspect only neighbouring cells. */
+class PositionIndex {
+  private readonly cells = new Map<string, Array<{ id: string; position: THREE.Vector3 }>>();
+
+  constructor(positions?: ReadonlyMap<string, THREE.Vector3>) {
+    if (positions) for (const [id, position] of positions) this.add(id, position);
   }
-  return true;
+
+  add(id: string, position: THREE.Vector3): void {
+    const key = cellKey(cellCoordinate(position.x), cellCoordinate(position.y), cellCoordinate(position.z));
+    const bucket = this.cells.get(key) ?? [];
+    bucket.push({ id, position });
+    this.cells.set(key, bucket);
+  }
+
+  conflicts(candidate: THREE.Vector3): boolean {
+    const cx = cellCoordinate(candidate.x);
+    const cy = cellCoordinate(candidate.y);
+    const cz = cellCoordinate(candidate.z);
+    const minimumSq = (FCC_NEIGHBOR_DISTANCE - POSITION_EPSILON) ** 2;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const entry of this.cells.get(cellKey(cx + dx, cy + dy, cz + dz)) ?? []) {
+            if (candidate.distanceToSquared(entry.position) < minimumSq) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
 }
 
-function mergedPositions(global: ReadonlyMap<string, THREE.Vector3>, local: ReadonlyMap<string, THREE.Vector3>): Map<string, THREE.Vector3> {
-  const merged = new Map(global);
-  for (const [id, position] of local) merged.set(id, position);
-  return merged;
+function positionLegal(candidate: THREE.Vector3, sphereRadius: number, index: PositionIndex): boolean {
+  const radius = candidate.length();
+  return radius >= CORE_LAYOUT_CLEARANCE_RADIUS - POSITION_EPSILON
+    && radius <= sphereRadius + POSITION_EPSILON
+    && !index.conflicts(candidate);
 }
 
 function exactAssignedNeighbourCount(
@@ -373,15 +414,6 @@ function exactAssignedNeighbourCount(
     if (neighbour && Math.abs(candidate.distanceTo(neighbour) - FCC_NEIGHBOR_DISTANCE) <= POSITION_EPSILON) count++;
   }
   return count;
-}
-
-function geometricGapScore(candidate: THREE.Vector3, parentId: string, positions: ReadonlyMap<string, THREE.Vector3>): number {
-  let minimum = Number.POSITIVE_INFINITY;
-  for (const [id, position] of positions) {
-    if (id === parentId) continue;
-    minimum = Math.min(minimum, candidate.distanceToSquared(position));
-  }
-  return minimum;
 }
 
 function candidateRadialScore(parentId: string, id: string, parent: THREE.Vector3, candidate: THREE.Vector3, directed: DirectedIndex): number {
@@ -399,41 +431,38 @@ function chooseExactCandidate(
   parentId: string,
   parent: THREE.Vector3,
   previousStep: THREE.Vector3 | null,
-  candidates: readonly THREE.Vector3[],
+  directions: readonly THREE.Vector3[],
   sphereRadius: number,
   adjacency: ReadonlyMap<string, string[]>,
   positions: ReadonlyMap<string, THREE.Vector3>,
   directed: DirectedIndex,
+  index: PositionIndex,
 ): THREE.Vector3 | null {
   let best: THREE.Vector3 | null = null;
   let bestExact = -1;
   let bestRadial = Number.NEGATIVE_INFINITY;
   let bestContinuity = Number.NEGATIVE_INFINITY;
   let bestLayer = Number.NEGATIVE_INFINITY;
-  let bestGap = Number.NEGATIVE_INFINITY;
   let bestKey = '';
-  for (const direction of candidates) {
+  for (const direction of directions) {
     const candidate = parent.clone().add(direction.clone().multiplyScalar(FCC_NEIGHBOR_DISTANCE));
-    if (!positionLegal(candidate, sphereRadius, positions)) continue;
+    if (!positionLegal(candidate, sphereRadius, index)) continue;
     const exact = exactAssignedNeighbourCount(id, candidate, adjacency, positions);
     const radial = candidateRadialScore(parentId, id, parent, candidate, directed);
     const continuity = previousStep ? direction.dot(previousStep.clone().normalize()) : 0;
     const layer = layerCandidateScore(node, candidate, sphereRadius);
-    const gap = geometricGapScore(candidate, parentId, positions);
     const key = directionKey(direction);
     const better = exact > bestExact
       || (exact === bestExact && radial > bestRadial + POSITION_EPSILON)
       || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && continuity > bestContinuity + POSITION_EPSILON)
       || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && Math.abs(continuity - bestContinuity) <= POSITION_EPSILON && layer > bestLayer + POSITION_EPSILON)
-      || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && Math.abs(continuity - bestContinuity) <= POSITION_EPSILON && Math.abs(layer - bestLayer) <= POSITION_EPSILON && gap > bestGap + POSITION_EPSILON)
-      || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && Math.abs(continuity - bestContinuity) <= POSITION_EPSILON && Math.abs(layer - bestLayer) <= POSITION_EPSILON && Math.abs(gap - bestGap) <= POSITION_EPSILON && key < bestKey);
+      || (exact === bestExact && Math.abs(radial - bestRadial) <= POSITION_EPSILON && Math.abs(continuity - bestContinuity) <= POSITION_EPSILON && Math.abs(layer - bestLayer) <= POSITION_EPSILON && (!bestKey || key < bestKey));
     if (!better) continue;
     best = candidate;
     bestExact = exact;
     bestRadial = radial;
     bestContinuity = continuity;
     bestLayer = layer;
-    bestGap = gap;
     bestKey = key;
   }
   return best;
@@ -443,20 +472,13 @@ function chooseLongCandidate(
   parent: THREE.Vector3,
   directions: readonly THREE.Vector3[],
   sphereRadius: number,
-  positions: ReadonlyMap<string, THREE.Vector3>,
+  index: PositionIndex,
 ): THREE.Vector3 | null {
   for (let multiplier = 2; multiplier <= 8; multiplier++) {
-    let best: THREE.Vector3 | null = null;
-    let bestGap = Number.NEGATIVE_INFINITY;
     for (const direction of directions) {
       const candidate = parent.clone().add(direction.clone().multiplyScalar(FCC_NEIGHBOR_DISTANCE * multiplier));
-      if (!positionLegal(candidate, sphereRadius, positions)) continue;
-      const gap = geometricGapScore(candidate, '', positions);
-      if (gap <= bestGap) continue;
-      bestGap = gap;
-      best = candidate;
+      if (positionLegal(candidate, sphereRadius, index)) return candidate;
     }
-    if (best) return best;
   }
   return null;
 }
@@ -503,22 +525,27 @@ function tryPlaceComponent(
   allowLongEdges: boolean,
 ): Map<string, THREE.Vector3> | null {
   const local = new Map<string, THREE.Vector3>();
+  const combinedPositions = new Map(globalPositions);
+  const index = new PositionIndex(globalPositions);
   const rootNode = byId.get(plan.rootId)!;
   const root = anchorDirection.clone().multiplyScalar(layerRadiusForSphere(rootNode, sphereRadius));
-  if (!positionLegal(root, sphereRadius, globalPositions)) return null;
+  if (!positionLegal(root, sphereRadius, index)) return null;
   local.set(plan.rootId, root);
+  combinedPositions.set(plan.rootId, root);
+  index.add(plan.rootId, root);
 
   // Long/main chain first: conclusion -> premise, straight toward the centre.
-  for (let index = 1; index < plan.spine.length; index++) {
-    const id = plan.spine[index];
-    const parentId = plan.spine[index - 1];
+  for (let position = 1; position < plan.spine.length; position++) {
+    const id = plan.spine[position];
+    const parentId = plan.spine[position - 1];
     const parent = local.get(parentId)!;
     const relation = directedRelation(parentId, id, directed);
     const sign = relation > 0 ? 1 : -1;
     const candidate = parent.clone().add(anchorDirection.clone().multiplyScalar(sign * FCC_NEIGHBOR_DISTANCE));
-    const positions = mergedPositions(globalPositions, local);
-    if (!positionLegal(candidate, sphereRadius, positions)) return null;
+    if (!positionLegal(candidate, sphereRadius, index)) return null;
     local.set(id, candidate);
+    combinedPositions.set(id, candidate);
+    index.add(id, candidate);
   }
 
   const localDirections = localExactDirections(anchorDirection);
@@ -539,12 +566,25 @@ function tryPlaceComponent(
     const directions = [preferredRadial];
     if (previousStep && previousStep.lengthSq() > POSITION_EPSILON) directions.push(previousStep.clone().normalize());
     directions.push(...localDirections);
-    const positions = mergedPositions(globalPositions, local);
-    let candidate = chooseExactCandidate(id, node, parentId, parent, previousStep, directions, sphereRadius, adjacency, positions, directed);
+    let candidate = chooseExactCandidate(
+      id,
+      node,
+      parentId,
+      parent,
+      previousStep,
+      directions,
+      sphereRadius,
+      adjacency,
+      combinedPositions,
+      directed,
+      index,
+    );
     const parentDegree = adjacency.get(parentId)?.length ?? 0;
-    if (!candidate && (allowLongEdges || parentDegree > 12)) candidate = chooseLongCandidate(parent, directions, sphereRadius, positions);
+    if (!candidate && (allowLongEdges || parentDegree > 12)) candidate = chooseLongCandidate(parent, directions, sphereRadius, index);
     if (!candidate) return null;
     local.set(id, candidate);
+    combinedPositions.set(id, candidate);
+    index.add(id, candidate);
   }
   return local;
 }
@@ -577,10 +617,9 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, THREE
 
     let widthExpansions = 0;
     for (;;) {
-      const directions = rankedAnchorDirections(placed.map(component => component.anchorDirection));
       let local: Map<string, THREE.Vector3> | null = null;
       let chosenDirection: THREE.Vector3 | null = null;
-      for (const direction of directions) {
+      for (const direction of ANCHOR_DIRECTION_SEQUENCE) {
         local = tryPlaceComponent(
           plan,
           direction,
