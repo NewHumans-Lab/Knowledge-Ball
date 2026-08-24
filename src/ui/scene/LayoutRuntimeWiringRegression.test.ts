@@ -45,6 +45,8 @@ assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs m
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale checks');
 assert(sceneSource.includes('let graphZoom = 1;'), 'initial graph scale must be neutral so five layout diameters render as five visible diameters');
 assert(!sceneSource.includes('let graphZoom = 1.27;'), 'the old 1.27 initial position-only enlargement must not return');
+assert(!sceneSource.includes('if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;'), 'focused mobile node must not steal a tap from a nearer projected neighbour');
+assert(sceneSource.includes("if (typeof id === 'string' && distance <= 24 && (!nearest || distance < nearest.distance))"), 'mobile taps must resolve by the nearest visible projected ball');
 assert(!sceneSource.includes('detailReasoningPresentationPositions'), 'detail-only reasoning displacement must be removed');
 assert(!sceneSource.includes('detailDisplayPositions'), 'rendered node positions must come directly from authoritative scene coordinates');
 
