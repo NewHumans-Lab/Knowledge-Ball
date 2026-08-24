@@ -63,6 +63,41 @@ assertNearly(radius(reasoning), 144, 'middle reasoning should follow one inward 
 assertNearly(radius(premise), 72, 'inner premise should follow the second inward x');
 assert(radius(premise) < radius(reasoning) && radius(reasoning) < radius(conclusion), 'semantic inference direction must point outward');
 
+// Shared premise is a branch point, never permission to turn through it into a
+// different conclusion and call the combined path one main chain. This mirrors
+// demo n3 -> r-n6/n6, r-n15/n15 and r-n7/n7, the structure that previously made
+// two reasoning balls collide at the same coordinate no matter how large R grew.
+const sharedPremise = [
+  node('n3', [], 'inner'),
+  node('r-n6', ['n3'], 'middle', 'reasoning'),
+  node('n6', ['r-n6'], 'middle'),
+  node('r-n15', ['n3'], 'middle', 'reasoning'),
+  node('n15', ['r-n15'], 'middle'),
+  node('r-n7', ['n3'], 'middle', 'reasoning'),
+  node('n7', ['r-n7'], 'outer'),
+];
+applyUniformLayerLayout(sharedPremise);
+for (const [left, right] of [
+  ['n3', 'r-n6'], ['r-n6', 'n6'],
+  ['n3', 'r-n15'], ['r-n15', 'n15'],
+  ['n3', 'r-n7'], ['r-n7', 'n7'],
+] as const) {
+  assertNearly(
+    distance(sharedPremise.find(item => item.id === left)!, sharedPremise.find(item => item.id === right)!),
+    72,
+    `${left} -> ${right} shared-premise branch must remain one x`,
+  );
+}
+assertNearly(radius(sharedPremise.find(item => item.id === 'n7')!), 216, 'purple branch conclusion stays on the current sphere surface');
+assertNearly(radius(sharedPremise.find(item => item.id === 'r-n7')!), 144, 'chosen purple chain walks inward through reasoning');
+assertNearly(radius(sharedPremise.find(item => item.id === 'n3')!), 72, 'shared premise stops the main chain at the inner side');
+for (const item of sharedPremise) {
+  for (const other of sharedPremise) {
+    if (item.id >= other.id) continue;
+    assert(distance(item, other) >= 72 - 1e-7, `shared-premise branches ${item.id}/${other.id} must not overlap`);
+  }
+}
+
 // Depth capacity is solved by growing the whole sphere in 216-unit steps, not by
 // stretching any direct relation. Four blue nodes require one expansion: 216 -> 432.
 const blueLong = [
@@ -191,7 +226,9 @@ assert(source.includes('requiredSphereRadiusForSpine'), 'depth must trigger sphe
 assert(source.includes('expandSphere'), 'width/depth capacity must share one expansion path');
 assert(source.includes('multiplyScalar(LAYOUT_RADIUS_INCREMENT)'), 'whole-chain outward translation must be exactly 3x');
 assert(source.includes('for (const id of component.ids) positions.get(id)?.add(delta);'), 'expansion must translate a whole chain rigidly');
-assert(source.includes('Long/main chain first: conclusion -> premise, straight toward the centre.'));
+assert(source.includes('One semantic inference chain only: conclusion -> reasoning -> premise, inward.'));
+assert(source.includes('directed.incomingIds.get(id)'), 'main spine must only walk incoming semantic edges toward premises');
+assert(source.includes('Never cross a shared premise'), 'shared premise must terminate a semantic spine rather than bridge conclusions');
 assert(source.includes('parentDegree > 12'), 'only intrinsically overfull local stars may immediately relax x');
 assert(!source.includes('ordinarySlotCache'));
 assert(!source.includes('reasoningPerpendicular'));
