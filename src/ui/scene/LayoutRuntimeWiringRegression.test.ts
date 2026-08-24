@@ -43,6 +43,8 @@ assert(sceneSource.includes('syncEdges(allNodes)'), 'relation lifecycle must fol
 assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD must not own relation lifecycle');
 assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs must not globally hide relations');
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale checks');
+assert(sceneSource.includes('let graphZoom = 1;'), 'initial graph scale must be neutral so five layout diameters render as five visible diameters');
+assert(!sceneSource.includes('let graphZoom = 1.27;'), 'the old 1.27 initial position-only enlargement must not return');
 assert(!sceneSource.includes('detailReasoningPresentationPositions'), 'detail-only reasoning displacement must be removed');
 assert(!sceneSource.includes('detailDisplayPositions'), 'rendered node positions must come directly from authoritative scene coordinates');
 
