@@ -49,6 +49,23 @@ const touchedHistory = node('history-touched', 'history', 'verified', 'touched')
 const pendingHistory = node('candidate-history', 'candidate-history', 'pending');
 const pendingOpposition = node('candidate-opposition', 'candidate-opposition', 'pending');
 const rejected = node('rejected', 'rejected', 'falsified');
+const suppressedHistory: KnowledgeLineageViewNode = {
+  ...node('suppressed-history', 'history', 'verified', 'mastered'),
+  lineage: {
+    ...node('suppressed-history-base', 'history').lineage!,
+    topicId: 'suppressed-topic',
+    suppressedByOpposition: true,
+  },
+};
+const suppressedOpposition: KnowledgeLineageViewNode = {
+  ...node('suppressed-opposition', 'opposition', 'verified', 'mastered'),
+  lineage: {
+    ...node('suppressed-opposition-base', 'opposition').lineage!,
+    topicId: 'suppressed-topic',
+    proposal: 'opposition',
+    suppressedByOpposition: true,
+  },
+};
 
 assert.equal(nodeVisibleInKnowledgeMode(current, 'current'), true);
 assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), false);
@@ -61,6 +78,17 @@ assert.equal(nodeVisibleInKnowledgeMode(opposition, 'all'), true);
 assert.equal(nodeVisibleInKnowledgeMode(current, 'personal'), false);
 assert.equal(nodeVisibleInKnowledgeMode(touchedHistory, 'personal'), true);
 assert.equal(nodeVisibleInKnowledgeMode({ ...current, mastery:'mastered' }, 'personal'), true);
+
+// A successful opposition to a reasoning node is not a viewpoint swap. The red
+// winning opposition remains red, the former white reasoning is gray history,
+// and both are audit-only: even personal mastery cannot reveal them outside All.
+for (const suppressedNode of [suppressedHistory, suppressedOpposition]) {
+  assert.equal(nodeVisibleInKnowledgeMode(suppressedNode, 'current'), false);
+  assert.equal(nodeVisibleInKnowledgeMode(suppressedNode, 'personal'), false);
+  assert.equal(nodeVisibleInKnowledgeMode(suppressedNode, 'all'), true);
+}
+assert.equal(lineageColorForNode(suppressedHistory), KNOWLEDGE_HISTORY_COLOR);
+assert.equal(lineageColorForNode(suppressedOpposition), KNOWLEDGE_OPPOSITION_COLOR);
 
 // Pending gray/red proposals are the explicit all-mode exception.
 for (const pending of [pendingHistory, pendingOpposition]) {
@@ -77,6 +105,8 @@ let detailOpen = true;
 const relatedElements = [
   { dataset: { relatedNodeId: 'history' } },
   { dataset: { relatedNodeId: 'opposition' } },
+  { dataset: { relatedNodeId: 'suppressed-history' } },
+  { dataset: { relatedNodeId: 'suppressed-opposition' } },
 ];
 const fakeDetailRoot = {
   classList: { contains: (name: string) => name === 'open' && detailOpen },
@@ -94,6 +124,8 @@ try {
   assert.equal(nodeVisibleBecauseDetailIsOpen('unrelated'), false);
   assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), true, 'open detail must temporarily reveal related gray history');
   assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), true, 'open detail must temporarily reveal related red opposition');
+  assert.equal(nodeVisibleInKnowledgeMode(suppressedHistory, 'current'), false, 'suppressed reasoning history remains All-only even with detail open');
+  assert.equal(nodeVisibleInKnowledgeMode(suppressedOpposition, 'current'), false, 'winning red reasoning opposition remains All-only even with detail open');
   assert.equal(nodeVisibleInKnowledgeMode(rejected, 'current'), false, 'detail context must never resurrect rejected audit-only nodes');
   assert.equal(edgeVisibleInKnowledgeMode(current, history, 'current', true, () => false), true, 'gray lineage line appears with its two visible endpoint balls');
   assert.equal(edgeVisibleInKnowledgeMode(current, opposition, 'current', true, () => false), true, 'red lineage line appears with its two visible endpoint balls');
@@ -109,6 +141,8 @@ try {
 
 assert.equal(nodeBelongsInLineageScene(history), true, 'legacy hidden flag must not delete formal history from scene data');
 assert.equal(nodeBelongsInLineageScene(opposition), true);
+assert.equal(nodeBelongsInLineageScene(suppressedHistory), true, 'suppressed gray reasoning must remain available to All mode');
+assert.equal(nodeBelongsInLineageScene(suppressedOpposition), true, 'suppressed red reasoning opposition must remain available to All mode');
 assert.equal(nodeBelongsInLineageScene(rejected), false, 'rejected candidate remains audit-only');
 
 assert.equal(lineageColorForNode(history), KNOWLEDGE_HISTORY_COLOR);
