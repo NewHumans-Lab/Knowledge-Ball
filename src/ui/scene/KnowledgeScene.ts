@@ -291,7 +291,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let returningNodeId: string | null = null;
   let focusedNodeId: string | null = null;
   let focusTargetQuaternion: THREE.Quaternion | null = null;
-  let graphZoom = 1.27;
+  let graphZoom = 1;
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
   const mobilePerformance = window.matchMedia('(max-width: 640px)').matches;
