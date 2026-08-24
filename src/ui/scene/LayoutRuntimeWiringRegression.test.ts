@@ -10,15 +10,14 @@ import {
 const appSource = readFileSync('src/ui/app.ts', 'utf8');
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const uniformSource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
-const relationSource = readFileSync('src/ui/scene/RelationLengthLayout.ts', 'utf8');
 
-assert(appSource.includes("import { applyUniformLayerLayout } from './scene/UniformLayerLayout';"), 'user app must import the uniform layout entry point');
+assert(appSource.includes("import { applyUniformLayerLayout } from './scene/UniformLayerLayout';"), 'user app must retain the single layout entry point');
 const allNodesIndex = appSource.indexOf('layoutNodes = domainNodes.map');
 const layoutCallIndex = appSource.indexOf('applyUniformLayerLayout(layoutNodes)');
 const renderFilterIndex = appSource.indexOf('renderNodes = layoutNodes.filter');
 assert(allNodesIndex >= 0, 'user app must build layout from every projected node');
-assert(layoutCallIndex > allNodesIndex, 'uniform layout must run after the full projected graph is materialized');
-assert(renderFilterIndex > layoutCallIndex, 'hidden rendering filter must run only after full-graph layout optimization');
+assert(layoutCallIndex > allNodesIndex, 'FCC layout must run after the full projected graph is materialized');
+assert(renderFilterIndex > layoutCallIndex, 'visibility filtering must run only after full-graph occupancy is assigned');
 assert(appSource.includes('function getSceneNodes(): KnowledgeSceneNode[] {\n  return renderNodes;\n}'), 'the live scene must receive the complete visible render-node set on mobile and desktop');
 assert(!appSource.includes('mobileSceneNodeLimit'), 'mobile knowledge truth must not restore a fixed scene-node cap');
 
@@ -38,18 +37,29 @@ const next = selectMobileActiveNodeIds(shifted, previous, new Set());
 assert.equal(next.size, MOBILE_ACTIVE_NODE_TARGET, 'hysteresis must keep a bounded working set');
 
 assert(sceneSource.includes('selectMobileActiveNodeIds'), 'scene must dynamically select its mobile high-detail working set');
-assert(sceneSource.includes('largeGraphDirty = true;') && sceneSource.includes("mode === 'rotate'"), 'rotation must invalidate the mobile working set so near/far membership updates while rotating');
+assert(sceneSource.includes('largeGraphDirty = true;') && sceneSource.includes("mode === 'rotate'"), 'rotation must invalidate only mobile render membership, not layout coordinates');
 assert(sceneSource.includes('const nodeId = !moved && !pinchOccurred ? draggedNodeId : null;'), 'pointerup must reuse the pointerdown hit instead of rescanning the whole working set');
-assert(sceneSource.includes('syncEdges(allNodes)'), 'relation lifecycle must follow the complete graph rather than the mobile high-detail working set');
-assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD membership must not create, remove, or restore relations');
+assert(sceneSource.includes('syncEdges(allNodes, detailDisplayPositions)'), 'relation lifecycle must follow the complete graph while detail presentation affects display geometry only');
+assert(!sceneSource.includes('syncEdges(activeNodes'), 'mobile LOD membership must not create, remove, or restore relations');
 assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs must not globally hide all relations');
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale regression checks');
+assert(sceneSource.includes('detailReasoningPresentationPositions'), 'detail view must keep directly connected reasoning meshes canvas-addressable without changing their FCC home coordinates');
+assert(sceneSource.includes('record.group.position.copy(detailDisplayPositions.get(n.id) ?? n.pos!)'), 'detail-only presentation must affect rendered mesh position rather than authoritative node.pos');
+assert(!/detailReasoningPresentationPositions[\s\S]*?homePos\s*=/.test(sceneSource), 'detail-only presentation must never rewrite FCC home positions');
 
-assert(uniformSource.includes("import { optimizeRelationLengthLayout } from './RelationLengthLayout';"), 'uniform layout must import the relation-length optimizer used by the user page');
-const slotAssignmentIndex = uniformSource.indexOf('ordered.forEach((node, index) =>');
-const relationOptimizeIndex = uniformSource.indexOf('optimizeRelationLengthLayout(nodes)');
-assert(slotAssignmentIndex >= 0 && relationOptimizeIndex > slotAssignmentIndex, 'relation-length optimization must run after fixed uniform slots are assigned');
-assert(relationSource.includes('collectRelationLayoutEdges'), 'relation optimizer implementation must retain the complete graph edge collector');
-assert(!relationSource.includes('filter(node => !node.hidden)'), 'relation optimizer must not drop hidden historical nodes from its objective');
+assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = 35;'), 'live layout must expose x=35 directly in Three.js world units');
+assert(!uniformSource.includes('FCC_WORLD_UNITS_PER_DISTANCE_UNIT'), 'live layout must not restore a second x scale multiplier');
+assert(!uniformSource.includes('stepSpan: 1 | 2'), 'reasoning contraction must not restore a two-x ordinary span');
+assert(uniformSource.includes('FCC_NEIGHBOR_STEPS'), 'live layout must use the twelve FCC nearest-neighbour slots');
+assert(uniformSource.includes('collectFccOrdinaryEdges'), 'live layout must contract reasoning nodes only for ordinary occupancy planning');
+assert(uniformSource.includes('ordinarySlotCache'), 'surviving node IDs must retain projection slots across normal incremental updates');
+assert(uniformSource.includes('approximateDiameterPath'), 'large/long connected components must identify a main spine before branch placement');
+assert(uniformSource.includes('if (isSpine) return continuity * 1000'), 'main-spine straight continuation must outrank layer direction when an exact-x slot is free');
+assert(uniformSource.includes('layerDelta > 0') && uniformSource.includes('layerDelta < 0'), 'layer changes must bias outward/inward branch direction without hard shells');
+assert(uniformSource.includes('Only after every exact-x neighbour is unavailable may an edge grow longer.'), 'greater-than-x placement must remain a fallback only');
+assert(uniformSource.includes('if (isReasoningNode(node)) continue;'), 'reasoning nodes must not consume ordinary FCC occupancy slots');
+assert(!uniformSource.includes('LAYER_BANDS'), 'live layout must not restore hard radial layer boundaries');
+assert(!uniformSource.includes('optimizeRelationLengthLayout'), 'live page must not run the superseded global same-shell slot optimizer');
+assert(!uniformSource.includes('Fibonacci'), 'live page must not restore Fibonacci shell distribution');
 
-console.log('User-page full-graph layout, relation authority, and dynamic mobile LOD wiring regression tests passed.');
+console.log('User-page FCC layout, relation authority, detail presentation, and dynamic mobile LOD wiring regression tests passed.');
