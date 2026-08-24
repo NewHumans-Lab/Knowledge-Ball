@@ -17,7 +17,7 @@ html.node-detail-labels-off .node-label{
   transform:translate(-50%,-50%);
   z-index:70;
   display:none;
-  pointer-events:auto;
+  pointer-events:none;
   color:var(--ink);
   text-align:center;
   align-items:center;
@@ -25,6 +25,13 @@ html.node-detail-labels-off .node-label{
   flex-direction:column;
 }
 #nodeDetailOverlay.open{display:flex;}
+/*
+ * The detail card is visually elliptical but its CSS box is rectangular. Keep
+ * that transparent rectangle touch-through so a real 3D neighbour can still be
+ * tapped at its fixed layout coordinate. Only actual visible/control children
+ * reclaim pointer input; geometry never moves just to make the navigator usable.
+ */
+#nodeDetailOverlay > :not(.node-detail-relations){pointer-events:auto;}
 #nodeDetailOverlay::before{
   content:"";
   position:absolute;

@@ -165,9 +165,10 @@ assert(/const\s+move\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisib
 assert(/const\s+up\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible\)\s*return;/.test(sceneSource));
 assert(/const\s+wheel\s*=\s*\(e:\s*WheelEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible\)\s*return;/.test(sceneSource));
 assert(sceneSource.includes('callbacks.onNodeTap(nodeId)'), 'node tap must emit only through the node-tap callback');
-assert(sceneSource.includes('const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;'), 'completed focused-node state must own second-tap priority');
-assert(sceneSource.includes('if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;'), 'mobile second tap must prefer focused node inside its 24px touch radius');
-assert(sceneSource.includes('raycaster.intersectObject(focusedRecord.shell, false).length > 0'), 'desktop second tap must prefer focused sphere hit');
+assert(sceneSource.includes('const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;'), 'completed focused-node state remains available for exact desktop sphere picking');
+assert(!sceneSource.includes('if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;'), 'mobile focused node must not steal a tap from a nearer projected neighbour');
+assert(sceneSource.includes("if (typeof id === 'string' && distance <= 24 && (!nearest || distance < nearest.distance))"), 'mobile tap must choose the nearest visible projected ball inside the touch radius');
+assert(sceneSource.includes('raycaster.intersectObject(focusedRecord.shell, false).length > 0'), 'desktop exact sphere hit may still prefer the focused sphere');
 assert(/\.shell\.visible\s*=\s*true/.test(sceneSource), 'large mobile graphs must retain opaque semantic node bodies');
 assert(/\.point\.visible\s*=\s*!core/.test(sceneSource), 'semantic aura remains independent of the node body');
 assert(/const\s+pending\s*=\s*!core\s*&&\s*nodeShouldPulse\(n\)/.test(sceneSource), 'only non-core pending/revalidating nodes may pulse');
