@@ -491,6 +491,61 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     return forced;
   };
 
+  // The FCC layout remains authoritative in node.pos/homePos. When the local
+  // detail navigator is open, a directly connected reasoning ball can otherwise
+  // sit under the centred DOM surface (a reasoning midpoint is only x/2 from an
+  // ordinary endpoint). Move only the rendered mesh/edge endpoint to a stable
+  // screen-side presentation position so the real ball remains touchable. No
+  // graph coordinate, relation, label rule, zoom, or interaction contract changes.
+  const detailReasoningPresentationPositions = (nodes: readonly KnowledgeSceneNode[]) => {
+    const positions = new Map<string, THREE.Vector3>();
+    if (!detailNodeId || host.clientWidth <= 0 || host.clientHeight <= 0) return positions;
+    const detail = nodes.find(node => node.id === detailNodeId);
+    if (!detail?.pos) return positions;
+
+    const previous = nodes
+      .filter(node => node.type === 'reasoning' && detail.premises?.includes(node.id) && node.id !== detail.id)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const next = nodes
+      .filter(node => node.type === 'reasoning' && node.premises?.includes(detail.id) && node.id !== detail.id)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    if (previous.length === 0 && next.length === 0) return positions;
+
+    worldGroup.updateMatrixWorld(true);
+    const detailWorld = detail.pos.clone().applyMatrix4(worldGroup.matrixWorld);
+    const detailProjected = detailWorld.clone().project(camera);
+    if (!hasFiniteCoordinates(detailProjected)) return positions;
+
+    const width = host.clientWidth;
+    const height = host.clientHeight;
+    const centreX = (detailProjected.x * .5 + .5) * width;
+    const centreY = (-detailProjected.y * .5 + .5) * height;
+    const horizontalLimit = Math.max(0, width / 2 - 30);
+    const verticalLimit = Math.max(0, height / 2 - 40);
+    const horizontal = Math.min(horizontalLimit, THREE.MathUtils.clamp(width * .38, 145, 280));
+    const vertical = Math.min(verticalLimit, THREE.MathUtils.clamp(height * .16, 110, 150));
+    const inverseWorld = worldGroup.matrixWorld.clone().invert();
+
+    const placeSide = (items: readonly KnowledgeSceneNode[], xSign: -1 | 1, ySign: -1 | 1) => {
+      items.forEach((node, index) => {
+        if (draggedNodeId === node.id) return;
+        const spread = (index - (items.length - 1) / 2) * 38;
+        const targetX = THREE.MathUtils.clamp(centreX + xSign * horizontal, 30, width - 30);
+        const targetY = THREE.MathUtils.clamp(centreY + ySign * vertical + spread, 40, height - 40);
+        const target = new THREE.Vector3(
+          targetX / width * 2 - 1,
+          -(targetY / height * 2 - 1),
+          detailProjected.z,
+        ).unproject(camera).applyMatrix4(inverseWorld);
+        positions.set(node.id, target);
+      });
+    };
+
+    placeSide(previous, -1, -1);
+    placeSide(next, 1, 1);
+    return positions;
+  };
+
   const mobileCandidates = (nodes: readonly KnowledgeSceneNode[]): MobileSceneCandidate[] => {
     worldGroup.updateMatrixWorld(true);
     return nodes.map(node => {
@@ -525,7 +580,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     line.userData.geometryVisible = true;
   };
 
-  const syncEdges = (nodes: KnowledgeSceneNode[]) => {
+  const syncEdges = (nodes: KnowledgeSceneNode[], displayPositions?: ReadonlyMap<string, THREE.Vector3>) => {
     const byId = new Map(nodes.map(node => [node.id, node] as const));
     const wanted = new Set<string>();
     const hasSelection = selectedId !== null;
@@ -552,7 +607,11 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
             ? KNOWLEDGE_SCENE_THEME.edge.disputedOpacity
             : KNOWLEDGE_SCENE_THEME.edge.normalOpacity;
       material.opacity = relationActive ? KNOWLEDGE_SCENE_THEME.edge.activeOpacity : stateOpacity * (hasSelection ? KNOWLEDGE_SCENE_THEME.edge.inactiveFactor : 1);
-      updateLineGeometry(edgeMap[key], from.pos, to.pos);
+      updateLineGeometry(
+        edgeMap[key],
+        displayPositions?.get(from.id) ?? from.pos,
+        displayPositions?.get(to.id) ?? to.pos,
+      );
     }
 
     Object.keys(edgeMap).forEach(key => {
@@ -595,6 +654,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     worldGroup.scale.setScalar(graphZoom);
     const allNodes = getNodes();
     allNodes.forEach(node => { if (!hasFiniteCoordinates(node.pos)) place(node); });
+    const detailDisplayPositions = detailReasoningPresentationPositions(allNodes);
     const activeNodes = activeNodesForRender(allNodes);
     const activeIds = new Set(activeNodes.map(node => node.id));
     pendingNodeIds.clear();
@@ -602,7 +662,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
     activeNodes.forEach(n => {
       const record = ensure(n);
-      record.group.position.copy(n.pos!);
+      record.group.position.copy(detailDisplayPositions.get(n.id) ?? n.pos!);
       record.group.scale.setScalar(1);
       const core = isCoreNodeId(n.id);
       const pending = !core && nodeShouldPulse(n);
@@ -638,7 +698,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const now = performance.now();
     if (largeMobileGraph || draggedNodeId || returningNodeId || now - lastEdgeSync >= 100) {
-      syncEdges(allNodes);
+      syncEdges(allNodes, detailDisplayPositions);
       lastEdgeSync = now;
     }
     applyVisibility();
