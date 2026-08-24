@@ -77,7 +77,7 @@ function reasoningNode(id: string, title: string, lineage: GraphNode['lineage'],
   };
 }
 
-// Two-camp reasoning invariant: white and red heads keep stable colors/roles;
+// Two-camp reasoning invariant: white and red heads are both current/actionable;
 // dominance alone decides which head is on the logical inference chain.
 const reasoningNodes: GraphNode[] = [
   reasoningNode('r-white-1', 'White reasoning', { topicId: 'reason-topic', proposal: 'new', role: 'current', rank: 0 }),
@@ -87,14 +87,16 @@ const reasoningNodes: GraphNode[] = [
   }, 'pending'),
 ];
 promoteOppositionCandidate(reasoningNodes, 'r-red-1');
-assert.equal(lineageRoleFor(reasoningNodes[0]!), 'current', 'white head must stay white/current when red wins');
+assert.equal(lineageRoleFor(reasoningNodes[0]!), 'current', 'white head must stay current when red wins');
 assert.equal(reasoningNodes[0]!.lineage?.reasoningSide, 'normal');
 assert.equal(reasoningNodes[0]!.lineage?.reasoningSideRank, 0);
 assert.equal(reasoningNodes[0]!.lineage?.reasoningDominant, false);
-assert.equal(lineageRoleFor(reasoningNodes[1]!), 'opposition', 'winning red head must stay red/opposition');
+assert.equal(lineageRoleFor(reasoningNodes[1]!), 'current', 'winning red head must also be a current/actionable camp head');
+assert.equal(reasoningNodes[1]!.lineage?.reasoningSide, 'opposition');
 assert.equal(reasoningNodes[1]!.lineage?.reasoningSideRank, 0);
 assert.equal(reasoningNodes[1]!.lineage?.reasoningDominant, true);
-assert.equal(currentNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-white-1');
+assert.equal(currentNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-white-1', 'generic current lookup remains the white camp head');
+assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')?.id, 'r-red-1');
 assert.equal(dominantNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-red-1');
 assert.deepEqual(validateKnowledgeLineage(reasoningNodes), []);
 
@@ -115,6 +117,7 @@ reasoningNodes.push(reasoningNode('r-red-2', 'Red challenge v2', {
 }, 'pending'));
 promoteOptimizationCandidate(reasoningNodes, 'r-red-2');
 assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')?.id, 'r-red-2');
+assert.equal(lineageRoleFor(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')!), 'current');
 assert.equal(dominantNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-red-2');
 assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'opposition').map(node => node.id), ['r-red-1']);
 assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'normal').map(node => node.id), ['r-white-1']);
@@ -129,6 +132,7 @@ reasoningNodes.push(reasoningNode('r-white-3', 'White rebuttal', {
 promoteOppositionCandidate(reasoningNodes, 'r-white-3');
 assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'normal')?.id, 'r-white-3');
 assert.equal(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')?.id, 'r-red-2');
+assert.equal(lineageRoleFor(reasoningHeadForTopic(reasoningNodes, 'reason-topic', 'opposition')!), 'current', 'red head stays current/actionable after losing dominance');
 assert.equal(dominantNodeForTopic(reasoningNodes, 'reason-topic')?.id, 'r-white-3');
 assert.equal(reasoningNodes.find(node => node.id === 'r-red-2')?.lineage?.reasoningDominant, false);
 assert.deepEqual(reasoningHistoryChain(reasoningNodes, 'reason-topic', 'normal').map(node => node.id), ['r-white-2', 'r-white-1']);
