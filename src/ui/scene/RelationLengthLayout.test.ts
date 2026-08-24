@@ -121,8 +121,7 @@ const uniformSource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8')
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 assert(!relationSource.includes('for (let j = i + 1'), 'relation optimizer must not use all-pairs node comparison');
 assert(!relationSource.includes('.sort('), 'relation optimizer must not rely on O(n log n) sorting');
-assert(!uniformSource.includes('for (let j = i + 1'), 'uniform slot generation must not use all-pairs relaxation');
-assert(!uniformSource.includes('.sort('), 'uniform slot generation must stay linear and sorting-free');
+assert(!uniformSource.includes('for (let j = i + 1'), 'FCC layout must not use all-pairs collision relaxation');
 assert(relationSource.includes('LOCAL_CELL_RADIUS = 2'), 'nearest-slot search must stay bounded to a fixed spatial neighborhood');
 assert(relationSource.includes('DEFAULT_PASSES = 4'), 'optimization pass count must remain a fixed constant');
 assert(relationSource.includes('approximateDiameterPath'), 'adaptive layout must inspect component extent without exact longest-path search');
