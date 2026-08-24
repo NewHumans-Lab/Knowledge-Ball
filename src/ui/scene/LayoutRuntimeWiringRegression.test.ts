@@ -51,14 +51,16 @@ assert(!sceneSource.includes('detailReasoningPresentationPositions'), 'detail-on
 assert(!sceneSource.includes('detailDisplayPositions'), 'rendered node positions must come directly from authoritative scene coordinates');
 
 // Layout priority is lexicographic, not a blended force simulation:
-// exact x first, directed radial progress second, soft colour layer after that.
+// exact x first, conclusion-side anchoring/directed radial order second, colour layer after that.
 assert(uniformSource.includes('export const ORDINARY_NODE_RADIUS = 7.2;'), 'live layout must state the ordinary-ball radius');
 assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NODE_DIAMETER * 5;'), 'first constraint must remain five ordinary-ball diameters');
 assert(uniformSource.includes('FCC_NEIGHBOR_STEPS'), 'live layout must retain the twelve FCC nearest-neighbour slots');
 assert(uniformSource.includes('collectDirectLayoutEdges'), 'only direct real graph edges may drive adjacency');
 assert(uniformSource.includes('exactAssignedNeighbourCount'), 'candidate choice must first preserve as many exact-x real relations as possible');
-assert(uniformSource.includes('directedRadialScore'), 'second constraint must orient semantic source inward and target outward');
-assert(uniformSource.includes('orientSpine'), 'long chains must start from an upstream end instead of the geometric middle');
+assert(uniformSource.includes('endpointDownstreamScore'), 'chain orientation must identify the conclusion side');
+assert(uniformSource.includes('orientSpine'), 'long chains must be scheduled conclusion-first');
+assert(uniformSource.includes('mainSpineRadialBudget'), 'the conclusion anchor must reserve enough radial room to walk back toward premises');
+assert(uniformSource.includes('directedRadialScore'), 'second constraint must keep semantic source inward and target outward');
 assert(uniformSource.includes('LAYER_TARGET_RADIUS'), 'inner/middle/outer must have soft radial targets');
 assert(uniformSource.includes('inner: FCC_NEIGHBOR_DISTANCE'), 'inner target must remain 1x');
 assert(uniformSource.includes('middle: FCC_NEIGHBOR_DISTANCE * 2'), 'middle target must remain 2x');
@@ -67,6 +69,7 @@ assert(uniformSource.includes('gapScore'), 'branches must retain geometric gap f
 assert(uniformSource.includes('approximateDiameterPath'), 'one cheap main spine may preserve long-chain straightness');
 assert(uniformSource.includes('Only after every legal exact-x neighbour is unavailable may a direct edge grow longer.'), 'greater-than-x placement must remain fallback only');
 assert(!uniformSource.includes('Start a long spine at its middle and grow toward both ends.'), 'centre-out chain reversal must stay removed');
+assert(!uniformSource.includes('endpointUpstreamScore'), 'premise-first chain anchoring must stay removed');
 assert(!uniformSource.includes('ordinarySlotCache'), 'session slot-cache policy must stay absent');
 assert(!uniformSource.includes('reasoningPerpendicular'), 'reasoning-specific offsets must stay absent');
 assert(!uniformSource.includes('reasoningDominant'), 'reasoning dominance must not influence coordinates');
@@ -75,4 +78,4 @@ assert(!uniformSource.includes('LAYER_BANDS'), 'soft targets must not become old
 assert(!uniformSource.includes('optimizeRelationLengthLayout'), 'old relation optimizer must stay out of the live path');
 assert(!uniformSource.includes('Fibonacci'), 'old Fibonacci distribution must stay absent');
 
-console.log('User-page five-diameter + outward-chain + soft-layer wiring regression tests passed.');
+console.log('User-page five-diameter + conclusion-first outward-chain + soft-layer wiring regression tests passed.');
