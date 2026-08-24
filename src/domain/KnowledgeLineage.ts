@@ -18,7 +18,7 @@ export type ReasoningSide = 'normal' | 'opposition';
 
 /**
  * A knowledge ball is immutable. This metadata describes where that immutable
- * ball currently sits relative to the topic's active head; it does not rewrite
+ * ball currently sits relative to the topic's active heads; it does not rewrite
  * the ball's title, layer, or content.
  */
 export interface KnowledgeLineageMeta {
@@ -68,12 +68,12 @@ export function reasoningSideRankFor(node: KnowledgeLineageNode): number | null 
   return node.lineage?.reasoningSideRank ?? null;
 }
 
+/** Both white and red stable camp heads are current heads; dominance is separate. */
 export function isReasoningSideHead(node: KnowledgeLineageNode): boolean {
-  const role = lineageRoleFor(node);
   return Boolean(
     node.lineage?.reasoningSide
       && node.lineage.reasoningSideRank === 0
-      && (role === 'current' || role === 'opposition'),
+      && lineageRoleFor(node) === 'current',
   );
 }
 
@@ -92,11 +92,17 @@ export function initialLineage(nodeId: string): KnowledgeLineageMeta {
   return { topicId: nodeId, proposal: 'new', role: 'current', rank: 0 };
 }
 
+/**
+ * For dual-side reasoning topics this deliberately returns the white/normal
+ * current head. Non-reasoning topics still have exactly one ordinary current.
+ */
 export function currentNodeForTopic<T extends KnowledgeLineageNode>(
   nodes: readonly T[],
   topicId: string,
 ): T | undefined {
-  return nodes.find(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'current');
+  const currents = nodes.filter(node => topicIdFor(node) === topicId && lineageRoleFor(node) === 'current');
+  return currents.find(node => node.lineage?.reasoningSide === 'normal' && node.lineage.reasoningSideRank === 0)
+    ?? currents[0];
 }
 
 export function reasoningHeadForTopic<T extends KnowledgeLineageNode>(
@@ -106,16 +112,15 @@ export function reasoningHeadForTopic<T extends KnowledgeLineageNode>(
 ): T | undefined {
   return nodes.find(node =>
     topicIdFor(node) === topicId
-      && lineageRoleFor(node) !== 'rejected'
+      && lineageRoleFor(node) === 'current'
       && node.lineage?.reasoningSide === side
-      && node.lineage.reasoningSideRank === 0
-      && (lineageRoleFor(node) === 'current' || lineageRoleFor(node) === 'opposition'),
+      && node.lineage.reasoningSideRank === 0,
   );
 }
 
 /**
  * Logical-chain authority is independent from color for reasoning topics. A red
- * head may dominate while the white head remains white and present as the other
+ * head may dominate while the white head remains white and current as the other
  * camp. Legacy/non-reasoning topics continue to use the ordinary current head.
  */
 export function dominantNodeForTopic<T extends KnowledgeLineageNode>(
@@ -200,33 +205,34 @@ export function validateKnowledgeLineage(nodes: readonly KnowledgeLineageNode[])
       errors.push(`reasoning side rank requires a reasoning side: ${node.id}`);
     }
     if ((meta.reasoningSideRank ?? 0) < 0) errors.push(`reasoning side rank must be non-negative: ${node.id}`);
-    if (meta.reasoningDominant && (!meta.reasoningSide || meta.reasoningSideRank !== 0)) {
-      errors.push(`only a reasoning side head may be dominant: ${node.id}`);
+    if (meta.reasoningDominant && (!meta.reasoningSide || meta.reasoningSideRank !== 0 || meta.role !== 'current')) {
+      errors.push(`only a current reasoning side head may be dominant: ${node.id}`);
     }
   }
 
   for (const topicId of topicIds) {
     const members = nodes.filter(node => topicIdFor(node) === topicId);
     const activeMembers = members.filter(node => lineageRoleFor(node) !== 'rejected');
-    const currents = activeMembers.filter(node => lineageRoleFor(node) === 'current');
-    if (currents.length !== 1) errors.push(`topic must have exactly one current node: ${topicId}`);
-
-    for (const role of ['history', 'opposition'] as const) {
-      const usedRanks = new Map<number, string>();
-      for (const node of activeMembers.filter(member => lineageRoleFor(member) === role)) {
-        const rank = node.lineage?.rank ?? 0;
-        const previous = usedRanks.get(rank);
-        if (previous) errors.push(`${role} lineage cannot fork at rank ${rank}: ${previous}, ${node.id}`);
-        else usedRanks.set(rank, node.id);
-      }
-    }
-
     const stableMembers = activeMembers.filter(node => {
       const role = lineageRoleFor(node);
       return role === 'current' || role === 'history' || role === 'opposition';
     });
     const dualSide = stableMembers.some(node => node.lineage?.reasoningSide !== undefined);
-    if (!dualSide) continue;
+
+    if (!dualSide) {
+      const currents = activeMembers.filter(node => lineageRoleFor(node) === 'current');
+      if (currents.length !== 1) errors.push(`topic must have exactly one current node: ${topicId}`);
+      for (const role of ['history', 'opposition'] as const) {
+        const usedRanks = new Map<number, string>();
+        for (const node of activeMembers.filter(member => lineageRoleFor(member) === role)) {
+          const rank = node.lineage?.rank ?? 0;
+          const previous = usedRanks.get(rank);
+          if (previous) errors.push(`${role} lineage cannot fork at rank ${rank}: ${previous}, ${node.id}`);
+          else usedRanks.set(rank, node.id);
+        }
+      }
+      continue;
+    }
 
     for (const node of stableMembers) {
       if (!node.lineage?.reasoningSide || node.lineage.reasoningSideRank === undefined) {
@@ -235,16 +241,21 @@ export function validateKnowledgeLineage(nodes: readonly KnowledgeLineageNode[])
     }
 
     const normalHead = stableMembers.filter(node =>
-      node.lineage?.reasoningSide === 'normal' && node.lineage.reasoningSideRank === 0,
+      node.lineage?.reasoningSide === 'normal'
+        && node.lineage.reasoningSideRank === 0
+        && lineageRoleFor(node) === 'current',
     );
     const oppositionHead = stableMembers.filter(node =>
-      node.lineage?.reasoningSide === 'opposition' && node.lineage.reasoningSideRank === 0,
+      node.lineage?.reasoningSide === 'opposition'
+        && node.lineage.reasoningSideRank === 0
+        && lineageRoleFor(node) === 'current',
     );
-    if (normalHead.length !== 1 || lineageRoleFor(normalHead[0]!) !== 'current') {
-      errors.push(`reasoning topic must have exactly one white normal head: ${topicId}`);
-    }
-    if (oppositionHead.length > 1 || (oppositionHead[0] && lineageRoleFor(oppositionHead[0]) !== 'opposition')) {
-      errors.push(`reasoning topic may have at most one red opposition head: ${topicId}`);
+    if (normalHead.length !== 1) errors.push(`reasoning topic must have exactly one white current head: ${topicId}`);
+    if (oppositionHead.length > 1) errors.push(`reasoning topic may have at most one red current head: ${topicId}`);
+
+    const currents = stableMembers.filter(node => lineageRoleFor(node) === 'current');
+    if (currents.length !== normalHead.length + oppositionHead.length) {
+      errors.push(`reasoning topic current nodes must be side heads only: ${topicId}`);
     }
 
     const sideHeads = [...normalHead, ...oppositionHead];
