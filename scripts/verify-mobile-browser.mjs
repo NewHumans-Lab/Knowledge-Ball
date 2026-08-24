@@ -99,23 +99,32 @@ try{
     assert.ok(visual.trueBluePeak>=.55,'actual true-blue scene signal must remain visibly bright instead of collapsing into near-black blue');
     assert.ok(visual.greenDominant<=5,'old green/teal contamination must not reappear in the actual scene screenshot');
 
-    // Gate B: calibrate semantic colors around four real on-screen ordinary nodes. Lineage nodes
-    // have an intentional higher-priority special palette, so including them would not test the layer palette.
-    // The local peak checks are deliberate: hue alone is insufficient because a correctly-hued node can still be visually too dark.
-    // Layer color is now controlled by effectiveLayer, not by NodeType, so the calibration must exercise
-    // the same canonical layer input consumed by the production scene.
-    const calibrationIds=targets.slice(0,4).map(target=>target.id);
+    // Gate B: first turn up to eight ordinary on-screen candidates into structural white controls.
+    // A projected centre alone does not prove that a sphere is actually visible; another foreground
+    // sphere may occlude it after a legitimate 3D layout change. Select the four calibration spheres
+    // only after the real screenshot proves that their white controls are visibly exposed.
+    const calibrationCandidateIds=targets.map(target=>target.id);
     const originals=await page.evaluate(ids=>{
       const original=[];
       ids.forEach(id=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;original.push({id,type:node.type,status:node.status,mastery:node.mastery,effectiveLayer:node.effectiveLayer});node.type='reasoning';node.status='verified';node.mastery='none';});
       window.__debug.scene.markDirty();window.__debug.scene.start();return original;
-    },calibrationIds);
+    },calibrationCandidateIds);
     await page.waitForTimeout(180);
     await page.evaluate(()=>window.__debug.scene.stop());
-    const controlPoints=await page.evaluate(ids=>ids.map(id=>window.__debug.scene.screenPositionForNode(id)),calibrationIds);
-    assert.ok(controlPoints.every(Boolean),'calibration control nodes must remain on screen');
+    const candidateControlPoints=await page.evaluate(ids=>ids.map(id=>window.__debug.scene.screenPositionForNode(id)),calibrationCandidateIds);
+    assert.ok(candidateControlPoints.every(Boolean),'calibration control candidates must remain on screen');
     const controlScreenshot=await canvasHost.screenshot({type:'png'});
-    const control=await analyzeScreenshot(page,controlScreenshot,toLocalRegions(controlPoints));
+    const candidateControl=await analyzeScreenshot(page,controlScreenshot,toLocalRegions(candidateControlPoints));
+    const calibrationIndices=candidateControl.regions
+      .map((stats,index)=>({index,score:stats.whitePeak*1000+stats.white}))
+      .sort((a,b)=>b.score-a.score)
+      .filter(entry=>candidateControl.regions[entry.index].whitePeak>=.80)
+      .slice(0,4)
+      .map(entry=>entry.index);
+    assert.equal(calibrationIndices.length,4,'mobile palette calibration requires four screenshot-confirmed visible ordinary spheres');
+    const calibrationIds=calibrationIndices.map(index=>calibrationCandidateIds[index]);
+    const controlRegions=calibrationIndices.map(index=>candidateControl.regions[index]);
+    console.log('mobile screenshot-confirmed calibration ids',calibrationIds);
 
     await page.evaluate(ids=>{
       const specs=[['definition','verified','inner'],['theorem','verified','middle'],['hypothesis','verified','outer'],['reasoning','verified','middle']];
@@ -130,18 +139,18 @@ try{
     assert.ok(paletteScreenshot.length>5_000,'semantic palette screenshot must contain real rendered visual data');
     const palette=await analyzeScreenshot(page,paletteScreenshot,toLocalRegions(palettePoints));
     console.log('mobile semantic-palette visual pixels',palette);
-    console.log('mobile semantic local control',control.regions);
+    console.log('mobile semantic local control',controlRegions);
     console.log('mobile semantic local palette',palette.regions);
     assert.equal(palette.width,visual.width,'actual and semantic-palette screenshots must share the same width');
     assert.equal(palette.height,visual.height,'actual and semantic-palette screenshots must share the same height');
-    assert.ok(palette.regions[0].cyan>=control.regions[0].cyan+6,`inner calibration must add local ice-blue pixels (control=${control.regions[0].cyan}, palette=${palette.regions[0].cyan})`);
+    assert.ok(palette.regions[0].cyan>=controlRegions[0].cyan+6,`inner calibration must add local ice-blue pixels (control=${controlRegions[0].cyan}, palette=${palette.regions[0].cyan})`);
     assert.ok(palette.regions[0].cyanPeak>=.60,`inner ice-blue must stay bright in the real composite (peak=${palette.regions[0].cyanPeak})`);
     // The intended middle hue sits on an intentionally blue background. Replacing a white control sphere
     // with a purer/brighter blue can reduce the total count of already-blue background pixels, so count
     // deltas are not a reliable signal. Require a strong local brightness gain in the true-blue hue instead.
     assert.ok(palette.regions[1].trueBluePeak>=.75,`middle true-blue must stay bright in the real composite (peak=${palette.regions[1].trueBluePeak})`);
-    assert.ok(palette.regions[1].trueBluePeak>=control.regions[1].trueBluePeak+.15,`middle calibration must increase local true-blue brightness (control=${control.regions[1].trueBluePeak}, palette=${palette.regions[1].trueBluePeak})`);
-    assert.ok(palette.regions[2].violet>=control.regions[2].violet+6,`outer calibration must add local violet pixels (control=${control.regions[2].violet}, palette=${palette.regions[2].violet})`);
+    assert.ok(palette.regions[1].trueBluePeak>=controlRegions[1].trueBluePeak+.15,`middle calibration must increase local true-blue brightness (control=${controlRegions[1].trueBluePeak}, palette=${palette.regions[1].trueBluePeak})`);
+    assert.ok(palette.regions[2].violet>=controlRegions[2].violet+6,`outer calibration must add local violet pixels (control=${controlRegions[2].violet}, palette=${palette.regions[2].violet})`);
     assert.ok(palette.regions[2].violetPeak>=.55,`outer violet must stay bright in the real composite (peak=${palette.regions[2].violetPeak})`);
     assert.ok(palette.white>=100,'semantic calibration must retain the whole-frame structural white language');
     assert.ok(palette.greenDominant<=5,'semantic calibration must not reintroduce green/teal contamination');
