@@ -106,6 +106,7 @@ function appendCanonicalEdge(
  * Internal authoritative edge projection shared by scene geometry and opened
  * detail navigation. For reasoning topics the white/red camp colors are stable,
  * while `reasoningDominant` alone decides which head occupies the logical chain.
+ * logicRuleId is metadata on a reasoning node and never becomes a visual edge.
  */
 function collectCanonicalKnowledgeEdges(
   nodes: readonly KnowledgeRelationNode[],
