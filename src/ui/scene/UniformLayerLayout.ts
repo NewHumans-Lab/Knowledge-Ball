@@ -366,17 +366,22 @@ function continuityScore(candidate: FccCoord, parent: FccCoord, previousStep: Fc
   return directionDot(direction, previousStep) / (a * b);
 }
 
-/** Choose the FCC direction most tangent to the centre, keeping both spine halves compact. */
+/** Choose an FCC direction most tangent to the centre; prefer screen-x extent on ties. */
 function tangentStepAt(coord: FccCoord): FccCoord {
   let best = FCC_NEIGHBOR_STEPS[0];
   let bestRadial = Math.abs(directionDot(coord, best));
+  let bestHorizontal = Math.abs(best[0]);
   let bestKey = coordKey(best);
   for (const step of FCC_NEIGHBOR_STEPS.slice(1)) {
     const radial = Math.abs(directionDot(coord, step));
+    const horizontal = Math.abs(step[0]);
     const key = coordKey(step);
-    if (radial < bestRadial || (radial === bestRadial && key < bestKey)) {
+    if (radial < bestRadial
+      || (radial === bestRadial && horizontal > bestHorizontal)
+      || (radial === bestRadial && horizontal === bestHorizontal && key < bestKey)) {
       best = step;
       bestRadial = radial;
+      bestHorizontal = horizontal;
       bestKey = key;
     }
   }
@@ -387,7 +392,7 @@ function chooseCandidate(
   candidates: readonly FccCoord[],
   id: string,
   parentCoord: FccCoord,
-  isSpine: boolean,
+  preserveContinuity: boolean,
   previousStep: FccCoord | null,
   occupied: ReadonlySet<string>,
   adjacency: ReadonlyMap<string, string[]>,
@@ -401,7 +406,7 @@ function chooseCandidate(
 
   for (const candidate of candidates) {
     const exact = exactAssignedNeighbourCount(id, candidate, adjacency, assigned);
-    const continuity = isSpine ? continuityScore(candidate, parentCoord, previousStep) : 0;
+    const continuity = preserveContinuity ? continuityScore(candidate, parentCoord, previousStep) : 0;
     const gap = gapScore(parentCoord, candidate, occupied);
     const key = coordKey(candidate);
     const better = exact > bestExact
@@ -421,7 +426,7 @@ function chooseCandidate(
 function nearestFreeSlot(
   id: string,
   parentCoord: FccCoord,
-  isSpine: boolean,
+  preserveContinuity: boolean,
   previousStep: FccCoord | null,
   occupied: ReadonlySet<string>,
   adjacency: ReadonlyMap<string, string[]>,
@@ -431,7 +436,7 @@ function nearestFreeSlot(
     .map(step => addCoord(parentCoord, step))
     .filter(coord => validFreeSlot(coord, occupied));
   if (exact.length > 0) {
-    return chooseCandidate(exact, id, parentCoord, isSpine, previousStep, occupied, adjacency, assigned);
+    return chooseCandidate(exact, id, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned);
   }
 
   // Only after every exact-x neighbour is occupied may a direct edge grow longer.
@@ -457,7 +462,7 @@ function nearestFreeSlot(
           minimumDistanceSq = Math.min(minimumDistanceSq, coordLengthSq(subtractCoord(candidate, parentCoord)));
         }
         const closest = free.filter(candidate => coordLengthSq(subtractCoord(candidate, parentCoord)) === minimumDistanceSq);
-        return chooseCandidate(closest, id, parentCoord, isSpine, previousStep, occupied, adjacency, assigned);
+        return chooseCandidate(closest, id, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned);
       }
     }
     frontier = next;
@@ -503,6 +508,7 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
         && childIndex !== undefined
         && Math.abs(childIndex - parentIndex) === 1;
       let previousStep: FccCoord | null = null;
+      let preserveContinuity = isSpine;
 
       if (isSpine && parentIndex !== undefined && childIndex !== undefined) {
         const center = schedule.spineCenterIndex;
@@ -521,7 +527,19 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
         }
       }
 
-      const coord = nearestFreeSlot(id, parentCoord, isSpine, previousStep, occupied, adjacency, assigned);
+      // Any degree-two direct graph path is a chain, even if the cheap diameter
+      // spine did not select it. Continue away from its already placed neighbour
+      // before considering branch gap aesthetics.
+      if (!previousStep && (adjacency.get(parentId)?.length ?? 0) === 2) {
+        const otherId = (adjacency.get(parentId) ?? []).find(neighbourId => neighbourId !== id && assigned.has(neighbourId));
+        const otherCoord = otherId ? assigned.get(otherId) : undefined;
+        if (otherCoord) {
+          previousStep = subtractCoord(parentCoord, otherCoord);
+          preserveContinuity = true;
+        }
+      }
+
+      const coord = nearestFreeSlot(id, parentCoord, preserveContinuity, previousStep, occupied, adjacency, assigned);
       assign(id, coord, assigned, occupied);
     }
   }
@@ -530,7 +548,7 @@ function placeGraphNodes(nodes: readonly UniformLayoutNode[]): Map<string, FccCo
 
 /**
  * One live layout algorithm: direct graph nodes occupy FCC slots at five ordinary
- * ball diameters. Main chains grow from their middle and stay straight when
+ * ball diameters. Main/degree-two chains grow compactly and stay straight when
  * possible; branches fill the largest local geometric gap. No semantic/layer
  * proximity policy participates.
  */
