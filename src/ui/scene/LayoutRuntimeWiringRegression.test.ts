@@ -44,7 +44,9 @@ assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD membership m
 assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs must not globally hide all relations');
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale regression checks');
 
-assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = 5;'), 'live layout must expose x=5 as the current visual spacing constant');
+assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = 35;'), 'live layout must expose x=35 directly in Three.js world units');
+assert(!uniformSource.includes('FCC_WORLD_UNITS_PER_DISTANCE_UNIT'), 'live layout must not restore a second x scale multiplier');
+assert(!uniformSource.includes('stepSpan: 1 | 2'), 'reasoning contraction must not restore a two-x ordinary span');
 assert(uniformSource.includes('FCC_NEIGHBOR_STEPS'), 'live layout must use the twelve FCC nearest-neighbour slots');
 assert(uniformSource.includes('collectFccOrdinaryEdges'), 'live layout must contract reasoning nodes only for ordinary occupancy planning');
 assert(uniformSource.includes('ordinarySlotCache'), 'surviving node IDs must retain projection slots across normal incremental updates');
