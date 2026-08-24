@@ -54,8 +54,9 @@ assertNearly(LAYER_TARGET_RADIUS.inner, 72, 'inner soft target must be one x');
 assertNearly(LAYER_TARGET_RADIUS.middle, 144, 'middle soft target must be two x');
 assertNearly(LAYER_TARGET_RADIUS.outer, 216, 'outer soft target must be three x');
 
-// A real premise -> reasoning -> conclusion chain contains two real one-x edges,
-// and semantic direction must run from the centre toward the surface.
+// A real premise -> reasoning -> conclusion chain contains two real one-x edges.
+// Placement starts from the conclusion side, but final geometry must read inward
+// premise -> reasoning -> conclusion outward.
 const reasoningChain = [
   node('conclusion', ['reasoning'], 'outer'),
   node('premise', [], 'inner'),
@@ -75,13 +76,14 @@ const reasoning = reasoningChain.find(item => item.id === 'reasoning')!;
 const conclusion = reasoningChain.find(item => item.id === 'conclusion')!;
 assertNearly(distance(premise, reasoning), FCC_NEIGHBOR_DISTANCE, 'premise -> reasoning must remain one x');
 assertNearly(distance(reasoning, conclusion), FCC_NEIGHBOR_DISTANCE, 'reasoning -> conclusion must remain one x');
-assert(radius(premise) < radius(reasoning), 'reasoning must sit farther from the centre than its premise');
-assert(radius(reasoning) < radius(conclusion), 'conclusion must sit farther from the centre than its reasoning');
-assertNearly(radius(premise), LAYER_TARGET_RADIUS.inner, 'inner chain source should hit its soft target when unconstrained');
+assert(radius(premise) < radius(reasoning), 'premise must be closer to the centre than reasoning');
+assert(radius(reasoning) < radius(conclusion), 'reasoning must be closer to the centre than conclusion');
+assertNearly(radius(premise), LAYER_TARGET_RADIUS.inner, 'inner premise should hit its soft target when unconstrained');
 assertNearly(radius(reasoning), LAYER_TARGET_RADIUS.middle, 'middle reasoning should hit its soft target when unconstrained');
-assertNearly(radius(conclusion), LAYER_TARGET_RADIUS.outer, 'outer conclusion should hit its soft target when unconstrained');
+assertNearly(radius(conclusion), LAYER_TARGET_RADIUS.outer, 'outer conclusion should be the first outer anchor');
 
-// A simple main chain starts upstream, stays exact-x, runs outward and stays straight.
+// A simple main chain is anchored at the conclusion, then walks backward toward
+// premises. Final semantic order still moves strictly outward and stays straight.
 const straightChain = [
   node('chain-d', ['chain-c']),
   node('chain-b', ['chain-a']),
@@ -92,24 +94,29 @@ applyUniformLayerLayout(straightChain);
 const orderedStraight = ['chain-a', 'chain-b', 'chain-c', 'chain-d'].map(id => straightChain.find(item => item.id === id)!);
 for (let i = 1; i < orderedStraight.length; i++) {
   assertNearly(distance(orderedStraight[i - 1], orderedStraight[i]), FCC_NEIGHBOR_DISTANCE, 'main-chain edge must use one x');
-  assert(radius(orderedStraight[i]) > radius(orderedStraight[i - 1]), 'main-chain semantic direction must move outward');
+  assert(radius(orderedStraight[i]) > radius(orderedStraight[i - 1]), 'semantic premise-to-conclusion direction must move outward');
 }
+assertNearly(radius(orderedStraight[3]), FCC_NEIGHBOR_DISTANCE * 4, 'four-node blue chain must place its conclusion far enough out to walk three exact steps inward');
+assertNearly(radius(orderedStraight[0]), FCC_NEIGHBOR_DISTANCE, 'four-node blue chain must finish its earliest premise at the inner one-x radius');
 const ab = orderedStraight[1].pos!.clone().sub(orderedStraight[0].pos!);
 const bc = orderedStraight[2].pos!.clone().sub(orderedStraight[1].pos!);
 const cd = orderedStraight[3].pos!.clone().sub(orderedStraight[2].pos!);
 const straightDot = FCC_NEIGHBOR_DISTANCE ** 2 - 1e-6;
-assert(ab.dot(bc) > straightDot, 'main chain should continue straight when the outward exact-x slot is free');
-assert(bc.dot(cd) > straightDot, 'long main chain should keep the same straight outward direction');
+assert(ab.dot(bc) > straightDot, 'main chain should continue straight when the exact inward/outward ray is free');
+assert(bc.dot(cd) > straightDot, 'long main chain should keep one straight radial direction');
 
-// Direction outranks colour-layer preference. Even an inner downstream node must
-// move outward from an outer upstream node when an exact-x outward slot exists.
+// Direction outranks colour-layer preference. Even if the conclusion says inner
+// and the premise says outer, conclusion-first placement must push the conclusion
+// outward enough to leave an exact inward slot for the premise.
 const directionVsLayer = [
   node('outer-source', [], 'outer'),
   node('inner-conclusion', ['outer-source'], 'inner'),
 ];
 applyUniformLayerLayout(directionVsLayer);
 assertNearly(distance(directionVsLayer[0], directionVsLayer[1]), FCC_NEIGHBOR_DISTANCE, 'direction/layer conflict must not break x');
-assert(radius(directionVsLayer[1]) > radius(directionVsLayer[0]), 'directed inference must outrank the inner-layer inward preference');
+assert(radius(directionVsLayer[0]) < radius(directionVsLayer[1]), 'source must remain inward of target even when colour layers disagree');
+assertNearly(radius(directionVsLayer[1]), FCC_NEIGHBOR_DISTANCE * 2, 'inner conclusion may move beyond its soft target to preserve inference direction');
+assertNearly(radius(directionVsLayer[0]), FCC_NEIGHBOR_DISTANCE, 'outer source may move inside its soft target when direction has higher priority');
 
 // Branches fill distinct exact-x gaps around their parent. Radial preference may
 // rank those legal gaps, but it may not replace them with farther positions.
@@ -125,17 +132,17 @@ for (let i = 0; i < fork.length; i++) {
   }
 }
 
-// In a directed star the semantic source is pulled inward before its middle-layer
-// preference is considered. At radius 1x the Sun makes one FCC neighbour illegal,
-// so all eleven legal exact-x gaps must fill before any longer branch is allowed.
+// A 13-way directed star has one conclusion used as the outer chain anchor, then
+// its shared premise is placed inward. All twelve exact FCC directions around that
+// premise must be occupied before the final conclusion is allowed to exceed x.
 const crowded = [node('crowded-root')];
 for (let i = 0; i < 13; i++) crowded.push(node(`crowded-${i}`, ['crowded-root']));
 applyUniformLayerLayout(crowded);
 const childDistances = crowded.slice(1).map(child => distance(crowded[0], child));
 assert.equal(
   childDistances.filter(value => Math.abs(value - FCC_NEIGHBOR_DISTANCE) <= 1e-8).length,
-  11,
-  'all eleven legal exact-x gaps beside the physical Sun must fill before a longer edge is allowed',
+  12,
+  'all twelve legal exact-x gaps must fill before a longer edge is allowed',
 );
 assert(childDistances.some(value => value > FCC_NEIGHBOR_DISTANCE + 1e-8), 'only a child without any legal exact slot may exceed x');
 
@@ -167,6 +174,7 @@ for (const item of isolatedMiddleSet) {
 const hidden = [node('visible-root'), node('hidden-node', ['visible-root'], 'outer', 'fact', true)];
 applyUniformLayerLayout(hidden);
 assertNearly(distance(hidden[0], hidden[1]), FCC_NEIGHBOR_DISTANCE, 'hidden nodes still participate in real direct-edge spacing');
+assert(radius(hidden[0]) < radius(hidden[1]), 'hidden target must still sit outward of its real source');
 
 // Full reconstruction is deterministic and does not depend on a session slot cache.
 const deterministicA = [node('det-a', [], 'inner'), node('det-b', ['det-a']), node('det-c', ['det-b'], 'outer'), node('det-branch', ['det-b'])];
@@ -181,11 +189,14 @@ assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NOD
 assert(uniformSource.includes('collectDirectLayoutEdges'), 'layout must use only direct real graph edges');
 assert(uniformSource.includes('gapScore'), 'branch placement must retain geometric gap filling');
 assert(uniformSource.includes('approximateDiameterPath'), 'main-chain straightness may retain one cheap graph spine');
-assert(uniformSource.includes('orientSpine'), 'long spine must be oriented by semantic direction instead of centre-out scheduling');
-assert(uniformSource.includes('directedRadialScore'), 'candidate choice must encode source-inward / conclusion-outward direction');
+assert(uniformSource.includes('endpointDownstreamScore'), 'main spine must identify the conclusion side instead of the premise side');
+assert(uniformSource.includes('orientSpine'), 'long spine must be oriented conclusion-first');
+assert(uniformSource.includes('mainSpineRadialBudget'), 'conclusion anchor must reserve inward space for the whole main spine');
+assert(uniformSource.includes('directedRadialScore'), 'candidate choice must encode source-inward / target-outward direction');
 assert(uniformSource.includes('LAYER_TARGET_RADIUS'), 'inner/middle/outer must have soft radial targets');
 assert(uniformSource.includes('Only after every legal exact-x neighbour is unavailable may a direct edge grow longer.'), 'longer edges must remain a strict fallback');
 assert(!uniformSource.includes('Start a long spine at its middle and grow toward both ends.'), 'old centre-out chain reversal must stay removed');
+assert(!uniformSource.includes('endpointUpstreamScore'), 'premise-first orientation must stay removed');
 assert(!uniformSource.includes('ordinarySlotCache'), 'session slot caching must stay absent');
 assert(!uniformSource.includes('reasoningPerpendicular'), 'reasoning-specific spatial offsets must stay absent');
 assert(!uniformSource.includes('reasoningDominant'), 'reasoning camp dominance must not affect layout');
@@ -202,4 +213,4 @@ const physicsSource = sceneSource.slice(physicsMatch.index, labelsMatch.index);
 assert(/n\.pos!\.copy\(n\.homePos!\)/.test(physicsSource), 'scene motion must return to the fixed projection coordinate');
 assert(!physicsSource.includes('applyUniformLayerLayout'), 'camera/physics frames must never trigger relayout');
 
-console.log('Five-diameter FCC + outward inference + soft layer-target regression tests passed.');
+console.log('Five-diameter FCC + conclusion-first outward inference + soft layer-target regression tests passed.');
