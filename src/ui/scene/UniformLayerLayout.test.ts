@@ -63,7 +63,7 @@ applyUniformLayerLayout(reasoningChain);
 assertNearly(distance(reasoningChain[0], reasoningChain[1]), FCC_NEIGHBOR_DISTANCE, 'premise -> reasoning must be one x');
 assertNearly(distance(reasoningChain[1], reasoningChain[2]), FCC_NEIGHBOR_DISTANCE, 'reasoning -> conclusion must be one x');
 
-// A simple main chain should use exact-x edges and remain straight while those slots are free.
+// A simple main chain grows from its middle, uses exact-x edges and stays straight.
 const straightChain = [
   node('chain-a'),
   node('chain-b', ['chain-a']),
@@ -94,17 +94,18 @@ for (let i = 0; i < fork.length; i++) {
   }
 }
 
-// All twelve one-x gaps are consumed before any child may grow farther away.
+// The root sits one x from the physical Sun, so its inward FCC slot is illegal.
+// Every remaining legal exact-x gap must be consumed before a child grows farther.
 const crowded = [node('crowded-root')];
 for (let i = 0; i < 13; i++) crowded.push(node(`crowded-${i}`, ['crowded-root']));
 applyUniformLayerLayout(crowded);
 const childDistances = crowded.slice(1).map(child => distance(crowded[0], child));
 assert.equal(
   childDistances.filter(value => Math.abs(value - FCC_NEIGHBOR_DISTANCE) <= 1e-8).length,
-  12,
-  'all twelve exact-x FCC gaps must be filled before a longer edge is allowed',
+  11,
+  'all eleven legal exact-x gaps beside the physical Sun must fill before a longer edge is allowed',
 );
-assert(childDistances.some(value => value > FCC_NEIGHBOR_DISTANCE + 1e-8), 'the thirteenth child may exceed x only after exact gaps are full');
+assert(childDistances.some(value => value > FCC_NEIGHBOR_DISTANCE + 1e-8), 'only children without a legal exact slot may exceed x');
 
 // Disconnected roots use geometric gap filling: the first twelve fit the nearest FCC shell evenly.
 const isolated = Array.from({ length: 12 }, (_, index) => node(`isolated-${String(index).padStart(2, '0')}`));
@@ -149,6 +150,7 @@ assert(uniformSource.includes('export const FCC_NEIGHBOR_DISTANCE = ORDINARY_NOD
 assert(uniformSource.includes('collectDirectLayoutEdges'), 'layout must use only direct real graph edges');
 assert(uniformSource.includes('gapScore'), 'branch placement must retain geometric gap filling');
 assert(uniformSource.includes('approximateDiameterPath'), 'main-chain straightness may use one cheap graph spine');
+assert(uniformSource.includes('Start a long spine at its middle and grow toward both ends.'), 'long chains must use the compact centre-out geometric schedule');
 assert(uniformSource.includes('Only after every exact-x neighbour is occupied may a direct edge grow longer.'), 'longer edges must remain a strict fallback');
 assert(!uniformSource.includes('LAYER_RANK'), 'layer-direction scoring must be removed');
 assert(!uniformSource.includes('layerDelta'), 'inner/middle/outer must not steer candidate choice');
