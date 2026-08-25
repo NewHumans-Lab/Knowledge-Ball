@@ -87,7 +87,6 @@ export interface KnowledgeSceneOptions {
 
 export interface KnowledgeSceneRuntime {
   markDirty: () => void;
-  focusNode: (id: string) => void;
   start: () => void;
   stop: () => void;
   setOverlayVisible: (visible: boolean) => void;
@@ -289,8 +288,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let detailNodeId: string | null = null;
   let draggedNodeId: string | null = null;
   let returningNodeId: string | null = null;
-  let focusedNodeId: string | null = null;
-  let focusTargetQuaternion: THREE.Quaternion | null = null;
   let graphZoom = 1.27;
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
@@ -716,28 +713,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     return true;
   };
 
-  const focusNode = (id: string) => {
-    const node = getNodes().find(value => value.id === id);
-    if (!node?.pos || node.pos.lengthSq() === 0 || isCoreNodeId(id)) return;
-    selectedId = id;
-    focusedNodeId = id;
-    const direction = node.pos.clone().normalize().applyQuaternion(worldGroup.quaternion);
-    const delta = new THREE.Quaternion().setFromUnitVectors(direction, new THREE.Vector3(0, 0, 1));
-    focusTargetQuaternion = delta.multiply(worldGroup.quaternion.clone()).normalize();
-    largeGraphDirty = true;
-  };
-
-  const updateNodeFocus = (dt: number) => {
-    if (!focusTargetQuaternion) return false;
-    worldGroup.quaternion.slerp(focusTargetQuaternion, 1 - Math.exp(-10 * dt));
-    if (worldGroup.quaternion.angleTo(focusTargetQuaternion) < .001) {
-      worldGroup.quaternion.copy(focusTargetQuaternion);
-      focusTargetQuaternion = null;
-      return false;
-    }
-    return true;
-  };
-
   const labels = () => {
     scene.updateMatrixWorld(true);
     const allNodes = getNodes();
@@ -771,17 +746,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const rect = renderer.domElement.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     const shells = Object.values(nodeMap).filter(record => record.group.visible).map(record => record.shell);
-    const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;
     if (mobilePerformance) {
-      if (focusedRecord?.group.visible) {
-        focusedRecord.group.getWorldPosition(worldPos);
-        const projected = worldPos.clone().project(camera);
-        if (hasFiniteCoordinates(projected)) {
-          const sx = rect.left + (projected.x * .5 + .5) * rect.width;
-          const sy = rect.top + (-projected.y * .5 + .5) * rect.height;
-          if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;
-        }
-      }
       let nearest: { id: string; distance: number } | null = null;
       for (const shell of shells) {
         shell.parent!.getWorldPosition(worldPos);
@@ -797,7 +762,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     ndc.set(((x - rect.left) / rect.width) * 2 - 1, -(((y - rect.top) / rect.height) * 2 - 1));
     raycaster.setFromCamera(ndc, camera);
-    if (focusedRecord?.group.visible && raycaster.intersectObject(focusedRecord.shell, false).length > 0) return focusedNodeId;
     const hit = raycaster.intersectObjects(shells, false)[0]?.object.parent?.userData.nodeId;
     return typeof hit === 'string' ? hit : null;
   };
@@ -834,14 +798,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       graphZoom = clampGraphZoom(pinchStartZoom * dist / pinchStartDist);
       largeGraphDirty = true;
     } else if (mode === 'rotate') {
-      focusedNodeId = null;
-      focusTargetQuaternion = null;
       worldGroup.rotation.y += (e.clientX - lastX) * .004;
       worldGroup.rotation.x += (e.clientY - lastY) * .004;
       largeGraphDirty = true;
     } else if (mode === 'node' && draggedNodeId) {
-      focusedNodeId = null;
-      focusTargetQuaternion = null;
       const node = getNodes().find(value => value.id === draggedNodeId);
       if (node?.pos) {
         const delta = new THREE.Vector3((e.clientX - lastX) * .45 / graphZoom, -(e.clientY - lastY) * .45 / graphZoom, 0).applyQuaternion(worldGroup.quaternion.clone().invert());
@@ -883,11 +843,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
           resumeFrameLoop();
         }
       } else {
-        // A real ordinary-ball tap now means “open this knowledge”. It must not
-        // mutate the user's chosen 3D orientation. Cancel any earlier search
-        // focus animation, keep the selected identity, and open detail directly.
-        focusedNodeId = null;
-        focusTargetQuaternion = null;
+        // A real ordinary-ball tap means “open this knowledge” without changing
+        // the user's chosen 3D orientation.
         window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
       }
     } else if (!moved && !pinchOccurred) {
@@ -928,7 +885,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const scheduleFrame = () => {
     if (!running || overlayVisible) return;
     const largeMobileGraph = mobilePerformance && getNodes().length > MOBILE_ACTIVE_NODE_TARGET;
-    const delay = largeMobileGraph && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null && focusTargetQuaternion === null ? 100 : 0;
+    const delay = largeMobileGraph && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null ? 100 : 0;
     if (delay) {
       frameTimer = window.setTimeout(() => {
         frameTimer = null;
@@ -958,13 +915,12 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const dt = Math.min(clock.getDelta(), .05);
     if (!largeMobileGraph) physics(dt);
     const returnStillActive = updateReturningNode(dt);
-    const focusStillActive = updateNodeFocus(dt);
     sync();
     updateCoreOrbit(time);
     applyPendingPulse(time);
     labels();
     renderer.render(scene, camera);
-    largeGraphDirty = returnStillActive || focusStillActive;
+    largeGraphDirty = returnStillActive;
     scheduleFrame();
   };
 
@@ -992,7 +948,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   return {
     markDirty: () => { largeGraphDirty = true; },
-    focusNode,
     start: () => {
       if (!running) {
         running = true;

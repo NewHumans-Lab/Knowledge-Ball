@@ -246,19 +246,20 @@ try{
 
     const searchTarget=targets[1];
     await page.evaluate(()=>window.__debug.scene.start());
+    const searchPointBefore=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),searchTarget.id);
+    assert.ok(searchPointBefore,'search target must remain renderable before selection');
     await page.locator('#aiInput').fill(searchTarget.title);
     const searchResult=page.locator(`[data-node-id="${searchTarget.id}"]`).first();
     await searchResult.waitFor({state:'visible'});
     await searchResult.click();
-    await page.waitForTimeout(900);
-    assert.equal(await page.locator('#panel.open').count(),0,'search selection must focus without opening the legacy panel');
-    assert.equal(await page.locator('#nodeDetailOverlay.open').count(),0,'search selection must focus without opening details');
-    const searchCentered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),searchTarget.id);
-    assert.ok(searchCentered,'search-focused node must remain renderable');
-    assert.ok(Math.hypot(searchCentered.x-(hostBox.x+hostBox.width/2),searchCentered.y-(hostBox.y+hostBox.height/2))<4,'search selection must use the same center-focus behavior as a node tap');
-    await page.touchscreen.tap(searchCentered.x,searchCentered.y);
-    await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
-    await page.locator('#nodeDetailOverlay .node-detail-close').click();
+    const searchDetail=page.locator('#nodeDetailOverlay.open');
+    await searchDetail.waitFor({state:'visible'});
+    assert.equal(await page.locator('#panel.open').count(),0,'search selection must open the near-node detail without the legacy panel');
+    assert.equal((await searchDetail.locator('.node-detail-title').textContent())?.trim(),searchTarget.title,'search selection must directly open the selected knowledge detail');
+    const searchPointAfter=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),searchTarget.id);
+    assert.ok(searchPointAfter,'search-selected node must remain renderable after detail opens');
+    assert.ok(Math.hypot(searchPointAfter.x-searchPointBefore.x,searchPointAfter.y-searchPointBefore.y)<=2,'search selection must not rotate or auto-center the graph');
+    await searchDetail.locator('.node-detail-close').click();
     await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
 
     await page.goto(new URL('ios-install.html',origin).href,{waitUntil:'domcontentloaded'});
@@ -267,5 +268,5 @@ try{
     assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
-  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, split create exit, focus-before-details, near-node details, search focus, exit navigation, raycast and UI click checks passed');
+  console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, split create exit, direct node/search details, exit navigation, raycast and UI click checks passed');
 }finally{server.kill('SIGKILL');server.unref();}
