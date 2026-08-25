@@ -30,7 +30,7 @@ import {
 import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
 import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
 import { SyncEngine } from '../sync/SyncEngine';
-import { createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
+import { createdNodeIdsFromEvent, createProductionSyncAdapter } from '../sync/SupabaseSyncAdapter';
 import {
   createProductionAuthClient,
   type PersonalKnowledgeStateSnapshot,
@@ -104,10 +104,34 @@ let interaction: InteractionController;
 const knowledgeSurfaceState = new KnowledgeSurfaceState();
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
 let markingViewedNodeId: string | null = null;
+let currentViewerUserId: string | null = null;
+const locallyCreatedByMeNodeIds = new Set<string>();
+
+function nodeCreatedByCurrentUser(nodeId: string): boolean {
+  if (locallyCreatedByMeNodeIds.has(nodeId)) return true;
+  if (!currentViewerUserId) return false;
+  return productionSyncAdapter?.nodeMetadata(nodeId)?.actorId === currentViewerUserId;
+}
+
+function syncCreatedByMeFlags(): void {
+  for (const node of layoutNodes) node.createdByMe = nodeCreatedByCurrentUser(node.id);
+  scene?.markDirty();
+}
+
+function updateCurrentViewerUserId(userId: string): void {
+  if (currentViewerUserId && currentViewerUserId !== userId) locallyCreatedByMeNodeIds.clear();
+  currentViewerUserId = userId;
+  syncCreatedByMeFlags();
+}
 
 async function commitPublicEvent(event: DomainEvent): Promise<boolean> {
   if (!syncEngine) throw new Error('公共知识远程通道尚未初始化');
-  return syncEngine.commit(event);
+  const accepted = await syncEngine.commit(event);
+  if (accepted) {
+    for (const nodeId of createdNodeIdsFromEvent(event)) locallyCreatedByMeNodeIds.add(nodeId);
+    syncCreatedByMeFlags();
+  }
+  return accepted;
 }
 
 function getSceneNodes(): KnowledgeSceneNode[] {
@@ -193,6 +217,7 @@ function renderNodeFromDomain(dn: GraphNode): KnowledgeSceneNode {
       type: dn.type as KnowledgeNodeType,
       status: dn.status,
       mastery: dn.mastery,
+      createdByMe: nodeCreatedByCurrentUser(dn.id),
       reasoning: dn.reasoning,
       premises: [...dn.premises],
       declaredLayer,
@@ -372,7 +397,6 @@ function openNode(id: string): void {
     panel.closeNodePanel();
     knowledgeSurfaceState.open('detail', id);
     nodeDetail.open(id);
-    void markNodeViewed(id);
   } else {
     panel.openNodePanel(id);
   }
@@ -712,6 +736,7 @@ if (!Capacitor.isNativePlatform()) {
     onAction: launchPanelAction,
     onSelectRelatedNode: openNode,
     onDetailNodeChange: id => scene.setDetailNode(id),
+    onViewed: id => { void markNodeViewed(id); },
     onClose: () => { knowledgeSurfaceState.close('detail'); },
   });
 }
@@ -779,6 +804,7 @@ const accountUi = !Capacitor.isNativePlatform()
       toast: opt<HTMLElement>('toast') ?? null,
       getLocalPersonalStates: latestLocalPersonalStates,
       applyPersonalSnapshot: applyPersonalKnowledgeSnapshot,
+      onIdentityResolved: updateCurrentViewerUserId,
     })
   : null;
 

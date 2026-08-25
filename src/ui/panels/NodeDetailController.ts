@@ -47,6 +47,7 @@ export interface NodeDetailControllerOptions {
   onAction: (id: string, action: NodeDetailAction) => void;
   onSelectRelatedNode: (id: string) => void;
   onDetailNodeChange: (id: string | null) => void;
+  onViewed?: (id: string) => void;
   onClose?: () => void;
 }
 
@@ -152,6 +153,7 @@ export class NodeDetailController {
   private readonly onAction: NodeDetailControllerOptions['onAction'];
   private readonly onSelectRelatedNode: NodeDetailControllerOptions['onSelectRelatedNode'];
   private readonly onDetailNodeChange: NodeDetailControllerOptions['onDetailNodeChange'];
+  private readonly onViewed?: NodeDetailControllerOptions['onViewed'];
   private readonly onClose?: NodeDetailControllerOptions['onClose'];
   private readonly root: HTMLElement;
   private currentId: string | null = null;
@@ -168,6 +170,7 @@ export class NodeDetailController {
     this.onAction = options.onAction;
     this.onSelectRelatedNode = options.onSelectRelatedNode;
     this.onDetailNodeChange = options.onDetailNodeChange;
+    this.onViewed = options.onViewed;
     this.onClose = options.onClose;
     this.root = document.createElement('section');
     this.root.id = 'nodeDetailOverlay';
@@ -194,6 +197,9 @@ export class NodeDetailController {
     this.root.classList.add('open');
     this.positionCurrent();
     this.startPositionTracking();
+    // Mastery is a consequence of content actually being presented, not of a
+    // scene selection/focus gesture. Refreshes do not emit a second view.
+    this.onViewed?.(id);
   }
 
   refresh(id = this.currentId): void {

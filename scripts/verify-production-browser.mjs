@@ -122,9 +122,8 @@ try {
   await assertVisibilityState('当前', 'current');
 
   // Hosted-data acceptance: prove that an actual Supabase-loaded conclusion and
-  // its reasoning-process ball share one canonical scene/detail chain. This is
-  // deliberately a real first tap -> focus -> second tap interaction; no detail
-  // controller method is called directly.
+  // its reasoning-process ball share one canonical scene/detail chain. One real
+  // tap opens detail directly and must preserve the current graph orientation.
   const chainFixture = await page.evaluate(() => {
     const debug = window.__debug;
     const nodes = debug?.renderNodes ?? [];
@@ -143,14 +142,12 @@ try {
   assert.ok(chainFixture, 'hosted projection must expose an on-screen conclusion with a real reasoning-process predecessor');
 
   await page.touchscreen.tap(chainFixture.x, chainFixture.y);
-  await page.waitForTimeout(900);
-  const centered = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), chainFixture.id);
-  assert.ok(centered, 'focused hosted conclusion must remain renderable');
-  await page.touchscreen.tap(centered.x, centered.y);
-
   const detail = page.locator('#nodeDetailOverlay.open');
   await detail.waitFor({ state: 'visible', timeout: 5_000 });
-  assert.equal(await detail.getAttribute('data-node-id'), chainFixture.id, 'second tap must open the hosted conclusion detail');
+  assert.equal(await detail.getAttribute('data-node-id'), chainFixture.id, 'first tap must open the hosted conclusion detail');
+  const pointAfterOpen = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), chainFixture.id);
+  assert.ok(pointAfterOpen, 'hosted conclusion must remain renderable after detail opens');
+  assert.ok(Math.hypot(pointAfterOpen.x - chainFixture.x, pointAfterOpen.y - chainFixture.y) <= 3, 'hosted detail open must not rotate the graph');
   const previousReasoning = detail.locator(`.node-detail-relation[data-relation-kind="previous"][data-related-node-id="${chainFixture.reasoningId}"]`);
   assert.equal(await previousReasoning.count(), 1, 'hosted conclusion must expose its real reasoning-process ball on the left');
   const relationKinds = await detail.locator('.node-detail-relation[data-relation-kind]').evaluateAll(elements => elements.map(element => element.dataset.relationKind));

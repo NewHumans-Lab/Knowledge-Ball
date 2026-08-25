@@ -204,23 +204,16 @@ try{
 
     const target=targets[0];
     await page.evaluate(()=>window.__debug.scene.start());
+    const pointBeforeDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
+    assert.ok(pointBeforeDetail,'direct-detail target must remain renderable before tap');
     await page.touchscreen.tap(target.x,target.y);
-    await page.waitForTimeout(900);
-    assert.equal(await page.locator('#panel.open').count(),0,'first node tap must focus the node without opening the legacy panel');
-    assert.equal(await page.locator('#nodeDetailOverlay.open').count(),0,'first node tap must focus without opening near-node details');
-    const centered=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
-    assert.ok(centered,'focused node must remain renderable');
-    assert.ok(Math.hypot(centered.x-(hostBox.x+hostBox.width/2),centered.y-(hostBox.y+hostBox.height/2))<4,'first node tap must rotate the whole graph until the node reaches screen center');
-    const coreOverlap=await page.evaluate(({centered})=>['n1','n2','n16']
-      .map(id=>{const point=window.__debug.scene.screenPositionForNode(id);return point?{...point,id,distance:Math.hypot(point.x-centered.x,point.y-centered.y)}:null;})
-      .filter(Boolean).sort((a,b)=>a.distance-b.distance)[0],{centered});
-    assert.ok(coreOverlap,'core triad must expose a projected point for overlap regression');
-    assert.ok(coreOverlap.distance<=24,`nearest core node must overlap the focused node touch radius (distance=${coreOverlap.distance})`);
-    await page.touchscreen.tap(coreOverlap.x,coreOverlap.y);
     const detail=page.locator('#nodeDetailOverlay.open');
     await detail.waitFor({state:'visible'});
-    assert.equal(await page.locator('#panel.open').count(),0,'second tap must not restore the old large rectangular detail panel');
-    assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'focused ordinary node must win the second tap inside its existing hit radius even when a core node is closer');
+    assert.equal(await page.locator('#panel.open').count(),0,'first node tap must open the near-node detail without the legacy panel');
+    assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'first ordinary-node tap must open that node detail');
+    const pointAfterDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
+    assert.ok(pointAfterDetail,'direct-detail target must remain renderable after detail opens');
+    assert.ok(Math.hypot(pointAfterDetail.x-pointBeforeDetail.x,pointAfterDetail.y-pointBeforeDetail.y)<=2,'opening detail must not rotate the whole graph');
     assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('贡献者'),'near-node detail must expose contributor metadata');
     assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('时间'),'near-node detail must expose server creation time');
     assert.equal(await detail.locator('.node-detail-content-label').count(),0,'near-node detail must not restore the removed standalone content label');

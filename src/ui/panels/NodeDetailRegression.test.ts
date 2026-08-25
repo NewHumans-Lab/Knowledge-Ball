@@ -159,6 +159,10 @@ assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/actio
 
 assert(app.includes('if (!Capacitor.isNativePlatform())'), 'new near-node detail behavior must remain web-only for now');
 assert(app.includes('nodeDetail.open(id)'), 'ordinary-node path must open the near-node detail surface');
+assert(detail.includes('this.onViewed?.(id);'), 'detail owner must emit viewed only after the detail surface has been rendered and opened');
+assert(app.includes('onViewed: id => { void markNodeViewed(id); }'), 'app mastery write must be wired to the rendered-detail viewed signal');
+const openNodeSource = app.slice(app.indexOf('function openNode('), app.indexOf('function updateSceneOverlayState'));
+assert(!openNodeSource.includes('markNodeViewed'), 'scene selection/openNode intent must not itself mark mastery');
 assert(app.includes("getMetadata: id =>"), 'detail must receive contributor/time metadata through the production adapter');
 assert(app.includes('panel.openNodePanel(id)') && app.includes('launchPanelAction'), 'large panel must remain the single editing surface behind non-create detail actions');
 

@@ -112,38 +112,12 @@ try {
   });
   assert.ok(target, 'must expose a tappable production-scale fixture node');
 
-  const canvasBox = await page.locator('#canvasHost').boundingBox();
-  assert.ok(canvasBox, 'production-scale canvas must expose a finite bounding box');
-  const center = { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height / 2 };
-
-  // Issue #51 still guards responsiveness, but the product contract is now focus-first:
-  // first tap must remain fast and center the node without opening details.
-  const firstTapStarted = performance.now();
-  await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'first focus tap');
-  const firstTapWall = performance.now() - firstTapStarted;
-  assert.ok(firstTapWall <= 250, `first focus tap took ${firstTapWall.toFixed(1)}ms`);
-  assert.equal(await page.locator('#panel.open').count(), 0, 'first tap must focus without opening the legacy panel');
-  assert.equal(await page.locator('#nodeDetailOverlay.open').count(), 0, 'first tap must focus without opening near-node details');
-  assert.equal(
-    await page.evaluate(beforeCount => window.__debug.store.allEvents().slice(beforeCount).filter(event => event.type === 'NodeMasterySet').length, before),
-    0,
-    'focus-only first tap must not mark the node viewed before details open',
-  );
-
-  await deadline(page.waitForFunction(({ nodeId, centerX, centerY }) => {
-    const point = window.__debug?.scene?.screenPositionForNode?.(nodeId);
-    return Boolean(point && Math.hypot(point.x - centerX, point.y - centerY) < 0.25);
-  }, { nodeId: target.id, centerX: center.x, centerY: center.y }), 1_000, 'node focus');
-
-  const centered = await page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), target.id);
-  assert.ok(centered, 'focused node must remain renderable at screen center');
-
-  // Second tap opens the lightweight near-node detail view. Keep the original
-  // Issue #51 latency gate and the viewed-node personal-state side effect.
+  const pointBeforeTap = await page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), target.id);
+  assert.ok(pointBeforeTap, 'direct-detail target must remain renderable before tap');
   const graphFlushesBeforeDetailTap = await page.evaluate(() => window.__debug.projectionRenderScheduler.flushCount());
-  const secondTapStarted = performance.now();
-  await deadline(page.touchscreen.tap(centered.x, centered.y), 1_000, 'centered node tap');
-  const secondTapWall = performance.now() - secondTapStarted;
+  const detailTapStarted = performance.now();
+  await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'direct detail tap');
+  const detailTapWall = performance.now() - detailTapStarted;
   await deadline(page.waitForFunction(() => document.querySelector('#nodeDetailOverlay')?.classList.contains('open')), 1_000, 'near-node detail open');
   await deadline(page.waitForFunction(nodeId => window.__debug?.projection?.state?.nodesById?.[nodeId]?.mastery === 'touched', target.id), 1_000, 'viewed-node mastery');
   await new Promise(resolve => setTimeout(resolve, 100));
@@ -160,17 +134,20 @@ try {
       detailTitle: detail?.querySelector('.node-detail-title')?.textContent?.trim() ?? '',
       activeCount: window.__debug.scene.getActiveNodeCount(),
       graphFlushes: window.__debug.projectionRenderScheduler.flushCount(),
+      pointAfterTap: window.__debug.scene.screenPositionForNode(nodeId),
     };
   }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
 
-  console.log(JSON.stringify({ firstTapWall, secondTapWall, lodState, state }, null, 2));
-  assert.ok(secondTapWall <= 250, `centered detail tap took ${secondTapWall.toFixed(1)}ms`);
+  console.log(JSON.stringify({ detailTapWall, lodState, state }, null, 2));
+  assert.ok(detailTapWall <= 250, `direct detail tap took ${detailTapWall.toFixed(1)}ms`);
+  assert.ok(state.pointAfterTap, 'direct-detail target must remain renderable after detail opens');
+  assert.ok(Math.hypot(state.pointAfterTap.x - pointBeforeTap.x, state.pointAfterTap.y - pointBeforeTap.y) <= 2, 'opening detail must preserve the current graph orientation');
   assert.ok(state.activeCount <= mobileActiveNodeTarget, `selected-node relation retention must remain within the ${mobileActiveNodeTarget}-node working set`);
-  assert.ok(state.detailOpen, 'near-node detail must remain open and responsive');
-  assert.equal(state.legacyPanelOpen, false, 'normal second-tap viewing must not reopen the legacy rectangular panel');
+  assert.ok(state.detailOpen, 'near-node detail must open on the first real node tap');
+  assert.equal(state.legacyPanelOpen, false, 'normal viewing must not reopen the legacy rectangular panel');
   assert.equal(state.detailTitle, target.id.replace('panel-style-node-', 'Panel style node '), 'near-node detail must show the selected fixture title');
-  assert.equal(state.mastery, 'touched', 'viewed node must still be automatically marked touched');
-  assert.equal(state.masteryEvents.length, 1, `one view must append exactly one mastery event, got ${state.masteryEvents.length}`);
+  assert.equal(state.mastery, 'touched', 'actually rendered detail must mark the viewed node touched');
+  assert.equal(state.masteryEvents.length, 1, `one rendered detail view must append exactly one mastery event, got ${state.masteryEvents.length}`);
   assert.equal(state.masteryEvents[0]?.payload?.nodeId, target.id, 'mastery event must target the viewed node');
   assert.equal(state.masteryEvents[0]?.payload?.mastery, 'touched', 'viewed node must append touched mastery');
   assert.equal(state.graphFlushes, graphFlushesBeforeDetailTap, 'viewed-node mastery must not trigger a full graph render/layout flush');

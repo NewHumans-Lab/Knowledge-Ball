@@ -22,6 +22,7 @@ export interface AccountUiOptions {
   toast: HTMLElement | null;
   getLocalPersonalStates: () => Array<{ nodeId: string; mastery: PersonalMastery }>;
   applyPersonalSnapshot: (states: PersonalKnowledgeStateSnapshot[]) => void;
+  onIdentityResolved?: (userId: string) => void;
 }
 
 export class AccountUiController {
@@ -102,6 +103,7 @@ export class AccountUiController {
   private async syncPersonalKnowledgeCloud(): Promise<void> {
     if (!this.account) return;
     const userId = await this.account.currentUserId();
+    this.options.onIdentityResolved?.(userId);
     const storage = this.browserStorage();
     let localOwner = storage?.getItem(LOCAL_PERSONAL_OWNER_KEY) ?? null;
     if (!localOwner) {
