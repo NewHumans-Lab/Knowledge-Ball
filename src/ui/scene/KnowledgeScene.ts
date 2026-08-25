@@ -529,7 +529,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       mobileActiveNodeIds = new Set(eligible.map(node => node.id));
       return eligible;
     }
-    const forced = selectedRelationIds(eligible);
+    // `eligible` is a new filtered array each frame. Relation topology belongs
+    // to the stable full graph generation; hidden/non-candidate forced IDs are
+    // ignored by selectMobileActiveNodeIds because they are absent from candidates.
+    const forced = selectedRelationIds(nodes);
     mobileActiveNodeIds = selectMobileActiveNodeIds(mobileCandidates(eligible), mobileActiveNodeIds, forced);
     return eligible.filter(node => mobileActiveNodeIds.has(node.id));
   };

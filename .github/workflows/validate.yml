@@ -1,27 +1,101 @@
-name: Apply LQ-04 mobile correction
+name: Validate
 
 on:
   push:
+  pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/cache-knowledge-relations
           fetch-depth: 0
-      - name: Apply mobile relation-cache correction
-        run: python scripts/apply-lq04-mobile.py
-      - name: Restore validation workflow and commit correction
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:pages
+      - run: npm test
+      - run: npm run test:download
+      - name: Require the hosted release schema expected by migrations
+        if: github.event_name == 'pull_request'
+        run: node scripts/verify-supabase-schema.mjs
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      - name: Install Chromium for browser regressions
+        run: npx playwright install --with-deps chromium
+      - name: Verify split standalone/reasoning creation on a real mobile page
+        run: node scripts/verify-split-create-browser.mjs
+      - name: Verify real-touch Current Personal All cycle on the built page
+        run: node scripts/verify-visibility-mode-browser.mjs
+      - name: Verify second-tap related-node navigation
+        run: node scripts/verify-node-detail-relations-browser.mjs
+      - name: Verify cloud-only public state with two already-open real pages
+        run: npm run test:browser-cloud
+      - run: npm run test:browser-mobile
+      - name: Upload mobile scene visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-scene-visual
+          path: artifacts/mobile-scene-*.png
+          if-no-files-found: warn
+      - name: Run Issue 51 production-scale interaction trace
+        run: npm run test:issue51-browser
+      - name: Upload Issue 51 Playwright trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue51-playwright-trace
+          path: artifacts/issue51-trace.zip
+          if-no-files-found: warn
+      - name: Verify pull request merges cleanly with its base
+        if: github.event_name == 'pull_request'
         run: |
-          git show 0374d9e9b608d4d4745402017609e3f0ccdda178:.github/workflows/validate.yml > .github/workflows/validate.yml
-          rm scripts/apply-lq04-mobile.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Keep mobile relation cache on stable graph generation"
-          git push origin HEAD:fix/cache-knowledge-relations
+          git fetch origin "${{ github.base_ref }}"
+          npm run test:merge -- "origin/${{ github.base_ref }}"
+
+  android-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 35
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
+      - run: npm ci
+      - run: npm test
+      - run: npm run android:sync
+      - name: Run Android tests and build debug APK
+        working-directory: android
+        run: ./gradlew test assembleDebug
+
+  ios-build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run ios:sync
+      - name: Build iOS simulator app without signing
+        working-directory: ios/App
+        run: xcodebuild -workspace App.xcworkspace -scheme App -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
