@@ -75,7 +75,6 @@ import {
   type NodeDetailAction,
   type NodeDetailNode,
 } from './panels/NodeDetailController';
-import { NodeDetailLineageUi } from './panels/NodeDetailLineageUi';
 import { setupMobileShell } from '../mobile/MobileShell';
 import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
@@ -100,7 +99,6 @@ let scene: KnowledgeSceneRuntime;
 let panel: PanelController;
 let knowledgeCreate: KnowledgeCreateController;
 let nodeDetail: NodeDetailController | null = null;
-let nodeDetailLineageUi: NodeDetailLineageUi | null = null;
 let interaction: InteractionController;
 let currentPanelId: string | null = null;
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
@@ -373,7 +371,6 @@ function openNode(id: string): void {
   if (nodeDetail) {
     panel.closeNodePanel();
     nodeDetail.open(id);
-    nodeDetailLineageUi?.open(id);
     void markNodeViewed(id);
   } else {
     panel.openNodePanel(id);
@@ -621,13 +618,11 @@ scene = createKnowledgeScene({
     onNodeTap: openNode,
     onBackgroundTap: () => {
       currentPanelId = null;
-      nodeDetailLineageUi?.close();
       nodeDetail?.close();
       panel.closeNodePanel();
     },
     onBackgroundDoubleTap: () => {
       const premiseId = currentPanelId;
-      nodeDetailLineageUi?.close();
       nodeDetail?.close();
       currentPanelId = premiseId;
       if (premiseId) knowledgeCreate.openReasoning(premiseId);
@@ -718,11 +713,9 @@ if (!Capacitor.isNativePlatform()) {
     onSelectRelatedNode: openNode,
     onDetailNodeChange: id => scene.setDetailNode(id),
     onClose: () => {
-      nodeDetailLineageUi?.close();
       currentPanelId = null;
     },
   });
-  nodeDetailLineageUi = new NodeDetailLineageUi({ getNodeById: getNodeDetailById });
 }
 
 openSettingsOverlay = () => panel.openSettingsOverlay();
@@ -748,7 +741,6 @@ function refreshCurrentKnowledgeSurface(): void {
   if (panelOpen) panel.openNodePanel(currentPanelId);
   else if (nodeDetail?.isOpenFor(currentPanelId)) {
     nodeDetail.refresh(currentPanelId);
-    nodeDetailLineageUi?.refresh(currentPanelId);
   }
 }
 
@@ -916,7 +908,6 @@ void setupMobileShell();
   panel,
   knowledgeCreate,
   nodeDetail,
-  nodeDetailLineageUi,
   accountUi,
   scene,
   projectionRenderScheduler,

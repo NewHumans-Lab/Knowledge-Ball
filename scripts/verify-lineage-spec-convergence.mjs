@@ -4,7 +4,6 @@ import { readFile } from 'node:fs/promises';
 
 const panel = await readFile('src/ui/panels/PanelController.ts', 'utf8');
 const detail = await readFile('src/ui/panels/NodeDetailController.ts', 'utf8');
-const lineageUi = await readFile('src/ui/panels/NodeDetailLineageUi.ts', 'utf8');
 const app = await readFile('src/ui/app.ts', 'utf8');
 const command = await readFile('src/command/EditNode.ts', 'utf8');
 const projection = await readFile('src/projection/GraphProjection.ts', 'utf8');
@@ -29,19 +28,18 @@ assert.doesNotMatch(panel, /openNegateForm|openEditForm/);
 assert.doesNotMatch(detail, /NodeDetailControllerLegacy/);
 assert.match(detail, /edit: '优化'/);
 assert.match(detail, /negate: '提出对立观点'/);
-assert.match(lineageUi, /class NodeDetailLineageUi/);
-assert.doesNotMatch(lineageUi, /relabelActions|data-node-detail-action="edit"|data-node-detail-action="negate"/);
-assert.match(lineageUi, /snapshot\.roundKind !== 'CASCADE'/);
-assert.doesNotMatch(lineageUi, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/);
-assert.match(lineageUi, /data-cascade-vote-side="AGREE"/);
-assert.match(lineageUi, /data-cascade-vote-side="DISAGREE"/);
-assert.match(lineageUi, /account\.castPendingKnowledgeVote\(nodeId, side\)/);
+assert.equal(existsSync('src/ui/panels/NodeDetailLineageUi.ts'), false, 'NodeDetail must not regain a second DOM/lifecycle owner');
+assert.match(detail, /snapshot\.roundKind !== 'CASCADE'/);
+assert.doesNotMatch(detail, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/);
+assert.match(detail, /data-cascade-vote-side="AGREE"/);
+assert.match(detail, /data-cascade-vote-side="DISAGREE"/);
+assert.match(detail, /account\.castPendingKnowledgeVote\(nodeId, side\)/);
 
 assert.match(app, /executeKnowledgeOptimization/);
 assert.match(app, /executeKnowledgeOpposition/);
 assert.match(app, /onOptimizeNode: optimizeKnowledgeNode/);
 assert.match(app, /onOpposeNode: opposeKnowledgeNode/);
-assert.match(app, /nodeDetailLineageUi\?\.open\(id\)/);
+assert.doesNotMatch(app, /NodeDetailLineageUi|nodeDetailLineageUi/, 'app must have one NodeDetail lifecycle owner');
 assert.doesNotMatch(app, /LineageIntentBridge|encodeLineageIntent|decodeLineageIntent/);
 assert.doesNotMatch(command, /decodeLineageIntent|executeKnowledgeOptimization|executeKnowledgeOpposition/);
 
