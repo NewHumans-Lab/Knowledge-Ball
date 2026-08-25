@@ -140,6 +140,7 @@ export interface PanelControllerElements {
 export type PanelNodeAction = 'edit' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
 
 type LineageCandidateKind = 'optimization' | 'opposition';
+type PanelView = 'detail' | 'subview';
 
 function escapeHtml(input: string): string {
   return input
@@ -223,6 +224,7 @@ export class PanelController {
   private selectedId: string | null = null;
   private prefillPremise: string | null = null;
   private toastTimer: number | null = null;
+  private panelView: PanelView = 'detail';
 
   constructor(options: PanelControllerCallbacks & PanelControllerElements) {
     this.getNodes = options.getNodes;
@@ -285,6 +287,10 @@ export class PanelController {
 
     this.toast = options.toast;
 
+    this.configureExitControl(this.panelClose, '返回知识球');
+    this.configureExitControl(this.modalClose, '返回上一层');
+    this.configureExitControl(this.accountClose, '返回知识球');
+    this.configureExitControl(this.settingsClose, '返回知识球');
     this.configureLayerSubmission();
     this.bind();
   }
@@ -335,6 +341,8 @@ export class PanelController {
     if (!node) return;
 
     this.selectedId = id;
+    this.panelView = 'detail';
+    this.updatePanelExitLabel();
     this.onOverlayVisibilityChange?.(true);
     this.panel.classList.add('open');
     this.panelTitle.textContent = node.title;
@@ -462,6 +470,8 @@ export class PanelController {
     this.panel.classList.remove('open');
     this.onOverlayVisibilityChange?.(false);
     this.selectedId = null;
+    this.panelView = 'detail';
+    this.updatePanelExitLabel();
   }
 
   openNodeAction(id: string, action: PanelNodeAction): boolean {
@@ -570,8 +580,41 @@ export class PanelController {
     }
   }
 
+  private configureExitControl(control: HTMLElement | undefined, label: string): void {
+    if (!control) return;
+    if (control instanceof HTMLButtonElement) control.type = 'button';
+    control.setAttribute('aria-label', label);
+    control.setAttribute('title', label);
+  }
+
+  private updatePanelExitLabel(): void {
+    this.configureExitControl(this.panelClose, this.panelView === 'subview' ? '返回节点详情' : '返回知识球');
+  }
+
+  private enterPanelSubview(id: string): void {
+    this.selectedId = id;
+    this.panelView = 'subview';
+    this.updatePanelExitLabel();
+  }
+
+  private returnToNodeDetail(id: string | null = this.selectedId): void {
+    if (!id) {
+      this.closeNodePanel();
+      return;
+    }
+    this.openNodePanel(id);
+  }
+
+  private handlePanelExit(): void {
+    if (this.panelView === 'subview') {
+      this.returnToNodeDetail();
+      return;
+    }
+    this.closeNodePanel();
+  }
+
   private bind(): void {
-    this.panelClose.addEventListener('click', () => this.closeNodePanel());
+    this.panelClose.addEventListener('click', () => this.handlePanelExit());
     this.modalClose.addEventListener('click', () => this.closeCreateModal());
     this.modalCancel.addEventListener('click', () => this.closeCreateModal());
 
@@ -740,6 +783,7 @@ export class PanelController {
   private openLineageCandidateForm(id: string, kind: LineageCandidateKind): void {
     const node = this.getNodeById(id);
     if (!node) return;
+    this.enterPanelSubview(id);
     const optimization = kind === 'optimization';
     const reasoningOptimization = optimization && node.type === 'reasoning';
     const candidateLayer = node.declaredLayer ?? node.effectiveLayer ?? 'outer';
@@ -768,7 +812,7 @@ export class PanelController {
       <button class="btn ghost" id="cancelLineageCandidate">取消</button>
     `;
 
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelLineageCandidate')?.addEventListener('click', () => this.openNodePanel(id));
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelLineageCandidate')?.addEventListener('click', () => this.returnToNodeDetail(id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitLineageCandidate')?.addEventListener('click', async () => {
       const title = this.panelBody.querySelector<HTMLInputElement>('#lineageCandidateTitle')?.value.trim() ?? '';
       const layerValue = reasoningOptimization
@@ -866,6 +910,7 @@ export class PanelController {
   private openDecomposeForm(id: string): void {
     const reasoning = this.getNodeById(id);
     if (!reasoning || reasoning.type !== 'reasoning') return;
+    this.enterPanelSubview(id);
     const conclusions = this.getNodes().filter(node => node.type !== 'reasoning' && node.premises.includes(id));
     this.panelTitle.textContent = `分解：${reasoning.title}`;
     this.panelBody.innerHTML = `
@@ -891,7 +936,7 @@ export class PanelController {
       <button class="btn primary" id="submitDecompose">检查完整链并分解</button>
       <button class="btn ghost" id="cancelOperation">取消</button>
     `;
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(id));
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitDecompose')?.addEventListener('click', async () => {
       const value = <T extends HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector: string) =>
         safeText(this.panelBody.querySelector<T>(selector)?.value);
@@ -941,6 +986,7 @@ export class PanelController {
   }
 
   private openDefinitionMergeForm(node: PanelNodeSummary): void {
+    this.enterPanelSubview(node.id);
     const candidates = this.getNodes().filter(candidate => candidate.id !== node.id && candidate.type === 'definition');
     this.panelTitle.textContent = `合并定义：${node.title}`;
     this.panelBody.innerHTML = `
@@ -954,7 +1000,7 @@ export class PanelController {
       <p class="note-small" style="text-align:left;">来源定义必须文字不同但语义相同；原定义保留为别名并默认隐藏。</p>
     `;
     this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">检查并合并定义</button><button class="btn ghost" id="cancelOperation">取消</button>`;
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(node.id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
       const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
       const payload: MergeDefinitionPayload = {
@@ -980,6 +1026,7 @@ export class PanelController {
   }
 
   private openTheoryMergeForm(node: PanelNodeSummary): void {
+    this.enterPanelSubview(node.id);
     const reasoning = this.reasoningParent(node);
     if (!reasoning) return;
     const candidates = this.getNodes().filter(candidate => {
@@ -1005,7 +1052,7 @@ export class PanelController {
       <p class="note-small" style="text-align:left;">系统先检查并建立统一推理过程，再建立依赖它的统一结论；内部细分类沿用来源结构，不要求用户填写。</p>
     `;
     this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">检查推理后合并结论</button><button class="btn ghost" id="cancelOperation">取消</button>`;
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));
+    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(node.id));
     this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
       const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
       const payload: MergeTheoryPayload = {
