@@ -36,6 +36,28 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+function publicNodeEvent(id: string, nodeId: string): DomainEvent {
+  return {
+    id,
+    type: 'NodeCreated',
+    scope: 'public',
+    schemaVersion: 1,
+    timestamp: Date.now(),
+    payload: { nodeId, title: nodeId, nodeType: 'fact', reasoning: '', premises: [], source: 'test' },
+  };
+}
+
+function masteryEvent(id: string, nodeId: string, mastery: 'none' | 'touched' | 'mastered' = 'touched'): DomainEvent {
+  return {
+    id,
+    type: 'NodeMasterySet',
+    scope: 'personal',
+    schemaVersion: 1,
+    timestamp: Date.now(),
+    payload: { nodeId, mastery },
+  };
+}
+
 export async function runPersistenceRegression(): Promise<void> {
   // Generic persistence remains supported for tests/unconfigured tooling.
   const persistence = new MemoryPersistence();
@@ -78,24 +100,10 @@ export async function runPersistenceRegression(): Promise<void> {
   const storage = new MemoryStorage();
   const legacyKey = 'knowledge-ball.events.v1';
   const personalKey = 'knowledge-ball.personal-events.v1';
-  const publicEvent: DomainEvent = {
-    id: 'legacy-public',
-    type: 'NodeCreated',
-    scope: 'public',
-    schemaVersion: 1,
-    timestamp: 1,
-    payload: { nodeId: 'legacy-node', title: 'Legacy', nodeType: 'fact', reasoning: '', premises: [], source: 'import' },
-  };
-  const masteryEvent: DomainEvent = {
-    id: 'legacy-mastery',
-    type: 'NodeMasterySet',
-    scope: 'personal',
-    schemaVersion: 1,
-    timestamp: 2,
-    payload: { nodeId: 'legacy-node', mastery: 'mastered' },
-  };
+  const publicEvent = publicNodeEvent('legacy-public', 'legacy-node');
+  const legacyMastery = masteryEvent('legacy-mastery', 'legacy-node', 'mastered');
   const legacyPersistence = new KnowledgePersistence<DomainEvent>({ storageKey: legacyKey, storage });
-  legacyPersistence.saveLocal([publicEvent, masteryEvent]);
+  legacyPersistence.saveLocal([publicEvent, legacyMastery]);
   const legacyRawBefore = storage.getItem(legacyKey);
 
   const personalPersistence = new FilteredKnowledgePersistence<DomainEvent>({
@@ -108,9 +116,78 @@ export async function runPersistenceRegression(): Promise<void> {
   assert(migrated.length === 1 && migrated[0]?.id === 'legacy-mastery', 'legacy public events must be ignored while mastery is retained');
   assert(storage.getItem(legacyKey) === legacyRawBefore, 'legacy mixed cache must not be cleared or rewritten');
   assert(personalPersistence.shouldPersist(publicEvent) === false, 'public event must never be selected for browser persistence');
-  assert(personalPersistence.shouldPersist(masteryEvent) === true, 'personal mastery remains locally persistable in this phase');
+  assert(personalPersistence.shouldPersist(legacyMastery) === true, 'personal mastery remains locally persistable in this phase');
+  const migratedMarker = JSON.parse(storage.getItem(personalKey) ?? '{}') as { schemaVersion?: number; format?: string; chunkCount?: number };
+  assert(migratedMarker.schemaVersion === 2 && migratedMarker.format === 'chunked-journal', 'legacy mastery must migrate to the bounded journal format');
+  assert(migratedMarker.chunkCount === 1, 'single migrated mastery event must occupy one journal chunk');
 
-  personalPersistence.saveLocal([publicEvent, masteryEvent]);
-  const currentSaved = new KnowledgePersistence<DomainEvent>({ storageKey: personalKey, storage }).loadLocal();
-  assert(currentSaved.length === 1 && currentSaved[0]?.type === 'NodeMasterySet', 'new persistence key must contain personal events only');
+  personalPersistence.saveLocal([publicEvent, legacyMastery]);
+  const reloadedPersonal = new FilteredKnowledgePersistence<DomainEvent>({
+    storageKey: personalKey,
+    legacyStorageKey: legacyKey,
+    storage,
+    retain: event => event.type === 'NodeMasterySet',
+  }).loadLocal();
+  assert(reloadedPersonal.length === 1 && reloadedPersonal[0]?.type === 'NodeMasterySet', 'new journal must reload personal events only without duplicating bulk compatibility saves');
+
+  // EventStore must use the incremental append contract when available. A single
+  // personal event after a long public history must never hand the whole store
+  // history back to persistence.
+  class AppendProbePersistence implements EventPersistence {
+    appendCalls: DomainEvent[] = [];
+    saveCalls = 0;
+    loadLocal(): DomainEvent[] { return []; }
+    saveLocal(): void { this.saveCalls += 1; }
+    appendLocal(event: DomainEvent): void { this.appendCalls.push(event); }
+    shouldPersist(event: DomainEvent): boolean { return event.type === 'NodeMasterySet'; }
+  }
+  const probe = new AppendProbePersistence();
+  const probeStore = new EventStore<GraphState>(() => ({ nodesById: {} }), probe);
+  for (let index = 0; index < 1500; index += 1) {
+    probeStore.append(publicNodeEvent(`public-${index}`, `node-${index}`));
+  }
+  probeStore.append(masteryEvent('personal-after-long-history', 'node-1499'));
+  assert(probe.saveCalls === 0, 'incremental persistence must not receive a full-history save after a personal event');
+  assert(probe.appendCalls.length === 1 && probe.appendCalls[0]?.id === 'personal-after-long-history', 'incremental persistence must receive exactly the new persistable event');
+
+  // The production filtered persistence retains every personal audit event while
+  // bounding each localStorage payload to one small chunk. More history creates
+  // more chunks rather than ever-growing rewrite work.
+  const journalStorage = new MemoryStorage();
+  const journalKey = 'personal-journal-regression';
+  const journalPersistence = new FilteredKnowledgePersistence<DomainEvent>({
+    storageKey: journalKey,
+    storage: journalStorage,
+    retain: event => event.type === 'NodeMasterySet',
+  });
+  const journalStore = new EventStore<GraphState>(() => ({ nodesById: {} }), journalPersistence);
+  for (let index = 0; index < 70; index += 1) {
+    journalStore.append(masteryEvent(`mastery-${index}`, `knowledge-${index % 7}`, index % 3 === 0 ? 'mastered' : 'touched'));
+  }
+  const marker = JSON.parse(journalStorage.getItem(journalKey) ?? '{}') as { schemaVersion?: number; format?: string; chunkCount?: number; chunkSize?: number };
+  assert(marker.schemaVersion === 2 && marker.format === 'chunked-journal', 'personal writes must use the chunked journal');
+  assert(marker.chunkCount === 3 && marker.chunkSize === 32, '70 audit events must be split into bounded 32-event chunks');
+  for (let index = 0; index < 3; index += 1) {
+    const chunk = JSON.parse(journalStorage.getItem(`${journalKey}.chunk.v2.${index}`) ?? '{}') as { events?: DomainEvent[] };
+    assert(Array.isArray(chunk.events) && chunk.events.length > 0 && chunk.events.length <= 32, 'no personal write chunk may grow with the full audit history');
+  }
+  const journalReload = new FilteredKnowledgePersistence<DomainEvent>({
+    storageKey: journalKey,
+    storage: journalStorage,
+    retain: event => event.type === 'NodeMasterySet',
+  }).loadLocal();
+  assert(journalReload.length === 70, 'chunked journal must preserve the complete personal audit history across reload');
+  assert(journalReload[0]?.id === 'mastery-0' && journalReload[69]?.id === 'mastery-69', 'chunked journal must preserve personal event order');
+
+  // Clearing personal persistence must not cause the untouched legacy mixed cache
+  // to resurrect old mastery on the next boot.
+  personalPersistence.clearLocal();
+  const afterClear = new FilteredKnowledgePersistence<DomainEvent>({
+    storageKey: personalKey,
+    legacyStorageKey: legacyKey,
+    storage,
+    retain: event => event.type === 'NodeMasterySet',
+  }).loadLocal();
+  assert(afterClear.length === 0, 'explicitly cleared personal state must stay cleared even when legacy audit data remains read-only');
+  assert(storage.getItem(legacyKey) === legacyRawBefore, 'clearing current personal state must still leave the legacy mixed cache untouched');
 }
