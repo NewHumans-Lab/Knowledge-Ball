@@ -22,4 +22,9 @@ assert.match(syncBlock, /knowledgeRelationIndex = createKnowledgeRelationIndex\(
 assert.match(app, /getRelations: id => knowledgeRelationIndex\.relationsFor\(id\)/, 'node detail must read indexed adjacency instead of rescanning all graph nodes');
 assert.doesNotMatch(app, /buildKnowledgeRelations\(id, nodeList\(projection\.state\)\)/, 'node detail refresh must not rebuild canonical topology');
 
+const browserFixture = await readFile('scripts/verify-node-detail-relations-browser.mjs', 'utf8');
+assert.doesNotMatch(browserFixture, /debug\.renderNodes\.push\(/, 'browser lineage fixtures must never bypass the projection-to-render generation owner');
+assert.match(browserFixture, /debug\.projectionRenderScheduler\.request\(\)/, 'browser lineage fixtures that mutate projection truth must request the production render-generation boundary');
+assert.match(browserFixture, /debug\.projectionRenderScheduler\.flushNow\(\)/, 'browser lineage fixture generation must complete deterministically before touch assertions');
+
 console.log('Knowledge relation cache wiring regression tests passed');
