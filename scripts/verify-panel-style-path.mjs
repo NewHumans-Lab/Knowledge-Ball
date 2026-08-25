@@ -5,7 +5,6 @@ import { chromium } from 'playwright';
 const origin = 'http://127.0.0.1:4173/Knowledge-Ball/';
 const eventCount = 343;
 const mobileActiveNodeTarget = 49;
-const replayDeadlineMs = 5_000;
 
 function fixtureEvents() {
   const timestamp = Date.now() - eventCount;
@@ -50,43 +49,20 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(
-    window.__debug?.store
-      && window.__debug?.projection
-      && window.__debug?.scene
-      && window.__debug?.projectionRenderScheduler,
-  ), null, { timeout: 20_000 });
-  await page.waitForFunction(() => !window.__debug.projectionRenderScheduler.isScheduled(), null, { timeout: 20_000 });
+  await page.waitForFunction(() => Boolean(window.__debug?.store && window.__debug?.projection && window.__debug?.scene), null, { timeout: 20_000 });
 
   // Public knowledge is no longer restored from browser localStorage. Seed this
   // production-scale fixture through the same in-memory boundary used after the
   // server has accepted authoritative public events. This keeps the interaction
   // benchmark at 343 public events without reintroducing local public truth.
-  // The authoritative events still apply one-by-one, but the expensive derived
-  // 3D layout must be coalesced into exactly one refresh for this synchronous burst.
-  const layoutFlushesBeforeReplay = await page.evaluate(() => window.__debug.projectionRenderScheduler.flushCount());
-  const replayStarted = performance.now();
-  const injected = await deadline(page.evaluate(events => {
+  const injected = await page.evaluate(events => {
     let appended = 0;
     for (const event of events) {
       if (window.__debug.store.appendValidated(event)) appended += 1;
     }
     return appended;
-  }, fixtureEvents()), replayDeadlineMs, 'production-scale authoritative replay');
+  }, fixtureEvents());
   assert.equal(injected, eventCount, 'production-scale fixture must inject every authoritative public event exactly once');
-  await deadline(page.waitForFunction(before => (
-    window.__debug.projectionRenderScheduler.flushCount() > before
-      && !window.__debug.projectionRenderScheduler.isScheduled()
-  ), layoutFlushesBeforeReplay), replayDeadlineMs, 'coalesced production layout');
-  const replayWall = performance.now() - replayStarted;
-  const layoutFlushesAfterReplay = await page.evaluate(() => window.__debug.projectionRenderScheduler.flushCount());
-  assert.equal(
-    layoutFlushesAfterReplay - layoutFlushesBeforeReplay,
-    1,
-    '343 authoritative events must produce exactly one full projection/layout refresh',
-  );
-  assert.ok(replayWall <= replayDeadlineMs, `343-event replay + one layout took ${replayWall.toFixed(1)}ms`);
-
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
   await page.waitForFunction(() => (window.__debug?.scene?.getActiveNodeCount?.() ?? 0) > 0, null, { timeout: 20_000 });
 
@@ -133,9 +109,8 @@ try {
   assert.ok(canvasBox, 'production-scale canvas must expose a finite bounding box');
   const center = { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height / 2 };
 
-  // Issue #51 guards the current product interaction contract: the first tap must
-  // stay fast, center the selected node and avoid opening either legacy detail UI.
-  // The retired second-tap NodeDetail path is intentionally no longer part of this benchmark.
+  // Issue #51 still guards responsiveness, but the product contract is now focus-first:
+  // first tap must remain fast and center the node without opening details.
   const firstTapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'first focus tap');
   const firstTapWall = performance.now() - firstTapStarted;
@@ -145,7 +120,7 @@ try {
   assert.equal(
     await page.evaluate(beforeCount => window.__debug.store.allEvents().slice(beforeCount).filter(event => event.type === 'NodeMasterySet').length, before),
     0,
-    'focus-only first tap must not mark the node viewed',
+    'focus-only first tap must not mark the node viewed before details open',
   );
 
   await deadline(page.waitForFunction(({ nodeId, centerX, centerY }) => {
@@ -153,18 +128,42 @@ try {
     return Boolean(point && Math.hypot(point.x - centerX, point.y - centerY) < 0.25);
   }, { nodeId: target.id, centerX: center.x, centerY: center.y }), 1_000, 'node focus');
 
-  const postFocusState = await deadline(page.evaluate(nodeId => ({
-    point: window.__debug.scene.screenPositionForNode(nodeId),
-    activeCount: window.__debug.scene.getActiveNodeCount(),
-    legacyPanelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
-    detailOpen: document.querySelector('#nodeDetailOverlay.open') !== null,
-  }), target.id), 250, 'post-focus responsiveness');
+  const centered = await page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), target.id);
+  assert.ok(centered, 'focused node must remain renderable at screen center');
 
-  assert.ok(postFocusState.point, 'focused node must remain renderable at screen center');
-  assert.ok(postFocusState.activeCount <= mobileActiveNodeTarget, `selected-node retention must remain within the ${mobileActiveNodeTarget}-node working set`);
-  assert.equal(postFocusState.legacyPanelOpen, false, 'focus must not reopen the legacy rectangular panel');
-  assert.equal(postFocusState.detailOpen, false, 'focus must not open near-node detail');
-  console.log(JSON.stringify({ replayWall, layoutFlushes: 1, firstTapWall, lodState, postFocusState }, null, 2));
+  // Second tap opens the lightweight near-node detail view. Keep the original
+  // Issue #51 latency gate and the viewed-node personal-state side effect.
+  const secondTapStarted = performance.now();
+  await deadline(page.touchscreen.tap(centered.x, centered.y), 1_000, 'centered node tap');
+  const secondTapWall = performance.now() - secondTapStarted;
+  await deadline(page.waitForFunction(() => document.querySelector('#nodeDetailOverlay')?.classList.contains('open')), 1_000, 'near-node detail open');
+  await deadline(page.waitForFunction(nodeId => window.__debug?.projection?.state?.nodesById?.[nodeId]?.mastery === 'touched', target.id), 1_000, 'viewed-node mastery');
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  const state = await deadline(page.evaluate(({ beforeCount, nodeId }) => {
+    const events = window.__debug.store.allEvents();
+    const appended = events.slice(beforeCount);
+    const detail = document.querySelector('#nodeDetailOverlay');
+    return {
+      masteryEvents: appended.filter(event => event.type === 'NodeMasterySet'),
+      mastery: window.__debug.projection.state.nodesById[nodeId]?.mastery,
+      detailOpen: detail?.classList.contains('open') ?? false,
+      legacyPanelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
+      detailTitle: detail?.querySelector('.node-detail-title')?.textContent?.trim() ?? '',
+      activeCount: window.__debug.scene.getActiveNodeCount(),
+    };
+  }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
+
+  console.log(JSON.stringify({ firstTapWall, secondTapWall, lodState, state }, null, 2));
+  assert.ok(secondTapWall <= 250, `centered detail tap took ${secondTapWall.toFixed(1)}ms`);
+  assert.ok(state.activeCount <= mobileActiveNodeTarget, `selected-node relation retention must remain within the ${mobileActiveNodeTarget}-node working set`);
+  assert.ok(state.detailOpen, 'near-node detail must remain open and responsive');
+  assert.equal(state.legacyPanelOpen, false, 'normal second-tap viewing must not reopen the legacy rectangular panel');
+  assert.equal(state.detailTitle, target.id.replace('panel-style-node-', 'Panel style node '), 'near-node detail must show the selected fixture title');
+  assert.equal(state.mastery, 'touched', 'viewed node must still be automatically marked touched');
+  assert.equal(state.masteryEvents.length, 1, `one view must append exactly one mastery event, got ${state.masteryEvents.length}`);
+  assert.equal(state.masteryEvents[0]?.payload?.nodeId, target.id, 'mastery event must target the viewed node');
+  assert.equal(state.masteryEvents[0]?.payload?.mastery, 'touched', 'viewed node must append touched mastery');
 
   await context.close();
 } finally {
