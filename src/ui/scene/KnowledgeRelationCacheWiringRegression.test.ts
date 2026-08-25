@@ -9,6 +9,7 @@ assert.match(scene, /relationIndexFor\(nodes\)\.relationsFor\(selected\.id\)/, '
 assert.match(scene, /relationIndexFor\(nodes\)\.edges/, 'edge geometry sync must reuse indexed canonical edges');
 assert.match(scene, /const forced = selectedRelationIds\(nodes\)/, 'large-mobile LOD must reuse the stable full graph generation for relation lookup');
 assert.doesNotMatch(scene, /const forced = selectedRelationIds\(eligible\)/, 'large-mobile LOD must not rebuild relation topology from a new filtered array every frame');
+assert.doesNotMatch(scene, /relationIndexFor\(eligible\)/, 'filtered mobile candidates must never become the relation-index generation key');
 assert.doesNotMatch(scene, /collectKnowledgeChainEdges\(nodes\)/, 'frame-time edge sync must not reconstruct canonical topology');
 assert.doesNotMatch(scene, /buildKnowledgeRelations\(selected\.id, nodes\)/, 'selection changes must not rebuild canonical topology');
 
