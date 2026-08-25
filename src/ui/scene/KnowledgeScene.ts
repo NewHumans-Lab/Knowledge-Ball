@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { KnowledgeLineageMeta } from '../../domain/KnowledgeLineage';
-import { buildKnowledgeRelations, collectKnowledgeChainEdges } from '../../domain/KnowledgeRelations';
+import { createKnowledgeRelationIndex } from '../../domain/KnowledgeRelations';
 import type { KnowledgeLayer } from '../../domain/KnowledgeLayerPolicy';
 import { isSystemCoreNodeId } from '../../domain/KnowledgeLayerPolicy';
 import {
@@ -297,10 +297,18 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const mobilePerformance = window.matchMedia('(max-width: 640px)').matches;
   const publicGetNodes = getNodes;
   const systemCoreNodes: KnowledgeSceneNode[] = createSystemCoreSceneNodes();
-  getNodes = () => [
-    ...systemCoreNodes,
-    ...publicGetNodes().filter(node => !isCoreNodeId(node.id)),
-  ];
+  let publicNodesSnapshot: KnowledgeSceneNode[] | null = null;
+  let combinedNodesSnapshot: KnowledgeSceneNode[] = [...systemCoreNodes];
+  getNodes = () => {
+    const publicNodes = publicGetNodes();
+    if (publicNodes === publicNodesSnapshot) return combinedNodesSnapshot;
+    publicNodesSnapshot = publicNodes;
+    combinedNodesSnapshot = [
+      ...systemCoreNodes,
+      ...publicNodes.filter(node => !isCoreNodeId(node.id)),
+    ];
+    return combinedNodesSnapshot;
+  };
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, host.clientWidth / Math.max(host.clientHeight, 1), .5, 8000);
@@ -409,6 +417,16 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const worldPos = new THREE.Vector3();
   const projectedPos = new THREE.Vector3();
   let lastEdgeSync = 0;
+  let relationIndexNodes: readonly KnowledgeSceneNode[] | null = null;
+  let relationIndex = createKnowledgeRelationIndex([]);
+
+  const relationIndexFor = (nodes: readonly KnowledgeSceneNode[]) => {
+    if (nodes !== relationIndexNodes) {
+      relationIndex = createKnowledgeRelationIndex(nodes);
+      relationIndexNodes = nodes;
+    }
+    return relationIndex;
+  };
 
   const place = (n: KnowledgeSceneNode) => {
     n.layer = layerForNode(n);
@@ -484,7 +502,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const selected = nodes.find(node => node.id === selectedId);
     if (!selected) return forced;
     forced.add(selected.id);
-    const relations = buildKnowledgeRelations(selected.id, nodes);
+    const relations = relationIndexFor(nodes).relationsFor(selected.id);
     for (const items of Object.values(relations)) {
       for (const item of items) forced.add(item.id);
     }
@@ -530,7 +548,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const wanted = new Set<string>();
     const hasSelection = selectedId !== null;
 
-    for (const edge of collectKnowledgeChainEdges(nodes)) {
+    for (const edge of relationIndexFor(nodes).edges) {
       const from = byId.get(edge.fromId);
       const to = byId.get(edge.toId);
       if (!from || !to || !shouldRenderEdge(from.id, to.id)) continue;

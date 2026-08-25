@@ -9,7 +9,7 @@ import {
   lineageRoleFor,
   topicIdFor,
 } from '../domain/KnowledgeLineage';
-import { buildKnowledgeRelations } from '../domain/KnowledgeRelations';
+import { createKnowledgeRelationIndex } from '../domain/KnowledgeRelations';
 import {
   declaredLayerForNode,
   effectiveLayerForNode,
@@ -94,6 +94,7 @@ const productionSyncAdapter = createProductionSyncAdapter();
 const nodeViewAuthClient = createProductionAuthClient();
 let layoutNodes: KnowledgeSceneNode[] = [];
 let renderNodes: KnowledgeSceneNode[] = [];
+let knowledgeRelationIndex = createKnowledgeRelationIndex([]);
 let scene: KnowledgeSceneRuntime;
 let panel: PanelController;
 let knowledgeCreate: KnowledgeCreateController;
@@ -142,6 +143,7 @@ function effectivePremiseIds(node: GraphNode, allNodes: readonly GraphNode[]): s
 
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
+  knowledgeRelationIndex = createKnowledgeRelationIndex(domainNodes);
 
   // All formal lineage balls stay in scene data. Current/Personal/All owns their
   // visibility; rejected audit-only candidates and legacy hidden records do not.
@@ -708,7 +710,7 @@ if (!Capacitor.isNativePlatform()) {
       const metadata = productionSyncAdapter?.nodeMetadata(id);
       return metadata ? { contributor: metadata.contributor, createdAt: metadata.createdAt, actorId: metadata.actorId } : null;
     },
-    getRelations: id => buildKnowledgeRelations(id, nodeList(projection.state)),
+    getRelations: id => knowledgeRelationIndex.relationsFor(id),
     getScreenPosition: id => scene.screenPositionForNode(id),
     getActions: getNodeDetailActions,
     onAction: launchPanelAction,

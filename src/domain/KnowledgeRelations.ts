@@ -52,9 +52,27 @@ export interface KnowledgeChainEdge {
   toId: string;
 }
 
+export interface KnowledgeRelationIndex {
+  /** Stable canonical scene edges for one graph topology generation. */
+  readonly edges: readonly KnowledgeChainEdge[];
+  /** O(1) adjacency lookup after the topology index has been built. */
+  relationsFor(openedId: string): KnowledgeRelations;
+}
+
 type KnowledgeRelationAxis = 'logical' | 'history' | 'opposition';
 interface CanonicalKnowledgeEdge extends KnowledgeChainEdge {
   axis: KnowledgeRelationAxis;
+}
+
+interface RelationBuckets {
+  previous: KnowledgeRelationNode[];
+  next: KnowledgeRelationNode[];
+  history: KnowledgeRelationNode[];
+  opposition: KnowledgeRelationNode[];
+}
+
+function emptyRelations(): KnowledgeRelations {
+  return { previous: [], next: [], history: [], opposition: [] };
 }
 
 function item(node: KnowledgeRelationNode): KnowledgeRelationItem {
@@ -66,15 +84,6 @@ function item(node: KnowledgeRelationNode): KnowledgeRelationItem {
     declaredLayer: node.declaredLayer,
     lineage: node.lineage,
   };
-}
-
-/** Resolve an immutable version reference to the topic's effective logical head. */
-function effectiveNode(
-  node: KnowledgeRelationNode | undefined,
-  nodes: readonly KnowledgeRelationNode[],
-): KnowledgeRelationNode | undefined {
-  if (!node) return undefined;
-  return dominantNodeForTopic(nodes, topicIdFor(node)) ?? node;
 }
 
 function uniqueItems(nodes: readonly KnowledgeRelationNode[]): KnowledgeRelationItem[] {
@@ -103,48 +112,63 @@ function appendCanonicalEdge(
 }
 
 /**
- * Internal authoritative edge projection shared by scene geometry and opened
- * detail navigation. For reasoning topics the white/red camp colors are stable,
- * while `reasoningDominant` alone decides which head occupies the logical chain.
- * logicRuleId is metadata on a reasoning node and never becomes a visual edge.
+ * Build canonical relation topology once for one graph generation.
+ *
+ * The previous implementation repeatedly searched the complete node array for
+ * every node/topic. This groups nodes by topic first and resolves each topic's
+ * dominant head once, reducing topology construction to roughly O(N + E) plus
+ * the small per-topic rank sorts needed by immutable history chains.
  */
 function collectCanonicalKnowledgeEdges(
   nodes: readonly KnowledgeRelationNode[],
 ): CanonicalKnowledgeEdge[] {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
+  const membersByTopic = new Map<string, KnowledgeRelationNode[]>();
   const seen = new Set<string>();
   const edges: CanonicalKnowledgeEdge[] = [];
+
+  for (const node of nodes) {
+    const topicId = topicIdFor(node);
+    const members = membersByTopic.get(topicId);
+    if (members) members.push(node);
+    else membersByTopic.set(topicId, [node]);
+  }
+
+  const activeTopicIds: string[] = [];
+  const dominantByTopic = new Map<string, KnowledgeRelationNode>();
+  for (const [topicId, members] of membersByTopic) {
+    if (!members.some(node => lineageRoleFor(node) !== 'rejected')) continue;
+    activeTopicIds.push(topicId);
+    const dominant = dominantNodeForTopic(members, topicId);
+    if (dominant) dominantByTopic.set(topicId, dominant);
+  }
+
+  const effectiveNode = (node: KnowledgeRelationNode | undefined): KnowledgeRelationNode | undefined => {
+    if (!node) return undefined;
+    return dominantByTopic.get(topicIdFor(node)) ?? node;
+  };
 
   // Effective logical chain. A red reasoning head can therefore replace the
   // white head in premises/reasoning/conclusion lines without rewriting stored
   // premise IDs or recoloring either camp.
   for (const node of nodes) {
-    const effective = effectiveNode(node, nodes);
+    const effective = effectiveNode(node);
     if (!effective || effective.id !== node.id || lineageRoleFor(node) === 'rejected') continue;
     for (const previousId of node.premises) {
-      const previous = effectiveNode(byId.get(previousId), nodes);
+      const previous = effectiveNode(byId.get(previousId));
       if (!previous || lineageRoleFor(previous) === 'rejected' || previous.id === node.id) continue;
       appendCanonicalEdge(edges, seen, previous.id, node.id, 'logical');
     }
   }
 
-  const topicIds = [...new Set(
-    nodes
-      .filter(node => lineageRoleFor(node) !== 'rejected')
-      .map(topicIdFor),
-  )];
-
-  for (const topicId of topicIds) {
-    const normalHead = reasoningHeadForTopic(nodes, topicId, 'normal');
-    const redHead = reasoningHeadForTopic(nodes, topicId, 'opposition');
+  for (const topicId of activeTopicIds) {
+    const members = membersByTopic.get(topicId)!;
+    const normalHead = reasoningHeadForTopic(members, topicId, 'normal');
+    const redHead = reasoningHeadForTopic(members, topicId, 'opposition');
 
     if (normalHead) {
-      // Reasoning topics have two independent version tails:
-      // white head -> gray white history...
-      // red head   -> gray red history...
-      // The two live heads are joined only by the opposition axis.
       let previous = normalHead;
-      for (const history of reasoningHistoryChain(nodes, topicId, 'normal')) {
+      for (const history of reasoningHistoryChain(members, topicId, 'normal')) {
         appendCanonicalEdge(edges, seen, previous.id, history.id, 'history');
         previous = history;
       }
@@ -152,16 +176,15 @@ function collectCanonicalKnowledgeEdges(
       if (redHead) {
         appendCanonicalEdge(edges, seen, normalHead.id, redHead.id, 'opposition');
         previous = redHead;
-        for (const history of reasoningHistoryChain(nodes, topicId, 'opposition')) {
+        for (const history of reasoningHistoryChain(members, topicId, 'opposition')) {
           appendCanonicalEdge(edges, seen, previous.id, history.id, 'history');
           previous = history;
         }
       }
 
-      for (const candidate of nodes) {
+      for (const candidate of members) {
         const role = lineageRoleFor(candidate);
-        if (topicIdFor(candidate) !== topicId
-          || (role !== 'candidate-history' && role !== 'candidate-opposition')) continue;
+        if (role !== 'candidate-history' && role !== 'candidate-opposition') continue;
         const target = candidate.lineage?.targetId ? byId.get(candidate.lineage.targetId) : undefined;
         if (!target || lineageRoleFor(target) === 'rejected') continue;
         appendCanonicalEdge(
@@ -176,25 +199,24 @@ function collectCanonicalKnowledgeEdges(
     }
 
     // Legacy/non-reasoning lineage keeps the original single-current model.
-    const current = currentNodeForTopic(nodes, topicId);
+    const current = currentNodeForTopic(members, topicId);
     if (!current) continue;
 
     let previous = current;
-    for (const history of stableLineageChain(nodes, topicId, 'history')) {
+    for (const history of stableLineageChain(members, topicId, 'history')) {
       appendCanonicalEdge(edges, seen, previous.id, history.id, 'history');
       previous = history;
     }
 
     previous = current;
-    for (const opposition of stableLineageChain(nodes, topicId, 'opposition')) {
+    for (const opposition of stableLineageChain(members, topicId, 'opposition')) {
       appendCanonicalEdge(edges, seen, previous.id, opposition.id, 'opposition');
       previous = opposition;
     }
 
-    for (const candidate of nodes) {
+    for (const candidate of members) {
       const role = lineageRoleFor(candidate);
-      if (topicIdFor(candidate) !== topicId
-        || (role !== 'candidate-history' && role !== 'candidate-opposition')) continue;
+      if (role !== 'candidate-history' && role !== 'candidate-opposition') continue;
       const target = candidate.lineage?.targetId
         ? byId.get(candidate.lineage.targetId)
         : current;
@@ -212,45 +234,65 @@ function collectCanonicalKnowledgeEdges(
   return edges;
 }
 
+export function createKnowledgeRelationIndex(
+  nodes: readonly KnowledgeRelationNode[],
+): KnowledgeRelationIndex {
+  const byId = new Map(nodes.map(node => [node.id, node] as const));
+  const canonicalEdges = collectCanonicalKnowledgeEdges(nodes);
+  const bucketsById = new Map<string, RelationBuckets>();
+
+  const buckets = (id: string): RelationBuckets => {
+    const current = bucketsById.get(id);
+    if (current) return current;
+    const created: RelationBuckets = { previous: [], next: [], history: [], opposition: [] };
+    bucketsById.set(id, created);
+    return created;
+  };
+
+  for (const edge of canonicalEdges) {
+    const from = byId.get(edge.fromId);
+    const to = byId.get(edge.toId);
+    if (!from || !to || lineageRoleFor(from) === 'rejected' || lineageRoleFor(to) === 'rejected') continue;
+    if (edge.axis === 'logical') {
+      buckets(from.id).next.push(to);
+      buckets(to.id).previous.push(from);
+    } else if (edge.axis === 'history') {
+      buckets(from.id).history.push(to);
+      buckets(to.id).history.push(from);
+    } else {
+      buckets(from.id).opposition.push(to);
+      buckets(to.id).opposition.push(from);
+    }
+  }
+
+  const edges: readonly KnowledgeChainEdge[] = canonicalEdges.map(({ fromId, toId }) => ({ fromId, toId }));
+  return {
+    edges,
+    relationsFor(openedId: string): KnowledgeRelations {
+      if (!byId.has(openedId)) return emptyRelations();
+      const relationBuckets = bucketsById.get(openedId);
+      if (!relationBuckets) return emptyRelations();
+      return {
+        previous: uniqueItems(relationBuckets.previous),
+        next: uniqueItems(relationBuckets.next),
+        history: uniqueItems(relationBuckets.history),
+        opposition: uniqueItems(relationBuckets.opposition),
+      };
+    },
+  };
+}
+
+/** Compatibility helper for callers that do not retain a graph-generation index. */
 export function buildKnowledgeRelations(
   openedId: string,
   nodes: readonly KnowledgeRelationNode[],
 ): KnowledgeRelations {
-  const byId = new Map(nodes.map(node => [node.id, node] as const));
-  if (!byId.has(openedId)) return { previous: [], next: [], history: [], opposition: [] };
-
-  const previous: KnowledgeRelationNode[] = [];
-  const next: KnowledgeRelationNode[] = [];
-  const history: KnowledgeRelationNode[] = [];
-  const opposition: KnowledgeRelationNode[] = [];
-
-  for (const edge of collectCanonicalKnowledgeEdges(nodes)) {
-    if (edge.fromId !== openedId && edge.toId !== openedId) continue;
-    const otherId = edge.fromId === openedId ? edge.toId : edge.fromId;
-    const other = byId.get(otherId);
-    if (!other || lineageRoleFor(other) === 'rejected') continue;
-
-    if (edge.axis === 'logical') {
-      if (edge.toId === openedId) previous.push(other);
-      else next.push(other);
-    } else if (edge.axis === 'history') {
-      history.push(other);
-    } else {
-      opposition.push(other);
-    }
-  }
-
-  return {
-    previous: uniqueItems(previous),
-    next: uniqueItems(next),
-    history: uniqueItems(history),
-    opposition: uniqueItems(opposition),
-  };
+  return createKnowledgeRelationIndex(nodes).relationsFor(openedId);
 }
 
-/** Scene and detail navigation consume the exact same canonical edges. */
+/** Compatibility helper for callers that do not retain a graph-generation index. */
 export function collectKnowledgeChainEdges(
   nodes: readonly KnowledgeRelationNode[],
 ): KnowledgeChainEdge[] {
-  return collectCanonicalKnowledgeEdges(nodes).map(({ fromId, toId }) => ({ fromId, toId }));
+  return [...createKnowledgeRelationIndex(nodes).edges];
 }
