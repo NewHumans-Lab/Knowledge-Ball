@@ -49,7 +49,12 @@ try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => Boolean(window.__debug?.store && window.__debug?.projection && window.__debug?.scene), null, { timeout: 20_000 });
+  await page.waitForFunction(() => Boolean(window.__debug?.store && window.__debug?.projection && window.__debug?.scene && window.__debug?.projectionRenderScheduler), null, { timeout: 20_000 });
+
+  const graphFlushesBeforeFixture = await page.evaluate(() => {
+    window.__debug.projectionRenderScheduler.flushNow();
+    return window.__debug.projectionRenderScheduler.flushCount();
+  });
 
   // Public knowledge is no longer restored from browser localStorage. Seed this
   // production-scale fixture through the same in-memory boundary used after the
@@ -65,6 +70,8 @@ try {
   assert.equal(injected, eventCount, 'production-scale fixture must inject every authoritative public event exactly once');
   await page.waitForFunction(count => window.__debug?.renderNodes?.length >= count, eventCount, { timeout: 20_000 });
   await page.waitForFunction(() => (window.__debug?.scene?.getActiveNodeCount?.() ?? 0) > 0, null, { timeout: 20_000 });
+  const graphFlushesAfterFixture = await page.evaluate(() => window.__debug.projectionRenderScheduler.flushCount());
+  assert.equal(graphFlushesAfterFixture - graphFlushesBeforeFixture, 1, '343 synchronous authoritative events must produce exactly one full graph render/layout flush');
 
   const lodState = await page.evaluate(() => ({
     renderCount: window.__debug.renderNodes.length,
@@ -133,6 +140,7 @@ try {
 
   // Second tap opens the lightweight near-node detail view. Keep the original
   // Issue #51 latency gate and the viewed-node personal-state side effect.
+  const graphFlushesBeforeDetailTap = await page.evaluate(() => window.__debug.projectionRenderScheduler.flushCount());
   const secondTapStarted = performance.now();
   await deadline(page.touchscreen.tap(centered.x, centered.y), 1_000, 'centered node tap');
   const secondTapWall = performance.now() - secondTapStarted;
@@ -151,6 +159,7 @@ try {
       legacyPanelOpen: document.querySelector('#panel')?.classList.contains('open') ?? false,
       detailTitle: detail?.querySelector('.node-detail-title')?.textContent?.trim() ?? '',
       activeCount: window.__debug.scene.getActiveNodeCount(),
+      graphFlushes: window.__debug.projectionRenderScheduler.flushCount(),
     };
   }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
 
@@ -164,6 +173,7 @@ try {
   assert.equal(state.masteryEvents.length, 1, `one view must append exactly one mastery event, got ${state.masteryEvents.length}`);
   assert.equal(state.masteryEvents[0]?.payload?.nodeId, target.id, 'mastery event must target the viewed node');
   assert.equal(state.masteryEvents[0]?.payload?.mastery, 'touched', 'viewed node must append touched mastery');
+  assert.equal(state.graphFlushes, graphFlushesBeforeDetailTap, 'viewed-node mastery must not trigger a full graph render/layout flush');
 
   await context.close();
 } finally {

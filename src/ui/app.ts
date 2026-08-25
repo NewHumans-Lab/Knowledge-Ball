@@ -40,6 +40,7 @@ import {
 import { type KnowledgeNodeType } from './config/KnowledgeUiConfig';
 import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
 import { installAccountUi } from './AccountUi';
+import { ProjectionRenderScheduler } from './ProjectionRenderScheduler';
 
 import {
   createKnowledgeScene,
@@ -151,6 +152,34 @@ function syncNodesFromProjection(): void {
   });
   applyUniformLayerLayout(layoutNodes);
   renderNodes = layoutNodes.filter(node => nodeBelongsInLineageScene(node));
+}
+
+function syncPersonalMasteryFromProjection(nodeId: string): void {
+  const mastery = projection.state.nodesById[nodeId]?.mastery;
+  if (!mastery) return;
+  for (const node of layoutNodes) {
+    if (node.id === nodeId) {
+      node.mastery = mastery;
+      break;
+    }
+  }
+  for (const node of renderNodes) {
+    if (node.id === nodeId) {
+      node.mastery = mastery;
+      break;
+    }
+  }
+}
+
+function syncAllPersonalMasteryFromProjection(): void {
+  for (const node of layoutNodes) {
+    const mastery = projection.state.nodesById[node.id]?.mastery;
+    if (mastery) node.mastery = mastery;
+  }
+  for (const node of renderNodes) {
+    const mastery = projection.state.nodesById[node.id]?.mastery;
+    if (mastery) node.mastery = mastery;
+  }
 }
 
 function renderNodeFromDomain(dn: GraphNode): KnowledgeSceneNode {
@@ -329,8 +358,9 @@ function latestLocalPersonalStates(): Array<{ nodeId: string; mastery: PersonalM
 function applyPersonalKnowledgeSnapshot(states: PersonalKnowledgeStateSnapshot[]): void {
   const masteryById = Object.fromEntries(states.map(state => [state.nodeId, state.mastery])) as Record<string, PersonalMastery>;
   projection.replacePersonalMastery(masteryById);
-  syncNodesFromProjection();
+  syncAllPersonalMasteryFromProjection();
   scene.markDirty();
+  refreshCurrentKnowledgeSurface();
 }
 
 function openNode(id: string): void {
@@ -709,21 +739,40 @@ interaction = new InteractionController({
   onOpenSettings: () => panel.openSettingsOverlay(),
 });
 
+function refreshCurrentKnowledgeSurface(): void {
+  if (!currentPanelId) return;
+  const panelOpen = must<HTMLElement>('panel').classList.contains('open');
+  if (panelOpen) panel.openNodePanel(currentPanelId);
+  else if (nodeDetail?.isOpenFor(currentPanelId)) {
+    nodeDetail.refresh(currentPanelId);
+    nodeDetailLineageUi?.refresh(currentPanelId);
+  }
+}
+
+function flushProjectionRender(): void {
+  performance.mark?.('knowledge-render-flush-start');
+  syncNodesFromProjection();
+  scene.markDirty();
+  refreshCurrentKnowledgeSurface();
+  performance.mark?.('knowledge-render-flush-end');
+  performance.measure?.('knowledge-render-flush', 'knowledge-render-flush-start', 'knowledge-render-flush-end');
+}
+
+const projectionRenderScheduler = new ProjectionRenderScheduler(flushProjectionRender);
+
 store.subscribe((event) => {
   performance.mark?.('knowledge-subscriber-start');
   projection.apply(event);
-  // Layer occupancy is global: every event can alter layer membership or visibility,
-  // so rebuild the complete slot assignment from the authoritative projection.
-  syncNodesFromProjection();
-  scene.markDirty();
-
-  if (currentPanelId) {
-    const panelOpen = must<HTMLElement>('panel').classList.contains('open');
-    if (panelOpen) panel.openNodePanel(currentPanelId);
-    else if (nodeDetail?.isOpenFor(currentPanelId)) {
-      nodeDetail.refresh(currentPanelId);
-      nodeDetailLineageUi?.refresh(currentPanelId);
-    }
+  if (event.type === 'NodeMasterySet') {
+    // Personal mastery changes visibility/style only. They never change graph
+    // topology, lineage, layer membership, or spatial constraints.
+    syncPersonalMasteryFromProjection(event.payload.nodeId);
+    scene.markDirty();
+    if (currentPanelId === event.payload.nodeId) refreshCurrentKnowledgeSurface();
+  } else {
+    // Public/domain truth still advances event-by-event. A synchronous replay
+    // burst gets one derived full-graph render/layout at the microtask boundary.
+    projectionRenderScheduler.request();
   }
   performance.mark?.('knowledge-subscriber-end');
   performance.measure?.('knowledge-subscriber', 'knowledge-subscriber-start', 'knowledge-subscriber-end');
@@ -835,8 +884,9 @@ void bootstrapRemoteFirst({
   seedDemo: seedDemoData,
 })
   .then(() => {
-    syncNodesFromProjection();
-    scene.markDirty();
+    // Materialize any pending coalesced replay before scene start without
+    // rebuilding the same authoritative graph a second time.
+    projectionRenderScheduler.flushNow();
     scene.start();
   })
   .catch(error => {
@@ -866,6 +916,7 @@ void setupMobileShell();
   nodeDetailLineageUi,
   accountUi,
   scene,
+  projectionRenderScheduler,
   createKnowledgeNode,
   createStandaloneKnowledge,
   createReasoningKnowledge,
