@@ -113,6 +113,7 @@ function appendCanonicalEdge(
 
 /**
  * Build canonical relation topology once for one graph generation.
+ * logicRuleId is metadata on a reasoning node and never becomes a visual edge.
  *
  * The previous implementation repeatedly searched the complete node array for
  * every node/topic. This groups nodes by topic first and resolves each topic's

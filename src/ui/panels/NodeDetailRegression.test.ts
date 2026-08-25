@@ -42,8 +42,8 @@ for (const direction of ['previous', 'next', 'history', 'opposition']) {
 assert(relationDomain.includes('collectKnowledgeChainEdges'), 'scene and detail must share canonical chain ownership');
 assert(relationDomain.includes('logicRuleId is metadata'), 'logic rule identity must be explicitly separated from visual chain truth');
 assert(!relationDomain.includes('twinGroup'), 'legacy twin UI metadata must not enter canonical relation truth');
-assert(app.includes('buildKnowledgeRelations(id, nodeList(projection.state))'), 'detail must consume the canonical domain relation projection');
-assert(scene.includes('collectKnowledgeChainEdges(nodes)'), 'scene lines must consume the same canonical domain chain');
+assert(app.includes('knowledgeRelationIndex.relationsFor(id)'), 'detail must consume the canonical indexed domain relation projection');
+assert(scene.includes('relationIndexFor(nodes).edges'), 'scene lines must consume the same canonical indexed domain chain');
 assert(!scene.includes('n.logicRuleId ? [n.logicRuleId]'), 'scene must not redraw logic metadata as a relation line');
 assert(!scene.includes("join('<->')"), 'scene must not redraw legacy twin links');
 assert(detail.includes('data-related-node-id='), 'near-node relations must preserve each projected related node id in the DOM');
