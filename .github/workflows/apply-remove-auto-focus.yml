@@ -5,7 +5,7 @@ on:
     branches:
       - fix/remove-auto-focus-navigation
     paths:
-      - scripts/remove-auto-focus.patch
+      - scripts/apply-remove-auto-focus.py
       - .github/workflows/apply-remove-auto-focus.yml
 
 permissions:
@@ -23,10 +23,8 @@ jobs:
           ref: fix/remove-auto-focus-navigation
           fetch-depth: 0
 
-      - name: Apply cleanup patch
-        run: |
-          git apply --check scripts/remove-auto-focus.patch
-          git apply scripts/remove-auto-focus.patch
+      - name: Apply exact cleanup
+        run: python3 scripts/apply-remove-auto-focus.py
 
       - name: Install dependencies
         run: npm ci
@@ -46,6 +44,7 @@ jobs:
       - name: Commit validated cleanup
         run: |
           rm scripts/remove-auto-focus.patch
+          rm scripts/apply-remove-auto-focus.py
           rm .github/workflows/apply-remove-auto-focus.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
