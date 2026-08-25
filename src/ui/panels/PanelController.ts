@@ -76,7 +76,7 @@ export interface PanelControllerCallbacks {
   getNodes: () => PanelNodeSummary[];
   getNodeById: (id: string) => PanelNodeSummary | null;
 
-  onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
+  onCreateNode?: (payload: CreateNodePayload) => Promise<void> | void;
   onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
@@ -165,7 +165,7 @@ export class PanelController {
   private readonly getNodes: () => PanelNodeSummary[];
   private readonly getNodeById: (id: string) => PanelNodeSummary | null;
 
-  private readonly onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
+  private readonly onCreateNode?: (payload: CreateNodePayload) => Promise<void> | void;
   private readonly onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
@@ -450,7 +450,7 @@ export class PanelController {
     this.panelActions.innerHTML = `
       <div class="action-grid">
         <button class="btn ghost" id="btnEditNode">Optimize · 优化</button>
-        <button class="btn ghost" id="btnDeriveNode">Add · 新增</button>
+        ${this.onCreateNode ? '<button class="btn ghost" id="btnDeriveNode">Add · 新增</button>' : ''}
       </div>
       <div class="action-grid">
         ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">Decompose · 分解</button>' : ''}
@@ -492,6 +492,9 @@ export class PanelController {
   }
 
   openCreateModal(prefillPremiseId: string | null = null): void {
+    // Legacy combined create remains a native compatibility surface only. Web
+    // production intentionally uses KnowledgeCreateController's split flows.
+    if (!this.onCreateNode) return;
     this.prefillPremise = prefillPremiseId;
     this.modalTitle.textContent = prefillPremiseId ? '基于现有知识提交新节点' : '提交新知识节点';
     this.modalHint.style.display = 'block';
@@ -679,6 +682,7 @@ export class PanelController {
         return;
       }
 
+      if (!this.onCreateNode) return;
       this.modalSubmit.disabled = true;
       try {
         await this.onCreateNode({

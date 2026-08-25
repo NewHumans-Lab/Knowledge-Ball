@@ -635,7 +635,7 @@ panel = new PanelController({
   getNodes: getPanelNodes,
   getNodeById: getPanelNodeById,
 
-  onCreateNode: createKnowledgeNode,
+  onCreateNode: Capacitor.isNativePlatform() ? createKnowledgeNode : undefined,
   onOptimizeNode: optimizeKnowledgeNode,
   onOpposeNode: opposeKnowledgeNode,
   onDecomposeNode: decomposeKnowledgeNode,
