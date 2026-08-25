@@ -7,6 +7,8 @@ assert.match(scene, /publicNodes === publicNodesSnapshot/, 'scene node array ide
 assert.match(scene, /nodes !== relationIndexNodes/, 'scene must rebuild relation topology only when the graph-generation node array changes');
 assert.match(scene, /relationIndexFor\(nodes\)\.relationsFor\(selected\.id\)/, 'selected-neighbour lookup must reuse the scene relation index');
 assert.match(scene, /relationIndexFor\(nodes\)\.edges/, 'edge geometry sync must reuse indexed canonical edges');
+assert.match(scene, /const forced = selectedRelationIds\(nodes\)/, 'large-mobile LOD must reuse the stable full graph generation for relation lookup');
+assert.doesNotMatch(scene, /const forced = selectedRelationIds\(eligible\)/, 'large-mobile LOD must not rebuild relation topology from a new filtered array every frame');
 assert.doesNotMatch(scene, /collectKnowledgeChainEdges\(nodes\)/, 'frame-time edge sync must not reconstruct canonical topology');
 assert.doesNotMatch(scene, /buildKnowledgeRelations\(selected\.id, nodes\)/, 'selection changes must not rebuild canonical topology');
 
