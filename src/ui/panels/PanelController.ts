@@ -87,6 +87,7 @@ export interface PanelControllerCallbacks {
   onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
   onSelectRelatedNode?: (id: string) => void;
   onOverlayVisibilityChange?: (visible: boolean) => void;
+  onNodePanelChange?: (id: string | null) => void;
 
   onOpenSettings?: () => void;
   onCloseSettings?: () => void;
@@ -175,6 +176,7 @@ export class PanelController {
   private readonly onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
   private readonly onSelectRelatedNode?: (id: string) => void;
   private readonly onOverlayVisibilityChange?: (visible: boolean) => void;
+  private readonly onNodePanelChange?: (id: string | null) => void;
   private readonly onOpenSettings?: () => void;
   private readonly onCloseSettings?: () => void;
 
@@ -241,6 +243,7 @@ export class PanelController {
     this.onSetMastery = options.onSetMastery;
     this.onSelectRelatedNode = options.onSelectRelatedNode;
     this.onOverlayVisibilityChange = options.onOverlayVisibilityChange;
+    this.onNodePanelChange = options.onNodePanelChange;
     this.onOpenSettings = options.onOpenSettings;
     this.onCloseSettings = options.onCloseSettings;
 
@@ -345,6 +348,7 @@ export class PanelController {
     this.updatePanelExitLabel();
     this.onOverlayVisibilityChange?.(true);
     this.panel.classList.add('open');
+    this.onNodePanelChange?.(id);
     this.panelTitle.textContent = node.title;
 
     const typeColor = TYPE_COLOR_HEX[node.type] ?? '#ffffff';
@@ -467,11 +471,13 @@ export class PanelController {
   }
 
   closeNodePanel(): void {
+    const wasOpen = this.selectedId !== null || this.panel.classList.contains('open');
     this.panel.classList.remove('open');
     this.onOverlayVisibilityChange?.(false);
     this.selectedId = null;
     this.panelView = 'detail';
     this.updatePanelExitLabel();
+    if (wasOpen) this.onNodePanelChange?.(null);
   }
 
   openNodeAction(id: string, action: PanelNodeAction): boolean {
