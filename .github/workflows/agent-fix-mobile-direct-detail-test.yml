@@ -1,0 +1,26 @@
+name: Repair mobile direct-detail regression
+
+on:
+  push:
+    branches:
+      - fix/direct-detail-personal-visibility
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair stale mobile regression variable
+        run: node scripts/.agent-fix-mobile-direct-detail-test.mjs
+      - name: Commit regression repair only
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/verify-mobile-browser.mjs
+          git diff --cached --check
+          git commit -m "Fix direct-detail mobile regression assertion"
+          git push origin HEAD:${GITHUB_REF_NAME}
