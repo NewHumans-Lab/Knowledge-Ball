@@ -24,11 +24,11 @@ jobs:
       - name: Apply scoped patch
         run: node scripts/.agent-direct-detail-personal-visibility.mjs
 
-      - name: Remove one-shot patch machinery
+      - name: Remove one-shot patch scripts and restore CI workflow
         run: |
           rm scripts/.agent-direct-detail-personal-visibility.mjs
           rm scripts/.agent-fix-direct-detail-patch.mjs
-          rm .github/workflows/agent-direct-detail-patch.yml
+          git restore --source=HEAD -- .github/workflows/validate.yml
 
       - name: Commit product changes atomically
         run: |
