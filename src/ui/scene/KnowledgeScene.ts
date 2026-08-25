@@ -291,7 +291,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let returningNodeId: string | null = null;
   let focusedNodeId: string | null = null;
   let focusTargetQuaternion: THREE.Quaternion | null = null;
-  let graphZoom = 1;
+  let graphZoom = 1.27;
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
   const mobilePerformance = window.matchMedia('(max-width: 640px)').matches;
@@ -752,8 +752,15 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const shells = Object.values(nodeMap).filter(record => record.group.visible).map(record => record.shell);
     const focusedRecord = focusedNodeId && focusTargetQuaternion === null ? nodeMap[focusedNodeId] : undefined;
     if (mobilePerformance) {
-      // Every visible ball competes by its actual projected centre. The focused
-      // ball must not steal taps from a neighbour whose 3D edge projects nearby.
+      if (focusedRecord?.group.visible) {
+        focusedRecord.group.getWorldPosition(worldPos);
+        const projected = worldPos.clone().project(camera);
+        if (hasFiniteCoordinates(projected)) {
+          const sx = rect.left + (projected.x * .5 + .5) * rect.width;
+          const sy = rect.top + (-projected.y * .5 + .5) * rect.height;
+          if (Math.hypot(sx - x, sy - y) <= 24) return focusedNodeId;
+        }
+      }
       let nearest: { id: string; distance: number } | null = null;
       for (const shell of shells) {
         shell.parent!.getWorldPosition(worldPos);

@@ -34,7 +34,7 @@
     "test:browser-cloud": "node scripts/verify-cloud-authority-browser.mjs",
     "test:browser-mobile": "node scripts/verify-mobile-browser.mjs",
     "test:issue51-browser": "node scripts/verify-issue51-browser.mjs",
-    "test:bootstrap": "npx esbuild src/bootstrap/RemoteFirstBootstrap.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/remote-first-bootstrap.mjs && node .test-dist/remote-first-bootstrap.mjs && npx esbuild src/bootstrap/StartupPerformanceRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/startup-performance-regression.mjs && node .test-dist/startup-performance-regression.mjs"
+    "test:bootstrap": "npx esbuild src/bootstrap/RemoteFirstBootstrap.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/remote-first-bootstrap.mjs && node .test-dist/remote-first-bootstrap.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.8",

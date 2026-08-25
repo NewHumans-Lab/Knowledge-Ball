@@ -40,7 +40,6 @@ import {
 import { type KnowledgeNodeType } from './config/KnowledgeUiConfig';
 import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
 import { installAccountUi } from './AccountUi';
-import { ProjectionRenderScheduler } from './ProjectionRenderScheduler';
 
 import {
   createKnowledgeScene,
@@ -710,7 +709,11 @@ interaction = new InteractionController({
   onOpenSettings: () => panel.openSettingsOverlay(),
 });
 
-function flushProjectionRender(): void {
+store.subscribe((event) => {
+  performance.mark?.('knowledge-subscriber-start');
+  projection.apply(event);
+  // Layer occupancy is global: every event can alter layer membership or visibility,
+  // so rebuild the complete slot assignment from the authoritative projection.
   syncNodesFromProjection();
   scene.markDirty();
 
@@ -722,17 +725,6 @@ function flushProjectionRender(): void {
       nodeDetailLineageUi?.refresh(currentPanelId);
     }
   }
-}
-
-const projectionRenderScheduler = new ProjectionRenderScheduler(flushProjectionRender);
-
-store.subscribe((event) => {
-  performance.mark?.('knowledge-subscriber-start');
-  projection.apply(event);
-  // Domain truth still advances event-by-event. The derived 3D layout is global
-  // and expensive, so a synchronous authoritative replay burst is rendered once
-  // at the microtask boundary instead of rebuilding the whole world per event.
-  projectionRenderScheduler.request();
   performance.mark?.('knowledge-subscriber-end');
   performance.measure?.('knowledge-subscriber', 'knowledge-subscriber-start', 'knowledge-subscriber-end');
 });
@@ -815,9 +807,6 @@ sendButton?.addEventListener('click', () => {
 });
 
 interaction.setVisibilityMode('current');
-// First paint belongs to the renderer, not to the network. The core Sun/triad
-// can render immediately while authoritative public knowledge hydrates below.
-scene.start();
 
 function validateProposedPublicEvent(event: PublicKnowledgeEvent): string | null {
   const errors = validateDomainEventAgainstState(event, projection.state);
@@ -846,12 +835,13 @@ void bootstrapRemoteFirst({
   seedDemo: seedDemoData,
 })
   .then(() => {
-    // Usually already coalesced by the event subscriber; this is an idempotent
-    // final request for zero-event hydration and local demo initialization.
-    projectionRenderScheduler.request();
+    syncNodesFromProjection();
+    scene.markDirty();
+    scene.start();
   })
   .catch(error => {
     console.error('[Knowledge-Ball] remote-first bootstrap failed:', error);
+    scene.start();
   });
 
 window.addEventListener('resize', () => {
@@ -876,7 +866,6 @@ void setupMobileShell();
   nodeDetailLineageUi,
   accountUi,
   scene,
-  projectionRenderScheduler,
   createKnowledgeNode,
   createStandaloneKnowledge,
   createReasoningKnowledge,
