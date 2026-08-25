@@ -18,12 +18,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Harden scoped patch matcher
+        run: node scripts/.agent-fix-direct-detail-patch.mjs
+
       - name: Apply scoped patch
         run: node scripts/.agent-direct-detail-personal-visibility.mjs
 
       - name: Remove one-shot patch machinery
         run: |
           rm scripts/.agent-direct-detail-personal-visibility.mjs
+          rm scripts/.agent-fix-direct-detail-patch.mjs
           rm .github/workflows/agent-direct-detail-patch.yml
 
       - name: Commit product changes atomically
