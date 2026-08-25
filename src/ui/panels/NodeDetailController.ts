@@ -688,8 +688,6 @@ export class NodeDetailController {
   }
 
   private handleFinalizedCascade(snapshot: PendingKnowledgeVoteSnapshot): void {
-    if (this.root.dataset.finalizedCascade === snapshot.nodeId) return;
-    this.root.dataset.finalizedCascade = snapshot.nodeId;
     this.clearVoteRefresh();
     window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
       detail: { nodeId: snapshot.nodeId, verdict: snapshot.verdict, cascade: true },
