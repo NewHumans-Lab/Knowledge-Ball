@@ -43,7 +43,7 @@ function publicNodeEvent(id: string, nodeId: string): DomainEvent {
     scope: 'public',
     schemaVersion: 1,
     timestamp: Date.now(),
-    payload: { nodeId, title: nodeId, nodeType: 'fact', reasoning: '', premises: [], source: 'test' },
+    payload: { nodeId, title: nodeId, nodeType: 'fact', reasoning: '', premises: [], source: 'import' },
   };
 }
 
