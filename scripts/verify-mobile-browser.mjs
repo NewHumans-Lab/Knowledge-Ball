@@ -222,7 +222,7 @@ try{
     const detailBox=await detail.boundingBox();
     assert.ok(detailBox,'near-node detail must have a visible mobile box');
     assert.ok(detailBox.height>detailBox.width,'near-node detail must use a narrow vertical ellipse so premise/conclusion context can occupy the side space');
-    assert.ok(centered.x>=detailBox.x&&centered.x<=detailBox.x+detailBox.width&&centered.y>=detailBox.y&&centered.y<=detailBox.y+detailBox.height,'near-node detail must sit in front of and visually occlude the selected sphere');
+    assert.ok(pointAfterDetail.x>=detailBox.x&&pointAfterDetail.x<=detailBox.x+detailBox.width&&pointAfterDetail.y>=detailBox.y&&pointAfterDetail.y<=detailBox.y+detailBox.height,'near-node detail must sit in front of and visually occlude the selected sphere');
     const selectedLabelHidden=await page.evaluate(title=>[...document.querySelectorAll('.node-label')].find(label=>label.textContent?.trim()===title)?.style.display==='none',target.title);
     assert.equal(selectedLabelHidden,true,'near-node detail must hide only the selected sphere label');
     await assertNodeDetailExit(detail.locator('.node-detail-close'),'node detail exit');
@@ -230,8 +230,8 @@ try{
     await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
     await page.waitForFunction(title=>[...document.querySelectorAll('.node-label')].some(label=>label.textContent?.trim()===title&&label.style.display!=='none'),target.title);
 
-    // Re-open the focused node and verify all edit variants are entered through one text control.
-    await page.touchscreen.tap(centered.x,centered.y);
+    // Re-open the same node at its preserved position and verify all edit variants are entered through one text control.
+    await page.touchscreen.tap(pointAfterDetail.x,pointAfterDetail.y);
     await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
     await page.locator('#nodeDetailOverlay .node-detail-edit').click();
     await page.locator('#nodeDetailOverlay [data-node-detail-action="edit"]').click();
