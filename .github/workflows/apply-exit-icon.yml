@@ -1,0 +1,36 @@
+name: Apply canonical exit icon text
+
+on:
+  push:
+    branches:
+      - fix/explicit-panel-exit-ownership
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/explicit-panel-exit-ownership
+      - name: Make exit icon source semantic
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          path = Path('index.html')
+          source = path.read_text()
+          pattern = r'(<button\b[^>]*\bid="(?:panelClose|modalClose|accountClose|settingsClose)"[^>]*>).*?(</button>)'
+          updated, count = re.subn(pattern, lambda match: f'{match.group(1)}❌{match.group(2)}', source, flags=re.S)
+          if count != 4:
+              raise SystemExit(f'expected 4 exit buttons, updated {count}')
+          path.write_text(updated)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Use semantic exit icon text in source HTML"
+          git push origin HEAD:fix/explicit-panel-exit-ownership
