@@ -31,6 +31,9 @@ export class AccountUiController {
   private loginRequiredTimer: number | null = null;
 
   constructor(private readonly options: AccountUiOptions) {
+    if (this.options.accountClose instanceof HTMLButtonElement) this.options.accountClose.type = 'button';
+    this.options.accountClose?.setAttribute('aria-label', '返回知识球');
+    this.options.accountClose?.setAttribute('title', '返回知识球');
     this.options.avatarButton?.addEventListener('click', this.handleAvatarClick);
     this.options.accountClose?.addEventListener('click', this.close);
     this.options.accountOverlay?.addEventListener('click', this.handleOverlayClick);

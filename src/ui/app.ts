@@ -40,6 +40,7 @@ import {
 import { type KnowledgeNodeType } from './config/KnowledgeUiConfig';
 import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
 import { installAccountUi } from './AccountUi';
+import './ExitControls.css';
 import { ProjectionRenderScheduler } from './ProjectionRenderScheduler';
 
 import {

@@ -1,0 +1,46 @@
+#panelClose,
+#modalClose,
+#accountClose,
+#settingsClose {
+  min-width: 44px;
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  border: 1px solid rgba(123, 199, 199, .28);
+  border-radius: 50%;
+  background: rgba(5, 18, 23, .94);
+  color: #e7f0f1;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 1;
+  visibility: visible;
+  cursor: pointer;
+  z-index: 2;
+}
+
+#panelClose:focus-visible,
+#modalClose:focus-visible,
+#accountClose:focus-visible,
+#settingsClose:focus-visible {
+  outline: 2px solid #75e0d3;
+  outline-offset: 2px;
+}
+
+@media (max-width: 780px) {
+  #panel {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .panel-header,
+  .modal-header {
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+}

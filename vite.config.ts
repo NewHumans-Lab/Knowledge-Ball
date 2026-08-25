@@ -38,7 +38,6 @@ export default defineConfig({
           // Native shells are intentionally frozen on the legacy controller for this web-only cleanup.
           // Browser account state is now installed explicitly by app.ts instead of an injected DOM patch.
           if (nativeBuild) scripts.push({ tag: 'script', attrs: { type: 'module', src: '/src/ui/AuthUi.ts' }, injectTo: 'body-prepend' });
-          scripts.push({ tag: 'script', attrs: { type: 'module', src: '/src/ui/ExitUi.ts' }, injectTo: 'body-prepend' });
           return scripts;
         },
       },
