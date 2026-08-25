@@ -27,7 +27,8 @@ assert(syncEdgesStart >= 0 && visibilityStart > syncEdgesStart, 'canonical scene
 const syncEdgesSource = sceneSource.slice(syncEdgesStart, visibilityStart);
 assert(/edgeMap\[key\]\.userData\.edgeEndpoints\s*=\s*\[from\.id,\s*to\.id\]/.test(syncEdgesSource), 'every canonical chain edge must retain its two real node IDs for visibility filtering');
 assert(/updateLineGeometry\(edgeMap\[key\],\s*from\.pos,\s*to\.pos\)/.test(syncEdgesSource), 'canonical chain geometry must use authoritative endpoint positions even when an endpoint has no rendered mesh');
-assert(syncEdgesSource.includes('collectKnowledgeChainEdges(nodes)'), 'scene edge lifecycle must come from the canonical real-node chain');
+assert(syncEdgesSource.includes('relationIndexFor(nodes).edges'), 'scene edge lifecycle must come from the canonical indexed real-node chain');
+assert(!syncEdgesSource.includes('collectKnowledgeChainEdges'), 'visibility/runtime edge ownership must not rebuild canonical topology during edge sync');
 assert(!syncEdgesSource.includes('logicRuleId'), 'visibility/runtime edge ownership must not restore logic metadata as a line');
 assert(!syncEdgesSource.includes('twinGroup'), 'visibility/runtime edge ownership must not restore legacy twin links');
 assert(/\.userData\.geometryVisible\s*=\s*true/.test(sceneSource), 'edge geometry validity must be stored independently from mode visibility');
