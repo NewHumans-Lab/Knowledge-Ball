@@ -19,7 +19,7 @@ import { emptyGraphState, nodeList } from '../state/GraphState';
 import type { Projection } from './Projection';
 import { cascadeReachable } from '../graph/Graph';
 import {
-  applyKnowledgeEdit,
+  applyKnowledgeEditInPlace,
   type KnowledgeEdit,
   type NewProtocolNode,
   type ProtocolNode,
@@ -137,37 +137,23 @@ export class GraphProjection implements Projection<GraphState> {
       }
       return;
     }
-    const masteryById = new Map(nodeList(this.state).map(node => [node.id, node.mastery]));
-    const declaredLayerById = new Map(nodeList(this.state).map(node => [node.id, node.declaredLayer]));
-    const lineageById = new Map(nodeList(this.state).map(node => [node.id, node.lineage ? structuredClone(node.lineage) : undefined]));
-    const protocolNodes: ProtocolNode[] = nodeList(this.state).map(node => ({
-      id: node.id,
-      title: node.title,
-      type: node.type,
-      status: node.status,
-      reasoning: node.reasoning,
-      premises: [...node.premises],
-      hidden: node.hidden,
-      aliases: node.aliases ? [...node.aliases] : undefined,
-      supersededBy: node.supersededBy,
-      logicRuleId: node.logicRuleId,
-      negatedBy: node.negatedBy ? [...node.negatedBy] : undefined,
-      semanticKey: node.semanticKey,
-      lineage: node.lineage ? structuredClone(node.lineage) : undefined,
-    }));
-    const result = applyKnowledgeEdit(protocolNodes, edit);
+    // GraphNode structurally contains ProtocolNode plus personal/presentation
+    // fields. Mutating these references preserves mastery, declared layer, lineage,
+    // and object identity for every existing node instead of rebuilding the graph.
+    const protocolNodes: ProtocolNode[] = nodeList(this.state);
+    const existingNodeCount = protocolNodes.length;
+    const result = applyKnowledgeEditInPlace(protocolNodes, edit);
     if (result.errors.length) throw new Error(`Invalid ${edit.kind} event: ${result.errors.join('；')}`);
 
-    this.state.nodesById = Object.fromEntries(result.nodes.map(node => [
-      node.id,
-      {
+    // The protocol array is only an index view over nodesById, so append the small
+    // delta of newly-created nodes to the authoritative record after mutation.
+    for (const node of result.nodes.slice(existingNodeCount)) {
+      this.state.nodesById[node.id] = {
         ...node,
-        mastery: masteryById.get(node.id) ?? 'none',
-        declaredLayer: declaredLayerById.get(node.id),
-        lineage: lineageById.get(node.id) ?? node.lineage,
+        mastery: 'none',
         premises: [...node.premises],
-      },
-    ]));
+      };
+    }
   }
 
   apply(event: DomainEvent): void {

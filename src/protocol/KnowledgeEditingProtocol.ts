@@ -489,17 +489,15 @@ function restoreClaimsWhoseOppositionWasNegated(nodes: ProtocolNode[], negatedId
 }
 
 /**
- * Apply exactly one validated edit. No source node is deleted: replaced or negated
- * nodes remain queryable, default-hidden, and still block duplicate submissions.
+ * Mutate one already-validated protocol graph in place. Existing node objects keep
+ * their identity; newly-created nodes are appended to the supplied array. This is
+ * the single mutation implementation shared by the pure protocol API and live
+ * projections.
  */
-export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): KnowledgeEditResult {
-  const errors = validateKnowledgeEdit(nodes, edit);
-  if (errors.length) return { nodes, errors };
-
-  const next = structuredClone(nodes);
-  const byId = indexNodes(next);
+function mutateKnowledgeEditInPlace(nodes: ProtocolNode[], edit: KnowledgeEdit): void {
+  const byId = indexNodes(nodes);
   const append = (node: ProtocolNode) => {
-    next.push(node);
+    nodes.push(node);
     byId.set(node.id, node);
   };
 
@@ -528,14 +526,14 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
       const corrected = nodeFromDraft(edit.correctedReasoning!, target.premises);
       append(corrected);
       target.supersededBy = corrected.id;
-      for (const node of next) {
+      for (const node of nodes) {
         if (node.hidden || node.supersededBy) continue;
         node.premises = node.premises.map(id => id === target.id ? corrected.id : id);
       }
     } else {
-      suspendDownstream(next, target.id);
+      suspendDownstream(nodes, target.id);
     }
-    restoreClaimsWhoseOppositionWasNegated(next, target.id);
+    restoreClaimsWhoseOppositionWasNegated(nodes, target.id);
   }
 
   if (edit.kind === 'decompose') {
@@ -572,7 +570,7 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
       source.status = 'suspended';
       source.hidden = true;
     }
-    for (const node of next) {
+    for (const node of nodes) {
       if (node.hidden || node.supersededBy) continue;
       node.premises = node.premises.map(id => edit.sourceNodeIds.includes(id) ? merged.id : id);
     }
@@ -600,11 +598,32 @@ export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): 
       conclusion.hidden = true;
     }
     const sourceConclusionIds = new Set(edit.chains.map(chain => chain.conclusionId));
-    for (const node of next) {
+    for (const node of nodes) {
       if (node.hidden || node.supersededBy) continue;
       node.premises = node.premises.map(id => sourceConclusionIds.has(id) ? mergedConclusion.id : id);
     }
   }
+}
 
+/**
+ * Projection-oriented protocol API. Validation is identical to applyKnowledgeEdit,
+ * but successful edits preserve the identity of all existing node objects.
+ */
+export function applyKnowledgeEditInPlace(nodes: ProtocolNode[], edit: KnowledgeEdit): KnowledgeEditResult {
+  const errors = validateKnowledgeEdit(nodes, edit);
+  if (errors.length) return { nodes, errors };
+  mutateKnowledgeEditInPlace(nodes, edit);
+  return { nodes, errors: [] };
+}
+
+/**
+ * Pure protocol API retained for command validation, tests, and callers that need
+ * an immutable result. It shares the same mutation core after cloning once.
+ */
+export function applyKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit): KnowledgeEditResult {
+  const errors = validateKnowledgeEdit(nodes, edit);
+  if (errors.length) return { nodes, errors };
+  const next = structuredClone(nodes);
+  mutateKnowledgeEditInPlace(next, edit);
   return { nodes: next, errors: [] };
 }

@@ -98,6 +98,10 @@ async function run(): Promise<void> {
   assert.deepEqual(runtime.projection.state.nodesById.c1.premises, ['r1'], 'add event must survive reload');
   assert.equal(runtime.projection.state.nodesById.r1.logicRuleId, 'logic', 'logic classification must survive reload');
 
+  const nodesByIdBeforeDecompose = runtime.projection.state.nodesById;
+  const untouchedPremiseBeforeDecompose = runtime.projection.state.nodesById.p1;
+  const editedReasoningBeforeDecompose = runtime.projection.state.nodesById.r1;
+  const conclusionBeforeDecompose = runtime.projection.state.nodesById.c1;
   const beforeDecompose = runtime.store.size();
   const decomposeEvent = await executeKnowledgeEdit(runtime.store, runtime.projection, {
     kind: 'decompose',
@@ -112,6 +116,10 @@ async function run(): Promise<void> {
   });
   assert.equal(decomposeEvent.type, 'KnowledgeDecomposed');
   assert.equal(runtime.store.size(), beforeDecompose + 1, 'decomposition must append one event');
+  assert.equal(runtime.projection.state.nodesById, nodesByIdBeforeDecompose, 'projection edits must preserve the authoritative nodesById record');
+  assert.equal(runtime.projection.state.nodesById.p1, untouchedPremiseBeforeDecompose, 'unaffected nodes must keep object identity');
+  assert.equal(runtime.projection.state.nodesById.r1, editedReasoningBeforeDecompose, 'edited existing nodes must be mutated in place');
+  assert.equal(runtime.projection.state.nodesById.c1, conclusionBeforeDecompose, 'rewired existing conclusions must keep object identity');
   assert.equal(runtime.projection.state.nodesById.r1.hidden, true);
   assert.deepEqual(runtime.projection.state.nodesById.r1a.premises, ['p1', 'p2']);
   assert.deepEqual(runtime.projection.state.nodesById.m1.premises, ['r1a']);
