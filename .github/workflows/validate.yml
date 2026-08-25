@@ -2,15 +2,12 @@ name: Apply LQ-04
 
 on:
   push:
-    branches:
-      - fix/cache-knowledge-relations
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'chore: run LQ-04 relation-index patch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
