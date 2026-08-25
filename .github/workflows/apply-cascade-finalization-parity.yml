@@ -1,0 +1,30 @@
+name: Apply cascade finalization parity
+
+on:
+  push:
+    branches:
+      - fix/node-detail-single-owner
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/node-detail-single-owner
+      - name: Preserve cascade finalization behavior
+        env:
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ "$ACTOR" = "github-actions[bot]" ]; then
+            exit 0
+          fi
+          python3 scripts/apply-cascade-finalization-parity.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui/panels/NodeDetailController.ts
+          git commit -m "Preserve cascade finalization behavior"
+          git push origin HEAD:fix/node-detail-single-owner
