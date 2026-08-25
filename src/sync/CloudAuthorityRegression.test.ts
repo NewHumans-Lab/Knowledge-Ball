@@ -101,7 +101,8 @@ const restored = client(null, filtered);
 assert.deepEqual(restored.store.allEvents().map(event => event.type), ['NodeMasterySet'], 'legacy local public events must never enter the runtime EventStore');
 assert.equal(restored.projection.state.nodesById['stale-local-node'], undefined, 'stale local public node must never enter GraphProjection');
 assert.ok(storage.getItem('knowledge-ball.events.v1')?.includes('STALE LOCAL PUBLIC NODE'), 'legacy mixed cache may remain physically present while being ignored');
-assert.ok(storage.getItem('knowledge-ball.personal-events.v1')?.includes('NodeMasterySet'), 'personal mastery may be migrated to its dedicated local key');
+assert.ok(storage.getItem('knowledge-ball.personal-events.v1')?.includes('chunked-journal'), 'personal mastery migration must establish the dedicated bounded journal');
+assert.ok(storage.getItem('knowledge-ball.personal-events.v1.chunk.v2.0')?.includes('NodeMasterySet'), 'personal mastery audit event must be retained in the journal chunk');
 
 // A missing cloud is a hard public-write failure. There is no local public fallback.
 const noCloud = client(null);
