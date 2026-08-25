@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { EventStore } from '../event/EventStore';
 import { validateDomainEventAgainstState } from '../event/EventValidation';
-import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjection';
+import { GraphProjection } from '../projection/GraphProjection';
 import { nodeList } from '../state/GraphState';
 import type { GraphNode } from '../graph/Node';
 import {
@@ -687,7 +687,6 @@ panel = new PanelController({
   setLabelFont: opt<HTMLSelectElement>('setLabelFont'),
   setLabelBrightness: opt<HTMLInputElement>('setLabelBrightness'),
   setLabelBrightnessVal: opt<HTMLElement>('setLabelBrightnessVal'),
-  depthLimit: opt<HTMLInputElement>('depthLimit'),
 
   toast: opt<HTMLElement>('toast'),
 });
@@ -789,31 +788,8 @@ panel.setSettingsValues({
   labelBrightness: 1,
   labelColor: '#C7DBDD',
   labelFont: `'Noto Sans SC','Inter',sans-serif`,
-  depthLimit: null,
 });
 
-const depthLimitInput = opt<HTMLInputElement>('depthLimit');
-if (depthLimitInput) {
-  const applyDepthLimit = () => {
-    const raw = depthLimitInput.value.trim();
-    if (!raw) {
-      setCascadeDepthLimit(null);
-      scene.setCascadeDepthLimit(null);
-      return;
-    }
-    const value = Number(raw);
-    if (Number.isFinite(value) && value > 0) {
-      setCascadeDepthLimit(value);
-      scene.setCascadeDepthLimit(value);
-    } else {
-      setCascadeDepthLimit(null);
-      scene.setCascadeDepthLimit(null);
-    }
-  };
-
-  depthLimitInput.addEventListener('input', applyDepthLimit);
-  applyDepthLimit();
-}
 
 const legend = qOpt<HTMLElement>('.legend');
 if (legend) {

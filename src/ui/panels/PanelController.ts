@@ -133,7 +133,6 @@ export interface PanelControllerElements {
   setLabelFont?: HTMLSelectElement;
   setLabelBrightness?: HTMLInputElement;
   setLabelBrightnessVal?: HTMLElement;
-  depthLimit?: HTMLInputElement;
 
   toast?: HTMLElement;
 }
@@ -219,7 +218,6 @@ export class PanelController {
   private readonly setLabelFont?: HTMLSelectElement;
   private readonly setLabelBrightness?: HTMLInputElement;
   private readonly setLabelBrightnessVal?: HTMLElement;
-  private readonly depthLimit?: HTMLInputElement;
 
   private readonly toast?: HTMLElement;
 
@@ -286,7 +284,6 @@ export class PanelController {
     this.setLabelFont = options.setLabelFont;
     this.setLabelBrightness = options.setLabelBrightness;
     this.setLabelBrightnessVal = options.setLabelBrightnessVal;
-    this.depthLimit = options.depthLimit;
 
     this.toast = options.toast;
 
@@ -563,7 +560,6 @@ export class PanelController {
     labelBrightness?: number;
     labelColor?: string;
     labelFont?: string;
-    depthLimit?: number | null;
   }): void {
     if (typeof values.nodeRadius === 'number' && this.setNodeRadius) {
       this.setNodeRadius.value = String(values.nodeRadius);
@@ -583,9 +579,6 @@ export class PanelController {
     }
     if (typeof values.labelFont === 'string' && this.setLabelFont) {
       this.setLabelFont.value = values.labelFont;
-    }
-    if (values.depthLimit !== undefined && this.depthLimit) {
-      this.depthLimit.value = values.depthLimit === null ? '' : String(values.depthLimit);
     }
   }
 

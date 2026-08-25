@@ -17,7 +17,6 @@ import {
 import type { GraphState } from '../state/GraphState';
 import { emptyGraphState, nodeList } from '../state/GraphState';
 import type { Projection } from './Projection';
-import { cascadeReachable } from '../graph/Graph';
 import {
   applyKnowledgeEditInPlace,
   type KnowledgeEdit,
@@ -25,8 +24,6 @@ import {
   type ProtocolNode,
 } from '../protocol/KnowledgeEditingProtocol';
 
-let cascadeDepthLimit = Infinity;
-export function setCascadeDepthLimit(n: number | null) { cascadeDepthLimit = n ?? Infinity; }
 
 export class GraphProjection implements Projection<GraphState> {
   state: GraphState = emptyGraphState();
@@ -262,7 +259,4 @@ export class GraphProjection implements Projection<GraphState> {
     }
   }
 
-  reachableForCascade(fromNodeId: string): { ids: string[]; truncated: boolean } {
-    return cascadeReachable(fromNodeId, nodeList(this.state), cascadeDepthLimit);
-  }
 }
