@@ -7,8 +7,7 @@ assert.match(app, /new ProjectionRenderScheduler\(flushProjectionRender\)/,
 
 const subscriberStart = app.indexOf('store.subscribe((event) => {');
 assert.ok(subscriberStart >= 0, 'store subscriber must exist');
-const subscriberEnd = app.indexOf('
-});', subscriberStart);
+const subscriberEnd = app.indexOf('\n});', subscriberStart);
 assert.ok(subscriberEnd > subscriberStart, 'store subscriber must have a finite source block');
 const subscriber = app.slice(subscriberStart, subscriberEnd + 4);
 assert.match(subscriber, /projection\.apply\(event\)/,
@@ -23,8 +22,7 @@ assert.doesNotMatch(subscriber, /syncNodesFromProjection\(\)/,
   'store subscriber must never synchronously rebuild the whole graph per event');
 
 const snapshotStart = app.indexOf('function applyPersonalKnowledgeSnapshot');
-const snapshotEnd = app.indexOf('
-function openNode', snapshotStart);
+const snapshotEnd = app.indexOf('\nfunction openNode', snapshotStart);
 const snapshot = app.slice(snapshotStart, snapshotEnd);
 assert.match(snapshot, /syncAllPersonalMasteryFromProjection\(\)/,
   'account hydration must update mastery without graph layout');
