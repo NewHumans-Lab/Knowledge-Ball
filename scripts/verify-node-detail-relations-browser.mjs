@@ -363,9 +363,13 @@ try {
       ];
       for (const [id, role, proposal, title, rank, targetId] of fixtures) {
         debug.projection.state.nodesById[id] = makeDomainNode(id, role, proposal, title, rank, targetId);
-        debug.renderNodes.push(makeRenderNode(id, role, proposal, title, rank, targetId));
       }
-      debug.scene.markDirty();
+      // The fixture mutates Projection truth directly, so cross the same
+      // Projection -> render-generation boundary used by production events.
+      // Do not push into renderNodes: that bypasses layout/relation-index ownership
+      // and only worked when Scene rebuilt canonical topology every frame.
+      debug.projectionRenderScheduler.request();
+      debug.projectionRenderScheduler.flushNow();
       return { currentId, historyId, historyOlderId, oppositionId, oppositionOlderId };
     }, candidate.id);
     assert.ok(lineageFixture, 'deterministic lineage fixture must attach to the tested current conclusion');
