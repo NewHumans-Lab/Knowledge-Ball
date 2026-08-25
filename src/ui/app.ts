@@ -646,6 +646,7 @@ panel = new PanelController({
   onSetMastery: setKnowledgeMastery,
   onSelectRelatedNode: openNode,
   onOverlayVisibilityChange: updateSceneOverlayState,
+  onNodePanelChange: id => id ? knowledgeSurfaceState.open('panel', id) : knowledgeSurfaceState.close('panel'),
 
   panel: must<HTMLElement>('panel'),
   panelTitle: must<HTMLElement>('panelTitle'),
