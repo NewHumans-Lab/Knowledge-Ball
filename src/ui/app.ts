@@ -753,7 +753,7 @@ interaction = new InteractionController({
   settingsButton: opt<HTMLButtonElement>('btnSettings'),
   nodeRadiusInput: opt<HTMLInputElement>('setNodeRadius'),
   labelBrightnessInput: opt<HTMLInputElement>('setLabelBrightness'),
-  onPickNode: id => scene.focusNode(id),
+  onPickNode: openNode,
   onOpenCreateNode: () => knowledgeSurfaceState.nodeId ? knowledgeCreate.openReasoning(knowledgeSurfaceState.nodeId) : knowledgeCreate.openStandalone(),
   onOpenSettings: () => panel.openSettingsOverlay(),
 });
