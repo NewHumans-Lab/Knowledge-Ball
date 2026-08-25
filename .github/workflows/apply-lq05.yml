@@ -1,0 +1,271 @@
+name: Apply LQ-05 explicit panel exit ownership
+
+on:
+  push:
+    branches:
+      - fix/explicit-panel-exit-ownership
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/explicit-panel-exit-ownership
+          fetch-depth: 0
+      - name: Apply LQ-05 convergence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'missing patch anchor in {path}: {old[:100]!r}')
+              if text.count(old) != 1:
+                  raise SystemExit(f'non-unique patch anchor in {path}: {old[:100]!r} count={text.count(old)}')
+              p.write_text(text.replace(old, new, 1))
+
+          panel = 'src/ui/panels/PanelController.ts'
+          replace_once(panel,
+              "type LineageCandidateKind = 'optimization' | 'opposition';\n",
+              "type LineageCandidateKind = 'optimization' | 'opposition';\ntype PanelView = 'detail' | 'subview';\n")
+          replace_once(panel,
+              "  private toastTimer: number | null = null;\n",
+              "  private toastTimer: number | null = null;\n  private panelView: PanelView = 'detail';\n")
+          replace_once(panel,
+              "    this.toast = options.toast;\n\n    this.configureLayerSubmission();\n",
+              "    this.toast = options.toast;\n\n    this.configureExitControl(this.panelClose, '返回知识球');\n    this.configureExitControl(this.modalClose, '返回上一层');\n    this.configureExitControl(this.accountClose, '返回知识球');\n    this.configureExitControl(this.settingsClose, '返回知识球');\n    this.configureLayerSubmission();\n")
+          replace_once(panel,
+              "    this.selectedId = id;\n    this.onOverlayVisibilityChange?.(true);\n",
+              "    this.selectedId = id;\n    this.panelView = 'detail';\n    this.updatePanelExitLabel();\n    this.onOverlayVisibilityChange?.(true);\n")
+          replace_once(panel,
+              "  closeNodePanel(): void {\n    this.panel.classList.remove('open');\n    this.onOverlayVisibilityChange?.(false);\n    this.selectedId = null;\n  }\n",
+              "  closeNodePanel(): void {\n    this.panel.classList.remove('open');\n    this.onOverlayVisibilityChange?.(false);\n    this.selectedId = null;\n    this.panelView = 'detail';\n    this.updatePanelExitLabel();\n  }\n")
+          replace_once(panel,
+              "  private bind(): void {\n    this.panelClose.addEventListener('click', () => this.closeNodePanel());\n",
+              "  private configureExitControl(control: HTMLElement | undefined, label: string): void {\n    if (!control) return;\n    if (control instanceof HTMLButtonElement) control.type = 'button';\n    control.setAttribute('aria-label', label);\n    control.setAttribute('title', label);\n  }\n\n  private updatePanelExitLabel(): void {\n    this.configureExitControl(this.panelClose, this.panelView === 'subview' ? '返回节点详情' : '返回知识球');\n  }\n\n  private enterPanelSubview(id: string): void {\n    this.selectedId = id;\n    this.panelView = 'subview';\n    this.updatePanelExitLabel();\n  }\n\n  private returnToNodeDetail(id: string | null = this.selectedId): void {\n    if (!id) {\n      this.closeNodePanel();\n      return;\n    }\n    this.openNodePanel(id);\n  }\n\n  private handlePanelExit(): void {\n    if (this.panelView === 'subview') {\n      this.returnToNodeDetail();\n      return;\n    }\n    this.closeNodePanel();\n  }\n\n  private bind(): void {\n    this.panelClose.addEventListener('click', () => this.handlePanelExit());\n")
+          replace_once(panel,
+              "  private openLineageCandidateForm(id: string, kind: LineageCandidateKind): void {\n    const node = this.getNodeById(id);\n    if (!node) return;\n",
+              "  private openLineageCandidateForm(id: string, kind: LineageCandidateKind): void {\n    const node = this.getNodeById(id);\n    if (!node) return;\n    this.enterPanelSubview(id);\n")
+          replace_once(panel,
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelLineageCandidate')?.addEventListener('click', () => this.openNodePanel(id));\n",
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelLineageCandidate')?.addEventListener('click', () => this.returnToNodeDetail(id));\n")
+          replace_once(panel,
+              "  private openDecomposeForm(id: string): void {\n    const reasoning = this.getNodeById(id);\n    if (!reasoning || reasoning.type !== 'reasoning') return;\n",
+              "  private openDecomposeForm(id: string): void {\n    const reasoning = this.getNodeById(id);\n    if (!reasoning || reasoning.type !== 'reasoning') return;\n    this.enterPanelSubview(id);\n")
+          replace_once(panel,
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(id));\n",
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(id));\n")
+          replace_once(panel,
+              "  private openDefinitionMergeForm(node: PanelNodeSummary): void {\n    const candidates = this.getNodes().filter(candidate => candidate.id !== node.id && candidate.type === 'definition');\n",
+              "  private openDefinitionMergeForm(node: PanelNodeSummary): void {\n    this.enterPanelSubview(node.id);\n    const candidates = this.getNodes().filter(candidate => candidate.id !== node.id && candidate.type === 'definition');\n")
+          replace_once(panel,
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));\n",
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(node.id));\n")
+          replace_once(panel,
+              "  private openTheoryMergeForm(node: PanelNodeSummary): void {\n    const reasoning = this.reasoningParent(node);\n",
+              "  private openTheoryMergeForm(node: PanelNodeSummary): void {\n    this.enterPanelSubview(node.id);\n    const reasoning = this.reasoningParent(node);\n")
+          # The theory merge has the same cancel anchor a second time after the definition replacement.
+          replace_once(panel,
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.openNodePanel(node.id));\n",
+              "    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(node.id));\n")
+
+          account = 'src/ui/AccountUi.ts'
+          replace_once(account,
+              "  constructor(private readonly options: AccountUiOptions) {\n    this.options.avatarButton?.addEventListener('click', this.handleAvatarClick);\n",
+              "  constructor(private readonly options: AccountUiOptions) {\n    if (this.options.accountClose instanceof HTMLButtonElement) this.options.accountClose.type = 'button';\n    this.options.accountClose?.setAttribute('aria-label', '返回知识球');\n    this.options.accountClose?.setAttribute('title', '返回知识球');\n    this.options.avatarButton?.addEventListener('click', this.handleAvatarClick);\n")
+
+          app = 'src/ui/app.ts'
+          replace_once(app,
+              "import { installAccountUi } from './AccountUi';\nimport { ProjectionRenderScheduler } from './ProjectionRenderScheduler';\n",
+              "import { installAccountUi } from './AccountUi';\nimport './ExitControls.css';\nimport { ProjectionRenderScheduler } from './ProjectionRenderScheduler';\n")
+
+          vite = 'vite.config.ts'
+          replace_once(vite,
+              "          scripts.push({ tag: 'script', attrs: { type: 'module', src: '/src/ui/ExitUi.ts' }, injectTo: 'body-prepend' });\n",
+              "")
+
+          package = 'package.json'
+          replace_once(package,
+              "npx esbuild src/ui/panels/KnowledgeCreateRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-create-regression.mjs && node .test-dist/knowledge-create-regression.mjs && npx esbuild src/ui/BuildFreshness.test.ts",
+              "npx esbuild src/ui/panels/KnowledgeCreateRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/knowledge-create-regression.mjs && node .test-dist/knowledge-create-regression.mjs && npx esbuild src/ui/panels/PanelExitRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/panel-exit-regression.mjs && node .test-dist/panel-exit-regression.mjs && npx esbuild src/ui/BuildFreshness.test.ts")
+
+          validate = '.github/workflows/validate.yml'
+          replace_once(validate,
+              "      - name: Verify second-tap related-node navigation\n        run: node scripts/verify-node-detail-relations-browser.mjs\n",
+              "      - name: Verify second-tap related-node navigation\n        run: node scripts/verify-node-detail-relations-browser.mjs\n      - name: Verify explicit panel exit ownership on a real mobile page\n        run: node scripts/verify-panel-exit-browser.mjs\n")
+
+          Path('src/ui/ExitControls.css').write_text(r'''#panelClose,
+#modalClose,
+#accountClose,
+#settingsClose {
+  min-width: 44px;
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  border: 1px solid rgba(123, 199, 199, .28);
+  border-radius: 50%;
+  background: rgba(5, 18, 23, .94);
+  color: #e7f0f1;
+  font-size: 0;
+  line-height: 1;
+  opacity: 1;
+  visibility: visible;
+  cursor: pointer;
+  z-index: 2;
+}
+
+#panelClose::before,
+#modalClose::before,
+#accountClose::before,
+#settingsClose::before {
+  content: '❌';
+  font-size: 18px;
+  line-height: 1;
+}
+
+#panelClose:focus-visible,
+#modalClose:focus-visible,
+#accountClose:focus-visible,
+#settingsClose:focus-visible {
+  outline: 2px solid #75e0d3;
+  outline-offset: 2px;
+}
+
+@media (max-width: 780px) {
+  #panel {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .panel-header,
+  .modal-header {
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+}
+''')
+
+          Path('src/ui/panels/PanelExitRegression.test.ts').write_text(r'''import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+
+const panel = await readFile('src/ui/panels/PanelController.ts', 'utf8');
+assert.match(panel, /type PanelView = 'detail' \| 'subview'/, 'panel must own explicit detail/subview navigation state');
+assert.match(panel, /private panelView: PanelView = 'detail'/, 'panel must initialize its own navigation state');
+assert.match(panel, /this\.panelClose\.addEventListener\('click', \(\) => this\.handlePanelExit\(\)\)/, 'panel close must call the controller-owned exit action directly');
+assert.match(panel, /private handlePanelExit\(\): void/, 'panel must expose one explicit exit decision point');
+assert.match(panel, /this\.panelView === 'subview'/, 'panel exit must distinguish subviews from node detail');
+assert.match(panel, /this\.returnToNodeDetail\(\)/, 'subview exit must return directly to the selected node detail');
+assert.match(panel, /this\.enterPanelSubview\(id\)/, 'node edit flows must mark explicit subview ownership');
+assert.doesNotMatch(panel, /stopImmediatePropagation/, 'panel navigation must never depend on capture interception');
+assert.doesNotMatch(panel, /MutationObserver/, 'panel navigation must never infer state from DOM mutations');
+
+const vite = await readFile('vite.config.ts', 'utf8');
+assert.doesNotMatch(vite, /ExitUi\.ts/, 'Vite must not inject an exit monkeypatch layer');
+assert.equal(existsSync('src/ui/ExitUi.ts'), false, 'legacy ExitUi sidecar must be removed');
+
+const app = await readFile('src/ui/app.ts', 'utf8');
+assert.match(app, /import '\.\/ExitControls\.css'/, 'exit visuals must be regular application CSS');
+const css = await readFile('src/ui/ExitControls.css', 'utf8');
+assert.match(css, /#panelClose/, 'panel close visual must remain explicit');
+assert.doesNotMatch(css, /!important/, 'exit visuals must not rely on runtime CSS overrides');
+
+const account = await readFile('src/ui/AccountUi.ts', 'utf8');
+assert.match(account, /accountClose\?\.setAttribute\('aria-label', '返回知识球'\)/, 'browser account close must retain an accessible label under its real owner');
+
+console.log('Explicit panel exit ownership regression tests passed');
+''')
+
+          Path('scripts/verify-panel-exit-browser.mjs').write_text(r'''import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { chromium } from 'playwright';
+
+const origin = 'http://127.0.0.1:4173/Knowledge-Ball/';
+const server = spawn(
+  process.execPath,
+  ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1'],
+  { stdio: 'ignore' },
+);
+
+async function waitForServer() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    try {
+      if ((await fetch(origin)).ok) return;
+    } catch { /* preview is still starting */ }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error('Vite preview did not become reachable');
+}
+
+try {
+  await waitForServer();
+  const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+
+    await page.goto(`${origin}?explicit-panel-exit-regression=1`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    await page.waitForFunction(() => Boolean(window.__debug?.panel && window.__debug?.renderNodes?.length), null, { timeout: 10_000 });
+
+    const candidate = await page.evaluate(() => {
+      const core = new Set(['n1', 'n2', 'n16']);
+      const node = window.__debug.renderNodes.find(value => !core.has(value.id) && !value.hidden);
+      if (!node) return null;
+      return { id: node.id, title: node.title };
+    });
+    assert.ok(candidate, 'fixture must expose an ordinary node');
+
+    const opened = await page.evaluate(id => window.__debug.panel.openNodeAction(id, 'edit'), candidate.id);
+    assert.equal(opened, true, 'explicit edit action must open the optimization subview');
+    await page.locator('#panel.open').waitFor({ state: 'visible', timeout: 5_000 });
+    assert.match(await page.locator('#panelTitle').innerText(), /^编辑节点 · 优化：/, 'edit action must be in a panel subview');
+    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), '返回节点详情', 'subview close must explicitly mean return to node detail');
+
+    await page.locator('#panelClose').click();
+    await page.waitForFunction(
+      ({ id, title }) => document.querySelector('#panel.open') !== null
+        && document.querySelector('#panelTitle')?.textContent === title
+        && document.querySelector('#panelClose')?.getAttribute('aria-label') === '返回知识球'
+        && document.querySelector('#btnEditNode') !== null
+        && window.__debug?.panel !== undefined
+        && window.__debug?.renderNodes?.some(node => node.id === id),
+      candidate,
+      { timeout: 5_000 },
+    );
+
+    await page.locator('#panelClose').click();
+    await page.waitForFunction(() => document.querySelector('#panel.open') === null, null, { timeout: 5_000 });
+    assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
+    console.log('Explicit panel exit real mobile-page regression passed');
+  } finally {
+    await browser.close();
+  }
+} finally {
+  server.kill('SIGTERM');
+}
+''')
+
+          Path('src/ui/ExitUi.ts').unlink()
+          PY
+
+          rm .github/workflows/apply-lq05.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Replace exit UI monkeypatch with explicit panel navigation"
+          git push origin HEAD:fix/explicit-panel-exit-ownership
