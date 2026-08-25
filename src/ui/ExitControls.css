@@ -14,21 +14,12 @@
   border-radius: 50%;
   background: rgba(5, 18, 23, .94);
   color: #e7f0f1;
-  font-size: 0;
+  font-size: 18px;
   line-height: 1;
   opacity: 1;
   visibility: visible;
   cursor: pointer;
   z-index: 2;
-}
-
-#panelClose::before,
-#modalClose::before,
-#accountClose::before,
-#settingsClose::before {
-  content: '❌';
-  font-size: 18px;
-  line-height: 1;
 }
 
 #panelClose:focus-visible,
