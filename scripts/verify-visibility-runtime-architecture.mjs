@@ -17,6 +17,7 @@ async function sourceFiles(root) {
 const interaction = await readFile('src/ui/interaction/InteractionController.ts', 'utf8');
 const app = await readFile('src/ui/app.ts', 'utf8');
 const vite = await readFile('vite.config.ts', 'utf8');
+const index = await readFile('index.html', 'utf8');
 const freshness = await readFile('src/ui/BuildFreshness.ts', 'utf8');
 const deploy = await readFile('.github/workflows/deploy.yml', 'utf8');
 const schemaGate = await readFile('scripts/verify-supabase-schema.mjs', 'utf8');
@@ -36,7 +37,10 @@ for (const file of await sourceFiles('src')) {
   assert(!text.includes('setHideUntouched'), `${file} must not call or expose the legacy binary visibility setter`);
 }
 
-assert(vite.includes('knowledge-ball-canonical-visibility-shell'), 'built HTML must canonicalize the Current shell before runtime boot');
+assert(index.includes('id=\"btnPersonal\" data-visibility-mode=\"current\" title=\"当前：只显示每个主题的当前知识；点击切换到个人\">当前</button>'), 'index.html must own the canonical Current visibility shell');
+assert(!index.includes('隐藏/恢复未接触的知识节点'), 'index.html must not retain the legacy binary visibility shell');
+assert(!vite.includes('knowledge-ball-canonical-visibility-shell'), 'Vite must not rewrite product visibility HTML at build time');
+assert(!vite.includes('canonicalVisibilityButton'), 'Vite must not duplicate the visibility button source of truth');
 assert(vite.includes("src: '/src/ui/BuildFreshness.ts'"), 'every built Pages shell must install the build freshness guard');
 assert(freshness.includes("cache: 'no-store'"), 'freshness probe must bypass the browser HTTP cache');
 assert(freshness.includes("window.addEventListener('pageshow'"), 'BFCache/long-lived tabs must recheck deployment identity on pageshow');
