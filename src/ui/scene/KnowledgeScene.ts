@@ -56,6 +56,7 @@ export interface KnowledgeSceneNode {
   type: keyof typeof TYPE_COLOR;
   status: 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
   mastery: 'none' | 'touched' | 'mastered';
+  createdByMe?: boolean;
   reasoning: string;
   premises: string[];
   logicRuleId?: string;
@@ -881,17 +882,13 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
           labelsLayer.style.display = 'block';
           resumeFrameLoop();
         }
-      } else if (detailNodeId !== null) {
-        // Once the local detail navigator is open, one real-ball tap owns the
-        // whole navigation gesture: move that actual ball to centre and replace
-        // the open detail with that node. The pre-detail two-tap contract below
-        // remains unchanged.
-        focusNode(nodeId);
-        window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
-      } else if (focusedNodeId === nodeId && focusTargetQuaternion === null) {
-        window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
       } else {
-        focusNode(nodeId);
+        // A real ordinary-ball tap now means “open this knowledge”. It must not
+        // mutate the user's chosen 3D orientation. Cancel any earlier search
+        // focus animation, keep the selected identity, and open detail directly.
+        focusedNodeId = null;
+        focusTargetQuaternion = null;
+        window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
       }
     } else if (!moved && !pinchOccurred) {
       const now = performance.now();
@@ -1015,10 +1012,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     },
     setDetailNode: id => {
       detailNodeId = id;
-      // The detail node and the physical scene focus are one identity. Relation
-      // button navigation therefore moves the corresponding real ball to centre,
-      // just like tapping that ball directly in the open local navigator.
-      if (id) focusNode(id);
+      // Detail identity is presentation state only. Opening or navigating detail
+      // must preserve the user's current 3D orientation.
       applyVisibility();
       largeGraphDirty = true;
     },

@@ -18,11 +18,13 @@ function node(
   role: NonNullable<KnowledgeLineageViewNode['lineage']>['role'],
   status: KnowledgeLineageViewNode['status'] = 'verified',
   mastery: KnowledgeLineageViewNode['mastery'] = 'none',
+  createdByMe = false,
 ): KnowledgeLineageViewNode {
   return {
     id,
     status,
     mastery,
+    createdByMe,
     hidden: role === 'history' || role === 'opposition' || role === 'rejected',
     lineage: {
       topicId: 'topic',
@@ -57,12 +59,19 @@ assert.equal(nodeVisibleInKnowledgeMode(history, 'all'), true);
 assert.equal(nodeVisibleInKnowledgeMode(opposition, 'all'), true);
 
 assert.equal(nodeVisibleInKnowledgeMode(current, 'personal'), false);
-assert.equal(nodeVisibleInKnowledgeMode(touchedHistory, 'personal'), true);
+assert.equal(nodeVisibleInKnowledgeMode(touchedHistory, 'personal'), false, 'non-owned gray history never enters Personal');
 assert.equal(nodeVisibleInKnowledgeMode({ ...current, mastery:'mastered' }, 'personal'), true);
+assert.equal(nodeVisibleInKnowledgeMode({ ...history, createdByMe:true }, 'personal'), true, 'own gray history remains visible in Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...opposition, createdByMe:true }, 'personal'), true, 'own red opposition remains visible in Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...current, status:'falsified', mastery:'touched' }, 'personal'), false, 'non-owned red falsified current knowledge stays out of Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...current, status:'falsified', createdByMe:true }, 'personal'), true, 'own falsified knowledge remains visible in Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...current, status:'disputed', mastery:'touched' }, 'personal'), false, 'non-owned revalidation stays out of Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...current, status:'disputed', createdByMe:true }, 'personal'), true, 'own revalidation remains visible in Personal');
 
 for (const pending of [pendingHistory, pendingOpposition]) {
   assert.equal(nodeVisibleInKnowledgeMode(pending, 'current'), true);
-  assert.equal(nodeVisibleInKnowledgeMode(pending, 'personal'), true);
+  assert.equal(nodeVisibleInKnowledgeMode(pending, 'personal'), false);
+  assert.equal(nodeVisibleInKnowledgeMode({ ...pending, createdByMe:true }, 'personal'), true);
   assert.equal(nodeVisibleInKnowledgeMode(pending, 'all'), true);
 }
 
@@ -110,6 +119,10 @@ assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'current'), false);
 assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'current'), false);
 assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'all'), true);
 assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'all'), true);
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, mastery:'touched' }, 'personal'), false, 'non-owned red reasoning head stays out of Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, createdByMe:true }, 'personal'), true, 'own red reasoning head remains visible in Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHistory, mastery:'touched' }, 'personal'), false, 'non-owned gray reasoning history stays out of Personal');
+assert.equal(nodeVisibleInKnowledgeMode(whiteCounterCandidate, 'personal'), false, 'non-owned pending white counter-candidate stays out of Personal');
 assert.equal(lineageColorForNode(whiteHead), null, 'normal reasoning head keeps structural white');
 assert.equal(lineageColorForNode(redHead), KNOWLEDGE_OPPOSITION_COLOR, 'opposition reasoning head stays red even when dominant');
 assert.equal(lineageColorForNode(whiteHistory), KNOWLEDGE_HISTORY_COLOR);
@@ -140,6 +153,8 @@ try {
   assert.equal(nodeVisibleBecauseDetailIsOpen('unrelated'), false);
   assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), true, 'open detail temporarily reveals ordinary gray history');
   assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), true, 'open detail temporarily reveals ordinary red opposition');
+  assert.equal(nodeVisibleInKnowledgeMode({ ...history, mastery:'touched' }, 'personal'), false, 'open detail must not leak non-owned gray history into Personal');
+  assert.equal(nodeVisibleInKnowledgeMode({ ...opposition, mastery:'touched' }, 'personal'), false, 'open detail must not leak non-owned red opposition into Personal');
   assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'current'), true, 'white-side reasoning history is reachable from its head');
   assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'current'), true, 'red-side reasoning history is reachable from its head');
   assert.equal(nodeVisibleInKnowledgeMode(rejected, 'current'), false, 'detail context never resurrects rejected audit-only nodes');

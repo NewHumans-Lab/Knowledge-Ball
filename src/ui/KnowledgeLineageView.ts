@@ -9,6 +9,7 @@ export interface KnowledgeLineageViewNode {
   id: string;
   status: NodeStatus;
   mastery: Mastery;
+  createdByMe?: boolean;
   hidden?: boolean;
   lineage?: KnowledgeLineageMeta;
 }
@@ -50,6 +51,15 @@ export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boole
   return !node.hidden;
 }
 
+export function nodeRestrictedInPersonalMode(node: KnowledgeLineageViewNode): boolean {
+  const lineageColor = lineageColorForNode(node);
+  return node.status === 'pending'
+    || node.status === 'disputed'
+    || node.status === 'falsified'
+    || lineageColor === KNOWLEDGE_HISTORY_COLOR
+    || lineageColor === KNOWLEDGE_OPPOSITION_COLOR;
+}
+
 export function nodeVisibleInKnowledgeMode(
   node: KnowledgeLineageViewNode,
   mode: KnowledgeVisibilityMode,
@@ -59,18 +69,24 @@ export function nodeVisibleInKnowledgeMode(
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
 
-  // An opened detail is a temporary presentation lens; it may reveal the gray
-  // histories of either reasoning camp without changing global mode state.
+  if (mode === 'personal') {
+    const belongsInScene = node.lineage ? true : !node.hidden;
+    if (!belongsInScene) return false;
+    if (node.createdByMe) return true;
+    if (nodeRestrictedInPersonalMode(node)) return false;
+    return node.mastery !== 'none';
+  }
+
+  // An opened detail is a temporary presentation lens in Current/All only.
+  // Personal remains a strict private projection and does not leak non-owned
+  // gray/red/validating nodes merely because another detail is open.
   if (nodeVisibleBecauseDetailIsOpen(node.id)) return true;
 
-  // Pending lineage proposals remain visible while they are being judged.
+  // Pending lineage proposals remain globally visible while being judged, but
+  // Personal handled them above using the ownership exception.
   if (isPendingLineageCandidate(node)) return true;
 
   if (mode === 'all') return node.lineage ? true : !node.hidden;
-
-  if (mode === 'personal') {
-    return node.mastery !== 'none' && (node.lineage ? true : !node.hidden);
-  }
 
   // Reasoning is the deliberate Current-mode exception: both stable camp heads
   // remain visible so white="reasoning valid" and red="reasoning invalid" keep

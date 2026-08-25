@@ -19,18 +19,19 @@ async function waitForServer() {
   throw new Error('Vite preview did not become reachable');
 }
 
-async function waitForNodeAtCanvasCenter(page, id, tolerance = 12) {
-  await page.waitForFunction(
-    ({ nodeId, tolerancePx }) => {
-      const point = window.__debug?.scene?.screenPositionForNode(nodeId);
-      const host = document.getElementById('canvasHost');
-      if (!point || !host) return false;
-      const rect = host.getBoundingClientRect();
-      return Math.hypot(point.x - (rect.left + rect.width / 2), point.y - (rect.top + rect.height / 2)) <= tolerancePx;
-    },
-    { nodeId: id, tolerancePx: tolerance },
-    { timeout: 5_000 },
-  );
+async function waitForNodePoint(page, id) {
+  await page.waitForFunction(nodeId => Boolean(window.__debug?.scene?.screenPositionForNode(nodeId)), id, { timeout: 5_000 });
+  return page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), id);
+}
+
+// Legacy helper name remains for lineage lifecycle checks; it now only waits for
+// the physical node to be renderable and deliberately performs no centering.
+async function waitForNodeAtCanvasCenter(page, id) { return waitForNodePoint(page, id); }
+
+async function assertNodeStayedNear(page, id, before, tolerance = 3) {
+  const after = await waitForNodePoint(page, id);
+  assert.ok(after, `node ${id} must remain renderable`);
+  assert.ok(Math.hypot(after.x - before.x, after.y - before.y) <= tolerance, `node ${id} must not be auto-centered or rotated by detail navigation`);
 }
 
 async function findCanvasAddressableReasoningNeighbour(page, preferredIds) {
@@ -100,19 +101,15 @@ try {
     });
     assert.ok(candidate, 'fixture must expose a conclusion that is between two real reasoning-process nodes');
 
-    // Before detail opens, preserve the approved two-step gesture: first touch
-    // focuses the physical ball and the second touch opens its local navigator.
+    // One real-ball tap opens its local navigator immediately. The physical
+    // graph orientation is user-owned and must remain unchanged.
     await page.touchscreen.tap(candidate.x, candidate.y);
-    await page.waitForTimeout(900);
-    const centered = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), candidate.id);
-    assert.ok(centered, 'focused conclusion must remain renderable');
-    await page.touchscreen.tap(centered.x, centered.y);
 
     const detail = page.locator('#nodeDetailOverlay.open');
     await detail.waitFor({ state: 'visible', timeout: 5_000 });
-    assert.equal(await detail.getAttribute('data-node-id'), candidate.id, 'second tap must open the conclusion detail');
+    assert.equal(await detail.getAttribute('data-node-id'), candidate.id, 'first tap must open the conclusion detail');
     assert.equal(await page.locator('#panel.open').count(), 0, 'near-node flow must not restore the legacy large panel');
-    await waitForNodeAtCanvasCenter(page, candidate.id);
+    await assertNodeStayedNear(page, candidate.id, { x: candidate.x, y: candidate.y });
 
     const allControls = detail.locator('.node-detail-relation[data-related-node-id]');
     const controls = await allControls.evaluateAll(elements => elements.map(element => ({
@@ -237,15 +234,16 @@ try {
     }
 
     // A relation button is only another entrance to the same real ball. One tap
-    // must keep the navigator open, switch its content, and move that physical
-    // white reasoning ball to the centre of the 3D scene.
+    // must keep the navigator open, switch its content, and preserve that
+    // physical white reasoning ball at its current projected position.
+    const previousReasoningPoint = await waitForNodePoint(page, candidate.previousReasoningId);
     await previousReasoning.tap();
     await page.waitForFunction(
       id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
       candidate.previousReasoningId,
       { timeout: 5_000 },
     );
-    await waitForNodeAtCanvasCenter(page, candidate.previousReasoningId);
+    await assertNodeStayedNear(page, candidate.previousReasoningId, previousReasoningPoint);
     assert.equal((await page.locator('#nodeDetailOverlay .node-detail-title').textContent())?.trim(), candidate.previousReasoningTitle, 'reasoning-process relation tap must open the reasoning ball itself');
     assert.equal(await page.locator('#panel.open').count(), 0, 'button navigation must remain in one continuously open local navigator');
 
@@ -267,13 +265,14 @@ try {
 
     // Navigate back through the canonical next direction. Again, only one button
     // tap is allowed and the actual conclusion ball must return to centre.
+    const conclusionPoint = await waitForNodePoint(page, candidate.id);
     await detail.locator(`.node-detail-relation[data-relation-kind="next"][data-related-node-id="${candidate.id}"]`).tap();
     await page.waitForFunction(
       id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
       candidate.id,
       { timeout: 5_000 },
     );
-    await waitForNodeAtCanvasCenter(page, candidate.id);
+    await assertNodeStayedNear(page, candidate.id, conclusionPoint);
 
     // Crucial acceptance: after the detail navigator is already open, touching a
     // real connected white ball on the WebGL canvas once must immediately replace
@@ -289,7 +288,7 @@ try {
       physicalWhite.id,
       { timeout: 5_000 },
     );
-    await waitForNodeAtCanvasCenter(page, physicalWhite.id);
+    await assertNodeStayedNear(page, physicalWhite.id, { x: physicalWhite.x, y: physicalWhite.y });
     assert.equal((await page.locator('#nodeDetailOverlay .node-detail-title').textContent())?.trim(), physicalWhite.title, 'one real-ball touch must replace the detail with that white node');
     const physicalDetailNeighbours = await detail.locator('[data-related-node-id]').evaluateAll(elements => elements.map(element => element.dataset.relatedNodeId));
     assert.ok(physicalDetailNeighbours.includes(candidate.id), 'the newly centred white node must automatically unfold the conclusion it is directly connected to');
