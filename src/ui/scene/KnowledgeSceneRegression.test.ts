@@ -146,7 +146,7 @@ const syncEdgesStart = sceneSource.indexOf('const syncEdges =');
 const visibilityStart = sceneSource.indexOf('const applyVisibility =');
 assert(syncEdgesStart >= 0 && visibilityStart > syncEdgesStart, 'scene edge synchronizer must remain discoverable');
 const syncEdgesSource = sceneSource.slice(syncEdgesStart, visibilityStart);
-assert(syncEdgesSource.includes('collectKnowledgeChainEdges(nodes)'), 'scene must get horizontal lines from the canonical domain chain');
+assert(syncEdgesSource.includes('relationIndexFor(nodes).edges'), 'scene must get horizontal lines from the canonical indexed domain chain');
 assert(syncEdgesSource.includes('new THREE.LineBasicMaterial'), 'canonical chain lines must use one ordinary line material');
 assert(!syncEdgesSource.includes('LineDashedMaterial'), 'legacy twin dashed-line renderer must stay removed');
 assert(!syncEdgesSource.includes('logicRuleId'), 'logic-rule metadata must never become a scene line again');
