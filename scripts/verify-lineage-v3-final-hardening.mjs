@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const migration = readFileSync('supabase/migrations/202608220010_lineage_v3_final_hardening.sql', 'utf8');
 const hostedRegression = readFileSync('supabase/tests/lineage_v3_final_hardening.sql', 'utf8');
 const authClient = readFileSync('src/auth/AuthClient.ts', 'utf8');
-const lineageUi = readFileSync('src/ui/panels/NodeDetailLineageUi.ts', 'utf8');
+const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
 const uiGuard = readFileSync('src/ui/panels/LineageV3Hardening.css', 'utf8');
 
 assert.match(migration, /private\.is_eligible_public_voter\(target_user_id uuid\)/,
@@ -51,12 +51,12 @@ assert.doesNotMatch(authClient, /operation_key:\s*`pending-vote:\$\{nodeId\}`/,
   'node-only pending-vote idempotency keys would collide across rounds');
 assert.match(authClient, /roundKind\?: PendingVoteRoundKind/,
   'pending vote snapshots must expose round kind');
-assert.match(lineageUi, /snapshot\.roundKind !== 'CASCADE'/,
+assert.match(detail, /snapshot\.roundKind !== 'CASCADE'/,
   'cascade routing must use explicit round kind');
-assert.doesNotMatch(lineageUi, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/,
+assert.doesNotMatch(detail, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/,
   'cascade routing must not infer semantics from V1 policy identity');
-assert.match(lineageUi, /import '\.\/LineageV3Hardening\.css'/,
-  'the product UI must load the legacy direct-status action guard');
+assert.match(detail, /import '\.\/LineageV3Hardening\.css'/,
+  'the sole NodeDetail owner must load the legacy direct-status action guard');
 assert.match(uiGuard, /#btnResolve[\s\S]*#btnDispute[\s\S]*display:\s*none\s*!important/,
   'ordinary users must not be shown direct resolve/dispute public-status controls');
 

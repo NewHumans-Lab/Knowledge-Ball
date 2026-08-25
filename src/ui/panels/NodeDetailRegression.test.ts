@@ -4,7 +4,6 @@ import { formatNodeContributionTime, relationNodeTextColor } from './NodeDetailC
 import { NODE_LAYER_COLOR_HEX, NODE_SPECIAL_COLOR_HEX } from '../config/KnowledgeUiConfig';
 
 const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
-const lineageUi = readFileSync('src/ui/panels/NodeDetailLineageUi.ts', 'utf8');
 const css = readFileSync('src/ui/panels/NodeDetailPanel.css', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
 const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
@@ -28,8 +27,8 @@ for (const action of ['优化', '新增', '新增推理', '提出对立观点', 
 assert(!detail.includes("derive: '基于此新增'"), 'legacy combined 基于此新增 action must stay removed');
 assert(detail.includes("derive: '新增'") && detail.includes("'derive-reasoning': '新增推理'"), 'detail must expose two explicit create actions');
 assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit from a copied legacy controller');
-assert(!lineageUi.includes('relabelActions'), 'cascade helper must not rewrite ordinary detail action labels after render');
-assert(!lineageUi.includes('data-node-detail-action="edit"') && !lineageUi.includes('data-node-detail-action="negate"'), 'cascade helper must not own ordinary edit/opposition presentation');
+assert.equal(existsSync('src/ui/panels/NodeDetailLineageUi.ts'), false, 'near-node detail must have exactly one DOM/lifecycle owner');
+assert(!app.includes('NodeDetailLineageUi') && !app.includes('nodeDetailLineageUi'), 'app must not coordinate a second detail lifecycle');
 
 // One canonical relation model owns the scene line and the detail axes. A
 // reasoning-process ball is a real node in previous/next, not a hidden edge
@@ -114,19 +113,19 @@ assert(detail.includes('button.querySelector(\'small\')!.textContent = `能量 �
 
 // Automatic dependency cascade is a focused V3 enhancement, not a copied
 // detail controller. It reuses the authoritative pending-vote RPC.
-assert(lineageUi.includes('class NodeDetailLineageUi'), 'lineage detail enhancement must have one narrow owner');
-assert(lineageUi.includes("node.status !== 'disputed' || lineageRoleFor(node) !== 'current'"), 'cascade UI must attach only to disputed current nodes');
-assert(lineageUi.includes("snapshot.roundKind !== 'CASCADE'"), 'cascade UI must require the explicit server-created CASCADE round kind');
-assert(!lineageUi.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade UI must not infer round semantics from human V1 policy identity');
-assert(lineageUi.includes('data-cascade-vote-side="AGREE"'), 'cascade UI must expose agree');
-assert(lineageUi.includes('data-cascade-vote-side="DISAGREE"'), 'cascade UI must expose disagree');
-assert(lineageUi.includes('能量 −1'), 'cascade ordinary vote cost must remain one energy');
-assert(lineageUi.includes('无发起人、无发起人票'), 'cascade UI must state the no-initiator rule');
-assert(lineageUi.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'cascade must reuse the authoritative pending-vote RPC');
-assert(lineageUi.includes('REFRESH_MS = 3_000'), 'cascade tally must refresh without a permanent interval');
-assert(lineageUi.includes("knowledge-ball:verdict-finalized"), 'cascade finalization must request public-stream convergence');
-assert(!lineageUi.includes('setInterval('), 'cascade must not add a permanent polling interval');
-assert(app.includes('nodeDetailLineageUi?.open(id)') && app.includes('nodeDetailLineageUi?.refresh(currentPanelId)'), 'app must explicitly start and refresh lineage detail enhancement with the detail lifecycle');
+assert(detail.includes("role === 'current' && node.status === 'disputed'"), 'cascade interaction must attach only to disputed current nodes');
+assert(detail.includes("snapshot.roundKind !== 'CASCADE'"), 'cascade interaction must require the explicit server-created CASCADE round kind');
+assert(!detail.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade interaction must not infer round semantics from human V1 policy identity');
+assert(detail.includes('data-cascade-vote-side="AGREE"'), 'cascade interaction must expose agree');
+assert(detail.includes('data-cascade-vote-side="DISAGREE"'), 'cascade interaction must expose disagree');
+assert(detail.includes('能量 −1'), 'cascade ordinary vote cost must remain one energy');
+assert(detail.includes('无发起人、无发起人票'), 'cascade interaction must state the no-initiator rule');
+assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'cascade must reuse the authoritative pending-vote RPC');
+assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'cascade tally must reuse the detail owner polling cadence without a permanent interval');
+assert(detail.includes("knowledge-ball:verdict-finalized"), 'cascade finalization must request public-stream convergence');
+assert(!detail.includes('setInterval('), 'single detail owner must not add a permanent polling interval');
+assert.equal((detail.match(/private currentId:/g) ?? []).length, 1, 'single detail owner must keep exactly one selected-node lifecycle state');
+assert.equal((detail.match(/private voteRefreshTimer:/g) ?? []).length, 1, 'INITIAL, V1 and CASCADE interactions must share one refresh timer owner');
 
 assert(css.includes('grid-template-columns:1fr 1fr'), 'agree and disagree must stay side by side in one row');
 assert(css.includes('.node-detail-vote-button span{font-size:12px'), 'vote choice must be the primary line in each button');

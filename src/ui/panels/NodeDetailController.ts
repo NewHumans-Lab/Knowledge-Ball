@@ -1,4 +1,5 @@
 import './NodeDetailPanel.css';
+import './LineageV3Hardening.css';
 import {
   createProductionAuthClient,
   type KnowledgeRevalidationSnapshot,
@@ -323,7 +324,10 @@ export class NodeDetailController {
       return;
     }
 
-    if (role === 'current' && node.status === 'disputed') return;
+    if (role === 'current' && node.status === 'disputed') {
+      void this.bindCascadeVote(node.id, token, account);
+      return;
+    }
 
     const editButton = this.root.querySelector<HTMLButtonElement>('.node-detail-edit');
     const menu = this.root.querySelector<HTMLElement>('.node-detail-edit-menu');
@@ -552,6 +556,144 @@ export class NodeDetailController {
       this.voteRefreshTimer = null;
       void this.refreshRevalidationVote(nodeId, token, account);
     }, VOTE_REFRESH_MS);
+  }
+
+  private async bindCascadeVote(
+    nodeId: string,
+    token: number,
+    account: ReturnType<typeof createProductionAuthClient>,
+  ): Promise<void> {
+    if (!account) return;
+    try {
+      const snapshot = await account.getPendingKnowledgeVote(nodeId);
+      if (!this.isCurrentVote(nodeId, token)) return;
+      if (snapshot.roundKind !== 'CASCADE') return;
+      this.showCascadeSnapshot(snapshot, token, account);
+    } catch {
+      // A manually disputed current node can legitimately have no cascade round.
+      // Keep the controller-rendered waiting message in that case.
+    }
+  }
+
+  private showCascadeSnapshot(
+    snapshot: PendingKnowledgeVoteSnapshot,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): void {
+    if (!this.isCurrentVote(snapshot.nodeId, token)) return;
+    const existing = this.root.querySelector<HTMLElement>('.node-detail-cascade-status, .node-detail-cascade-vote');
+    if (!existing) return;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `
+      <div class="node-detail-vote node-detail-interaction node-detail-cascade-vote">
+        <div class="node-detail-vote-title">自动级联重审</div>
+        <div class="node-detail-vote-actions">
+          <button type="button" class="node-detail-vote-button agree" data-cascade-vote-side="AGREE"><span>同意</span><small>能量 −1</small></button>
+          <button type="button" class="node-detail-vote-button disagree" data-cascade-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small></button>
+        </div>
+        <div class="node-detail-vote-status" role="status" aria-live="polite"></div>
+      </div>
+    `;
+    existing.replaceWith(wrapper.firstElementChild!);
+
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-cascade-vote-side]'));
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        const side = button.dataset.cascadeVoteSide as PendingVoteSide | undefined;
+        if (side === 'AGREE' || side === 'DISAGREE') void this.castCascadeVote(snapshot.nodeId, side, token, account);
+      });
+    }
+    this.applyCascadeSnapshot(snapshot);
+    if (snapshot.verdict === 'PENDING') this.scheduleCascadeRefresh(snapshot.nodeId, token, account);
+    else this.handleFinalizedCascade(snapshot);
+  }
+
+  private async refreshCascadeVote(
+    nodeId: string,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): Promise<void> {
+    if (!this.isCurrentVote(nodeId, token)) return;
+    try {
+      const snapshot = await account.getPendingKnowledgeVote(nodeId);
+      if (!this.isCurrentVote(nodeId, token) || snapshot.roundKind !== 'CASCADE') return;
+      this.applyCascadeSnapshot(snapshot);
+      if (snapshot.verdict === 'PENDING') this.scheduleCascadeRefresh(nodeId, token, account);
+      else this.handleFinalizedCascade(snapshot);
+    } catch {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      if (document.visibilityState !== 'hidden') this.scheduleCascadeRefresh(nodeId, token, account);
+    }
+  }
+
+  private async castCascadeVote(
+    nodeId: string,
+    side: PendingVoteSide,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): Promise<void> {
+    if (!this.isCurrentVote(nodeId, token) || this.root.dataset.voteBusy === '1') return;
+    this.root.dataset.voteBusy = '1';
+    this.clearVoteRefresh();
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-cascade-vote-side]'));
+    buttons.forEach(button => { button.disabled = true; });
+    const status = this.root.querySelector<HTMLElement>('.node-detail-cascade-vote .node-detail-vote-status');
+    if (status) status.textContent = `${side === 'AGREE' ? '同意' : '反对'}票提交中 · 能量 −1…`;
+    try {
+      const snapshot = await account.castPendingKnowledgeVote(nodeId, side);
+      if (!this.isCurrentVote(nodeId, token) || snapshot.roundKind !== 'CASCADE') return;
+      this.applyCascadeSnapshot(snapshot);
+      if (snapshot.verdict === 'PENDING') this.scheduleCascadeRefresh(nodeId, token, account);
+      else this.handleFinalizedCascade(snapshot);
+    } catch (error) {
+      if (!this.isCurrentVote(nodeId, token)) return;
+      if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '投票失败';
+      this.scheduleCascadeRefresh(nodeId, token, account);
+    } finally {
+      delete this.root.dataset.voteBusy;
+    }
+  }
+
+  private applyCascadeSnapshot(snapshot: PendingKnowledgeVoteSnapshot): void {
+    const open = snapshot.verdict === 'PENDING';
+    const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-cascade-vote-side]'));
+    for (const button of buttons) {
+      const side = button.dataset.cascadeVoteSide as PendingVoteSide | undefined;
+      button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
+      button.disabled = !open || snapshot.mySide !== null;
+    }
+    const status = this.root.querySelector<HTMLElement>('.node-detail-cascade-vote .node-detail-vote-status');
+    if (!status) return;
+    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    if (!open) {
+      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
+      status.textContent = `${snapshot.verdict === 'CORRECT' ? '级联重审通过' : '级联重审未通过，知识已悬置'} · ${reason} · ${tally}`;
+    } else if (snapshot.mySide) {
+      status.textContent = `已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${tally}`;
+    } else {
+      status.textContent = `无发起人、无发起人票 · ${tally}`;
+    }
+  }
+
+  private scheduleCascadeRefresh(
+    nodeId: string,
+    token: number,
+    account: NonNullable<ReturnType<typeof createProductionAuthClient>>,
+  ): void {
+    this.clearVoteRefresh();
+    this.voteRefreshTimer = window.setTimeout(() => {
+      this.voteRefreshTimer = null;
+      void this.refreshCascadeVote(nodeId, token, account);
+    }, VOTE_REFRESH_MS);
+  }
+
+  private handleFinalizedCascade(snapshot: PendingKnowledgeVoteSnapshot): void {
+    if (this.root.dataset.finalizedCascade === snapshot.nodeId) return;
+    this.root.dataset.finalizedCascade = snapshot.nodeId;
+    this.clearVoteRefresh();
+    window.dispatchEvent(new CustomEvent('knowledge-ball:verdict-finalized', {
+      detail: { nodeId: snapshot.nodeId, verdict: snapshot.verdict, cascade: true },
+    }));
   }
 
   private async bindPendingVote(
