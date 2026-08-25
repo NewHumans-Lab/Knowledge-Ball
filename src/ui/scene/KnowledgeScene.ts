@@ -97,7 +97,6 @@ export interface KnowledgeSceneRuntime {
   setVisibilityMode: (mode: KnowledgeVisibilityMode) => void;
   /** Legacy binary compatibility; the header now uses setVisibilityMode(). */
   setHideUntouched: (enabled: boolean) => void;
-  setCascadeDepthLimit: (n: number | null) => void;
   getCameraZ: () => number;
   getVisibleEdgeCount: () => number;
   getActiveNodeCount: () => number;
@@ -1042,7 +1041,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       applyVisibility();
       largeGraphDirty = true;
     },
-    setCascadeDepthLimit: () => {},
     getCameraZ: () => camera.position.z,
     getVisibleEdgeCount: () => Object.values(edgeMap).filter(edge => edge.visible).length,
     getActiveNodeCount: () => Object.keys(nodeMap).length,

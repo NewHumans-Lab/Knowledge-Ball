@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { EventStore } from '../event/EventStore';
 import { validateDomainEventAgainstState } from '../event/EventValidation';
-import { GraphProjection, setCascadeDepthLimit } from '../projection/GraphProjection';
+import { GraphProjection } from '../projection/GraphProjection';
 import { nodeList } from '../state/GraphState';
 import type { GraphNode } from '../graph/Node';
 import {
@@ -42,6 +42,7 @@ import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
 import { installAccountUi } from './AccountUi';
 import './ExitControls.css';
 import { ProjectionRenderScheduler } from './ProjectionRenderScheduler';
+import { KnowledgeSurfaceState } from './KnowledgeSurfaceState';
 
 import {
   createKnowledgeScene,
@@ -100,7 +101,7 @@ let panel: PanelController;
 let knowledgeCreate: KnowledgeCreateController;
 let nodeDetail: NodeDetailController | null = null;
 let interaction: InteractionController;
-let currentPanelId: string | null = null;
+const knowledgeSurfaceState = new KnowledgeSurfaceState();
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
 let markingViewedNodeId: string | null = null;
 
@@ -314,7 +315,6 @@ function getNodeDetailActions(id: string): NodeDetailAction[] {
 }
 
 function launchPanelAction(id: string, action: NodeDetailAction): void {
-  currentPanelId = id;
   if (action === 'derive') {
     knowledgeCreate.openStandalone();
     return;
@@ -323,6 +323,7 @@ function launchPanelAction(id: string, action: NodeDetailAction): void {
     knowledgeCreate.openReasoning(id);
     return;
   }
+  nodeDetail?.close();
   if (!panel.openNodeAction(id, action)) {
     panel.showToast('当前知识节点不支持这个编辑操作');
   }
@@ -367,9 +368,9 @@ function applyPersonalKnowledgeSnapshot(states: PersonalKnowledgeStateSnapshot[]
 function openNode(id: string): void {
   const node = getNodeById(id);
   if (!node) return;
-  currentPanelId = id;
   if (nodeDetail) {
     panel.closeNodePanel();
+    knowledgeSurfaceState.open('detail', id);
     nodeDetail.open(id);
     void markNodeViewed(id);
   } else {
@@ -380,6 +381,13 @@ function openNode(id: string): void {
 
 function updateSceneOverlayState(visible: boolean): void {
   scene.setOverlayVisible(visible);
+}
+
+function closeKnowledgeSurface(): void {
+  const { surface } = knowledgeSurfaceState.snapshot();
+  if (surface === 'detail') nodeDetail?.close();
+  else if (surface === 'panel') panel.closeNodePanel();
+  knowledgeSurfaceState.clear();
 }
 
 function internalAtomicTypeForLayer(layer: UserKnowledgeLayer): KnowledgeNodeType {
@@ -437,8 +445,8 @@ async function createKnowledgeNode(payload: CreateNodePayload): Promise<void> {
       [conclusionId]: payload.layer,
     };
   }
-  currentPanelId = null;
   await applyKnowledgeEdit(edit, declaredLayers);
+  closeKnowledgeSurface();
 }
 
 async function createStandaloneKnowledge(payload: CreateStandaloneKnowledgePayload): Promise<void> {
@@ -453,8 +461,8 @@ async function createStandaloneKnowledge(payload: CreateStandaloneKnowledgePaylo
       reasoning: payload.description,
     },
   };
-  currentPanelId = null;
   await applyKnowledgeEdit(edit, { [nodeId]: payload.layer });
+  closeKnowledgeSurface();
 }
 
 async function createReasoningKnowledge(payload: CreateReasoningKnowledgePayload): Promise<void> {
@@ -471,10 +479,10 @@ async function createReasoningKnowledge(payload: CreateReasoningKnowledgePayload
     },
     conclusionIds: payload.conclusionIds,
   };
-  currentPanelId = null;
   // Reasoning is structurally a white ball; its semantic layer is the rigorous
   // reasoning layer. The type, not the layer palette, owns its white appearance.
   await applyKnowledgeEdit(edit, { [reasoningId]: 'middle' });
+  closeKnowledgeSurface();
 }
 
 async function applyKnowledgeEdit(
@@ -492,7 +500,6 @@ async function optimizeKnowledgeNode(id: string, payload: LineageCandidatePayloa
     reasoning: payload.description,
     declaredLayer: payload.layer,
   }, commitPublicEvent);
-  currentPanelId = null;
 }
 
 async function opposeKnowledgeNode(id: string, payload: LineageCandidatePayload): Promise<void> {
@@ -503,7 +510,6 @@ async function opposeKnowledgeNode(id: string, payload: LineageCandidatePayload)
     reasoning: payload.description,
     declaredLayer: payload.layer,
   }, commitPublicEvent);
-  currentPanelId = null;
 }
 
 async function decomposeKnowledgeNode(id: string, payload: DecomposeNodePayload): Promise<void> {
@@ -531,7 +537,6 @@ async function decomposeKnowledgeNode(id: string, payload: DecomposeNodePayload)
     })),
   };
   await applyKnowledgeEdit(edit);
-  currentPanelId = null;
 }
 
 async function mergeDefinitions(payload: MergeDefinitionPayload): Promise<void> {
@@ -548,7 +553,6 @@ async function mergeDefinitions(payload: MergeDefinitionPayload): Promise<void> 
     },
   };
   await applyKnowledgeEdit(edit);
-  currentPanelId = null;
 }
 
 async function mergeTheories(payload: MergeTheoryPayload): Promise<void> {
@@ -586,7 +590,6 @@ async function mergeTheories(payload: MergeTheoryPayload): Promise<void> {
     },
   };
   await applyKnowledgeEdit(edit);
-  currentPanelId = null;
 }
 
 async function resolveKnowledgeNode(id: string): Promise<void> {
@@ -617,14 +620,11 @@ scene = createKnowledgeScene({
   callbacks: {
     onNodeTap: openNode,
     onBackgroundTap: () => {
-      currentPanelId = null;
-      nodeDetail?.close();
-      panel.closeNodePanel();
+      closeKnowledgeSurface();
     },
     onBackgroundDoubleTap: () => {
-      const premiseId = currentPanelId;
-      nodeDetail?.close();
-      currentPanelId = premiseId;
+      const premiseId = knowledgeSurfaceState.nodeId;
+      closeKnowledgeSurface();
       if (premiseId) knowledgeCreate.openReasoning(premiseId);
       else knowledgeCreate.openStandalone();
     },
@@ -635,7 +635,7 @@ panel = new PanelController({
   getNodes: getPanelNodes,
   getNodeById: getPanelNodeById,
 
-  onCreateNode: createKnowledgeNode,
+  onCreateNode: Capacitor.isNativePlatform() ? createKnowledgeNode : undefined,
   onOptimizeNode: optimizeKnowledgeNode,
   onOpposeNode: opposeKnowledgeNode,
   onDecomposeNode: decomposeKnowledgeNode,
@@ -646,6 +646,7 @@ panel = new PanelController({
   onSetMastery: setKnowledgeMastery,
   onSelectRelatedNode: openNode,
   onOverlayVisibilityChange: updateSceneOverlayState,
+  onNodePanelChange: id => id ? knowledgeSurfaceState.open('panel', id) : knowledgeSurfaceState.close('panel'),
 
   panel: must<HTMLElement>('panel'),
   panelTitle: must<HTMLElement>('panelTitle'),
@@ -686,7 +687,6 @@ panel = new PanelController({
   setLabelFont: opt<HTMLSelectElement>('setLabelFont'),
   setLabelBrightness: opt<HTMLInputElement>('setLabelBrightness'),
   setLabelBrightnessVal: opt<HTMLElement>('setLabelBrightnessVal'),
-  depthLimit: opt<HTMLInputElement>('depthLimit'),
 
   toast: opt<HTMLElement>('toast'),
 });
@@ -712,9 +712,7 @@ if (!Capacitor.isNativePlatform()) {
     onAction: launchPanelAction,
     onSelectRelatedNode: openNode,
     onDetailNodeChange: id => scene.setDetailNode(id),
-    onClose: () => {
-      currentPanelId = null;
-    },
+    onClose: () => { knowledgeSurfaceState.close('detail'); },
   });
 }
 
@@ -731,17 +729,15 @@ interaction = new InteractionController({
   nodeRadiusInput: opt<HTMLInputElement>('setNodeRadius'),
   labelBrightnessInput: opt<HTMLInputElement>('setLabelBrightness'),
   onPickNode: id => scene.focusNode(id),
-  onOpenCreateNode: () => currentPanelId ? knowledgeCreate.openReasoning(currentPanelId) : knowledgeCreate.openStandalone(),
+  onOpenCreateNode: () => knowledgeSurfaceState.nodeId ? knowledgeCreate.openReasoning(knowledgeSurfaceState.nodeId) : knowledgeCreate.openStandalone(),
   onOpenSettings: () => panel.openSettingsOverlay(),
 });
 
 function refreshCurrentKnowledgeSurface(): void {
-  if (!currentPanelId) return;
-  const panelOpen = must<HTMLElement>('panel').classList.contains('open');
-  if (panelOpen) panel.openNodePanel(currentPanelId);
-  else if (nodeDetail?.isOpenFor(currentPanelId)) {
-    nodeDetail.refresh(currentPanelId);
-  }
+  const { nodeId, surface } = knowledgeSurfaceState.snapshot();
+  if (!nodeId) return;
+  if (surface === 'panel') panel.openNodePanel(nodeId);
+  else if (surface === 'detail') nodeDetail?.refresh(nodeId);
 }
 
 function flushProjectionRender(): void {
@@ -763,7 +759,7 @@ store.subscribe((event) => {
     // topology, lineage, layer membership, or spatial constraints.
     syncPersonalMasteryFromProjection(event.payload.nodeId);
     scene.markDirty();
-    if (currentPanelId === event.payload.nodeId) refreshCurrentKnowledgeSurface();
+    if (knowledgeSurfaceState.nodeId === event.payload.nodeId) refreshCurrentKnowledgeSurface();
   } else {
     // Public/domain truth still advances event-by-event. A synchronous replay
     // burst gets one derived full-graph render/layout at the microtask boundary.
@@ -792,31 +788,8 @@ panel.setSettingsValues({
   labelBrightness: 1,
   labelColor: '#C7DBDD',
   labelFont: `'Noto Sans SC','Inter',sans-serif`,
-  depthLimit: null,
 });
 
-const depthLimitInput = opt<HTMLInputElement>('depthLimit');
-if (depthLimitInput) {
-  const applyDepthLimit = () => {
-    const raw = depthLimitInput.value.trim();
-    if (!raw) {
-      setCascadeDepthLimit(null);
-      scene.setCascadeDepthLimit(null);
-      return;
-    }
-    const value = Number(raw);
-    if (Number.isFinite(value) && value > 0) {
-      setCascadeDepthLimit(value);
-      scene.setCascadeDepthLimit(value);
-    } else {
-      setCascadeDepthLimit(null);
-      scene.setCascadeDepthLimit(null);
-    }
-  };
-
-  depthLimitInput.addEventListener('input', applyDepthLimit);
-  applyDepthLimit();
-}
 
 const legend = qOpt<HTMLElement>('.legend');
 if (legend) {
@@ -836,7 +809,7 @@ if (Capacitor.isNativePlatform()) {
 }
 
 const createButton = qOpt<HTMLButtonElement>('.ai-add');
-createButton?.addEventListener('click', () => currentPanelId ? knowledgeCreate.openReasoning(currentPanelId) : knowledgeCreate.openStandalone());
+createButton?.addEventListener('click', () => knowledgeSurfaceState.nodeId ? knowledgeCreate.openReasoning(knowledgeSurfaceState.nodeId) : knowledgeCreate.openStandalone());
 
 const sendButton = qOpt<HTMLButtonElement>('.ai-send');
 const searchInput = must<HTMLInputElement>('aiInput');
@@ -911,6 +884,7 @@ void setupMobileShell();
   accountUi,
   scene,
   projectionRenderScheduler,
+  knowledgeSurfaceState,
   createKnowledgeNode,
   createStandaloneKnowledge,
   createReasoningKnowledge,

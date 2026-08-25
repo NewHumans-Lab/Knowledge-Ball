@@ -7,6 +7,8 @@ export interface StoreListener { (event: DomainEvent): void; }
 export interface EventPersistence {
   loadLocal(): DomainEvent[];
   saveLocal(events: DomainEvent[]): void;
+  /** Optional incremental path for append-only persistence implementations. */
+  appendLocal?(event: DomainEvent): void;
   shouldPersist?(event: DomainEvent): boolean;
 }
 const SNAPSHOT_EVERY_N_EVENTS = 5000;
@@ -65,7 +67,10 @@ export class EventStore<TState> {
     this.events.push(stamped);
     this.idIndex.add(event.id);
     this.listeners.forEach(listener => listener(stamped));
-    if (this.persistence.shouldPersist?.(stamped) ?? true) this.persistence.saveLocal(this.events);
+    if (this.persistence.shouldPersist?.(stamped) ?? true) {
+      if (this.persistence.appendLocal) this.persistence.appendLocal(stamped);
+      else this.persistence.saveLocal(this.events);
+    }
     if (this.events.length % SNAPSHOT_EVERY_N_EVENTS === 0) this.takeSnapshot();
     return true;
   }

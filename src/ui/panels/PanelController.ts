@@ -76,7 +76,7 @@ export interface PanelControllerCallbacks {
   getNodes: () => PanelNodeSummary[];
   getNodeById: (id: string) => PanelNodeSummary | null;
 
-  onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
+  onCreateNode?: (payload: CreateNodePayload) => Promise<void> | void;
   onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
@@ -87,6 +87,7 @@ export interface PanelControllerCallbacks {
   onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
   onSelectRelatedNode?: (id: string) => void;
   onOverlayVisibilityChange?: (visible: boolean) => void;
+  onNodePanelChange?: (id: string | null) => void;
 
   onOpenSettings?: () => void;
   onCloseSettings?: () => void;
@@ -132,7 +133,6 @@ export interface PanelControllerElements {
   setLabelFont?: HTMLSelectElement;
   setLabelBrightness?: HTMLInputElement;
   setLabelBrightnessVal?: HTMLElement;
-  depthLimit?: HTMLInputElement;
 
   toast?: HTMLElement;
 }
@@ -164,7 +164,7 @@ export class PanelController {
   private readonly getNodes: () => PanelNodeSummary[];
   private readonly getNodeById: (id: string) => PanelNodeSummary | null;
 
-  private readonly onCreateNode: (payload: CreateNodePayload) => Promise<void> | void;
+  private readonly onCreateNode?: (payload: CreateNodePayload) => Promise<void> | void;
   private readonly onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
@@ -175,6 +175,7 @@ export class PanelController {
   private readonly onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
   private readonly onSelectRelatedNode?: (id: string) => void;
   private readonly onOverlayVisibilityChange?: (visible: boolean) => void;
+  private readonly onNodePanelChange?: (id: string | null) => void;
   private readonly onOpenSettings?: () => void;
   private readonly onCloseSettings?: () => void;
 
@@ -217,7 +218,6 @@ export class PanelController {
   private readonly setLabelFont?: HTMLSelectElement;
   private readonly setLabelBrightness?: HTMLInputElement;
   private readonly setLabelBrightnessVal?: HTMLElement;
-  private readonly depthLimit?: HTMLInputElement;
 
   private readonly toast?: HTMLElement;
 
@@ -241,6 +241,7 @@ export class PanelController {
     this.onSetMastery = options.onSetMastery;
     this.onSelectRelatedNode = options.onSelectRelatedNode;
     this.onOverlayVisibilityChange = options.onOverlayVisibilityChange;
+    this.onNodePanelChange = options.onNodePanelChange;
     this.onOpenSettings = options.onOpenSettings;
     this.onCloseSettings = options.onCloseSettings;
 
@@ -283,7 +284,6 @@ export class PanelController {
     this.setLabelFont = options.setLabelFont;
     this.setLabelBrightness = options.setLabelBrightness;
     this.setLabelBrightnessVal = options.setLabelBrightnessVal;
-    this.depthLimit = options.depthLimit;
 
     this.toast = options.toast;
 
@@ -345,6 +345,7 @@ export class PanelController {
     this.updatePanelExitLabel();
     this.onOverlayVisibilityChange?.(true);
     this.panel.classList.add('open');
+    this.onNodePanelChange?.(id);
     this.panelTitle.textContent = node.title;
 
     const typeColor = TYPE_COLOR_HEX[node.type] ?? '#ffffff';
@@ -446,7 +447,7 @@ export class PanelController {
     this.panelActions.innerHTML = `
       <div class="action-grid">
         <button class="btn ghost" id="btnEditNode">Optimize · 优化</button>
-        <button class="btn ghost" id="btnDeriveNode">Add · 新增</button>
+        ${this.onCreateNode ? '<button class="btn ghost" id="btnDeriveNode">Add · 新增</button>' : ''}
       </div>
       <div class="action-grid">
         ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">Decompose · 分解</button>' : ''}
@@ -467,11 +468,13 @@ export class PanelController {
   }
 
   closeNodePanel(): void {
+    const wasOpen = this.selectedId !== null || this.panel.classList.contains('open');
     this.panel.classList.remove('open');
     this.onOverlayVisibilityChange?.(false);
     this.selectedId = null;
     this.panelView = 'detail';
     this.updatePanelExitLabel();
+    if (wasOpen) this.onNodePanelChange?.(null);
   }
 
   openNodeAction(id: string, action: PanelNodeAction): boolean {
@@ -486,6 +489,9 @@ export class PanelController {
   }
 
   openCreateModal(prefillPremiseId: string | null = null): void {
+    // Legacy combined create remains a native compatibility surface only. Web
+    // production intentionally uses KnowledgeCreateController's split flows.
+    if (!this.onCreateNode) return;
     this.prefillPremise = prefillPremiseId;
     this.modalTitle.textContent = prefillPremiseId ? '基于现有知识提交新节点' : '提交新知识节点';
     this.modalHint.style.display = 'block';
@@ -554,7 +560,6 @@ export class PanelController {
     labelBrightness?: number;
     labelColor?: string;
     labelFont?: string;
-    depthLimit?: number | null;
   }): void {
     if (typeof values.nodeRadius === 'number' && this.setNodeRadius) {
       this.setNodeRadius.value = String(values.nodeRadius);
@@ -574,9 +579,6 @@ export class PanelController {
     }
     if (typeof values.labelFont === 'string' && this.setLabelFont) {
       this.setLabelFont.value = values.labelFont;
-    }
-    if (values.depthLimit !== undefined && this.depthLimit) {
-      this.depthLimit.value = values.depthLimit === null ? '' : String(values.depthLimit);
     }
   }
 
@@ -673,6 +675,7 @@ export class PanelController {
         return;
       }
 
+      if (!this.onCreateNode) return;
       this.modalSubmit.disabled = true;
       try {
         await this.onCreateNode({
