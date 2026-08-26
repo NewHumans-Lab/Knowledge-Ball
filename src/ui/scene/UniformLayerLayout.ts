@@ -1,16 +1,22 @@
 import type { RadialKnowledgeLayoutNode } from './RadialKnowledgeLayout';
-import { applyRadialKnowledgeLayout } from './RadialKnowledgeLayout';
-import { applyLocalChainLengthOptimization } from './LocalChainLengthOptimizer';
+import {
+  applyRadialKnowledgeLayout,
+  placeReasoningAtRelationCenters,
+} from './RadialKnowledgeLayout';
+import { applyTriangularRelationGroupPacking } from './TriangularRelationGroupPacking';
 
 /**
  * Runtime layout entry kept only so existing callers do not need unrelated
- * wiring changes. RadialKnowledgeLayout establishes the canonical 5R layers and
- * initial triangular packing; the bounded local optimizer may then shorten
- * relation edges without changing those radial layers or the 5R minimum spacing.
+ * wiring changes. RadialKnowledgeLayout establishes the canonical 5R radial
+ * planes. Same-plane knowledge nodes are then reassigned to discrete triangular
+ * lattice cells by relation-group constraints, and reasoning balls are refreshed
+ * afterwards from the final premise/conclusion geometry centres.
  */
 export type UniformLayoutNode = RadialKnowledgeLayoutNode;
 
 export function applyUniformLayerLayout<T extends UniformLayoutNode>(nodes: T[]): T[] {
   applyRadialKnowledgeLayout(nodes);
-  return applyLocalChainLengthOptimization(nodes);
+  applyTriangularRelationGroupPacking(nodes);
+  placeReasoningAtRelationCenters(nodes);
+  return nodes;
 }
