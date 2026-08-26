@@ -10,7 +10,8 @@ import { SUN_ORBIT_RADIUS, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 /** Canonical phase-1 geometry. */
 export const RADIAL_LAYOUT_NODE_RADIUS = 7.2;
 export const RADIAL_LAYOUT_LINK_LENGTH = RADIAL_LAYOUT_NODE_RADIUS * 5;
-export const RADIAL_LAYOUT_MIN_PLANE_SPACING = RADIAL_LAYOUT_NODE_RADIUS * 2;
+export const RADIAL_LAYOUT_PLANE_EDGE_LENGTH = RADIAL_LAYOUT_LINK_LENGTH;
+export const RADIAL_LAYOUT_MIN_PLANE_SPACING = RADIAL_LAYOUT_PLANE_EDGE_LENGTH;
 
 const CHAIN_START_RADIUS = RADIAL_LAYOUT_LINK_LENGTH * 2;
 const MAX_COMPONENT_Z = 0.65;
@@ -34,9 +35,23 @@ type Basis = {
   v: THREE.Vector3;
 };
 
+type CompressedKnowledgeGraph = {
+  knowledgeNodes: RadialKnowledgeLayoutNode[];
+  adjacency: Map<string, Set<string>>;
+  outgoing: Map<string, Set<string>>;
+  incoming: Map<string, Set<string>>;
+};
+
 function setPosition(node: RadialKnowledgeLayoutNode, position: THREE.Vector3): void {
   node.pos = position.clone();
   node.homePos = position.clone();
+  node.vel ??= new THREE.Vector3();
+  node.vel.set(0, 0, 0);
+}
+
+function clearLayoutPosition(node: RadialKnowledgeLayoutNode): void {
+  node.pos = undefined;
+  node.homePos = undefined;
   node.vel ??= new THREE.Vector3();
   node.vel.set(0, 0, 0);
 }
@@ -51,11 +66,6 @@ function tangentBasis(direction: THREE.Vector3): Basis {
   return { radial, u, v };
 }
 
-/**
- * Gives every independent component its own outward radial direction.
- * The z clamp keeps components away from a camera-depth degeneracy while still
- * distributing them over the full visible sphere belt.
- */
 function componentDirection(index: number, count: number): THREE.Vector3 {
   if (count <= 1) return new THREE.Vector3(1, 0, 0);
   const z = MAX_COMPONENT_Z * (1 - 2 * ((index + 0.5) / count));
@@ -64,95 +74,158 @@ function componentDirection(index: number, count: number): THREE.Vector3 {
   return new THREE.Vector3(xy * Math.cos(phi), xy * Math.sin(phi), z).normalize();
 }
 
-/**
- * Places n neighbours on one plane perpendicular to the component radial axis.
- * Every neighbour is exactly L from center.
- *
- * For n>1, adjacent chord distance is 2ρsin(π/n), therefore the smallest ring
- * radius that satisfies spacing x is ρ=x/(2sin(π/n)). The axial offset is
- * h=sqrt(L²-ρ²). If ρ>L, fixed L is mathematically incompatible with x on a
- * single plane/circle; fixed L wins and ρ is clamped to L.
- */
-export function positionsOnPerpendicularPlane(
-  center: THREE.Vector3,
-  radialDirection: THREE.Vector3,
-  count: number,
-  outward: boolean,
-  minSpacing = RADIAL_LAYOUT_MIN_PLANE_SPACING,
-): THREE.Vector3[] {
-  if (count <= 0) return [];
-  const { radial, u, v } = tangentBasis(radialDirection);
-  const sign = outward ? 1 : -1;
+function axialToPlane(q: number, r: number, edgeLength: number): THREE.Vector2 {
+  return new THREE.Vector2(
+    edgeLength * (q + r / 2),
+    edgeLength * (Math.sqrt(3) / 2) * r,
+  );
+}
 
-  if (count === 1) {
-    return [center.clone().addScaledVector(radial, sign * RADIAL_LAYOUT_LINK_LENGTH)];
+function ringAxialCoordinates(radius: number): Array<[number, number]> {
+  const result: Array<[number, number]> = [];
+  for (let q = -radius; q <= radius; q += 1) {
+    for (let r = -radius; r <= radius; r += 1) {
+      const s = -q - r;
+      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) !== radius) continue;
+      result.push([q, r]);
+    }
   }
-
-  const requiredRingRadius = minSpacing / (2 * Math.sin(Math.PI / count));
-  const ringRadius = Math.min(requiredRingRadius, RADIAL_LAYOUT_LINK_LENGTH);
-  const axialOffset = Math.sqrt(Math.max(
-    0,
-    RADIAL_LAYOUT_LINK_LENGTH ** 2 - ringRadius ** 2,
-  ));
-  const phase = count % 2 === 0 ? Math.PI / count : 0;
-
-  return Array.from({ length: count }, (_, index) => {
-    const angle = phase + index * Math.PI * 2 / count;
-    return center.clone()
-      .addScaledVector(radial, sign * axialOffset)
-      .addScaledVector(u, ringRadius * Math.cos(angle))
-      .addScaledVector(v, ringRadius * Math.sin(angle));
+  return result.sort((left, right) => {
+    const a = axialToPlane(left[0], left[1], 1);
+    const b = axialToPlane(right[0], right[1], 1);
+    return Math.atan2(a.y, a.x) - Math.atan2(b.y, b.x);
   });
 }
 
-function isPrimaryNode(node: RadialKnowledgeLayoutNode): boolean {
-  if (isSystemCoreNodeId(node.id)) return false;
-  if (node.hidden && !node.lineage) return false;
-  if (lineageRoleFor(node) !== 'current') return false;
-  return node.lineage?.reasoningSide !== 'opposition';
+function evenlySampleRing<T>(items: readonly T[], count: number): T[] {
+  if (count >= items.length) return [...items];
+  return Array.from({ length: count }, (_, index) =>
+    items[Math.floor(index * items.length / count)]!,
+  );
+}
+
+/**
+ * Compact points on a triangular/hexagonal lattice with nearest-neighbour edge L.
+ * 3 points are an exact equilateral triangle; 7 points are center + regular hexagon.
+ */
+export function compactTriangularPlaneOffsets(
+  count: number,
+  edgeLength = RADIAL_LAYOUT_PLANE_EDGE_LENGTH,
+): THREE.Vector2[] {
+  if (count <= 0) return [];
+  if (count === 1) return [new THREE.Vector2(0, 0)];
+  if (count === 2) {
+    return [
+      new THREE.Vector2(-edgeLength / 2, 0),
+      new THREE.Vector2(edgeLength / 2, 0),
+    ];
+  }
+  if (count === 3) {
+    const h = Math.sqrt(3) * edgeLength / 2;
+    return [
+      new THREE.Vector2(-edgeLength / 2, -h / 3),
+      new THREE.Vector2(edgeLength / 2, -h / 3),
+      new THREE.Vector2(0, h * 2 / 3),
+    ];
+  }
+
+  const points = [new THREE.Vector2(0, 0)];
+  let remaining = count - 1;
+  let radius = 1;
+  while (remaining > 0) {
+    const ring = ringAxialCoordinates(radius);
+    const take = Math.min(remaining, ring.length);
+    for (const [q, r] of evenlySampleRing(ring, take)) {
+      points.push(axialToPlane(q, r, edgeLength));
+    }
+    remaining -= take;
+    radius += 1;
+  }
+
+  const centroid = points.reduce(
+    (sum, point) => sum.add(point),
+    new THREE.Vector2(),
+  ).multiplyScalar(1 / points.length);
+  return points.map(point => point.clone().sub(centroid));
+}
+
+export function positionsOnTriangularPlane(
+  center: THREE.Vector3,
+  radialDirection: THREE.Vector3,
+  count: number,
+  edgeLength = RADIAL_LAYOUT_PLANE_EDGE_LENGTH,
+): THREE.Vector3[] {
+  const { u, v } = tangentBasis(radialDirection);
+  return compactTriangularPlaneOffsets(count, edgeLength).map(offset =>
+    center.clone()
+      .addScaledVector(u, offset.x)
+      .addScaledVector(v, offset.y),
+  );
 }
 
 function isReasoning(node: RadialKnowledgeLayoutNode): boolean {
   return node.type === 'reasoning';
 }
 
-function buildPrimaryAdjacency(
-  primaryNodes: RadialKnowledgeLayoutNode[],
-): {
-  adjacency: Map<string, Set<string>>;
-  conclusionsByReasoning: Map<string, string[]>;
-  producerByKnowledge: Map<string, string[]>;
-} {
+function isPrimaryCurrentNode(node: RadialKnowledgeLayoutNode): boolean {
+  if (isSystemCoreNodeId(node.id)) return false;
+  if (node.hidden && !node.lineage) return false;
+  if (lineageRoleFor(node) !== 'current') return false;
+  return node.lineage?.reasoningSide !== 'opposition';
+}
+
+function connectDirected(
+  fromId: string,
+  toId: string,
+  adjacency: Map<string, Set<string>>,
+  outgoing: Map<string, Set<string>>,
+  incoming: Map<string, Set<string>>,
+): void {
+  if (fromId === toId) return;
+  adjacency.get(fromId)?.add(toId);
+  adjacency.get(toId)?.add(fromId);
+  outgoing.get(fromId)?.add(toId);
+  incoming.get(toId)?.add(fromId);
+}
+
+/**
+ * Reasoning nodes are deliberately removed from the primary layout graph.
+ * premise -> reasoning -> conclusion becomes premise -> conclusion for geometry.
+ * The reasoning ball is inserted afterwards at the midpoint of both side centres.
+ */
+function buildCompressedKnowledgeGraph(nodes: RadialKnowledgeLayoutNode[]): CompressedKnowledgeGraph {
+  const primaryNodes = nodes.filter(isPrimaryCurrentNode);
   const byId = new Map(primaryNodes.map(node => [node.id, node] as const));
   const reasoningIds = new Set(primaryNodes.filter(isReasoning).map(node => node.id));
-  const adjacency = new Map(primaryNodes.map(node => [node.id, new Set<string>()] as const));
+  const knowledgeNodes = primaryNodes.filter(node => !isReasoning(node));
+  const knowledgeIds = new Set(knowledgeNodes.map(node => node.id));
+
+  const adjacency = new Map(knowledgeNodes.map(node => [node.id, new Set<string>()] as const));
+  const outgoing = new Map(knowledgeNodes.map(node => [node.id, new Set<string>()] as const));
+  const incoming = new Map(knowledgeNodes.map(node => [node.id, new Set<string>()] as const));
   const conclusionsByReasoning = new Map<string, string[]>();
-  const producerByKnowledge = new Map<string, string[]>();
 
   for (const reasoningId of reasoningIds) conclusionsByReasoning.set(reasoningId, []);
-
-  for (const node of primaryNodes) {
-    if (isReasoning(node)) {
-      for (const premiseId of node.premises ?? []) {
-        if (!byId.has(premiseId)) continue;
-        adjacency.get(node.id)!.add(premiseId);
-        adjacency.get(premiseId)!.add(node.id);
-      }
-      continue;
-    }
-
+  for (const node of knowledgeNodes) {
     for (const sourceId of node.premises ?? []) {
-      if (!reasoningIds.has(sourceId)) continue;
-      conclusionsByReasoning.get(sourceId)!.push(node.id);
-      const producers = producerByKnowledge.get(node.id);
-      if (producers) producers.push(sourceId);
-      else producerByKnowledge.set(node.id, [sourceId]);
-      adjacency.get(node.id)!.add(sourceId);
-      adjacency.get(sourceId)!.add(node.id);
+      if (reasoningIds.has(sourceId)) conclusionsByReasoning.get(sourceId)!.push(node.id);
+      else if (knowledgeIds.has(sourceId)) connectDirected(sourceId, node.id, adjacency, outgoing, incoming);
     }
   }
 
-  return { adjacency, conclusionsByReasoning, producerByKnowledge };
+  for (const reasoningId of reasoningIds) {
+    const reasoning = byId.get(reasoningId);
+    if (!reasoning) continue;
+    const premises = (reasoning.premises ?? []).filter(id => knowledgeIds.has(id));
+    const conclusions = conclusionsByReasoning.get(reasoningId) ?? [];
+    for (const premiseId of premises) {
+      for (const conclusionId of conclusions) {
+        connectDirected(premiseId, conclusionId, adjacency, outgoing, incoming);
+      }
+    }
+  }
+
+  return { knowledgeNodes, adjacency, outgoing, incoming };
 }
 
 function connectedComponents(
@@ -161,7 +234,6 @@ function connectedComponents(
 ): string[][] {
   const components: string[][] = [];
   const visited = new Set<string>();
-
   for (const seed of [...nodeIds].sort()) {
     if (visited.has(seed)) continue;
     const queue = [seed];
@@ -169,10 +241,9 @@ function connectedComponents(
     visited.add(seed);
     let head = 0;
     while (head < queue.length) {
-      const id = queue[head++];
+      const id = queue[head++]!;
       component.push(id);
-      const neighbours = [...(adjacency.get(id) ?? [])].sort();
-      for (const nextId of neighbours) {
+      for (const nextId of [...(adjacency.get(id) ?? [])].sort()) {
         if (visited.has(nextId)) continue;
         visited.add(nextId);
         queue.push(nextId);
@@ -180,155 +251,92 @@ function connectedComponents(
     }
     components.push(component.sort());
   }
-
-  return components.sort((left, right) => left[0].localeCompare(right[0]));
+  return components.sort((left, right) => left[0]!.localeCompare(right[0]!));
 }
 
-function rootReasonings(
+function computeDepths(
   component: readonly string[],
-  byId: ReadonlyMap<string, RadialKnowledgeLayoutNode>,
-  producerByKnowledge: ReadonlyMap<string, readonly string[]>,
-): string[] {
+  incoming: ReadonlyMap<string, ReadonlySet<string>>,
+  outgoing: ReadonlyMap<string, ReadonlySet<string>>,
+): Map<string, number> {
   const componentSet = new Set(component);
-  const reasonings = component.filter(id => isReasoning(byId.get(id)!));
-  const roots = reasonings.filter(reasoningId => {
-    const reasoning = byId.get(reasoningId)!;
-    return (reasoning.premises ?? []).every(premiseId =>
-      (producerByKnowledge.get(premiseId) ?? [])
-        .every(parentReasoningId => !componentSet.has(parentReasoningId)),
-    );
-  });
-  return (roots.length ? roots : reasonings.slice(0, 1)).sort();
-}
+  const indegree = new Map<string, number>();
+  const depth = new Map<string, number>();
+  for (const id of component) {
+    const degree = [...(incoming.get(id) ?? [])].filter(parent => componentSet.has(parent)).length;
+    indegree.set(id, degree);
+    if (degree === 0) depth.set(id, 0);
+  }
 
-function placeRootReasonings(
-  rootIds: readonly string[],
-  byId: ReadonlyMap<string, RadialKnowledgeLayoutNode>,
-  direction: THREE.Vector3,
-): string[] {
-  if (!rootIds.length) return [];
-  const anchor = direction.clone().multiplyScalar(CHAIN_START_RADIUS);
-  const { u, v } = tangentBasis(direction);
-  const ringRadius = rootIds.length <= 1
-    ? 0
-    : Math.min(
-        RADIAL_LAYOUT_LINK_LENGTH,
-        RADIAL_LAYOUT_MIN_PLANE_SPACING / (2 * Math.sin(Math.PI / rootIds.length)),
-      );
-
-  rootIds.forEach((id, index) => {
-    const node = byId.get(id);
-    if (!node) return;
-    if (rootIds.length === 1) {
-      setPosition(node, anchor);
-      return;
+  const queue = component.filter(id => indegree.get(id) === 0).sort();
+  let head = 0;
+  while (head < queue.length) {
+    const id = queue[head++]!;
+    const baseDepth = depth.get(id) ?? 0;
+    for (const childId of [...(outgoing.get(id) ?? [])].filter(id => componentSet.has(id)).sort()) {
+      depth.set(childId, Math.max(depth.get(childId) ?? 0, baseDepth + 1));
+      const remaining = (indegree.get(childId) ?? 0) - 1;
+      indegree.set(childId, remaining);
+      if (remaining === 0) queue.push(childId);
     }
-    const angle = index * Math.PI * 2 / rootIds.length;
-    setPosition(
-      node,
-      anchor.clone()
-        .addScaledVector(u, ringRadius * Math.cos(angle))
-        .addScaledVector(v, ringRadius * Math.sin(angle)),
-    );
-  });
-  return [...rootIds];
+  }
+
+  const maxKnownDepth = Math.max(0, ...depth.values());
+  for (const id of component) {
+    if (!depth.has(id)) depth.set(id, maxKnownDepth + 1);
+  }
+  return depth;
 }
 
-function placeChainComponent(
+function relationOrderKey(
+  id: string,
+  incoming: ReadonlyMap<string, ReadonlySet<string>>,
+  outgoing: ReadonlyMap<string, ReadonlySet<string>>,
+): string {
+  const parents = [...(incoming.get(id) ?? [])].sort().join(',');
+  const children = [...(outgoing.get(id) ?? [])].sort().join(',');
+  return `${parents}|${children}|${id}`;
+}
+
+function placeCompressedComponent(
   component: readonly string[],
   byId: ReadonlyMap<string, RadialKnowledgeLayoutNode>,
-  conclusionsByReasoning: ReadonlyMap<string, readonly string[]>,
-  producerByKnowledge: ReadonlyMap<string, readonly string[]>,
+  incoming: ReadonlyMap<string, ReadonlySet<string>>,
+  outgoing: ReadonlyMap<string, ReadonlySet<string>>,
   direction: THREE.Vector3,
 ): void {
-  const reasoningIds = component.filter(id => isReasoning(byId.get(id)!));
-  if (!reasoningIds.length) {
-    const standalone = byId.get(component[0]);
-    if (standalone) setPosition(standalone, direction.clone().multiplyScalar(CHAIN_START_RADIUS));
-    return;
-  }
-
-  const placed = new Set<string>();
-  const roots = rootReasonings(component, byId, producerByKnowledge);
-  const queue = placeRootReasonings(roots, byId, direction);
-  roots.forEach(id => placed.add(id));
-  let head = 0;
-
-  while (head < queue.length) {
-    const reasoningId = queue[head++];
-    const reasoning = byId.get(reasoningId);
-    if (!reasoning?.pos) continue;
-
-    const premises = (reasoning.premises ?? [])
-      .filter(id => component.includes(id) && !placed.has(id))
-      .map(id => byId.get(id))
-      .filter((node): node is RadialKnowledgeLayoutNode => Boolean(node));
-    const premisePositions = positionsOnPerpendicularPlane(
-      reasoning.pos,
-      direction,
-      premises.length,
-      false,
-    );
-    premises.forEach((node, index) => {
-      setPosition(node, premisePositions[index]);
-      placed.add(node.id);
-    });
-
-    const conclusions = (conclusionsByReasoning.get(reasoningId) ?? [])
-      .filter(id => component.includes(id))
-      .map(id => byId.get(id))
-      .filter((node): node is RadialKnowledgeLayoutNode => Boolean(node));
-    const unplacedConclusions = conclusions.filter(node => !placed.has(node.id));
-    const conclusionPositions = positionsOnPerpendicularPlane(
-      reasoning.pos,
-      direction,
-      unplacedConclusions.length,
-      true,
-    );
-    unplacedConclusions.forEach((node, index) => {
-      setPosition(node, conclusionPositions[index]);
-      placed.add(node.id);
-    });
-
-    for (const conclusion of conclusions) {
-      if (!conclusion.pos) continue;
-      const children = reasoningIds
-        .filter(id => !placed.has(id) && (byId.get(id)?.premises ?? []).includes(conclusion.id))
-        .sort();
-      const childPositions = positionsOnPerpendicularPlane(
-        conclusion.pos,
-        direction,
-        children.length,
-        true,
-      );
-      children.forEach((childId, index) => {
-        const child = byId.get(childId);
-        if (!child) return;
-        setPosition(child, childPositions[index]);
-        placed.add(childId);
-        queue.push(childId);
-      });
-    }
-  }
-
-  // Phase 1 deliberately does not solve arbitrary cyclic/merge constraints.
-  // Any still-unplaced node gets a deterministic reserved position on this spoke
-  // without changing positions that already satisfy the single-chain equations.
-  let reserveIndex = 0;
+  const depths = computeDepths(component, incoming, outgoing);
+  const groups = new Map<number, string[]>();
   for (const id of component) {
-    if (placed.has(id)) continue;
-    const node = byId.get(id);
-    if (!node) continue;
-    const reserveRadius = CHAIN_START_RADIUS + RADIAL_LAYOUT_LINK_LENGTH * (reserveIndex + 1);
-    setPosition(node, direction.clone().multiplyScalar(reserveRadius));
-    reserveIndex += 1;
+    const d = depths.get(id) ?? 0;
+    const group = groups.get(d);
+    if (group) group.push(id);
+    else groups.set(d, [id]);
+  }
+
+  for (const depth of [...groups.keys()].sort((a, b) => a - b)) {
+    const ids = groups.get(depth)!
+      .sort((a, b) => relationOrderKey(a, incoming, outgoing).localeCompare(relationOrderKey(b, incoming, outgoing)));
+    const planeCenter = direction.clone().multiplyScalar(
+      CHAIN_START_RADIUS + depth * RADIAL_LAYOUT_LINK_LENGTH,
+    );
+    const positions = positionsOnTriangularPlane(
+      planeCenter,
+      direction,
+      ids.length,
+      RADIAL_LAYOUT_PLANE_EDGE_LENGTH,
+    );
+    ids.forEach((id, index) => {
+      const node = byId.get(id);
+      if (node) setPosition(node, positions[index]!);
+    });
   }
 }
 
 function placeLineageBranches(nodes: RadialKnowledgeLayoutNode[]): void {
   const groups = new Map<string, RadialKnowledgeLayoutNode[]>();
   for (const node of nodes) {
-    if (!node.lineage) continue;
+    if (!node.lineage || isReasoning(node)) continue;
     const topicId = topicIdFor(node);
     const group = groups.get(topicId);
     if (group) group.push(node);
@@ -381,13 +389,9 @@ function placeLineageBranches(nodes: RadialKnowledgeLayoutNode[]): void {
     });
 
     const grayCandidate = members.find(node => lineageRoleFor(node) === 'candidate-history');
-    if (grayCandidate) {
-      setPosition(grayCandidate, base.pos.clone().addScaledVector(v, RADIAL_LAYOUT_LINK_LENGTH));
-    }
+    if (grayCandidate) setPosition(grayCandidate, base.pos.clone().addScaledVector(v, RADIAL_LAYOUT_LINK_LENGTH));
     const redCandidate = members.find(node => lineageRoleFor(node) === 'candidate-opposition');
-    if (redCandidate) {
-      setPosition(redCandidate, base.pos.clone().addScaledVector(v, -RADIAL_LAYOUT_LINK_LENGTH));
-    }
+    if (redCandidate) setPosition(redCandidate, base.pos.clone().addScaledVector(v, -RADIAL_LAYOUT_LINK_LENGTH));
   }
 }
 
@@ -407,43 +411,82 @@ function placeCoreNodes(nodes: RadialKnowledgeLayoutNode[]): void {
   }
 }
 
+function meanPosition(nodes: readonly RadialKnowledgeLayoutNode[]): THREE.Vector3 | null {
+  const positioned = nodes.filter(
+    (node): node is RadialKnowledgeLayoutNode & { pos: THREE.Vector3 } => Boolean(node.pos),
+  );
+  if (!positioned.length) return null;
+  return positioned.reduce(
+    (sum, node) => sum.add(node.pos),
+    new THREE.Vector3(),
+  ).multiplyScalar(1 / positioned.length);
+}
+
 /**
- * Single runtime owner for knowledge-node geometry.
- *
- * Old uniform-layer and relation-length layouts are intentionally not called.
- * Current main knowledge forms radial components; premise -> reasoning ->
- * conclusion chains grow from the ball center outward with L=5r. Gray/red
- * lineage branches are perpendicular to that radial direction.
+ * A reasoning ball does not influence the knowledge layout. After all knowledge
+ * positions are fixed, it is inserted at the midpoint between the geometric
+ * centre of its premise set and the geometric centre of its conclusion set:
+ * R = (mean(P) + mean(C)) / 2.
+ */
+export function placeReasoningAtRelationCenters(nodes: RadialKnowledgeLayoutNode[]): void {
+  const byId = new Map(nodes.map(node => [node.id, node] as const));
+  const knowledgeNodes = nodes.filter(node => !isReasoning(node));
+
+  for (const reasoning of nodes.filter(isReasoning)) {
+    const premises = (reasoning.premises ?? [])
+      .map(id => byId.get(id))
+      .filter((node): node is RadialKnowledgeLayoutNode => Boolean(node && !isReasoning(node)));
+    const conclusions = knowledgeNodes.filter(node => (node.premises ?? []).includes(reasoning.id));
+    const premiseCenter = meanPosition(premises);
+    const conclusionCenter = meanPosition(conclusions);
+
+    if (premiseCenter && conclusionCenter) {
+      setPosition(reasoning, premiseCenter.add(conclusionCenter).multiplyScalar(0.5));
+    } else if (premiseCenter) {
+      setPosition(reasoning, premiseCenter);
+    } else if (conclusionCenter) {
+      setPosition(reasoning, conclusionCenter);
+    }
+  }
+}
+
+/**
+ * Runtime owner for the current chain geometry. Knowledge nodes are laid out on
+ * radial planes first; reasoning nodes are excluded from that solve and inserted
+ * afterwards at their relation geometry centres.
  */
 export function applyRadialKnowledgeLayout<T extends RadialKnowledgeLayoutNode>(nodes: T[]): T[] {
+  for (const node of nodes) {
+    if (isReasoning(node)) clearLayoutPosition(node);
+  }
   placeCoreNodes(nodes);
 
-  const primaryNodes = nodes.filter(isPrimaryNode);
-  const byId = new Map(primaryNodes.map(node => [node.id, node] as const));
-  const { adjacency, conclusionsByReasoning, producerByKnowledge } = buildPrimaryAdjacency(primaryNodes);
-  const components = connectedComponents(primaryNodes.map(node => node.id), adjacency);
-
+  const graph = buildCompressedKnowledgeGraph(nodes);
+  const byId = new Map(graph.knowledgeNodes.map(node => [node.id, node] as const));
+  const components = connectedComponents(graph.knowledgeNodes.map(node => node.id), graph.adjacency);
   components.forEach((component, index) => {
-    placeChainComponent(
+    placeCompressedComponent(
       component,
       byId,
-      conclusionsByReasoning,
-      producerByKnowledge,
+      graph.incoming,
+      graph.outgoing,
       componentDirection(index, components.length),
     );
   });
 
   placeLineageBranches(nodes);
 
-  // Legacy hidden records that are neither current nor formal lineage still get
-  // finite coordinates so scene internals never receive an undefined position.
-  let hiddenReserve = 0;
+  let reserveIndex = 0;
   for (const node of nodes) {
-    if (node.pos) continue;
-    const direction = componentDirection(hiddenReserve, Math.max(1, nodes.length));
-    setPosition(node, direction.multiplyScalar(CHAIN_START_RADIUS + RADIAL_LAYOUT_LINK_LENGTH * 6));
-    hiddenReserve += 1;
+    if (isReasoning(node) || node.pos) continue;
+    const direction = componentDirection(reserveIndex, Math.max(1, nodes.length));
+    setPosition(
+      node,
+      direction.multiplyScalar(CHAIN_START_RADIUS + RADIAL_LAYOUT_LINK_LENGTH * 6),
+    );
+    reserveIndex += 1;
   }
 
+  placeReasoningAtRelationCenters(nodes);
   return nodes;
 }

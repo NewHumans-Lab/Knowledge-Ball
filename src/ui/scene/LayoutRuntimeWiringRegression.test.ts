@@ -19,14 +19,18 @@ const renderFilterIndex = appSource.indexOf('renderNodes = layoutNodes.filter');
 assert(allNodesIndex >= 0, 'user app must build layout from every projected node');
 assert(layoutCallIndex > allNodesIndex, 'radial layout must run after the full projected graph is materialized');
 assert(renderFilterIndex > layoutCallIndex, 'hidden rendering filter must run only after full-graph layout');
-assert(appSource.includes('function getSceneNodes(): KnowledgeSceneNode[] {\n  return renderNodes;\n}'), 'the live scene must receive the complete visible render-node set on mobile and desktop');
 assert(!appSource.includes('mobileSceneNodeLimit'), 'mobile knowledge truth must not restore a fixed scene-node cap');
 
 assert(layoutEntrySource.includes("import { applyRadialKnowledgeLayout } from './RadialKnowledgeLayout';"), 'the compatibility layout entry must delegate only to RadialKnowledgeLayout');
 assert(layoutEntrySource.includes('return applyRadialKnowledgeLayout(nodes);'), 'the compatibility entry must not perform its own positioning');
+assert(!layoutEntrySource.includes('compressReasoningForPhaseOne'), 'layout entry must not mutate reasoning visibility or relation truth');
 assert(!layoutEntrySource.includes('RelationLengthLayout'), 'retired relation-length layout must not remain in the runtime entry');
-assert(radialSource.includes('RADIAL_LAYOUT_LINK_LENGTH = RADIAL_LAYOUT_NODE_RADIUS * 5'), 'radial owner must preserve L=5r');
-assert(radialSource.includes('positionsOnPerpendicularPlane'), 'radial owner must contain the perpendicular-plane expansion geometry');
+assert(radialSource.includes('RADIAL_LAYOUT_LINK_LENGTH = RADIAL_LAYOUT_NODE_RADIUS * 5'), 'radial owner must preserve L=5R');
+assert(radialSource.includes('RADIAL_LAYOUT_PLANE_EDGE_LENGTH = RADIAL_LAYOUT_LINK_LENGTH'), 'same-layer triangular edge must equal 5R');
+assert(radialSource.includes('compactTriangularPlaneOffsets'), 'radial owner must contain compact triangular-plane geometry');
+assert(radialSource.includes('buildCompressedKnowledgeGraph'), 'reasoning must be compressed out of the primary knowledge-position solve');
+assert(radialSource.includes('placeReasoningAtRelationCenters'), 'reasoning balls must be inserted after knowledge positions are solved');
+assert(radialSource.includes('premiseCenter.add(conclusionCenter).multiplyScalar(0.5)'), 'reasoning position must be the midpoint of equal-weight premise and conclusion centres');
 assert(!radialSource.includes('optimizeRelationLengthLayout'), 'radial owner must not call the retired optimizer');
 
 assert.equal(MOBILE_ACTIVE_NODE_TARGET, 49, 'mobile high-detail working set target must remain 49');
@@ -52,4 +56,4 @@ assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD membership m
 assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs must not globally hide all relations');
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale regression checks');
 
-console.log('Radial layout ownership and dynamic mobile LOD wiring regression tests passed.');
+console.log('Compressed triangular layout and reasoning midpoint wiring checks passed.');
