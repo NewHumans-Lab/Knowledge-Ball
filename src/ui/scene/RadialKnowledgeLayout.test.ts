@@ -9,6 +9,11 @@ import {
   positionsOnTriangularPlane,
   type RadialKnowledgeLayoutNode,
 } from './RadialKnowledgeLayout';
+import {
+  LOCAL_CHAIN_OPTIMIZATION_HOPS,
+  LOCAL_CHAIN_OPTIMIZATION_MAX_NODES,
+  applyLocalChainLengthOptimization,
+} from './LocalChainLengthOptimizer';
 
 const EPSILON = 1e-6;
 const near = (actual: number, expected: number, message: string) =>
@@ -18,10 +23,18 @@ const nearVector = (actual: THREE.Vector3, expected: THREE.Vector3, message: str
 const mean = (points: THREE.Vector3[]) => points
   .reduce((sum, point) => sum.add(point), new THREE.Vector3())
   .multiplyScalar(1 / points.length);
+const edgeTotal = (nodes: RadialKnowledgeLayoutNode[], edges: Array<[string, string]>) => {
+  const byId = new Map(nodes.map(node => [node.id, node] as const));
+  return edges.reduce((sum, [fromId, toId]) =>
+    sum + byId.get(fromId)!.pos!.distanceTo(byId.get(toId)!.pos!),
+  0);
+};
 
 assert.equal(RADIAL_LAYOUT_LINK_LENGTH, RADIAL_LAYOUT_NODE_RADIUS * 5, 'L must equal 5R');
 assert.equal(RADIAL_LAYOUT_PLANE_EDGE_LENGTH, RADIAL_LAYOUT_LINK_LENGTH, 'plane edge must equal 5R');
 assert.equal(RADIAL_LAYOUT_LINK_LENGTH, 36, 'R=7.2 therefore L=36');
+assert.equal(LOCAL_CHAIN_OPTIMIZATION_HOPS, 2, 'large-chain optimization must stay within two graph hops');
+assert.equal(LOCAL_CHAIN_OPTIMIZATION_MAX_NODES, 96, 'one local solve must stay bounded to 96 knowledge nodes');
 
 const triangle = compactTriangularPlaneOffsets(3);
 near(triangle[0]!.distanceTo(triangle[1]!), RADIAL_LAYOUT_LINK_LENGTH, 'triangle edge 01');
@@ -89,4 +102,65 @@ near(cc.distanceTo(ca), RADIAL_LAYOUT_LINK_LENGTH, 'conclusion triangle edge ca'
 const conclusionCenter = mean([ca, cb, cc]);
 nearVector(reasoning2, premise.clone().add(conclusionCenter).multiplyScalar(0.5), 'fan-out reasoning must use equal-weight side centres');
 
-console.log('Compressed triangular chain layout and reasoning-centre checks passed');
+const complex: RadialKnowledgeLayoutNode[] = [
+  { id: 'a', type: 'definition', premises: [] },
+  { id: 'b', type: 'definition', premises: [] },
+  { id: 'c', type: 'fact', premises: [] },
+  { id: 'd', type: 'fact', premises: [] },
+  { id: 'r-left', type: 'reasoning', premises: ['a', 'b', 'c'] },
+  { id: 'left', type: 'theory', premises: ['r-left'] },
+  { id: 'r-right', type: 'reasoning', premises: ['b', 'c', 'd'] },
+  { id: 'right', type: 'theory', premises: ['r-right'] },
+  { id: 'r-merge', type: 'reasoning', premises: ['left', 'right'] },
+  { id: 'out-1', type: 'fact', premises: ['r-merge'] },
+  { id: 'out-2', type: 'fact', premises: ['r-merge'] },
+];
+const compressedEdges: Array<[string, string]> = [
+  ['a', 'left'], ['b', 'left'], ['c', 'left'],
+  ['b', 'right'], ['c', 'right'], ['d', 'right'],
+  ['left', 'out-1'], ['right', 'out-1'],
+  ['left', 'out-2'], ['right', 'out-2'],
+];
+applyRadialKnowledgeLayout(complex);
+const baselineTotal = edgeTotal(complex, compressedEdges);
+const radialBefore = new Map(
+  complex
+    .filter(node => node.type !== 'reasoning')
+    .map(node => [node.id, node.pos!.x] as const),
+);
+applyLocalChainLengthOptimization(complex);
+const optimizedTotal = edgeTotal(complex, compressedEdges);
+assert.ok(optimizedTotal <= baselineTotal + EPSILON, 'local optimization must never increase the compressed chain edge total');
+for (const node of complex.filter(node => node.type !== 'reasoning')) {
+  near(node.pos!.x, radialBefore.get(node.id)!, `${node.id} must stay on its original radial plane`);
+}
+for (const ids of [['a', 'b', 'c', 'd'], ['left', 'right'], ['out-1', 'out-2']]) {
+  const points = ids.map(id => complex.find(node => node.id === id)!.pos!);
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) {
+      assert.ok(points[i]!.distanceTo(points[j]!) + EPSILON >= RADIAL_LAYOUT_LINK_LENGTH, 'same-plane optimized nodes must remain at least 5R apart');
+    }
+  }
+}
+const rLeft = complex.find(node => node.id === 'r-left')!.pos!;
+const leftPremiseCenter = mean(['a', 'b', 'c'].map(id => complex.find(node => node.id === id)!.pos!));
+const leftConclusion = complex.find(node => node.id === 'left')!.pos!;
+nearVector(rLeft, leftPremiseCenter.clone().add(leftConclusion).multiplyScalar(0.5), 'reasoning midpoint must be recomputed after local optimization');
+
+const giant: RadialKnowledgeLayoutNode[] = Array.from({ length: 120 }, (_, index) => ({
+  id: `g-${index}`,
+  type: index === 0 ? 'definition' : 'fact',
+  premises: index === 0 ? [] : [`g-${index - 1}`],
+}));
+giant.push(
+  { id: 'branch-a', type: 'fact', premises: ['g-60'] },
+  { id: 'branch-b', type: 'fact', premises: ['g-60'] },
+);
+applyRadialKnowledgeLayout(giant);
+const farStartBefore = giant.find(node => node.id === 'g-0')!.pos!.clone();
+const farEndBefore = giant.find(node => node.id === 'g-119')!.pos!.clone();
+applyLocalChainLengthOptimization(giant);
+nearVector(giant.find(node => node.id === 'g-0')!.pos!, farStartBefore, 'large-chain optimization must not move nodes far before the local branch window');
+nearVector(giant.find(node => node.id === 'g-119')!.pos!, farEndBefore, 'large-chain optimization must not move nodes far after the local branch window');
+
+console.log('Compressed triangular chain, bounded line minimization, and reasoning-centre checks passed');
