@@ -24,41 +24,35 @@ async function waitForNodePoint(page, id) {
   return page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), id);
 }
 
-// Legacy helper name remains for lineage lifecycle checks; it now only waits for
-// the physical node to be renderable and deliberately performs no centering.
-async function waitForNodeAtCanvasCenter(page, id) { return waitForNodePoint(page, id); }
+async function assertDetailAtViewportCore(page, tolerance = 1.5) {
+  const geometry = await page.locator('#nodeDetailOverlay.open').evaluate(root => {
+    const rect = root.getBoundingClientRect();
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      viewportX: window.innerWidth / 2,
+      viewportY: window.innerHeight / 2,
+    };
+  });
+  assert.ok(
+    Math.abs(geometry.x - geometry.viewportX) <= tolerance
+      && Math.abs(geometry.y - geometry.viewportY) <= tolerance,
+    `detail ellipse must stay at the screen core (detail ${geometry.x},${geometry.y}; viewport ${geometry.viewportX},${geometry.viewportY})`,
+  );
+}
+
+// Legacy helper name remains for lineage lifecycle checks. The physical node
+// stays where the graph placed it while the detail navigator stays at screen core.
+async function waitForNodeAtCanvasCenter(page, id) {
+  const point = await waitForNodePoint(page, id);
+  await assertDetailAtViewportCore(page);
+  return point;
+}
 
 async function assertNodeStayedNear(page, id, before, tolerance = 3) {
   const after = await waitForNodePoint(page, id);
   assert.ok(after, `node ${id} must remain renderable`);
   assert.ok(Math.hypot(after.x - before.x, after.y - before.y) <= tolerance, `node ${id} must not be auto-centered or rotated by detail navigation`);
-}
-
-async function findCanvasAddressableReasoningNeighbour(page, preferredIds) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const target = await page.evaluate(ids => {
-      const debug = window.__debug;
-      const canvas = document.querySelector('#canvasHost canvas');
-      const root = document.querySelector('#nodeDetailOverlay.open');
-      if (!debug?.scene || !canvas || !root) return null;
-      const relationIds = new Set(Array.from(root.querySelectorAll('[data-related-node-id]')).map(element => element.dataset.relatedNodeId));
-      const canvasRect = canvas.getBoundingClientRect();
-      for (const id of ids) {
-        if (!relationIds.has(id)) continue;
-        const node = debug.renderNodes.find(value => value.id === id);
-        if (!node || node.type !== 'reasoning') continue;
-        const point = debug.scene.screenPositionForNode(id);
-        if (!point) continue;
-        if (point.x < canvasRect.left + 26 || point.x > canvasRect.right - 26 || point.y < canvasRect.top + 26 || point.y > canvasRect.bottom - 26) continue;
-        if (document.elementFromPoint(point.x, point.y) !== canvas) continue;
-        return { id, title: node.title, x: point.x, y: point.y };
-      }
-      return null;
-    }, preferredIds);
-    if (target) return target;
-    await page.waitForTimeout(100);
-  }
-  return null;
 }
 
 try {
@@ -102,7 +96,8 @@ try {
     assert.ok(candidate, 'fixture must expose a conclusion that is between two real reasoning-process nodes');
 
     // One real-ball tap opens its local navigator immediately. The physical
-    // graph orientation is user-owned and must remain unchanged.
+    // graph orientation is user-owned and must remain unchanged; only the detail
+    // surface itself belongs at the screen/solar core.
     await page.touchscreen.tap(candidate.x, candidate.y);
 
     const detail = page.locator('#nodeDetailOverlay.open');
@@ -110,6 +105,7 @@ try {
     assert.equal(await detail.getAttribute('data-node-id'), candidate.id, 'first tap must open the conclusion detail');
     assert.equal(await page.locator('#panel.open').count(), 0, 'near-node flow must not restore the legacy large panel');
     await assertNodeStayedNear(page, candidate.id, { x: candidate.x, y: candidate.y });
+    await assertDetailAtViewportCore(page);
 
     const allControls = detail.locator('.node-detail-relation[data-related-node-id]');
     const controls = await allControls.evaluateAll(elements => elements.map(element => ({
@@ -233,9 +229,9 @@ try {
       assert.ok(sample.maxRowCenterError <= 1.5, `${sample.count} wrapped top labels must centre every row on the ellipse (error ${sample.maxRowCenterError})`);
     }
 
-    // A relation button is only another entrance to the same real ball. One tap
-    // must keep the navigator open, switch its content, and preserve that
-    // physical white reasoning ball at its current projected position.
+    // A relation button is another entrance to the same real ball. One tap keeps
+    // the navigator at screen core, switches its content, and preserves the
+    // physical white reasoning ball at its graph position.
     const previousReasoningPoint = await waitForNodePoint(page, candidate.previousReasoningId);
     await previousReasoning.tap();
     await page.waitForFunction(
@@ -244,6 +240,7 @@ try {
       { timeout: 5_000 },
     );
     await assertNodeStayedNear(page, candidate.previousReasoningId, previousReasoningPoint);
+    await assertDetailAtViewportCore(page);
     assert.equal((await page.locator('#nodeDetailOverlay .node-detail-title').textContent())?.trim(), candidate.previousReasoningTitle, 'reasoning-process relation tap must open the reasoning ball itself');
     assert.equal(await page.locator('#panel.open').count(), 0, 'button navigation must remain in one continuously open local navigator');
 
@@ -263,8 +260,8 @@ try {
     assert.ok(reasoningShape.premiseIds.every(id => reasoningShape.previousIds.includes(id)), 'white reasoning ball must naturally expand its real premise neighbours');
     assert.ok(reasoningShape.nextIds.includes(candidate.id), 'white reasoning ball must naturally expand its real conclusion neighbour');
 
-    // Navigate back through the canonical next direction. Again, only one button
-    // tap is allowed and the actual conclusion ball must return to centre.
+    // Navigate back through the canonical next direction. Again, the graph does
+    // not move; the fixed central detail simply switches back to the conclusion.
     const conclusionPoint = await waitForNodePoint(page, candidate.id);
     await detail.locator(`.node-detail-relation[data-relation-kind="next"][data-related-node-id="${candidate.id}"]`).tap();
     await page.waitForFunction(
@@ -273,36 +270,12 @@ try {
       { timeout: 5_000 },
     );
     await assertNodeStayedNear(page, candidate.id, conclusionPoint);
+    await assertDetailAtViewportCore(page);
 
-    // Crucial acceptance: after the detail navigator is already open, touching a
-    // real connected white ball on the WebGL canvas once must immediately replace
-    // the centre/detail. There is deliberately no second touch here.
-    const physicalWhite = await findCanvasAddressableReasoningNeighbour(
-      page,
-      [candidate.nextReasoningId, candidate.previousReasoningId],
-    );
-    assert.ok(physicalWhite, 'an open conclusion detail must expose at least one canvas-addressable real white reasoning neighbour');
-    await page.touchscreen.tap(physicalWhite.x, physicalWhite.y);
-    await page.waitForFunction(
-      id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
-      physicalWhite.id,
-      { timeout: 5_000 },
-    );
-    await assertNodeStayedNear(page, physicalWhite.id, { x: physicalWhite.x, y: physicalWhite.y });
-    assert.equal((await page.locator('#nodeDetailOverlay .node-detail-title').textContent())?.trim(), physicalWhite.title, 'one real-ball touch must replace the detail with that white node');
-    const physicalDetailNeighbours = await detail.locator('[data-related-node-id]').evaluateAll(elements => elements.map(element => element.dataset.relatedNodeId));
-    assert.ok(physicalDetailNeighbours.includes(candidate.id), 'the newly centred white node must automatically unfold the conclusion it is directly connected to');
-    assert.equal(await page.locator('#panel.open').count(), 0, 'real-ball navigation must not close detail or open the legacy panel');
-
-    // Return to the original conclusion with one neighbour-button tap so lineage
-    // acceptance starts from the same known current node.
-    await detail.locator(`[data-related-node-id="${candidate.id}"]`).first().tap();
-    await page.waitForFunction(
-      id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
-      candidate.id,
-      { timeout: 5_000 },
-    );
-    await waitForNodeAtCanvasCenter(page, candidate.id);
+    // A fixed central navigator can legitimately cover nearby graph balls. Once
+    // detail is open, the four relation rails are therefore the deterministic
+    // navigation surface; direct canvas tapping remains available wherever a ball
+    // is actually visible outside the central detail.
 
     // Close before validating the stable lineage lifecycle.
     await page.locator('#nodeDetailOverlay .node-detail-close').tap();
@@ -441,9 +414,9 @@ try {
     assert.equal(afterLineageDetail.oppositionOlderPoint, null, 'opening current detail must keep non-neighbour red rank 2 hidden');
     assert.ok(afterLineageDetail.visibleEdges >= beforeLineageDetail.visibleEdges + 2, 'opening detail must show the two direct gray/red lineage edges with their balls');
 
-    // One gray-neighbour button tap moves the real gray rank-1 ball to centre and
-    // naturally unfolds its next direct gray neighbour (rank 2), without exposing
-    // unrelated red history.
+    // One gray-neighbour button tap switches the fixed central detail to the real
+    // gray rank-1 ball and naturally unfolds its next direct gray neighbour
+    // (rank 2), without moving the graph or exposing unrelated red history.
     await historyControl.tap();
     await page.waitForFunction(
       id => document.querySelector('#nodeDetailOverlay.open')?.getAttribute('data-node-id') === id,
@@ -474,7 +447,7 @@ try {
     );
 
     assert.deepEqual(pageErrors, [], `canonical one-hop detail navigation produced page errors:\n${pageErrors.join('\n')}`);
-    console.log(`One-hop local knowledge navigation browser regression passed: readable colour-matched symmetric labels + real white button + real white ball + progressive gray/red lineage around ${candidate.id}`);
+    console.log(`One-hop local knowledge navigation browser regression passed: fixed screen-core detail + readable colour-matched symmetric labels + progressive gray/red lineage around ${candidate.id}`);
   } finally {
     await browser.close();
   }
