@@ -9,18 +9,25 @@ import {
 
 const appSource = readFileSync('src/ui/app.ts', 'utf8');
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
-const uniformSource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
-const relationSource = readFileSync('src/ui/scene/RelationLengthLayout.ts', 'utf8');
+const layoutEntrySource = readFileSync('src/ui/scene/UniformLayerLayout.ts', 'utf8');
+const radialSource = readFileSync('src/ui/scene/RadialKnowledgeLayout.ts', 'utf8');
 
-assert(appSource.includes("import { applyUniformLayerLayout } from './scene/UniformLayerLayout';"), 'user app must import the uniform layout entry point');
+assert(appSource.includes("import { applyUniformLayerLayout } from './scene/UniformLayerLayout';"), 'user app must use the single layout entry point');
 const allNodesIndex = appSource.indexOf('layoutNodes = domainNodes.map');
 const layoutCallIndex = appSource.indexOf('applyUniformLayerLayout(layoutNodes)');
 const renderFilterIndex = appSource.indexOf('renderNodes = layoutNodes.filter');
 assert(allNodesIndex >= 0, 'user app must build layout from every projected node');
-assert(layoutCallIndex > allNodesIndex, 'uniform layout must run after the full projected graph is materialized');
-assert(renderFilterIndex > layoutCallIndex, 'hidden rendering filter must run only after full-graph layout optimization');
+assert(layoutCallIndex > allNodesIndex, 'radial layout must run after the full projected graph is materialized');
+assert(renderFilterIndex > layoutCallIndex, 'hidden rendering filter must run only after full-graph layout');
 assert(appSource.includes('function getSceneNodes(): KnowledgeSceneNode[] {\n  return renderNodes;\n}'), 'the live scene must receive the complete visible render-node set on mobile and desktop');
 assert(!appSource.includes('mobileSceneNodeLimit'), 'mobile knowledge truth must not restore a fixed scene-node cap');
+
+assert(layoutEntrySource.includes("import { applyRadialKnowledgeLayout } from './RadialKnowledgeLayout';"), 'the compatibility layout entry must delegate only to RadialKnowledgeLayout');
+assert(layoutEntrySource.includes('return applyRadialKnowledgeLayout(nodes);'), 'the compatibility entry must not perform its own positioning');
+assert(!layoutEntrySource.includes('RelationLengthLayout'), 'retired relation-length layout must not remain in the runtime entry');
+assert(radialSource.includes('RADIAL_LAYOUT_LINK_LENGTH = RADIAL_LAYOUT_NODE_RADIUS * 5'), 'radial owner must preserve L=5r');
+assert(radialSource.includes('positionsOnPerpendicularPlane'), 'radial owner must contain the perpendicular-plane expansion geometry');
+assert(!radialSource.includes('optimizeRelationLengthLayout'), 'radial owner must not call the retired optimizer');
 
 assert.equal(MOBILE_ACTIVE_NODE_TARGET, 49, 'mobile high-detail working set target must remain 49');
 assert.equal(MOBILE_ACTIVE_NODE_ENTER_RANK, 45, 'new mobile nodes must enter only after moving clearly into the near set');
@@ -45,11 +52,4 @@ assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD membership m
 assert(!sceneSource.includes('edgesGroup.visible=false'), 'large mobile graphs must not globally hide all relations');
 assert(sceneSource.includes('getActiveNodeCount'), 'runtime must expose active-node count for production-scale regression checks');
 
-assert(uniformSource.includes("import { optimizeRelationLengthLayout } from './RelationLengthLayout';"), 'uniform layout must import the relation-length optimizer used by the user page');
-const slotAssignmentIndex = uniformSource.indexOf('ordered.forEach((node, index) =>');
-const relationOptimizeIndex = uniformSource.indexOf('optimizeRelationLengthLayout(nodes)');
-assert(slotAssignmentIndex >= 0 && relationOptimizeIndex > slotAssignmentIndex, 'relation-length optimization must run after fixed uniform slots are assigned');
-assert(relationSource.includes('collectRelationLayoutEdges'), 'relation optimizer implementation must retain the complete graph edge collector');
-assert(!relationSource.includes('filter(node => !node.hidden)'), 'relation optimizer must not drop hidden historical nodes from its objective');
-
-console.log('User-page full-graph layout, relation authority, and dynamic mobile LOD wiring regression tests passed.');
+console.log('Radial layout ownership and dynamic mobile LOD wiring regression tests passed.');
