@@ -31,7 +31,7 @@ const fixture = (): LayoutNode[] => [
   node('final-b', ['reason-3'], 'hypothesis', 'outer'),
 ];
 
-assert.equal(LAYOUT_UNIT, KNOWLEDGE_BALL_RADIUS, 'placement precision must be R, not 5R');
+assert.equal(LAYOUT_UNIT, 5 * KNOWLEDGE_BALL_RADIUS, 'knowledge geometry spacing must be 5R');
 assert.equal(EXCLUSION_RADIUS, 5 * KNOWLEDGE_BALL_RADIUS, 'dedup exclusion radius remains 5R');
 assert.equal(EXPANSION_UNIT, 5 * KNOWLEDGE_BALL_RADIUS, 'minimum outward expansion remains 5R');
 assert.equal(positionsCollide(new THREE.Vector3(), new THREE.Vector3(EXCLUSION_RADIUS, 0, 0)), true, 'positions at 5R are reserved');
@@ -43,9 +43,9 @@ assert.equal(new Set(compact7.map(([q, r]) => `${q}:${r}`)).size, 7);
 assert(compact7.some(([, r]) => r !== 0), 'local branch solve must retain two tangential axes');
 
 const snappedOrigin = snapToNearestFcc(new THREE.Vector3(0.1, 0.1, 0.1));
-assert(snappedOrigin.length() < KNOWLEDGE_BALL_RADIUS, 'FCC snapping must be R-scale rather than a coarse 5R jump');
+assert(snappedOrigin.length() < KNOWLEDGE_BALL_RADIUS, 'FCC snapping must remain R-scale rather than becoming a coarse 5R jump');
 const snappedNeighbor = snapToNearestFcc(new THREE.Vector3(KNOWLEDGE_BALL_RADIUS / Math.sqrt(2), KNOWLEDGE_BALL_RADIUS / Math.sqrt(2), 0));
-assert(Math.abs(snappedNeighbor.length() - KNOWLEDGE_BALL_RADIUS) < EPSILON, 'FCC nearest-neighbour distance must be R');
+assert(Math.abs(snappedNeighbor.length() - KNOWLEDGE_BALL_RADIUS) < EPSILON, 'FCC nearest-neighbour distance must remain R');
 
 const macros = icosahedronMacroDirections();
 assert.equal(macros.length, MACRO_DIRECTION_COUNT);
@@ -54,8 +54,8 @@ const macroCandidates = mapMacroDirectionsToCandidates(macros, fibonacci);
 assert.equal(new Set(macroCandidates).size, MACRO_DIRECTION_COUNT);
 
 const boundaries = computeSemanticBoundaries([...fixture(), ...Array.from({ length: 9 }, (_, i) => node(`capacity-${i}`))]);
-assert(Math.abs(boundaries.cyanBlue / LAYOUT_UNIT - Math.round(boundaries.cyanBlue / LAYOUT_UNIT)) < EPSILON, 'semantic shells resolve at R precision');
-assert(Math.abs(boundaries.bluePurple / LAYOUT_UNIT - Math.round(boundaries.bluePurple / LAYOUT_UNIT)) < EPSILON, 'semantic shells resolve at R precision');
+assert(Math.abs(boundaries.cyanBlue / LAYOUT_UNIT - Math.round(boundaries.cyanBlue / LAYOUT_UNIT)) < EPSILON, 'semantic shells must resolve on the 5R knowledge-spacing scale');
+assert(Math.abs(boundaries.bluePurple / LAYOUT_UNIT - Math.round(boundaries.bluePurple / LAYOUT_UNIT)) < EPSILON, 'semantic shells must resolve on the 5R knowledge-spacing scale');
 assert.equal(boundaries.purpleOuter, null);
 
 const first = fixture();
@@ -74,6 +74,16 @@ for (const reasoning of first.filter(n => n.type === 'reasoning')) {
 
 const [, componentAngle] = [...diagnostics.usedAngles][0]!;
 const direction = fibonacciDirections(89)[componentAngle]!;
+const radialProjection = (id: string) => first.find(n => n.id === id)!.pos!.dot(direction);
+const radialStep = radialProjection('conclusion-1') - radialProjection('shared-a');
+assert(Math.abs(radialStep - LAYOUT_UNIT) <= 2 * KNOWLEDGE_BALL_RADIUS, `adjacent knowledge depth must target 5R before R-scale FCC quantization (actual=${radialStep})`);
+
+const sameDepth = ['premise-c', 'shared-a', 'shared-b'].map(id => first.find(n => n.id === id)!.pos!);
+for (let i = 0; i < sameDepth.length; i++) for (let j = i + 1; j < sameDepth.length; j++) {
+  const distance = sameDepth[i]!.distanceTo(sameDepth[j]!);
+  assert(Math.abs(distance - LAYOUT_UNIT) <= 2 * KNOWLEDGE_BALL_RADIUS, `same-depth triangular neighbours must target 5R before R-scale FCC quantization (actual=${distance})`);
+}
+
 const outer = first.filter(n => n.declaredLayer === 'outer').map(n => n.pos!.dot(direction));
 assert(Math.min(...outer.map(value => Math.abs(value - diagnostics.boundaries.bluePurple))) <= KNOWLEDGE_BALL_RADIUS, 'innermost Purple node must anchor to the Blue/Purple shell before FCC snapping');
 
@@ -81,7 +91,7 @@ const knowledgeKeys = first.filter(n => n.type !== 'reasoning').map(n => {
   const p = n.pos!;
   return `${p.x.toFixed(8)}:${p.y.toFixed(8)}:${p.z.toFixed(8)}`;
 });
-assert.equal(new Set(knowledgeKeys).size, knowledgeKeys.length, 'one component may use R-scale internal FCC detail but may not self-overlap the exact same FCC point');
+assert.equal(new Set(knowledgeKeys).size, knowledgeKeys.length, 'one component may use R-scale FCC detail but may not self-overlap the exact same FCC point');
 
 const second = fixture();
 applyDeterministic5RLayout(second);
@@ -107,4 +117,4 @@ assert.equal(standaloneDiagnostics.macroAssignments.size, MACRO_DIRECTION_COUNT,
 assert.equal(new Set(standaloneDiagnostics.macroAssignments.values()).size, MACRO_DIRECTION_COUNT);
 assert.equal(standaloneDiagnostics.usedAngles.size, standalone.length);
 
-console.log('R-resolution FCC, 5R exclusion/expansion, shell anchoring, progressive component placement and determinism checks passed.');
+console.log('5R knowledge geometry, R-resolution FCC, 5R exclusion/expansion, shell anchoring and determinism checks passed.');
