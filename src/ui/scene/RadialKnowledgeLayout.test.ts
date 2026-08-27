@@ -1,187 +1,90 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
-  RADIAL_LAYOUT_LINK_LENGTH,
-  RADIAL_LAYOUT_NODE_RADIUS,
-  RADIAL_LAYOUT_PLANE_EDGE_LENGTH,
-  type RadialKnowledgeLayoutNode,
-} from './RadialKnowledgeLayout';
-import { applyUniformLayerLayout } from './UniformLayerLayout';
-import {
-  compactRelationGroupAxialCoordinates,
-  compareRelationPackingPriority,
-} from './TriangularRelationGroupPacking';
+  applyDeterministic5RLayout,
+  compactTriangularCoordinates,
+  computeSemanticBoundaries,
+  fibonacciDirections,
+  getLastLayoutDiagnostics,
+  icosahedronMacroDirections,
+  KNOWLEDGE_BALL_RADIUS,
+  LAYOUT_UNIT,
+  MACRO_DIRECTION_COUNT,
+  mapMacroDirectionsToCandidates,
+  positionsCollide,
+  type LayoutNode,
+} from './Deterministic5RLayout';
 
-const EPSILON = 1e-6;
-const near = (actual: number, expected: number, message: string) =>
-  assert.ok(Math.abs(actual - expected) < EPSILON, `${message}: ${actual} != ${expected}`);
-const nearVector = (actual: THREE.Vector3, expected: THREE.Vector3, message: string) =>
-  assert.ok(actual.distanceTo(expected) < EPSILON, `${message}: ${actual.toArray()} != ${expected.toArray()}`);
-const mean = (points: THREE.Vector3[]) => points
-  .reduce((sum, point) => sum.add(point), new THREE.Vector3())
-  .multiplyScalar(1 / points.length);
-const byId = (nodes: RadialKnowledgeLayoutNode[], id: string) => nodes.find(node => node.id === id)!;
-const isNear = (a: THREE.Vector3, b: THREE.Vector3, distance: number) => Math.abs(a.distanceTo(b) - distance) < EPSILON;
+const EPSILON = 1e-7;
+const node = (id: string, premises: string[] = [], type = 'fact', layer: LayoutNode['declaredLayer'] = 'inner'): LayoutNode => ({ id, premises, type, declaredLayer: layer });
+const fixture = (): LayoutNode[] => [
+  node('shared-a'), node('shared-b'), node('premise-c'),
+  node('reason-1', ['shared-a', 'shared-b'], 'reasoning'),
+  node('conclusion-1', ['reason-1'], 'theorem', 'middle'),
+  node('reason-2', ['shared-a', 'premise-c'], 'reasoning'),
+  node('conclusion-2', ['reason-2'], 'theorem', 'middle'),
+  node('reason-3', ['conclusion-1', 'conclusion-2'], 'reasoning'),
+  node('final-a', ['reason-3'], 'hypothesis', 'outer'),
+  node('final-b', ['reason-3'], 'hypothesis', 'outer'),
+];
 
-function axialPlane([q, r]: [number, number]): THREE.Vector2 {
-  return new THREE.Vector2(
-    RADIAL_LAYOUT_LINK_LENGTH * (q + r / 2),
-    RADIAL_LAYOUT_LINK_LENGTH * (Math.sqrt(3) / 2) * r,
-  );
+assert.equal(LAYOUT_UNIT, 5 * KNOWLEDGE_BALL_RADIUS, 'the single geometry unit must be L = 5R');
+assert.equal(positionsCollide(new THREE.Vector3(0, 0, 0), new THREE.Vector3(LAYOUT_UNIT - 1e-4, 0, 0)), true, 'distance < L must collide');
+assert.equal(positionsCollide(new THREE.Vector3(0, 0, 0), new THREE.Vector3(LAYOUT_UNIT, 0, 0)), false, 'distance == L must be allowed');
+
+const compact7 = compactTriangularCoordinates(7);
+assert.deepEqual(compact7[0], [0, 0], 'compact triangular template starts at the centre');
+assert.equal(new Set(compact7.map(([q, r]) => `${q}:${r}`)).size, 7, 'triangular template cells must be unique');
+assert(compact7.some(([, r]) => r !== 0), 'same-depth triangular lattice must use two axial dimensions, not an r=0 row');
+const hexDistance = ([q, r]: [number, number]) => Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
+assert.equal(compact7.slice(1).filter(cell => hexDistance(cell) === 1).length, 6, 'seven-cell template must be centre + six nearest neighbours');
+
+const macros = icosahedronMacroDirections();
+assert.equal(macros.length, MACRO_DIRECTION_COUNT, 'there must be exactly 12 fixed macro directions');
+const fibonacci = fibonacciDirections(89);
+const macroCandidates = mapMacroDirectionsToCandidates(macros, fibonacci);
+assert.equal(new Set(macroCandidates).size, MACRO_DIRECTION_COUNT, 'macro directions must map to distinct Fibonacci candidates');
+
+const boundaries = computeSemanticBoundaries([...fixture(), ...Array.from({ length: 9 }, (_, i) => node(`capacity-${i}`))]);
+assert.equal(boundaries.cyanBlue % LAYOUT_UNIT, 0);
+assert.equal(boundaries.bluePurple % LAYOUT_UNIT, 0);
+assert.equal(boundaries.purpleOuter, null, 'purple must not acquire a semantic outer boundary');
+
+const first = fixture();
+applyDeterministic5RLayout(first);
+const diagnostics = getLastLayoutDiagnostics()!;
+assert.equal(diagnostics.usedAngles.size, 1, 'shared premises and conclusions form one atomic connected component');
+assert.equal(diagnostics.occupiedCells.size, first.filter(n => n.type !== 'reasoning').length, 'reasoning consumes no occupancy cell');
+assert.equal(new Set(diagnostics.macroCandidateAngles).size, MACRO_DIRECTION_COUNT, 'diagnostics retain the 12 distinct macro candidate mappings');
+
+for (const reasoning of first.filter(n => n.type === 'reasoning')) {
+  const premises = reasoning.premises!.map(id => first.find(n => n.id === id)!.pos!);
+  const conclusions = first.filter(n => n.premises?.includes(reasoning.id)).map(n => n.pos!);
+  const mean = (values: THREE.Vector3[]) => values.reduce((sum, p) => sum.add(p), new THREE.Vector3()).multiplyScalar(1 / values.length);
+  assert(reasoning.pos!.distanceTo(mean(premises).add(mean(conclusions)).multiplyScalar(0.5)) < EPSILON, 'reasoning is the exact premise/conclusion centre midpoint');
 }
 
-function assertEquilateral(nodes: RadialKnowledgeLayoutNode[], ids: string[], label: string): void {
-  assert.equal(ids.length, 3);
-  const points = ids.map(id => byId(nodes, id).pos!);
-  near(points[0]!.distanceTo(points[1]!), RADIAL_LAYOUT_LINK_LENGTH, `${label} edge 01`);
-  near(points[1]!.distanceTo(points[2]!), RADIAL_LAYOUT_LINK_LENGTH, `${label} edge 12`);
-  near(points[2]!.distanceTo(points[0]!), RADIAL_LAYOUT_LINK_LENGTH, `${label} edge 20`);
+const [, componentAngle] = [...diagnostics.usedAngles][0]!;
+const direction = fibonacciDirections(89)[componentAngle]!;
+const radialProjection = (id: string) => first.find(n => n.id === id)!.pos!.dot(direction);
+assert(Math.abs((radialProjection('conclusion-1') - radialProjection('shared-a')) - LAYOUT_UNIT) < EPSILON, 'knowledge radial depth spacing is exactly L');
+
+const sameLayer = ['premise-c', 'shared-a', 'shared-b'].map(id => first.find(n => n.id === id)!.pos!);
+for (let i = 0; i < sameLayer.length; i++) for (let j = i + 1; j < sameLayer.length; j++) {
+  assert(Math.abs(sameLayer[i]!.distanceTo(sameLayer[j]!) - LAYOUT_UNIT) < EPSILON, 'first three same-depth knowledge nodes form a 5R equilateral triangular template');
 }
 
-function countEquilateralTriples(nodes: RadialKnowledgeLayoutNode[], triples: string[][]): number {
-  return triples.filter(ids => {
-    const [a, b, c] = ids.map(id => byId(nodes, id).pos!);
-    return isNear(a!, b!, RADIAL_LAYOUT_LINK_LENGTH)
-      && isNear(b!, c!, RADIAL_LAYOUT_LINK_LENGTH)
-      && isNear(c!, a!, RADIAL_LAYOUT_LINK_LENGTH);
-  }).length;
-}
+const second = fixture();
+applyDeterministic5RLayout(second);
+for (const original of first) assert(original.pos!.distanceTo(second.find(n => n.id === original.id)!.pos!) < 1e-9, `${original.id} must be deterministic`);
+assert.deepEqual([...getLastLayoutDiagnostics()!.usedAngles], [...diagnostics.usedAngles], 'identical graph input must preserve angle assignments');
+assert.deepEqual([...getLastLayoutDiagnostics()!.macroAssignments], [...diagnostics.macroAssignments], 'identical graph input must preserve seeded macro assignments');
 
-function assertSamePlaneMinimumSpacing(nodes: RadialKnowledgeLayoutNode[], ids: string[], label: string): void {
-  const points = ids.map(id => byId(nodes, id).pos!);
-  for (let i = 0; i < points.length; i += 1) {
-    for (let j = i + 1; j < points.length; j += 1) {
-      assert.ok(
-        points[i]!.distanceTo(points[j]!) + EPSILON >= RADIAL_LAYOUT_LINK_LENGTH,
-        `${label}: ${ids[i]} and ${ids[j]} must stay at least 5R apart`,
-      );
-    }
-  }
-}
+const standalone = Array.from({ length: 13 }, (_, index) => node(`standalone-${String(index).padStart(2, '0')}`));
+applyDeterministic5RLayout(standalone);
+const standaloneDiagnostics = getLastLayoutDiagnostics()!;
+assert.equal(standaloneDiagnostics.macroAssignments.size, MACRO_DIRECTION_COUNT, 'only the bounded top-12 set receives macro sectors');
+assert.equal(new Set(standaloneDiagnostics.macroAssignments.values()).size, MACRO_DIRECTION_COUNT, 'top-12 components must occupy different macro sectors');
+assert.equal(standaloneDiagnostics.usedAngles.size, standalone.length, 'each successful standalone component consumes exactly one global angle');
 
-assert.equal(RADIAL_LAYOUT_LINK_LENGTH, RADIAL_LAYOUT_NODE_RADIUS * 5, 'L must equal 5R');
-assert.equal(RADIAL_LAYOUT_PLANE_EDGE_LENGTH, RADIAL_LAYOUT_LINK_LENGTH, 'plane edge must equal 5R');
-assert.equal(RADIAL_LAYOUT_LINK_LENGTH, 36, 'R=7.2 therefore L=36');
-
-const compact3 = compactRelationGroupAxialCoordinates(3).map(axialPlane);
-near(compact3[0]!.distanceTo(compact3[1]!), RADIAL_LAYOUT_LINK_LENGTH, '3-point template edge 01');
-near(compact3[1]!.distanceTo(compact3[2]!), RADIAL_LAYOUT_LINK_LENGTH, '3-point template edge 12');
-near(compact3[2]!.distanceTo(compact3[0]!), RADIAL_LAYOUT_LINK_LENGTH, '3-point template edge 20');
-
-const compact4 = compactRelationGroupAxialCoordinates(4).map(axialPlane);
-let compact4Edges = 0;
-for (let i = 0; i < compact4.length; i += 1) {
-  for (let j = i + 1; j < compact4.length; j += 1) {
-    if (Math.abs(compact4[i]!.distanceTo(compact4[j]!) - RADIAL_LAYOUT_LINK_LENGTH) < EPSILON) compact4Edges += 1;
-  }
-}
-assert.equal(compact4Edges, 5, '4 points must be two edge-sharing equilateral triangles, not a row');
-
-const compact7 = compactRelationGroupAxialCoordinates(7).map(axialPlane);
-const centerIndex = compact7.findIndex((point, index) =>
-  compact7.filter((_, otherIndex) => otherIndex !== index)
-    .every(other => Math.abs(point.distanceTo(other) - RADIAL_LAYOUT_LINK_LENGTH) < EPSILON),
-);
-assert.ok(centerIndex >= 0, '7-point template must contain one centre with six 5R neighbours');
-for (let i = 0; i < compact7.length; i += 1) {
-  for (let j = i + 1; j < compact7.length; j += 1) {
-    assert.ok(compact7[i]!.distanceTo(compact7[j]!) + EPSILON >= RADIAL_LAYOUT_LINK_LENGTH, 'compact template may never go below 5R');
-  }
-}
-
-assert.ok(compareRelationPackingPriority([3, 3], [7]) < 0, 'satisfying two groups must beat satisfying only one larger group');
-assert.ok(compareRelationPackingPriority([7, 3], [6, 4]) < 0, 'when group count ties, the larger satisfied group must win first');
-assert.equal(compareRelationPackingPriority([7, 3], [7, 3]), 0, 'identical satisfied-group sizes must tie');
-
-const premiseFanIn: RadialKnowledgeLayoutNode[] = [
-  { id: 'p1', type: 'definition', premises: [] },
-  { id: 'p2', type: 'fact', premises: [] },
-  { id: 'p3', type: 'axiom', premises: [] },
-  { id: 'reasoning-1', type: 'reasoning', premises: ['p1', 'p2', 'p3'] },
-  { id: 'c1', type: 'theory', premises: ['reasoning-1'] },
-];
-applyUniformLayerLayout(premiseFanIn);
-assertEquilateral(premiseFanIn, ['p1', 'p2', 'p3'], 'same-conclusion premise group');
-const p1 = byId(premiseFanIn, 'p1').pos!;
-const p2 = byId(premiseFanIn, 'p2').pos!;
-const p3 = byId(premiseFanIn, 'p3').pos!;
-const conclusion = byId(premiseFanIn, 'c1').pos!;
-near(p1.x, p2.x, 'premises stay on one radial plane');
-near(p2.x, p3.x, 'premises stay on one radial plane');
-near(conclusion.x - p1.x, RADIAL_LAYOUT_LINK_LENGTH, 'next knowledge plane still advances outward by 5R');
-const premiseCenter = mean([p1, p2, p3]);
-const lateralCenterError = new THREE.Vector2(premiseCenter.y - conclusion.y, premiseCenter.z - conclusion.z).length();
-assert.ok(lateralCenterError <= RADIAL_LAYOUT_LINK_LENGTH + EPSILON, 'premise group centre must stay as close as lattice quantization allows to conclusion projection');
-nearVector(
-  byId(premiseFanIn, 'reasoning-1').pos!,
-  premiseCenter.clone().add(conclusion).multiplyScalar(0.5),
-  'reasoning must remain midpoint of premise and conclusion centres after packing',
-);
-
-const conclusionFanOut: RadialKnowledgeLayoutNode[] = [
-  { id: 'p', type: 'definition', premises: [] },
-  { id: 'r-a', type: 'reasoning', premises: ['p'] },
-  { id: 'ca', type: 'fact', premises: ['r-a'] },
-  { id: 'r-b', type: 'reasoning', premises: ['p'] },
-  { id: 'cb', type: 'fact', premises: ['r-b'] },
-  { id: 'r-c', type: 'reasoning', premises: ['p'] },
-  { id: 'cc', type: 'fact', premises: ['r-c'] },
-];
-applyUniformLayerLayout(conclusionFanOut);
-assertEquilateral(conclusionFanOut, ['ca', 'cb', 'cc'], 'same-premise conclusion group');
-assertSamePlaneMinimumSpacing(conclusionFanOut, ['ca', 'cb', 'cc'], 'fan-out layer');
-
-const sharedBranch: RadialKnowledgeLayoutNode[] = [
-  { id: 'a', type: 'definition', premises: [] },
-  { id: 'b', type: 'definition', premises: [] },
-  { id: 'c', type: 'definition', premises: [] },
-  { id: 'd', type: 'definition', premises: [] },
-  { id: 'r-left', type: 'reasoning', premises: ['a', 'b', 'c'] },
-  { id: 'left', type: 'theory', premises: ['r-left'] },
-  { id: 'r-right', type: 'reasoning', premises: ['b', 'c', 'd'] },
-  { id: 'right', type: 'theory', premises: ['r-right'] },
-];
-applyUniformLayerLayout(sharedBranch);
-assertEquilateral(sharedBranch, ['a', 'b', 'c'], 'first shared premise group');
-assertEquilateral(sharedBranch, ['b', 'c', 'd'], 'second shared premise group');
-assertSamePlaneMinimumSpacing(sharedBranch, ['a', 'b', 'c', 'd'], 'shared-branch root layer');
-
-const sevenPremises: RadialKnowledgeLayoutNode[] = [
-  ...Array.from({ length: 7 }, (_, index) => ({ id: `s${index}`, type: 'fact', premises: [] })),
-  { id: 'r-seven', type: 'reasoning', premises: Array.from({ length: 7 }, (_, index) => `s${index}`) },
-  { id: 'seven-out', type: 'theory', premises: ['r-seven'] },
-];
-applyUniformLayerLayout(sevenPremises);
-const sevenPoints = Array.from({ length: 7 }, (_, index) => byId(sevenPremises, `s${index}`).pos!);
-const sevenCenterIndex = sevenPoints.findIndex((point, index) =>
-  sevenPoints.filter((_, otherIndex) => otherIndex !== index)
-    .every(other => Math.abs(point.distanceTo(other) - RADIAL_LAYOUT_LINK_LENGTH) < EPSILON),
-);
-assert.ok(sevenCenterIndex >= 0, '7 related premises must realize centre + regular six-neighbour ring when there is no conflict');
-assertSamePlaneMinimumSpacing(sevenPremises, Array.from({ length: 7 }, (_, index) => `s${index}`), 'seven-premise layer');
-
-const impossibleK4: RadialKnowledgeLayoutNode[] = [
-  { id: 'ka', type: 'definition', premises: [] },
-  { id: 'kb', type: 'definition', premises: [] },
-  { id: 'kc', type: 'definition', premises: [] },
-  { id: 'kd', type: 'definition', premises: [] },
-  { id: 'kr1', type: 'reasoning', premises: ['ka', 'kb', 'kc'] },
-  { id: 'ko1', type: 'theory', premises: ['kr1'] },
-  { id: 'kr2', type: 'reasoning', premises: ['ka', 'kb', 'kd'] },
-  { id: 'ko2', type: 'theory', premises: ['kr2'] },
-  { id: 'kr3', type: 'reasoning', premises: ['ka', 'kc', 'kd'] },
-  { id: 'ko3', type: 'theory', premises: ['kr3'] },
-  { id: 'kr4', type: 'reasoning', premises: ['kb', 'kc', 'kd'] },
-  { id: 'ko4', type: 'theory', premises: ['kr4'] },
-];
-applyUniformLayerLayout(impossibleK4);
-const k4Triples = [
-  ['ka', 'kb', 'kc'],
-  ['ka', 'kb', 'kd'],
-  ['ka', 'kc', 'kd'],
-  ['kb', 'kc', 'kd'],
-];
-assert.equal(countEquilateralTriples(impossibleK4, k4Triples), 2, 'when four triangle constraints cannot coexist, packing must realize the maximum two');
-assertSamePlaneMinimumSpacing(impossibleK4, ['ka', 'kb', 'kc', 'kd'], 'conflicting root layer');
-
-console.log('Compressed radial chain plus triangular relation-group maximum-satisfaction checks passed');
+console.log('Deterministic 5R occupancy, triangular lattice, macro-sector, midpoint and determinism checks passed.');
