@@ -4,8 +4,8 @@ import { lineageRoleFor, topicIdFor, type KnowledgeLineageMeta } from '../../dom
 import { SUN_ORBIT_RADIUS, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 
 export const KNOWLEDGE_BALL_RADIUS = 7.2;
-/** R-scale placement / snapping resolution. */
-export const LAYOUT_UNIT = KNOWLEDGE_BALL_RADIUS;
+/** Knowledge-to-knowledge geometry spacing. FCC snapping itself remains R-scale. */
+export const LAYOUT_UNIT = 5 * KNOWLEDGE_BALL_RADIUS;
 /** Global exclusion radius and minimum radial expansion step. */
 export const EXCLUSION_RADIUS = 5 * KNOWLEDGE_BALL_RADIUS;
 export const EXPANSION_UNIT = 5 * KNOWLEDGE_BALL_RADIUS;
@@ -71,7 +71,7 @@ function layerOf(node: LayoutNode): 'inner' | 'middle' | 'outer' {
       : 'inner';
 }
 
-/** Semantic shells are resolved at R precision. Purple remains unbounded. */
+/** Semantic shells follow the 5R knowledge-spacing scale. Purple remains unbounded. */
 export function computeSemanticBoundaries(nodes: readonly LayoutNode[]): SemanticBoundaries {
   const occupiable = nodes.filter(node => node.type !== 'reasoning' && !isSystemCoreNodeId(node.id));
   const inner = occupiable.filter(node => layerOf(node) === 'inner').length;
