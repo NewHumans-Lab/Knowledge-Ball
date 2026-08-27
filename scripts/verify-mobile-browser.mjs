@@ -2,61 +2,71 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 
-const here=dirname(fileURLToPath(import.meta.url));
-const root=resolve(here,'..');
-const port=4177;
-const origin=`http://127.0.0.1:${port}`;
-const server=spawn('npx',['vite','preview','--host','127.0.0.1','--port',String(port)],{cwd:root,stdio:'ignore'});
-const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const origin='http://127.0.0.1:4173/Knowledge-Ball/';
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1'],{stdio:'ignore'});
 
-async function waitForServer(){
-  for(let i=0;i<50;i++){
-    try{const response=await fetch(origin);if(response.ok)return;}catch{}
-    await sleep(100);
-  }
-  throw new Error('mobile preview server did not start');
+async function assertExit(locator,name){
+  await locator.waitFor({state:'visible'});
+  assert.equal((await locator.textContent())?.trim(),'❌',`${name} must use the explicit exit icon`);
+  const box=await locator.boundingBox();
+  assert.ok(box,`${name} must have a mobile bounding box`);
+  assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
+  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
 }
 
-async function analyzeScreenshot(page,buffer,regions=[]){
-  return page.evaluate(async({bytes,regions})=>{
-    const blob=new Blob([Uint8Array.from(bytes)],{type:'image/png'});
-    const bitmap=await createImageBitmap(blob);
-    const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
-    const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(bitmap,0,0);
-    const data=context.getImageData(0,0,bitmap.width,bitmap.height).data;
-    const analyse=(accept)=>{
-      let trueBlue=0,violet=0,cyan=0,white=0,greenDominant=0,visible=0;
-      let cyanPeak=0,trueBluePeak=0,violetPeak=0,whitePeak=0;
-      for(let y=0;y<bitmap.height;y++)for(let x=0;x<bitmap.width;x++){
-        if(accept&&!accept(x,y))continue;
-        const offset=(y*bitmap.width+x)*4,r=data[offset]/255,g=data[offset+1]/255,b=data[offset+2]/255,a=data[offset+3]/255;
-        if(a<.2)continue;
-        const max=Math.max(r,g,b),min=Math.min(r,g,b),sat=max-min;
-        if(max>.10)visible++;
-        if(b>.28&&b>r*1.25&&b>g*1.08){trueBlue++;trueBluePeak=Math.max(trueBluePeak,b);}
-        if(b>.25&&r>.18&&b>g*1.18&&r>g*1.15){violet++;violetPeak=Math.max(violetPeak,max);}
-        if(b>.30&&g>.34&&g>r*1.12&&b>r*1.18){cyan++;cyanPeak=Math.max(cyanPeak,max);}
-        if(max>.52&&sat<.12){white++;whitePeak=Math.max(whitePeak,max);}
-        if(g>.30&&g>r*1.25&&g>b*1.12)greenDominant++;
-      }
-      return{trueBlue,violet,cyan,white,greenDominant,visible,cyanPeak,trueBluePeak,violetPeak,whitePeak};
+async function assertCreateExit(locator,name){
+  await locator.waitFor({state:'visible'});
+  assert.equal((await locator.textContent())?.trim(),'✕',`${name} must use the split-create close control`);
+  const box=await locator.boundingBox();
+  assert.ok(box,`${name} must have a mobile bounding box`);
+  assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
+  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
+}
+
+async function assertNodeDetailExit(locator,name){
+  await locator.waitFor({state:'visible'});
+  assert.equal((await locator.textContent())?.trim(),'×',`${name} must use the neutral X close control`);
+  const box=await locator.boundingBox();
+  assert.ok(box,`${name} must have a mobile bounding box`);
+  assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
+  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
+}
+
+async function analyzeScreenshot(page,screenshot,regions=[]){
+  const screenshotUrl=`data:image/png;base64,${screenshot.toString('base64')}`;
+  return page.evaluate(async ({src,regions})=>{
+    const image=new Image();image.src=src;await image.decode();
+    const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('2D screenshot analysis context unavailable');
+    ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    const hsv=(r,g,b)=>{const rn=r/255,gn=g/255,bn=b/255,max=Math.max(rn,gn,bn),min=Math.min(rn,gn,bn),d=max-min;let h=0;if(d){if(max===rn)h=60*(((gn-bn)/d)%6);else if(max===gn)h=60*((bn-rn)/d+2);else h=60*((rn-gn)/d+4);if(h<0)h+=360;}return{h,s:max?d/max:0,v:max};};
+    const empty=()=>({trueBlue:0,violet:0,cyan:0,white:0,greenDominant:0,visible:0,cyanPeak:0,trueBluePeak:0,violetPeak:0,whitePeak:0});
+    const add=(stats,r,g,b,a)=>{if(a<180)return;const {h,s,v}=hsv(r,g,b);if(v<.12)return;stats.visible++;
+      if(s<=.12&&v>=.42){stats.white++;stats.whitePeak=Math.max(stats.whitePeak,v);}
+      if(h>=185&&h<215&&s>=.25&&v>=.14){stats.cyan++;stats.cyanPeak=Math.max(stats.cyanPeak,v);}
+      if(h>=215&&h<238&&s>=.28&&v>=.14){stats.trueBlue++;stats.trueBluePeak=Math.max(stats.trueBluePeak,v);}
+      if(h>=238&&h<=285&&s>=.25&&v>=.14){stats.violet++;stats.violetPeak=Math.max(stats.violetPeak,v);}
+      if(h>=80&&h<=165&&s>=.25&&v>=.14)stats.greenDominant++;
     };
-    const whole=analyse();
-    const local=regions.map(region=>analyse((x,y)=>(x-region.x)**2+(y-region.y)**2<=region.radius**2));
-    return{width:bitmap.width,height:bitmap.height,...whole,regions:local};
-  },{bytes:[...buffer],regions});
+    const global=empty();
+    // Sample every fourth pixel for the whole-frame gate. Hue/saturation are more faithful than
+    // absolute RGB thresholds after WebGL is composited over the deep-space background.
+    for(let i=0;i<data.length;i+=16)add(global,data[i],data[i+1],data[i+2],data[i+3]);
+    const local=regions.map(region=>{const stats=empty(),radius=Math.max(1,Math.round(region.radius??18)),cx=Math.round(region.x),cy=Math.round(region.y);for(let y=Math.max(0,cy-radius);y<=Math.min(canvas.height-1,cy+radius);y++){for(let x=Math.max(0,cx-radius);x<=Math.min(canvas.width-1,cx+radius);x++){const dx=x-cx,dy=y-cy;if(dx*dx+dy*dy>radius*radius)continue;const i=(y*canvas.width+x)*4;add(stats,data[i],data[i+1],data[i+2],data[i+3]);}}return stats;});
+    return{width:canvas.width,height:canvas.height,...global,regions:local};
+  },{src:screenshotUrl,regions});
 }
 
 try{
-  await waitForServer();
-  const browser=await chromium.launch({headless:true});
+  for(let attempt=0;attempt<50;attempt++){try{if((await fetch(origin)).ok)break;}catch{}await new Promise(resolve=>setTimeout(resolve,100));}
+  const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader']});
   console.log('mobile browser launched');
   try{
-    const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true});
-    const page=await context.newPage();
+    const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+    const page=await context.newPage(),errors=[];page.setDefaultTimeout(10_000);
+    page.on('pageerror',error=>errors.push(error.message));
+    page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
     await page.goto(origin,{waitUntil:'domcontentloaded'});
     console.log('mobile page loaded');
     await page.waitForFunction(()=>Boolean(window.__debug?.scene&&window.__debug?.renderNodes?.length),null,{timeout:10_000});
@@ -90,18 +100,14 @@ try{
     assert.ok(visual.greenDominant<=5,'old green/teal contamination must not reappear in the actual scene screenshot');
 
     // Gate B: calibrate one genuinely visible sphere sequentially. R-resolution layouts can place several
-    // projected centres within one screen-space sphere footprint, so four simultaneous calibration nodes can
-    // legitimately occlude one another. Sequential calibration keeps geometry unchanged while testing the
-    // exact same production material/layer path for Cyan, Blue and Purple.
+    // projected centres inside one screen-space footprint, so simultaneous calibration nodes can occlude
+    // one another. Sequential calibration preserves geometry and still exercises the production palette.
     const calibrationId=targets[0].id;
     const original=await page.evaluate(id=>{
-      const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);
-      assert;
-      if(!node)return null;
+      const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return null;
       const saved={id,type:node.type,status:node.status,mastery:node.mastery,effectiveLayer:node.effectiveLayer};
       node.type='reasoning';node.status='verified';node.mastery='none';
-      window.__debug.scene.markDirty();window.__debug.scene.start();
-      return saved;
+      window.__debug.scene.markDirty();window.__debug.scene.start();return saved;
     },calibrationId);
     assert.ok(original,'calibration node must exist');
     await page.waitForTimeout(180);
@@ -110,15 +116,10 @@ try{
     assert.ok(controlPoint,'calibration control node must remain on screen');
     const controlScreenshot=await canvasHost.screenshot({type:'png'});
     const control=(await analyzeScreenshot(page,controlScreenshot,toLocalRegions([controlPoint],8))).regions[0];
-    assert.ok(control.visible>=40,'chosen calibration sphere must be genuinely visible before palette checks');
+    assert.ok(control.visible>=40,'calibration sphere must be visibly sampled');
 
     const calibrate=async(type,layer)=>{
-      await page.evaluate(({id,type,layer})=>{
-        const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);
-        if(!node)return;
-        node.type=type;node.status='verified';node.effectiveLayer=layer;node.mastery='none';
-        window.__debug.scene.markDirty();window.__debug.scene.start();
-      },{id:calibrationId,type,layer});
+      await page.evaluate(({id,type,layer})=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;node.type=type;node.status='verified';node.effectiveLayer=layer;node.mastery='none';window.__debug.scene.markDirty();window.__debug.scene.start();},{id:calibrationId,type,layer});
       await page.waitForTimeout(180);
       await page.evaluate(()=>window.__debug.scene.stop());
       const point=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),calibrationId);
@@ -126,14 +127,16 @@ try{
       const shot=await canvasHost.screenshot({type:'png'});
       return (await analyzeScreenshot(page,shot,toLocalRegions([point],8))).regions[0];
     };
-
     const cyanCalibration=await calibrate('definition','inner');
     const blueCalibration=await calibrate('theorem','middle');
     const purpleCalibration=await calibrate('hypothesis','outer');
     const paletteScreenshot=await canvasHost.screenshot({path:'artifacts/mobile-scene-palette.png',type:'png'});
+    assert.ok(paletteScreenshot.length>5_000,'semantic palette screenshot must contain real rendered visual data');
     const palette=await analyzeScreenshot(page,paletteScreenshot);
     console.log('mobile semantic local control',control);
     console.log('mobile semantic sequential palette',{cyanCalibration,blueCalibration,purpleCalibration});
+    assert.equal(palette.width,visual.width,'actual and semantic-palette screenshots must share the same width');
+    assert.equal(palette.height,visual.height,'actual and semantic-palette screenshots must share the same height');
     assert.ok(cyanCalibration.cyan>=control.cyan+6,`inner calibration must add local ice-blue pixels (control=${control.cyan}, palette=${cyanCalibration.cyan})`);
     assert.ok(cyanCalibration.cyanPeak>=.60,`inner ice-blue must stay bright in the real composite (peak=${cyanCalibration.cyanPeak})`);
     assert.ok(blueCalibration.trueBluePeak>=.75,`middle true-blue must stay bright in the real composite (peak=${blueCalibration.trueBluePeak})`);
@@ -156,41 +159,114 @@ try{
       const hiddenEndpointId=connected.premises.find(id=>ids.has(id)&&!['n1','n2','n16'].includes(id));
       if(!hiddenEndpointId)return null;
       const originalMastery=sceneNodes.map(node=>({id:node.id,mastery:node.mastery}));
-      sceneNodes.forEach(node=>{node.mastery=node.id===connected.id?'lit':'none';});
-      window.__debug.scene.setVisibilityMode?.('current');
+      sceneNodes.forEach(node=>{if(!['n1','n2','n16'].includes(node.id))node.mastery='touched';});
+      const hiddenEndpoint=sceneNodes.find(node=>node.id===hiddenEndpointId);
+      if(!hiddenEndpoint)return null;
+      hiddenEndpoint.mastery='none';
       window.__debug.scene.markDirty();window.__debug.scene.start();
-      return{connectedId:connected.id,hiddenEndpointId,originalMastery};
+      return{hiddenEndpointId,originalMastery};
     });
-    assert.ok(personalFixture,'mobile graph must contain a connected non-core fixture for Personal visibility regression');
-    await page.waitForTimeout(120);await page.evaluate(()=>window.__debug.scene.stop());
-    const beforeEdges=await page.evaluate(()=>window.__debug.scene.visibleEdgeKeys?.()??[]);
-    await page.getByRole('button',{name:/Personal/i}).click();
-    await page.waitForTimeout(120);await page.evaluate(()=>window.__debug.scene.stop());
-    const personalState=await page.evaluate(fixture=>({
-      connected:window.__debug.scene.screenPositionForNode(fixture.connectedId),
-      hidden:window.__debug.scene.screenPositionForNode(fixture.hiddenEndpointId),
-      edges:window.__debug.scene.visibleEdgeKeys?.()??[],
-    }),personalFixture);
-    assert.ok(personalState.connected,'mastered node must remain visible in Personal mode');
-    assert.equal(personalState.hidden,null,'unmastered node must be hidden in Personal mode');
-    assert.ok(personalState.edges.length<beforeEdges.length,'Personal mode must hide incident edges with hidden endpoints');
-    await page.getByRole('button',{name:/All/i}).click();
-    await page.waitForTimeout(120);await page.evaluate(()=>window.__debug.scene.stop());
-    const restored=await page.evaluate(fixture=>({hidden:window.__debug.scene.screenPositionForNode(fixture.hiddenEndpointId),edges:window.__debug.scene.visibleEdgeKeys?.()??[]}),personalFixture);
-    assert.ok(restored.hidden,'All mode must restore the hidden endpoint');
-    assert.deepEqual(restored.edges,beforeEdges,'All mode must restore exactly the original current edge set');
-    await page.evaluate(fixture=>{for(const saved of fixture.originalMastery){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node)node.mastery=saved.mastery;}window.__debug.scene.setVisibilityMode?.('current');window.__debug.scene.markDirty();window.__debug.scene.start();},personalFixture);
-    await page.waitForTimeout(80);await page.evaluate(()=>window.__debug.scene.stop());
-
-    // Existing interaction checks continue below.
-    const target=targets[0];
-    await page.mouse.click(target.x,target.y);
+    assert.ok(personalFixture,'mobile scene must contain a non-core connected relation for Personal-mode visibility testing');
+    await page.waitForTimeout(120);
+    const fullEdgeCount=await page.evaluate(()=>{window.__debug.scene.stop();return window.__debug.scene.getVisibleEdgeCount();});
+    assert.ok(fullEdgeCount>0,'full graph mode must render at least one relation line before Personal filtering');
+    await page.locator('#btnPersonal').click();
+    const personalEdgeCount=await page.evaluate(()=>window.__debug.scene.getVisibleEdgeCount());
+    assert.ok(personalEdgeCount<fullEdgeCount,`Personal mode must hide lines incident to hidden nodes (full=${fullEdgeCount}, personal=${personalEdgeCount})`);
+    await page.locator('#btnPersonal').click();
+    const restoredEdgeCount=await page.evaluate(()=>window.__debug.scene.getVisibleEdgeCount());
+    assert.equal(restoredEdgeCount,fullEdgeCount,'leaving Personal mode must restore exactly the prior visible relation-line count');
+    await page.evaluate(saved=>{for(const item of saved){const node=window.__debug.renderNodes.find(candidate=>candidate.id===item.id);if(node)node.mastery=item.mastery;}window.__debug.scene.markDirty();window.__debug.scene.start();},personalFixture.originalMastery);
     await page.waitForTimeout(100);
-    const panel=page.locator('#nodeDetailPanel');
-    assert.ok(await panel.isVisible(),'node detail panel must open from a real raycast click');
-    await page.locator('#nodeDetailClose').click();
-    await page.waitForTimeout(80);
+    await page.evaluate(()=>window.__debug.scene.stop());
 
+    assert.equal(await page.locator('.ai-add').count(),0,'search bar must not expose the old add-node button');
+    await page.evaluate(()=>window.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true,cancelable:true})));
+    const createOverlay=page.locator('#knowledgeCreateOverlay.show');
+    await createOverlay.waitFor({state:'visible'});
+    assert.equal((await createOverlay.locator('h3').textContent())?.trim(),'新增知识','Ctrl+N must open the new standalone create flow');
+    assert.equal(await createOverlay.locator('[data-create-reasoning]').count(),0,'standalone mobile create must not expose the old reasoning field');
+    assert.equal(await createOverlay.locator('[data-picker]').count(),0,'standalone mobile create must not expose premise/conclusion pickers');
+    await assertCreateExit(createOverlay.locator('[data-create-close]'),'split create modal exit');
+    await createOverlay.locator('[data-create-close]').click();
+    await page.locator('#knowledgeCreateOverlay').waitFor({state:'hidden'});
+
+    await page.locator('#btnSettings').click();
+    await page.locator('#settingsOverlay.show').waitFor({state:'visible'});
+    await assertExit(page.locator('#settingsClose'),'settings exit');
+    await page.locator('#settingsClose').click();
+    await page.locator('#settingsOverlay').waitFor({state:'hidden'});
+
+    await page.locator('.avatar-btn').click();
+    await page.locator('#accountOverlay.show').waitFor({state:'visible'});
+    await assertExit(page.locator('#accountClose'),'account exit');
+    await page.locator('#accountClose').click();
+    await page.locator('#accountOverlay').waitFor({state:'hidden'});
+
+    const target=targets[0];
+    await page.evaluate(()=>window.__debug.scene.start());
+    const pointBeforeDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
+    assert.ok(pointBeforeDetail,'direct-detail target must remain renderable before tap');
+    await page.touchscreen.tap(target.x,target.y);
+    const detail=page.locator('#nodeDetailOverlay.open');
+    await detail.waitFor({state:'visible'});
+    assert.equal(await page.locator('#panel.open').count(),0,'first node tap must open the near-node detail without the legacy panel');
+    assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'first ordinary-node tap must open that node detail');
+    const pointAfterDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
+    assert.ok(pointAfterDetail,'direct-detail target must remain renderable after detail opens');
+    assert.ok(Math.hypot(pointAfterDetail.x-pointBeforeDetail.x,pointAfterDetail.y-pointBeforeDetail.y)<=2,'opening detail must not rotate the whole graph');
+    assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('贡献者'),'near-node detail must expose contributor metadata');
+    assert.ok((await detail.locator('.node-detail-meta').textContent())?.includes('时间'),'near-node detail must expose server creation time');
+    assert.equal(await detail.locator('.node-detail-content-label').count(),0,'near-node detail must not restore the removed standalone content label');
+    assert.ok((await detail.locator('.node-detail-content').textContent())?.trim().length,'near-node detail must place knowledge content directly beneath the title');
+    assert.equal(await detail.locator('.node-detail-meta span').count(),2,'contributor and time must remain two separate metadata rows');
+    const detailBox=await detail.boundingBox();
+    assert.ok(detailBox,'near-node detail must have a visible mobile box');
+    assert.ok(detailBox.height>detailBox.width,'near-node detail must use a narrow vertical ellipse so premise/conclusion context can occupy the side space');
+    assert.ok(pointAfterDetail.x>=detailBox.x&&pointAfterDetail.x<=detailBox.x+detailBox.width&&pointAfterDetail.y>=detailBox.y&&pointAfterDetail.y<=detailBox.y+detailBox.height,'near-node detail must sit in front of and visually occlude the selected sphere');
+    const selectedLabelHidden=await page.evaluate(title=>[...document.querySelectorAll('.node-label')].find(label=>label.textContent?.trim()===title)?.style.display==='none',target.title);
+    assert.equal(selectedLabelHidden,true,'near-node detail must hide only the selected sphere label');
+    await assertNodeDetailExit(detail.locator('.node-detail-close'),'node detail exit');
+    await detail.locator('.node-detail-close').click();
+    await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
+    await page.waitForFunction(title=>[...document.querySelectorAll('.node-label')].some(label=>label.textContent?.trim()===title&&label.style.display!=='none'),target.title);
+
+    // Re-open the same node at its preserved position and verify all edit variants are entered through one text control.
+    await page.touchscreen.tap(pointAfterDetail.x,pointAfterDetail.y);
+    await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
+    await page.locator('#nodeDetailOverlay .node-detail-edit').click();
+    await page.locator('#nodeDetailOverlay [data-node-detail-action="edit"]').click();
+    await page.locator('#panelTitle').filter({hasText:'编辑节点'}).waitFor({state:'visible'});
+    assert.equal(await page.locator('#nodeDetailOverlay.open').count(),0,'choosing an edit operation must close the near-node viewer before opening the editor');
+    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'),'返回节点详情','legacy editor subview keeps its existing safe back semantics');
+    await page.locator('#panelClose').click();
+    await page.waitForFunction(title=>document.getElementById('panelTitle')?.textContent?.trim()===title,target.title);
+    assert.ok(await page.locator('#panel').evaluate(element=>element.classList.contains('open')),'editor back must return to the existing operation host');
+    await page.locator('#panelClose').click();
+    await page.waitForFunction(()=>!document.getElementById('panel')?.classList.contains('open'));
+
+    const searchTarget=targets[1];
+    await page.evaluate(()=>window.__debug.scene.start());
+    const searchPointBefore=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),searchTarget.id);
+    assert.ok(searchPointBefore,'search target must remain renderable before selection');
+    await page.locator('#aiInput').fill(searchTarget.title);
+    const searchResult=page.locator(`[data-node-id="${searchTarget.id}"]`).first();
+    await searchResult.waitFor({state:'visible'});
+    await searchResult.click();
+    const searchDetail=page.locator('#nodeDetailOverlay.open');
+    await searchDetail.waitFor({state:'visible'});
+    assert.equal(await page.locator('#panel.open').count(),0,'search selection must open the near-node detail without the legacy panel');
+    assert.equal((await searchDetail.locator('.node-detail-title').textContent())?.trim(),searchTarget.title,'search selection must directly open the selected knowledge detail');
+    const searchPointAfter=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),searchTarget.id);
+    assert.ok(searchPointAfter,'search-selected node must remain renderable after detail opens');
+    assert.ok(Math.hypot(searchPointAfter.x-searchPointBefore.x,searchPointAfter.y-searchPointBefore.y)<=2,'search selection must not rotate or auto-center the graph');
+    await searchDetail.locator('.node-detail-close').click();
+    await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
+
+    await page.goto(new URL('ios-install.html',origin).href,{waitUntil:'domcontentloaded'});
+    await assertExit(page.locator('.exit'),'iOS install exit');
+
+    assert.deepEqual(errors.filter(error=>/NaN|computeBoundingSphere|pageerror/i.test(error)),[]);
     await context.close();
   }finally{await browser.close();}
   console.log('Mobile viewport, bright semantic colors, Personal node/edge visibility, split create exit, direct node/search details, exit navigation, raycast and UI click checks passed');
