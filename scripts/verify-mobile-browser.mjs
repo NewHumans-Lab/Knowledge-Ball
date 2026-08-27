@@ -99,47 +99,53 @@ try{
     assert.ok(visual.trueBluePeak>=.55,'actual true-blue scene signal must remain visibly bright instead of collapsing into near-black blue');
     assert.ok(visual.greenDominant<=5,'old green/teal contamination must not reappear in the actual scene screenshot');
 
-    // Gate B: sample the sphere itself, not whichever deep-space background surrounds its new layout position.
-    // The hue and peak-brightness requirements remain unchanged; only the local sample radius is tightened.
-    const calibrationIds=targets.slice(0,4).map(target=>target.id);
-    const originals=await page.evaluate(ids=>{
-      const original=[];
-      ids.forEach(id=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;original.push({id,type:node.type,status:node.status,mastery:node.mastery,effectiveLayer:node.effectiveLayer});node.type='reasoning';node.status='verified';node.mastery='none';});
-      window.__debug.scene.markDirty();window.__debug.scene.start();return original;
-    },calibrationIds);
+    // Gate B: calibrate one genuinely visible sphere sequentially. R-resolution layouts can place several
+    // projected centres inside one screen-space footprint, so simultaneous calibration nodes can occlude
+    // one another. Sequential calibration preserves geometry and still exercises the production palette.
+    const calibrationId=targets[0].id;
+    const original=await page.evaluate(id=>{
+      const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return null;
+      const saved={id,type:node.type,status:node.status,mastery:node.mastery,effectiveLayer:node.effectiveLayer};
+      node.type='reasoning';node.status='verified';node.mastery='none';
+      window.__debug.scene.markDirty();window.__debug.scene.start();return saved;
+    },calibrationId);
+    assert.ok(original,'calibration node must exist');
     await page.waitForTimeout(180);
     await page.evaluate(()=>window.__debug.scene.stop());
-    const controlPoints=await page.evaluate(ids=>ids.map(id=>window.__debug.scene.screenPositionForNode(id)),calibrationIds);
-    assert.ok(controlPoints.every(Boolean),'calibration control nodes must remain on screen');
+    const controlPoint=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),calibrationId);
+    assert.ok(controlPoint,'calibration control node must remain on screen');
     const controlScreenshot=await canvasHost.screenshot({type:'png'});
-    const control=await analyzeScreenshot(page,controlScreenshot,toLocalRegions(controlPoints,8));
+    const control=(await analyzeScreenshot(page,controlScreenshot,toLocalRegions([controlPoint],8))).regions[0];
+    assert.ok(control.visible>=40,'calibration sphere must be visibly sampled');
 
-    await page.evaluate(ids=>{
-      const specs=[['definition','verified','inner'],['theorem','verified','middle'],['hypothesis','verified','outer'],['reasoning','verified','middle']];
-      ids.forEach((id,index)=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;node.type=specs[index][0];node.status=specs[index][1];node.effectiveLayer=specs[index][2];node.mastery='none';});
-      window.__debug.scene.markDirty();window.__debug.scene.start();
-    },calibrationIds);
-    await page.waitForTimeout(180);
-    await page.evaluate(()=>window.__debug.scene.stop());
-    const palettePoints=await page.evaluate(ids=>ids.map(id=>window.__debug.scene.screenPositionForNode(id)),calibrationIds);
-    assert.ok(palettePoints.every(Boolean),'semantic palette nodes must remain on screen');
+    const calibrate=async(type,layer)=>{
+      await page.evaluate(({id,type,layer})=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return;node.type=type;node.status='verified';node.effectiveLayer=layer;node.mastery='none';window.__debug.scene.markDirty();window.__debug.scene.start();},{id:calibrationId,type,layer});
+      await page.waitForTimeout(180);
+      await page.evaluate(()=>window.__debug.scene.stop());
+      const point=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),calibrationId);
+      assert.ok(point,'semantic calibration node must remain on screen');
+      const shot=await canvasHost.screenshot({type:'png'});
+      return (await analyzeScreenshot(page,shot,toLocalRegions([point],8))).regions[0];
+    };
+    const cyanCalibration=await calibrate('definition','inner');
+    const blueCalibration=await calibrate('theorem','middle');
+    const purpleCalibration=await calibrate('hypothesis','outer');
     const paletteScreenshot=await canvasHost.screenshot({path:'artifacts/mobile-scene-palette.png',type:'png'});
     assert.ok(paletteScreenshot.length>5_000,'semantic palette screenshot must contain real rendered visual data');
-    const palette=await analyzeScreenshot(page,paletteScreenshot,toLocalRegions(palettePoints,8));
-    console.log('mobile semantic-palette visual pixels',palette);
-    console.log('mobile semantic local control',control.regions);
-    console.log('mobile semantic local palette',palette.regions);
+    const palette=await analyzeScreenshot(page,paletteScreenshot);
+    console.log('mobile semantic local control',control);
+    console.log('mobile semantic sequential palette',{cyanCalibration,blueCalibration,purpleCalibration});
     assert.equal(palette.width,visual.width,'actual and semantic-palette screenshots must share the same width');
     assert.equal(palette.height,visual.height,'actual and semantic-palette screenshots must share the same height');
-    assert.ok(palette.regions[0].cyan>=control.regions[0].cyan+6,`inner calibration must add local ice-blue pixels (control=${control.regions[0].cyan}, palette=${palette.regions[0].cyan})`);
-    assert.ok(palette.regions[0].cyanPeak>=.60,`inner ice-blue must stay bright in the real composite (peak=${palette.regions[0].cyanPeak})`);
-    assert.ok(palette.regions[1].trueBluePeak>=.75,`middle true-blue must stay bright in the real composite (peak=${palette.regions[1].trueBluePeak})`);
-    assert.ok(palette.regions[1].trueBlue>=control.regions[1].trueBlue+6,`middle calibration must add local true-blue sphere pixels (control=${control.regions[1].trueBlue}, palette=${palette.regions[1].trueBlue})`);
-    assert.ok(palette.regions[2].violet>=control.regions[2].violet+6,`outer calibration must add local violet pixels (control=${control.regions[2].violet}, palette=${palette.regions[2].violet})`);
-    assert.ok(palette.regions[2].violetPeak>=.55,`outer violet must stay bright in the real composite (peak=${palette.regions[2].violetPeak})`);
+    assert.ok(cyanCalibration.cyan>=control.cyan+6,`inner calibration must add local ice-blue pixels (control=${control.cyan}, palette=${cyanCalibration.cyan})`);
+    assert.ok(cyanCalibration.cyanPeak>=.60,`inner ice-blue must stay bright in the real composite (peak=${cyanCalibration.cyanPeak})`);
+    assert.ok(blueCalibration.trueBluePeak>=.75,`middle true-blue must stay bright in the real composite (peak=${blueCalibration.trueBluePeak})`);
+    assert.ok(blueCalibration.trueBlue>=control.trueBlue+6,`middle calibration must add local true-blue sphere pixels (control=${control.trueBlue}, palette=${blueCalibration.trueBlue})`);
+    assert.ok(purpleCalibration.violet>=control.violet+6,`outer calibration must add local violet pixels (control=${control.violet}, palette=${purpleCalibration.violet})`);
+    assert.ok(purpleCalibration.violetPeak>=.55,`outer violet must stay bright in the real composite (peak=${purpleCalibration.violetPeak})`);
     assert.ok(palette.white>=100,'semantic calibration must retain the whole-frame structural white language');
     assert.ok(palette.greenDominant<=5,'semantic calibration must not reintroduce green/teal contamination');
-    await page.evaluate(original=>{for(const saved of original){const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;node.effectiveLayer=saved.effectiveLayer;}}window.__debug.scene.markDirty();window.__debug.scene.start();},originals);
+    await page.evaluate(saved=>{const node=window.__debug.renderNodes.find(candidate=>candidate.id===saved.id);if(node){node.type=saved.type;node.status=saved.status;node.mastery=saved.mastery;node.effectiveLayer=saved.effectiveLayer;}window.__debug.scene.markDirty();window.__debug.scene.start();},original);
     await page.waitForTimeout(100);
     await page.evaluate(()=>window.__debug.scene.stop());
 

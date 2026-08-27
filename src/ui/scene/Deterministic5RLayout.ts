@@ -4,7 +4,11 @@ import { lineageRoleFor, topicIdFor, type KnowledgeLineageMeta } from '../../dom
 import { SUN_ORBIT_RADIUS, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 
 export const KNOWLEDGE_BALL_RADIUS = 7.2;
-export const LAYOUT_UNIT = 5 * KNOWLEDGE_BALL_RADIUS;
+/** R-scale placement / snapping resolution. */
+export const LAYOUT_UNIT = KNOWLEDGE_BALL_RADIUS;
+/** Global exclusion radius and minimum radial expansion step. */
+export const EXCLUSION_RADIUS = 5 * KNOWLEDGE_BALL_RADIUS;
+export const EXPANSION_UNIT = 5 * KNOWLEDGE_BALL_RADIUS;
 export const CROSSING_SWEEP_LIMIT = 12;
 export const MACRO_DIRECTION_COUNT = 12;
 
@@ -26,6 +30,7 @@ export type SemanticBoundaries = Readonly<{ cyanBlue: number; bluePurple: number
 export type LayoutDiagnostics = Readonly<{
   boundaries: SemanticBoundaries;
   occupiedCells: ReadonlySet<string>;
+  reservedCells: ReadonlySet<string>;
   usedAngles: ReadonlyMap<string, number>;
   componentOrders: ReadonlyMap<string, readonly string[]>;
   macroCandidateAngles: readonly number[];
@@ -42,14 +47,16 @@ type Graph = {
   incoming: Map<string, Set<string>>;
 };
 type LocalNode = { id: string; depth: number; q: number; r: number };
-type Component = { id: string; ids: string[]; relations: Relation[]; local: LocalNode[]; branching: number; layers: number };
-type OccupancyEntry = { key: string; componentId: string; position: THREE.Vector3 };
-type Placed = { component: Component; angle: number; direction: THREE.Vector3; offset: number; positions: THREE.Vector3[] };
+type Component = { id: string; ids: string[]; relations: Relation[]; branching: number; layers: number };
+type SolvedComponent = Component & { local: LocalNode[] };
+type FccIndex = readonly [number, number, number];
+type Placed = { component: SolvedComponent; angle: number; direction: THREE.Vector3; radialExtra: number; positions: THREE.Vector3[] };
 
 const EPSILON = 1e-8;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const MIN_ANGLE_COUNT = 89;
 const TOP_COMPONENT_LIMIT = 12;
+const FCC_AXIS_STEP = KNOWLEDGE_BALL_RADIUS / Math.sqrt(2);
 
 function setPosition(node: LayoutNode, position: THREE.Vector3): void {
   node.pos = position.clone();
@@ -64,7 +71,7 @@ function layerOf(node: LayoutNode): 'inner' | 'middle' | 'outer' {
       : 'inner';
 }
 
-/** Every semantic boundary is snapped upward to the single layout unit L. */
+/** Semantic shells are resolved at R precision. Purple remains unbounded. */
 export function computeSemanticBoundaries(nodes: readonly LayoutNode[]): SemanticBoundaries {
   const occupiable = nodes.filter(node => node.type !== 'reasoning' && !isSystemCoreNodeId(node.id));
   const inner = occupiable.filter(node => layerOf(node) === 'inner').length;
@@ -89,8 +96,10 @@ function buildGraph(nodes: LayoutNode[]): Graph {
   const incoming = new Map(knowledge.map(node => [node.id, new Set<string>()]));
   const connect = (from: string, to: string) => {
     if (from === to) return;
-    adjacency.get(from)?.add(to); adjacency.get(to)?.add(from);
-    outgoing.get(from)?.add(to); incoming.get(to)?.add(from);
+    adjacency.get(from)?.add(to);
+    adjacency.get(to)?.add(from);
+    outgoing.get(from)?.add(to);
+    incoming.get(to)?.add(from);
   };
   for (const relation of relations) for (const premise of relation.premises) for (const conclusion of relation.conclusions) connect(premise, conclusion);
   for (const node of knowledge) for (const premise of node.premises ?? []) if (ids.has(premise)) connect(premise, node.id);
@@ -98,13 +107,20 @@ function buildGraph(nodes: LayoutNode[]): Graph {
 }
 
 function connectedComponents(graph: Graph): string[][] {
-  const result: string[][] = [], seen = new Set<string>();
+  const result: string[][] = [];
+  const seen = new Set<string>();
   for (const seed of graph.knowledge.map(node => node.id).sort()) {
     if (seen.has(seed)) continue;
-    const queue = [seed], ids: string[] = []; seen.add(seed);
+    const queue = [seed];
+    const ids: string[] = [];
+    seen.add(seed);
     for (let i = 0; i < queue.length; i++) {
-      const id = queue[i]!; ids.push(id);
-      for (const next of [...(graph.adjacency.get(id) ?? [])].sort()) if (!seen.has(next)) { seen.add(next); queue.push(next); }
+      const id = queue[i]!;
+      ids.push(id);
+      for (const next of [...(graph.adjacency.get(id) ?? [])].sort()) if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
+      }
     }
     result.push(ids.sort());
   }
@@ -112,7 +128,9 @@ function connectedComponents(graph: Graph): string[][] {
 }
 
 function depthsFor(ids: readonly string[], graph: Graph): Map<string, number> {
-  const set = new Set(ids), indegree = new Map<string, number>(), depth = new Map<string, number>();
+  const set = new Set(ids);
+  const indegree = new Map<string, number>();
+  const depth = new Map<string, number>();
   for (const id of ids) {
     const count = [...(graph.incoming.get(id) ?? [])].filter(parent => set.has(parent)).length;
     indegree.set(id, count);
@@ -140,7 +158,8 @@ function crossingCount(layers: Map<number, string[]>, graph: Graph, depth: Map<s
     .map(to => [from, to] as const));
   let count = 0;
   for (let i = 0; i < edges.length; i++) for (let j = i + 1; j < edges.length; j++) {
-    const [a, b] = edges[i]!, [c, d] = edges[j]!;
+    const [a, b] = edges[i]!;
+    const [c, d] = edges[j]!;
     if (a === c || a === d || b === c || b === d) continue;
     if (depth.get(a) !== depth.get(c) || depth.get(b) !== depth.get(d)) continue;
     if ((order.get(a)! - order.get(c)!) * (order.get(b)! - order.get(d)!) < 0) count++;
@@ -154,13 +173,13 @@ function median(values: readonly number[]): number {
   return values.length % 2 ? values[middle]! : (values[middle - 1]! + values[middle]!) / 2;
 }
 
-/** Deterministic layered median/barycenter sweeps. No second tangent-space lane exists. */
 function minimizeCrossings(ids: readonly string[], depth: Map<string, number>, graph: Graph): Map<number, string[]> {
   const layers = new Map<number, string[]>();
   for (const id of ids) {
     const d = depth.get(id)!;
     const layer = layers.get(d) ?? [];
-    layer.push(id); layers.set(d, layer);
+    layer.push(id);
+    layers.set(d, layer);
   }
   for (const layer of layers.values()) layer.sort();
   let best = new Map([...layers].map(([d, values]) => [d, [...values]]));
@@ -182,7 +201,8 @@ function minimizeCrossings(ids: readonly string[], depth: Map<string, number>, g
           const barycenter = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : positions.get(id)!;
           return [values.length ? median(values) : positions.get(id)!, barycenter, positions.get(id)!] as const;
         };
-        const sa = compare(a), sb = compare(b);
+        const sa = compare(a);
+        const sb = compare(b);
         return sa[0] - sb[0] || sa[1] - sb[1] || sa[2] - sb[2] || a.localeCompare(b);
       });
     }
@@ -200,10 +220,13 @@ function minimizeCrossings(ids: readonly string[], depth: Map<string, number>, g
 function axialRing(radius: number): Array<[number, number]> {
   if (radius === 0) return [[0, 0]];
   const result: Array<[number, number]> = [];
-  let q = radius, r = 0;
+  let q = radius;
+  let r = 0;
   const directions: Array<[number, number]> = [[-1, 1], [-1, 0], [0, -1], [1, -1], [1, 0], [0, 1]];
   for (const [dq, dr] of directions) for (let step = 0; step < radius; step++) {
-    result.push([q, r]); q += dq; r += dr;
+    result.push([q, r]);
+    q += dq;
+    r += dr;
   }
   return result;
 }
@@ -215,21 +238,26 @@ export function compactTriangularCoordinates(count: number): Array<[number, numb
   return result.slice(0, count);
 }
 
-function buildComponents(graph: Graph): Component[] {
+function buildComponentMetadata(graph: Graph): Component[] {
   const byId = new Map(graph.knowledge.map(node => [node.id, node]));
   return connectedComponents(graph).map(ids => {
-    const depth = depthsFor(ids, graph);
-    const ordered = minimizeCrossings(ids, depth, graph);
-    const local: LocalNode[] = [];
-    for (const [d, layer] of [...ordered].sort(([a], [b]) => a - b)) {
-      const coordinates = compactTriangularCoordinates(layer.length);
-      layer.forEach((id, index) => local.push({ id, depth: d, q: coordinates[index]![0], r: coordinates[index]![1] }));
-    }
     const relationSet = new Set(ids);
     const relations = graph.relations.filter(relation => [...relation.premises, ...relation.conclusions].some(id => relationSet.has(id)));
     const branching = relations.reduce((sum, relation) => sum + Math.max(0, relation.premises.length + relation.conclusions.length - 2), 0);
-    return { id: ids[0]!, ids, relations, local, branching, layers: new Set(ids.map(id => layerOf(byId.get(id)!))).size };
+    return { id: ids[0]!, ids, relations, branching, layers: new Set(ids.map(id => layerOf(byId.get(id)!))).size };
   });
+}
+
+/** Solve a component only when it is about to be placed. */
+function solveComponent(component: Component, graph: Graph): SolvedComponent {
+  const depth = depthsFor(component.ids, graph);
+  const ordered = minimizeCrossings(component.ids, depth, graph);
+  const local: LocalNode[] = [];
+  for (const [d, layer] of [...ordered].sort(([a], [b]) => a - b)) {
+    const coordinates = compactTriangularCoordinates(layer.length);
+    layer.forEach((id, index) => local.push({ id, depth: d, q: coordinates[index]![0], r: coordinates[index]![1] }));
+  }
+  return { ...component, local };
 }
 
 function compareHardness(a: Component, b: Component): number {
@@ -237,14 +265,7 @@ function compareHardness(a: Component, b: Component): number {
 }
 
 function selectTopComponents(components: readonly Component[], limit = TOP_COMPONENT_LIMIT): Component[] {
-  const top: Component[] = [];
-  for (const component of components) {
-    let index = 0;
-    while (index < top.length && compareHardness(top[index]!, component) <= 0) index++;
-    top.splice(index, 0, component);
-    if (top.length > limit) top.pop();
-  }
-  return top;
+  return [...components].sort(compareHardness).slice(0, limit);
 }
 
 export function fibonacciDirections(count: number): THREE.Vector3[] {
@@ -268,11 +289,15 @@ export function icosahedronMacroDirections(): THREE.Vector3[] {
 export function mapMacroDirectionsToCandidates(macros: readonly THREE.Vector3[], candidates: readonly THREE.Vector3[]): number[] {
   const used = new Set<number>();
   return macros.map(macro => {
-    let bestIndex = -1, bestDot = -Infinity;
+    let bestIndex = -1;
+    let bestDot = -Infinity;
     for (let index = 0; index < candidates.length; index++) {
       if (used.has(index)) continue;
       const dot = macro.dot(candidates[index]!);
-      if (dot > bestDot + EPSILON || (Math.abs(dot - bestDot) <= EPSILON && index < bestIndex)) { bestDot = dot; bestIndex = index; }
+      if (dot > bestDot + EPSILON || (Math.abs(dot - bestDot) <= EPSILON && index < bestIndex)) {
+        bestDot = dot;
+        bestIndex = index;
+      }
     }
     if (bestIndex < 0) throw new Error('Not enough distinct Fibonacci candidates for macro directions');
     used.add(bestIndex);
@@ -311,10 +336,14 @@ function seededPermutation(count: number, seed: number): number[] {
 }
 
 function macroSectorFor(direction: THREE.Vector3, macros: readonly THREE.Vector3[]): number {
-  let best = 0, bestDot = -Infinity;
+  let best = 0;
+  let bestDot = -Infinity;
   for (let index = 0; index < macros.length; index++) {
     const dot = direction.dot(macros[index]!);
-    if (dot > bestDot + EPSILON || (Math.abs(dot - bestDot) <= EPSILON && index < best)) { best = index; bestDot = dot; }
+    if (dot > bestDot + EPSILON || (Math.abs(dot - bestDot) <= EPSILON && index < best)) {
+      best = index;
+      bestDot = dot;
+    }
   }
   return best;
 }
@@ -332,75 +361,105 @@ function basis(direction: THREE.Vector3): [THREE.Vector3, THREE.Vector3] {
   return [u, direction.clone().cross(u).normalize()];
 }
 
-function minimumRadius(component: Component, byId: Map<string, LayoutNode>, boundaries: SemanticBoundaries): number {
-  let offset = 2 * LAYOUT_UNIT;
-  for (const local of component.local) {
+function anchorOffset(component: SolvedComponent, byId: Map<string, LayoutNode>, boundaries: SemanticBoundaries): number {
+  const outer = component.local.filter(local => layerOf(byId.get(local.id)!) === 'outer').sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id));
+  if (outer.length) return boundaries.bluePurple - outer[0]!.depth * LAYOUT_UNIT;
+
+  const middle = component.local.some(local => layerOf(byId.get(local.id)!) === 'middle');
+  const inner = component.local.filter(local => layerOf(byId.get(local.id)!) === 'inner').sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id));
+  if (middle && inner.length) return boundaries.cyanBlue - inner[0]!.depth * LAYOUT_UNIT;
+
+  return Math.max(2 * LAYOUT_UNIT, component.local.reduce((minimum, local) => {
     const layer = layerOf(byId.get(local.id)!);
-    const minimum = layer === 'outer' ? boundaries.bluePurple : layer === 'middle' ? boundaries.cyanBlue : LAYOUT_UNIT;
-    offset = Math.max(offset, minimum - local.depth * LAYOUT_UNIT);
-  }
-  return Math.ceil(offset / LAYOUT_UNIT) * LAYOUT_UNIT;
+    const shell = layer === 'middle' ? boundaries.cyanBlue : layer === 'outer' ? boundaries.bluePurple : LAYOUT_UNIT;
+    return Math.max(minimum, shell - local.depth * LAYOUT_UNIT);
+  }, 0));
 }
 
-function world(local: LocalNode, direction: THREE.Vector3, offset: number): THREE.Vector3 {
+function idealWorld(local: LocalNode, direction: THREE.Vector3, offset: number): THREE.Vector3 {
   const [u, v] = basis(direction);
   return direction.clone().multiplyScalar(offset + local.depth * LAYOUT_UNIT)
     .addScaledVector(u, LAYOUT_UNIT * (local.q + local.r / 2))
     .addScaledVector(v, LAYOUT_UNIT * Math.sqrt(3) * local.r / 2);
 }
 
-function bucketIndex(value: number): number { return Math.floor(value / LAYOUT_UNIT); }
-function bucketKey(position: THREE.Vector3): string { return `${bucketIndex(position.x)}:${bucketIndex(position.y)}:${bucketIndex(position.z)}`; }
-
-export function positionsCollide(a: THREE.Vector3, b: THREE.Vector3): boolean {
-  const threshold = LAYOUT_UNIT - EPSILON;
-  return a.distanceToSquared(b) < threshold * threshold;
+function fccIndexKey(index: FccIndex): string { return `${index[0]}:${index[1]}:${index[2]}`; }
+function isFccIndex(i: number, j: number, k: number): boolean { return ((i + j + k) & 1) === 0; }
+function fccIndexToWorld(index: FccIndex): THREE.Vector3 {
+  return new THREE.Vector3(index[0] * FCC_AXIS_STEP, index[1] * FCC_AXIS_STEP, index[2] * FCC_AXIS_STEP);
 }
 
-class SpatialOccupancy {
-  private readonly buckets = new Map<string, OccupancyEntry[]>();
-  private readonly entries = new Map<string, OccupancyEntry>();
-
-  hasCollision(position: THREE.Vector3, localBuckets?: Map<string, THREE.Vector3[]>): boolean {
-    const bx = bucketIndex(position.x), by = bucketIndex(position.y), bz = bucketIndex(position.z);
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
-      const key = `${bx + dx}:${by + dy}:${bz + dz}`;
-      if ((this.buckets.get(key) ?? []).some(entry => positionsCollide(position, entry.position))) return true;
-      if ((localBuckets?.get(key) ?? []).some(other => positionsCollide(position, other))) return true;
+export function snapToNearestFcc(position: THREE.Vector3): THREE.Vector3 {
+  const base: FccIndex = [
+    Math.round(position.x / FCC_AXIS_STEP),
+    Math.round(position.y / FCC_AXIS_STEP),
+    Math.round(position.z / FCC_AXIS_STEP),
+  ];
+  let best: FccIndex | null = null;
+  let bestDistance = Infinity;
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+    const candidate: FccIndex = [base[0] + dx, base[1] + dy, base[2] + dz];
+    if (!isFccIndex(candidate[0], candidate[1], candidate[2])) continue;
+    const world = fccIndexToWorld(candidate);
+    const distance = world.distanceToSquared(position);
+    if (distance < bestDistance - EPSILON || (Math.abs(distance - bestDistance) <= EPSILON && (!best || fccIndexKey(candidate) < fccIndexKey(best)))) {
+      best = candidate;
+      bestDistance = distance;
     }
-    return false;
   }
+  if (!best) throw new Error('FCC snap failed');
+  return fccIndexToWorld(best);
+}
+
+function fccIndexFromWorld(position: THREE.Vector3): FccIndex {
+  return [
+    Math.round(position.x / FCC_AXIS_STEP),
+    Math.round(position.y / FCC_AXIS_STEP),
+    Math.round(position.z / FCC_AXIS_STEP),
+  ];
+}
+
+export function positionsCollide(a: THREE.Vector3, b: THREE.Vector3): boolean {
+  const threshold = EXCLUSION_RADIUS + EPSILON;
+  return a.distanceToSquared(b) <= threshold * threshold;
+}
+
+class FccOccupancy {
+  private readonly occupied = new Set<string>();
+  private readonly reserved = new Set<string>();
 
   canPlace(positions: readonly THREE.Vector3[]): boolean {
-    const localBuckets = new Map<string, THREE.Vector3[]>();
+    const local = new Set<string>();
     for (const position of positions) {
-      if (this.hasCollision(position, localBuckets)) return false;
-      const key = bucketKey(position), bucket = localBuckets.get(key) ?? [];
-      bucket.push(position); localBuckets.set(key, bucket);
+      const key = fccIndexKey(fccIndexFromWorld(position));
+      if (local.has(key) || this.reserved.has(key)) return false;
+      local.add(key);
     }
     return true;
   }
 
-  add(key: string, componentId: string, position: THREE.Vector3): void {
-    const entry = { key, componentId, position: position.clone() };
-    const bucketName = bucketKey(position), bucket = this.buckets.get(bucketName) ?? [];
-    bucket.push(entry); this.buckets.set(bucketName, bucket); this.entries.set(key, entry);
+  add(position: THREE.Vector3): void {
+    const center = fccIndexFromWorld(position);
+    this.occupied.add(fccIndexKey(center));
+    const reach = Math.ceil(EXCLUSION_RADIUS / FCC_AXIS_STEP);
+    for (let dx = -reach; dx <= reach; dx++) for (let dy = -reach; dy <= reach; dy++) for (let dz = -reach; dz <= reach; dz++) {
+      const candidate: FccIndex = [center[0] + dx, center[1] + dy, center[2] + dz];
+      if (!isFccIndex(candidate[0], candidate[1], candidate[2])) continue;
+      if (fccIndexToWorld(candidate).distanceToSquared(position) <= EXCLUSION_RADIUS * EXCLUSION_RADIUS + EPSILON) this.reserved.add(fccIndexKey(candidate));
+    }
   }
 
-  keys(): ReadonlySet<string> { return new Set(this.entries.keys()); }
-}
-
-function occupancyFromPlaced(placed: readonly Placed[]): SpatialOccupancy {
-  const occupancy = new SpatialOccupancy();
-  for (const item of placed) item.component.local.forEach((local, index) => occupancy.add(`${item.component.id}:${local.id}`, item.component.id, item.positions[index]!));
-  return occupancy;
+  occupiedKeys(): ReadonlySet<string> { return new Set(this.occupied); }
+  reservedKeys(): ReadonlySet<string> { return new Set(this.reserved); }
 }
 
 function placeLineage(nodes: LayoutNode[]): void {
   const groups = new Map<string, LayoutNode[]>();
   for (const node of nodes) if (node.lineage && node.type !== 'reasoning') {
-    const id = topicIdFor(node), group = groups.get(id) ?? [];
-    group.push(node); groups.set(id, group);
+    const id = topicIdFor(node);
+    const group = groups.get(id) ?? [];
+    group.push(node);
+    groups.set(id, group);
   }
   for (const members of groups.values()) {
     const current = members.find(node => lineageRoleFor(node) === 'current' && node.lineage?.reasoningSide !== 'opposition');
@@ -439,58 +498,54 @@ export function applyDeterministic5RLayout<T extends LayoutNode>(nodes: T[]): T[
   const graph = buildGraph(nodes);
   const byId = new Map(nodes.map(node => [node.id, node]));
   const boundaries = computeSemanticBoundaries(nodes);
-  const components = buildComponents(graph);
-  const candidateCount = Math.max(MIN_ANGLE_COUNT, components.length);
+  const metadata = buildComponentMetadata(graph);
+  const processingOrder = [...metadata].sort(compareHardness);
+  const candidateCount = Math.max(MIN_ANGLE_COUNT, processingOrder.length);
   const candidates = fibonacciDirections(candidateCount);
   const macros = icosahedronMacroDirections();
   const macroCandidates = mapMacroDirectionsToCandidates(macros, candidates);
   const sectors = candidateSectors(candidates, macros);
   const graphSeed = stableHash(signature);
-  const top = selectTopComponents(components);
-  const topIds = new Set(top.map(component => component.id));
+  const top = selectTopComponents(processingOrder);
   const macroOrder = seededPermutation(MACRO_DIRECTION_COUNT, graphSeed ^ 0x9e3779b9);
   const macroAssignments = new Map<string, number>();
   top.forEach((component, index) => macroAssignments.set(component.id, macroOrder[index]!));
-  const processingOrder = [...top, ...components.filter(component => !topIds.has(component.id))];
 
-  let occupancy = new SpatialOccupancy();
+  const occupancy = new FccOccupancy();
   const usedAngles = new Set<number>();
   const placed: Placed[] = [];
   let expansionCount = 0;
 
-  for (const component of processingOrder) {
+  for (const metadataComponent of processingOrder) {
+    const component = solveComponent(metadataComponent, graph);
     const macroIndex = macroAssignments.get(component.id);
     const fixedOrder = macroIndex === undefined
       ? seededPermutation(candidateCount, graphSeed ^ stableHash(component.id) ^ 0x85ebca6b)
       : [macroCandidates[macroIndex]!, ...sectors[macroIndex]!.filter(index => index !== macroCandidates[macroIndex])];
+    let radialExtra = 0;
     let success = false;
-    const tried = new Set<number>();
 
     while (!success) {
+      const tried = new Set<number>();
       for (const angle of fixedOrder) {
         if (usedAngles.has(angle) || tried.has(angle)) continue;
         tried.add(angle);
         const direction = candidates[angle]!;
-        const offset = minimumRadius(component, byId, boundaries) + expansionCount * LAYOUT_UNIT;
-        const positions = component.local.map(local => world(local, direction, offset));
+        const offset = anchorOffset(component, byId, boundaries) + radialExtra;
+        const positions = component.local.map(local => snapToNearestFcc(idealWorld(local, direction, offset)));
         if (!occupancy.canPlace(positions)) continue;
+
         component.local.forEach((local, index) => setPosition(byId.get(local.id)!, positions[index]!));
-        component.local.forEach((local, index) => occupancy.add(`${component.id}:${local.id}`, component.id, positions[index]!));
+        positions.forEach(position => occupancy.add(position));
         usedAngles.add(angle);
-        placed.push({ component, angle, direction, offset, positions });
+        placed.push({ component, angle, direction, radialExtra, positions });
         success = true;
         break;
       }
 
       if (!success) {
+        radialExtra += EXPANSION_UNIT;
         expansionCount++;
-        for (const prior of placed) {
-          prior.offset += LAYOUT_UNIT;
-          prior.positions = prior.component.local.map(local => world(local, prior.direction, prior.offset));
-          prior.component.local.forEach((local, index) => setPosition(byId.get(local.id)!, prior.positions[index]!));
-        }
-        occupancy = occupancyFromPlaced(placed);
-        tried.clear();
       }
     }
   }
@@ -506,7 +561,8 @@ export function applyDeterministic5RLayout<T extends LayoutNode>(nodes: T[]): T[
   const componentOrders = new Map(placed.map(item => [item.component.id, item.component.local.slice().sort((a, b) => a.depth - b.depth || a.q - b.q || a.r - b.r || a.id.localeCompare(b.id)).map(node => node.id)]));
   lastDiagnostics = Object.freeze({
     boundaries,
-    occupiedCells: occupancy.keys(),
+    occupiedCells: occupancy.occupiedKeys(),
+    reservedCells: occupancy.reservedKeys(),
     usedAngles: new Map(placed.map(item => [item.component.id, item.angle])),
     componentOrders,
     macroCandidateAngles: [...macroCandidates],
@@ -529,7 +585,8 @@ export function countLayerCrossings(nodes: readonly LayoutNode[]): number {
   for (const id of ids.sort()) {
     const d = depth.get(id)!;
     const values = layers.get(d) ?? [];
-    values.push(id); layers.set(d, values);
+    values.push(id);
+    layers.set(d, values);
   }
   return crossingCount(layers, graph, depth);
 }
