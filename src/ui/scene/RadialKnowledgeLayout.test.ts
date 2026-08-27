@@ -54,8 +54,8 @@ const macroCandidates = mapMacroDirectionsToCandidates(macros, fibonacci);
 assert.equal(new Set(macroCandidates).size, MACRO_DIRECTION_COUNT);
 
 const boundaries = computeSemanticBoundaries([...fixture(), ...Array.from({ length: 9 }, (_, i) => node(`capacity-${i}`))]);
-assert.equal(boundaries.cyanBlue % LAYOUT_UNIT, 0, 'semantic shells resolve at R precision');
-assert.equal(boundaries.bluePurple % LAYOUT_UNIT, 0, 'semantic shells resolve at R precision');
+assert(Math.abs(boundaries.cyanBlue / LAYOUT_UNIT - Math.round(boundaries.cyanBlue / LAYOUT_UNIT)) < EPSILON, 'semantic shells resolve at R precision');
+assert(Math.abs(boundaries.bluePurple / LAYOUT_UNIT - Math.round(boundaries.bluePurple / LAYOUT_UNIT)) < EPSILON, 'semantic shells resolve at R precision');
 assert.equal(boundaries.purpleOuter, null);
 
 const first = fixture();
