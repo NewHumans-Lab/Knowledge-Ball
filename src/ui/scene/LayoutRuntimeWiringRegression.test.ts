@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
+import './ShellExpansionRemap.test';
+
 const app=readFileSync('src/ui/app.ts','utf8');
 const entry=readFileSync('src/ui/scene/UniformLayerLayout.ts','utf8');
 const implementation=readFileSync('src/ui/scene/Deterministic5RLayout.ts','utf8');
@@ -12,13 +14,24 @@ for(const forbidden of ['FccOccupancy','snapToNearestFcc','FCC_AXIS_STEP','fibon
 assert(implementation.includes('generateIcosahedralGrid'));
 assert(implementation.includes('address?: SpatialAddress'));
 assert(implementation.includes('Inputs are mutated only after a complete component solution exists'));
-assert(implementation.includes('for(const [id,address] of addresses)'),'authoritative node mutation occurs in one final commit after component searches');
+assert(implementation.includes('Atomic final commit: no input node is mutated'),'authoritative node mutation occurs only after the complete occupancy candidate passes');
 assert(implementation.includes('realKnowledgeLineLength'),'chain optimization must use real Knowledge-to-Knowledge total line length');
-assert(implementation.includes('mappedNeighborCenter'),'premises and conclusions must attract each other toward their mapped shell center');
+assert(implementation.includes('mappedNeighborCenter'),'premises and conclusions must attract each other toward their mapped shell center during initial layout');
 assert(implementation.includes('NO_IMPROVEMENT_LIMIT = 5'),'five consecutive non-improving passes are the convergence rule');
 assert(implementation.includes('fixedCompactPlacement'),'a chosen radial direction must own one fixed compact slot set per shell');
-assert(implementation.includes('A blocked compact slot changes the whole chain direction'),'blocked target slots must rotate the component instead of falling through to farther cells');
-assert(implementation.includes('Diagnostic utility only. Crossings are not an optimization objective.'),'crossing count may remain diagnostic but must not score layout');
-assert(implementation.includes('complex=metadata(g).sort(hardness)'),'complexity-first order remains authoritative');
-assert(implementation.includes("ordered=[...complex.filter(c=>c.ids.length>1),...complex.filter(c=>c.ids.length===1)]"),'standalone nodes are placed last');
+assert(implementation.includes('A blocked compact slot changes the whole chain direction'),'blocked target slots may rotate the component only during its initial placement');
+assert(implementation.includes('Boundary expansion is not a new layout'),'shell expansion must use a separate fixed-direction remap path');
+assert(implementation.includes('boundaryShiftFor'),'shell expansion must classify movement by whole component');
+assert(implementation.includes("pureCyan=layers.every(layer=>layer==='inner')"),'Cyan/Blue expansion must leave only purely Cyan components fixed');
+assert(implementation.includes("hasPurple=layers.some(layer=>layer==='outer')"),'Blue/Purple expansion must move every component containing Purple');
+assert(implementation.includes('remapComponentOutward'),'existing chains must map from committed positions instead of being re-searched');
+assert(implementation.includes('componentOptimizationPasses.set(c.id,0)'),'boundary-remapped chains must not rerun internal optimization');
+assert(implementation.includes('directionSwitchCounts.set(c.id,0)'),'boundary-remapped chains must not search or switch direction');
+assert(implementation.includes('Outward boundary remap invariant violated'),'an impossible outward collision is treated as an invariant failure, not as permission to rotate the chain');
+assert(implementation.includes('placementsAreLegal(finalPlacements'),'occupancy is rebuilt and globally validated before commit');
+assert(implementation.includes('restoreSpatialSnapshot'),'failed candidate construction restores the pre-run spatial state');
+assert(implementation.includes('complex=metadata(g).sort(hardness)'),'complexity-first order remains authoritative for initial placement');
+assert(implementation.includes("ordered=[...complex.filter(c=>c.ids.length>1),...complex.filter(c=>c.ids.length===1)]"),'standalone nodes are placed last during initial placement');
+assert(implementation.includes('countLayerCrossings'));
+assert(!implementation.includes('countLayerCrossings('+'placementArray'),'crossing count must never score layout');
 console.log('Single-owner compact radial ISG runtime architecture checks passed.');
