@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import './ShellExpansionRemap.test';
+import './ReasoningRadialPlacement.test';
 
 const app=readFileSync('src/ui/app.ts','utf8');
 const entry=readFileSync('src/ui/scene/UniformLayerLayout.ts','utf8');
 const implementation=readFileSync('src/ui/scene/Deterministic5RLayout.ts','utf8');
+const reasoningProjection=readFileSync('src/ui/scene/ReasoningRadialPlacement.ts','utf8');
 assert(app.includes("import { applyUniformLayerLayout } from './scene/UniformLayerLayout';"));
 assert(entry.includes("from './Deterministic5RLayout'"),'one narrow runtime layout owner remains');
+assert(entry.includes("from './ReasoningRadialPlacement'"),'runtime must apply the non-authoritative Reasoning projection after Knowledge layout');
+assert(entry.indexOf('applyDeterministic5RLayout(spatialKnowledge)')<entry.indexOf('applyReasoningRadialPlacement(spatialKnowledge)'),'Reasoning projection must run only after authoritative Knowledge geometry is final');
+assert(reasoningProjection.includes('(meanRadius(premises) + meanRadius(conclusions)) * 0.5'),'Reasoning radius must be the midpoint of premise/conclusion shell radii');
+assert(reasoningProjection.includes('conclusionAxis.normalize()'),'Reasoning direction must be owned by the conclusion radial axis');
+assert(reasoningProjection.includes('delete reasoning.address'),'Reasoning projection must never create authoritative ISG occupancy');
 assert(entry.includes("lineageRoleFor(node) !== 'rejected'"),'legacy rejected audit records must never enter runtime ISG');
 assert(entry.includes('delete node.address')&&entry.includes('delete node.pos')&&entry.includes('delete node.homePos'),'legacy rejected records must not retain stale spatial authority');
 assert(!existsSync('src/ui/scene/RadialKnowledgeLayout.ts'));
