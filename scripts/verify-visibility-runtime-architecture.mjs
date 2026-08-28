@@ -37,7 +37,7 @@ for (const file of await sourceFiles('src')) {
   assert(!text.includes('setHideUntouched'), `${file} must not call or expose the legacy binary visibility setter`);
 }
 
-assert(index.includes('id=\"btnPersonal\" data-visibility-mode=\"current\" title=\"当前：只显示每个主题的当前知识；点击切换到个人\">当前</button>'), 'index.html must own the canonical Current visibility shell');
+assert(/id="btnPersonal" data-visibility-mode="current"[^>]*data-i18n="app\.current"/.test(index), 'index.html must own the canonical Current visibility shell independent of the selected locale');
 assert(!index.includes('隐藏/恢复未接触的知识节点'), 'index.html must not retain the legacy binary visibility shell');
 assert(!vite.includes('knowledge-ball-canonical-visibility-shell'), 'Vite must not rewrite product visibility HTML at build time');
 assert(!vite.includes('canonicalVisibilityButton'), 'Vite must not duplicate the visibility button source of truth');

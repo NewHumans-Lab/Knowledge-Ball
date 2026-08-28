@@ -17,10 +17,16 @@ function validateHtml(html) {
   assert.match(html, /<meta\s+name="knowledge-ball-build"\s+content="[^"]+"/, 'Pages HTML must expose its build identity');
   assert.match(
     html,
-    /<button class="btn" id="btnPersonal" data-visibility-mode="current" title="当前：只显示每个主题的当前知识；点击切换到个人">当前<\/button>/,
-    'Pages HTML must boot with the canonical Current visibility shell',
+    /<button class="btn" id="btnPersonal" data-visibility-mode="current"[^>]*data-i18n="app\.current"[^>]*>.*?<\/button>/s,
+    'Pages HTML must boot with the canonical Current visibility shell without coupling the regression to one locale',
   );
   assert.doesNotMatch(html, /隐藏\/恢复未接触的知识节点/, 'obsolete binary Personal shell must never ship in a built artifact');
+  assert.match(html, /id="openDownloads"/, 'Settings must expose the nested Downloads destination');
+  assert.match(html, /id="downloadsOverlay"/, 'Pages HTML must include the Downloads destination');
+  assert.match(html, /class="app-download ios-download-card"/, 'Downloads must include Apple/iOS');
+  assert.match(html, /class="app-download android-download-card"/, 'Downloads must include Android');
+  assert.match(html, /class="app-download windows-download-card"/, 'Downloads must include Windows');
+  assert.match(html, /id="windowsDownload"[^>]*disabled/, 'Windows must remain unavailable until an authoritative installer exists');
   const assets = pageAssets(html);
   assert.ok(assets.some(asset => /\/assets\/index-[^/]+\.js$/.test(asset)), 'Pages HTML must reference its hashed application bundle');
   return assets;

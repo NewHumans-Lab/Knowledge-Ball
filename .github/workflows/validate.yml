@@ -22,6 +22,7 @@ jobs:
       - run: npm run build
       - run: npm run test:pages
       - run: npm test
+      - run: npm run test:i18n
       - run: npm run test:download
       - name: Require the hosted release schema expected by migrations
         if: github.event_name == 'pull_request'
@@ -31,6 +32,8 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
+      - name: Verify Settings downloads and zh-CN/en localization
+        run: node scripts/verify-i18n-downloads-browser.mjs
       - name: Verify split standalone/reasoning creation on a real mobile page
         run: node scripts/verify-split-create-browser.mjs
       - name: Verify real-touch Current Personal All cycle on the built page
@@ -82,6 +85,7 @@ jobs:
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
       - run: npm ci
       - run: npm test
+      - run: npm run test:i18n
       - run: npm run android:sync
       - name: Run Android tests and build debug APK
         working-directory: android
@@ -97,6 +101,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run test:i18n
       - run: npm run ios:sync
       - name: Build iOS simulator app without signing
         working-directory: ios/App

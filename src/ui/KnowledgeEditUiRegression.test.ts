@@ -23,11 +23,11 @@ assert(!html.includes('Canonical English'), 'submission UI must not contain an E
 assert(!panel.includes('canonicalTitle'), 'submission controller must not carry a canonical-English field');
 assert(!panel.includes('containsNonEnglish'), 'submission controller must not reject non-English titles');
 assert(!app.includes('fCanonical'), 'application wiring must not depend on the removed English field');
-assert(html.includes('<button class="btn primary" id="modalSubmit">提交知识</button>'), 'submission button must not imply content-truth validation');
+assert(html.includes('id="modalSubmit"') && html.includes('data-i18n="app.submit"'), 'localized submission button must not imply content-truth validation');
 
-assert(html.includes('<option value="inner">第一层 · 语义与基础事实</option>'), 'raw submission form must expose the canonical first layer');
-assert(html.includes('<option value="middle">第二层 · 严谨推理</option>'), 'raw submission form must expose the canonical second layer');
-assert(html.includes('<option value="outer">第三层 · 概率与争议</option>'), 'raw submission form must expose the canonical third layer');
+assert(html.includes('<option value="inner" data-i18n="taxonomy.inner">第一层 · 语义与基础事实</option>'), 'raw submission form must expose the canonical first layer');
+assert(html.includes('<option value="middle" data-i18n="taxonomy.middle">第二层 · 严谨推理</option>'), 'raw submission form must expose the canonical second layer');
+assert(html.includes('<option value="outer" data-i18n="taxonomy.outer">第三层 · 概率与争议</option>'), 'raw submission form must expose the canonical third layer');
 assert(!html.includes('<option value="fact">事实 Fact</option>'), 'submission form must not ask users for internal fine-grained node types');
 assert(!html.includes('<option value="theorem">定理 Theorem</option>'), 'submission form must not ask users for internal fine-grained node types');
 assert(!html.includes('<option value="prediction">预测 Prediction</option>'), 'submission form must not ask users for internal fine-grained node types');

@@ -5,6 +5,7 @@ import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Network } from '@capacitor/network';
 import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { subscribeLocale, t } from '../i18n/Locale';
 
 export const CURRENT_APP_VERSION = '0.2.0';
 export const DOWNLOAD_ROOT = 'https://rushow111.github.io/Knowledge-Ball/downloads';
@@ -53,23 +54,23 @@ async function loadUpdateManifest(): Promise<UpdateManifest> {
 
 async function checkForUpdate(): Promise<void> {
   const platform = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
-  setActionStatus(platform, '正在检查最新版…');
+  setActionStatus(platform, t('mobile.checking'));
   try {
     const manifest = await loadUpdateManifest();
     if (!isNewerVersion(manifest.version, CURRENT_APP_VERSION)) {
-      setActionStatus(platform, `当前已是最新版 v${CURRENT_APP_VERSION}`);
+      setActionStatus(platform, t('mobile.latest', { version: CURRENT_APP_VERSION }));
       return;
     }
-    setActionStatus(platform, `发现 v${manifest.version}，正在打开安装页面…`);
+    setActionStatus(platform, t('mobile.found', { version: manifest.version }));
     await Browser.open({ url: platform === 'ios' ? manifest.ios.url : manifest.android.url });
   } catch (error) {
-    console.error('Unable to check for Android updates', error);
-    setActionStatus(platform, '检查更新失败，请确认网络后重试。');
+    console.error('Unable to check for updates', error);
+    setActionStatus(platform, t('mobile.updateError'));
   }
 }
 
 async function shareCurrentApk(): Promise<void> {
-  setActionStatus('android', '正在准备当前版本安装包…');
+  setActionStatus('android', t('mobile.preparing'));
   try {
     const response = await fetch(CURRENT_APK_URL, { cache: 'no-store' });
     if (!response.ok) throw new Error(`APK download failed (${response.status})`);
@@ -83,30 +84,30 @@ async function shareCurrentApk(): Promise<void> {
     await Filesystem.writeFile({ path: fileName, directory: Directory.Cache, data: btoa(binary) });
     const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
     await Share.share({
-      title: `知识球 Android v${CURRENT_APP_VERSION}`,
-      text: `知识球 Android 当前版本 v${CURRENT_APP_VERSION}`,
+      title: t('mobile.androidShareTitle', { version: CURRENT_APP_VERSION }),
+      text: t('mobile.androidShareText', { version: CURRENT_APP_VERSION }),
       files: [uri],
-      dialogTitle: '分享知识球安装包',
+      dialogTitle: t('mobile.androidShareDialog'),
     });
-    setActionStatus('android', '安装包已交给系统分享面板。');
+    setActionStatus('android', t('mobile.shared'));
   } catch (error) {
     console.error('Unable to share the current Android APK', error);
-    setActionStatus('android', '准备分享失败，请确认网络和存储空间后重试。');
+    setActionStatus('android', t('mobile.shareError'));
   }
 }
 
 async function shareIosVersion(): Promise<void> {
   try {
     await Share.share({
-      title: `知识球 iOS v${CURRENT_APP_VERSION}`,
-      text: `知识球 iOS 当前版本 v${CURRENT_APP_VERSION}，使用 Safari 打开即可安装。`,
+      title: t('mobile.iosShareTitle', { version: CURRENT_APP_VERSION }),
+      text: t('mobile.iosShareText', { version: CURRENT_APP_VERSION }),
       url: IOS_INSTALL_URL,
-      dialogTitle: '分享知识球 iOS 应用',
+      dialogTitle: t('mobile.iosShareDialog'),
     });
-    setActionStatus('ios', '安装地址已交给系统分享面板。');
+    setActionStatus('ios', t('mobile.iosShared'));
   } catch (error) {
     console.error('Unable to share the current iOS version', error);
-    setActionStatus('ios', '分享失败，请稍后重试。');
+    setActionStatus('ios', t('mobile.iosShareError'));
   }
 }
 
@@ -121,10 +122,7 @@ export function applyPlatformVisibility(platform: 'android' | 'ios'): void {
   document.documentElement.classList.add('native-app', platform);
   document.querySelectorAll<HTMLElement>('.web-download-action').forEach(element => { element.hidden = true; });
   document.querySelectorAll<HTMLElement>('.native-app-actions').forEach(element => { element.hidden = true; });
-  document.querySelectorAll<HTMLElement>('.app-download').forEach(element => { element.hidden = true; });
-  const card = document.querySelector<HTMLElement>(`.${platform}-download-card`);
   const actions = document.querySelector<HTMLElement>(`.${platform}-native-actions`);
-  if (card) card.hidden = false;
   if (actions) actions.hidden = false;
 }
 
@@ -144,7 +142,7 @@ function showNetworkState(connected: boolean): void {
     banner = document.createElement('div');
     banner.id = 'networkBanner';
     banner.className = 'network-banner';
-    banner.textContent = '当前离线 · 本地知识图谱仍可浏览';
+    banner.textContent = t('mobile.offline');
     banner.setAttribute('role', 'status');
     document.body.appendChild(banner);
   }
@@ -160,6 +158,10 @@ export async function setupMobileShell(): Promise<void> {
   await StatusBar.setStyle({ style: Style.Dark });
   await StatusBar.setBackgroundColor({ color: '#080c16' });
   showNetworkState((await Network.getStatus()).connected);
+  subscribeLocale(() => {
+    const banner = document.getElementById('networkBanner');
+    if (banner) banner.textContent = t('mobile.offline');
+  });
   await Network.addListener('networkStatusChange', status => showNetworkState(status.connected));
   await App.addListener('backButton', async () => {
     if (closeTopLayer() === 'exit') await App.exitApp();

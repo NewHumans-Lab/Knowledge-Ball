@@ -79,6 +79,9 @@ import {
 import { setupMobileShell } from '../mobile/MobileShell';
 import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
+import { getLocale, initializeLocale, setLocale, subscribeLocale } from '../i18n/Locale';
+
+initializeLocale();
 
 const projection = new GraphProjection();
 const personalEventPersistence = new FilteredKnowledgePersistence<DomainEvent>({
@@ -814,6 +817,29 @@ panel.setSettingsValues({
   labelBrightness: 1,
   labelColor: '#C7DBDD',
   labelFont: `'Noto Sans SC','Inter',sans-serif`,
+});
+
+const localeSelect = opt<HTMLSelectElement>('setLocale');
+if (localeSelect) {
+  localeSelect.value = getLocale();
+  localeSelect.addEventListener('change', () => setLocale(localeSelect.value === 'en' ? 'en' : 'zh-CN'));
+}
+const downloadsOverlay = opt<HTMLElement>('downloadsOverlay');
+opt<HTMLButtonElement>('openDownloads')?.addEventListener('click', () => {
+  opt<HTMLElement>('settingsOverlay')?.classList.remove('show');
+  downloadsOverlay?.classList.add('show');
+});
+const closeDownloads = () => {
+  downloadsOverlay?.classList.remove('show');
+  opt<HTMLElement>('settingsOverlay')?.classList.add('show');
+};
+opt<HTMLButtonElement>('downloadsClose')?.addEventListener('click', closeDownloads);
+downloadsOverlay?.addEventListener('click', event => { if (event.target === downloadsOverlay) closeDownloads(); });
+subscribeLocale(() => {
+  if (localeSelect) localeSelect.value = getLocale();
+  const { nodeId, surface } = knowledgeSurfaceState.snapshot();
+  if (nodeId && surface === 'panel') panel.openNodePanel(nodeId);
+  else if (nodeId && surface === 'detail') nodeDetail?.refresh(nodeId);
 });
 
 

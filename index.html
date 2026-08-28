@@ -163,9 +163,10 @@
   .native-app .web-download-action{display:none;}
   [hidden]{display:none!important;}
   .native-app.android .android-native-actions,.native-app.ios .ios-native-actions{display:grid;}
-  .native-app.android .ios-download-card,.native-app.ios .android-download-card{display:none;}
   .native-app-actions{display:none;grid-template-columns:1fr 1fr;gap:10px;}
-  .app-download-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .app-download-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+  .settings-navigation{width:100%;display:flex;align-items:center;justify-content:space-between;text-align:left;min-height:48px;}
+  .downloads-modal{max-width:760px;}
   .native-app .app-download-grid{grid-template-columns:1fr;}
   @media (max-width:780px){
     header,.hint,.ai-bar,.legend,.node-label,.ai-results{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
@@ -177,6 +178,8 @@
     header{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));}
     .ai-bar-wrap{padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));}
     .btn,.avatar-btn,.ai-add,.ai-send,.panel-close{min-height:44px;min-width:44px;}
+    .app-download-grid{grid-template-columns:1fr;}
+    .downloads-modal{max-width:460px;}
   }
   /* Living Knowledge Field — reference-calibrated colour and scale only. */
   header{background:rgba(3,5,18,.94);border-color:var(--panel-border);padding:11px 16px}
@@ -205,12 +208,12 @@
 <div class="app" id="app">
   <header>
     <div class="brand">
-      <div class="avatar-btn" id="avatarBtn" title="个人账户">RS</div>
+      <div class="avatar-btn" id="avatarBtn" data-i18n-aria="app.account">RS</div>
       <div class="brand-copy"><div class="brand-title">KNOWLEDGE BALL</div><span class="brand-subtitle">LIVING RELATIONAL FIELD</span></div>
     </div>
     <div class="header-mid">
-      <button class="btn" id="btnPersonal" data-visibility-mode="current" title="当前：只显示每个主题的当前知识；点击切换到个人">当前</button>
-      <button class="btn" id="btnSettings">⚙ 设置</button>
+      <button class="btn" id="btnPersonal" data-visibility-mode="current" data-i18n="app.current">当前</button>
+      <button class="btn" id="btnSettings">⚙ <span data-i18n="app.settings">设置</span></button>
     </div>
   </header>
   <div class="main">
@@ -253,8 +256,8 @@
       <div class="ai-bar-inner">
         <div class="ai-results" id="aiResults"></div>
         <div class="ai-bar">
-          <input id="aiInput" type="text" placeholder="输入问题，或搜索知识节点…" autocomplete="off">
-          <button class="ai-send" id="aiSend">➤</button>
+          <input id="aiInput" type="text" data-i18n-placeholder="app.search" placeholder="输入问题，或搜索知识节点…" autocomplete="off">
+          <button class="ai-send" id="aiSend" data-i18n-aria="app.send">➤</button>
         </div>
       </div>
     </div>
@@ -263,21 +266,21 @@
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <div class="modal-header">
-      <h3 id="modalTitle">提交新知识节点</h3>
+      <h3 id="modalTitle" data-i18n="create.title">提交新知识节点</h3>
       <button class="panel-close" id="modalClose">❌</button>
     </div>
     <div class="modal-body">
       <div class="form-hint" id="modalHint" style="display:none;"></div>
       <div class="form-field">
-        <label>知识标题</label>
-        <input type="text" id="fTitle" placeholder="填写知识标题">
+        <label data-i18n="create.name">知识标题</label>
+        <input type="text" id="fTitle" data-i18n-placeholder="create.name.placeholder" placeholder="填写知识标题">
       </div>
       <div class="form-field">
-        <label>知识层级</label>
+        <label data-i18n="create.layer">知识层级</label>
         <select id="fType">
-          <option value="inner">第一层 · 语义与基础事实</option>
-          <option value="middle">第二层 · 严谨推理</option>
-          <option value="outer">第三层 · 概率与争议</option>
+          <option value="inner" data-i18n="taxonomy.inner">第一层 · 语义与基础事实</option>
+          <option value="middle" data-i18n="taxonomy.middle">第二层 · 严谨推理</option>
+          <option value="outer" data-i18n="taxonomy.outer">第三层 · 概率与争议</option>
         </select>
       </div>
       <div class="form-field">
@@ -299,8 +302,8 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="modalCancel">取消</button>
-      <button class="btn primary" id="modalSubmit">提交知识</button>
+      <button class="btn" id="modalCancel" data-i18n="app.cancel">取消</button>
+      <button class="btn primary" id="modalSubmit" data-i18n="app.submit">提交知识</button>
     </div>
   </div>
 </div>
@@ -323,71 +326,28 @@
 </div>
 <div class="modal-overlay" id="settingsOverlay">
   <div class="modal">
-    <div class="modal-header">
-      <h3>设置</h3>
-      <button class="panel-close" id="settingsClose">❌</button>
-    </div>
+    <div class="modal-header"><h3 data-i18n="settings.title">设置</h3><button class="panel-close" id="settingsClose" data-i18n-aria="app.close">❌</button></div>
     <div class="modal-body">
-      <div class="form-hint" style="margin-bottom:16px;">知识节点球体</div>
-      <div class="settings-row">
-        <label>球体半径 (mm)</label>
-        <input type="range" id="setNodeRadius" min="0.1" max="30" step="0.1" value="7.2">
-        <div class="settings-val" id="setNodeRadiusVal">7.2mm</div>
-      </div>
-      <div class="form-hint" style="margin:18px 0 16px;">知识节点文字标签</div>
-      <div class="settings-row">
-        <label>字号</label>
-        <input type="range" id="setLabelSize" min="8" max="18" value="11">
-        <div class="settings-val" id="setLabelSizeVal">11px</div>
-      </div>
-      <div class="settings-row">
-        <label>颜色</label>
-        <input type="color" id="setLabelColor" value="#B8BFD4">
-        <div style="flex:1"></div>
-      </div>
-      <div class="settings-row">
-        <label>字体</label>
-        <select id="setLabelFont">
-          <option value="'Noto Sans SC','Inter',sans-serif">默认无衬线</option>
-          <option value="'Noto Serif SC',serif">衬线（宋体风格）</option>
-          <option value="'Inter',monospace">等宽</option>
-        </select>
-      </div>
-      <div class="settings-row">
-        <label>亮度</label>
-        <input type="range" id="setLabelBrightness" min="10" max="100" value="100">
-        <div class="settings-val" id="setLabelBrightnessVal">100%</div>
-      </div>
-      <div class="form-hint" style="margin:18px 0 16px;">视角与协议参数</div>
-      <div class="settings-row">
-        <label>单次点击移动层数</label>
-        <input type="number" id="setViewStep" value="1" min="1" max="1" disabled title="预留，暂未启用">
-      </div>
-      <div class="form-hint" style="margin:18px 0 12px;">移动应用</div>
-      <div class="app-download-grid">
-      <div class="app-download android-download-card">
-        <div class="app-download-title">知识球 Android 应用</div>
-        <div class="app-download-meta">版本 0.2.0 · Android 7.0 及以上<br>安装时请允许浏览器安装来自此来源的应用。</div>
-        <a class="btn primary web-download-action" id="androidDownload" href="./downloads/knowledge-ball-android-v0.2.0.apk" download="knowledge-ball-android-v0.2.0.apk" type="application/vnd.android.package-archive">下载 Android 安装包（APK）</a>
-        <div class="native-app-actions android-native-actions" aria-label="Android 应用版本操作">
-          <button class="btn primary" id="androidUpdate" type="button">检查更新</button>
-          <button class="btn" id="androidShare" type="button">分享当前版本</button>
-        </div>
-        <div class="app-download-meta" id="androidActionStatus" role="status" aria-live="polite" style="margin:10px 0 0;"></div>
-      </div>
-      <div class="app-download ios-download-card">
-        <div class="app-download-title">知识球 iOS 应用</div>
-        <div class="app-download-meta">版本 0.2.0 · iOS 14 及以上<br>使用 Safari 安装，不依赖境外应用商店。</div>
-        <a class="btn primary web-download-action" id="iosDownload" href="./ios-install.html">安装 iOS 应用</a>
-        <div class="native-app-actions ios-native-actions" aria-label="iOS 应用版本操作">
-          <button class="btn primary" id="iosUpdate" type="button">检查更新</button>
-          <button class="btn" id="iosShare" type="button">分享当前版本</button>
-        </div>
-        <div class="app-download-meta" id="iosActionStatus" role="status" aria-live="polite" style="margin:10px 0 0;"></div>
-      </div>
-      </div>
-      <p class="note-small" style="text-align:left;">更多设置项（通知偏好、隐私范围、连接的第三方身份凭证等）预留，后续版本补充。</p>
+      <div class="settings-row"><label data-i18n="settings.language">语言</label><select id="setLocale"><option value="zh-CN">中文</option><option value="en">English</option></select></div>
+      <div class="form-hint" data-i18n="settings.appearance">知识节点球体</div>
+      <div class="settings-row"><label data-i18n="settings.radius">球体半径 (mm)</label><input type="range" id="setNodeRadius" min="0.1" max="30" step="0.1" value="7.2"><div class="settings-val" id="setNodeRadiusVal">7.2mm</div></div>
+      <div class="form-hint" data-i18n="settings.labels">知识节点文字标签</div>
+      <div class="settings-row"><label data-i18n="settings.fontSize">字号</label><input type="range" id="setLabelSize" min="8" max="18" value="11"><div class="settings-val" id="setLabelSizeVal">11px</div></div>
+      <div class="settings-row"><label data-i18n="settings.color">颜色</label><input type="color" id="setLabelColor" value="#B8BFD4"><div style="flex:1"></div></div>
+      <div class="settings-row"><label data-i18n="settings.font">字体</label><select id="setLabelFont"><option value="'Noto Sans SC','Inter',sans-serif" data-i18n="settings.font.default">默认无衬线</option><option value="'Noto Serif SC',serif" data-i18n="settings.font.serif">衬线（宋体风格）</option><option value="'Inter',monospace" data-i18n="settings.font.mono">等宽</option></select></div>
+      <div class="settings-row"><label data-i18n="settings.brightness">亮度</label><input type="range" id="setLabelBrightness" min="10" max="100" value="100"><div class="settings-val" id="setLabelBrightnessVal">100%</div></div>
+      <button class="btn settings-navigation" id="openDownloads" type="button"><span><b data-i18n="settings.downloads">下载</b><br><small data-i18n="settings.downloads.hint">获取适合你平台的知识球</small></span><span aria-hidden="true">›</span></button>
     </div>
+  </div>
+</div>
+<div class="modal-overlay" id="downloadsOverlay">
+  <div class="modal downloads-modal">
+    <div class="modal-header"><h3 data-i18n="downloads.title">下载</h3><button class="panel-close" id="downloadsClose" data-i18n-aria="downloads.back">‹</button></div>
+    <div class="modal-body"><div class="app-download-grid">
+      <div class="app-download ios-download-card"><div class="app-download-title" data-i18n="downloads.ios.title">Apple / iOS</div><div class="app-download-meta" data-i18n="downloads.ios.meta">版本 0.2.0 · iOS 14 及以上。使用 Safari 安装。</div><a class="btn primary web-download-action" id="iosDownload" href="./ios-install.html" data-i18n="downloads.ios.action">安装 iOS 应用</a><div class="native-app-actions ios-native-actions"><button class="btn primary" id="iosUpdate" data-i18n="downloads.update">检查更新</button><button class="btn" id="iosShare" data-i18n="downloads.share">分享当前版本</button></div><div class="app-download-meta" id="iosActionStatus" role="status" aria-live="polite"></div></div>
+      <div class="app-download android-download-card"><div class="app-download-title" data-i18n="downloads.android.title">Android</div><div class="app-download-meta" data-i18n="downloads.android.meta">版本 0.2.0 · Android 7.0 及以上。</div><a class="btn primary web-download-action" id="androidDownload" href="./downloads/knowledge-ball-android-v0.2.0.apk" download="knowledge-ball-android-v0.2.0.apk" type="application/vnd.android.package-archive" data-i18n="downloads.android.action">下载 Android 安装包（APK）</a><div class="native-app-actions android-native-actions"><button class="btn primary" id="androidUpdate" data-i18n="downloads.update">检查更新</button><button class="btn" id="androidShare" data-i18n="downloads.share">分享当前版本</button></div><div class="app-download-meta" id="androidActionStatus" role="status" aria-live="polite"></div></div>
+      <div class="app-download windows-download-card"><div class="app-download-title" data-i18n="downloads.windows.title">Windows</div><div class="app-download-meta" data-i18n="downloads.windows.meta">此仓库目前没有 Windows 安装程序。</div><button class="btn" id="windowsDownload" type="button" disabled data-i18n="downloads.unavailable">暂未提供</button></div>
+    </div></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>

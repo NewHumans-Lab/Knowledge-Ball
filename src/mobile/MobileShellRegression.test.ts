@@ -20,11 +20,12 @@ const androidActions = { hidden: true };
 const iosActions = { hidden: true };
 const androidCard = { hidden: false };
 const iosCard = { hidden: false };
+const windowsCard = { hidden: false };
 (globalThis as unknown as { document: unknown }).document = {
   documentElement: { classList: { add: (...names: string[]) => names.forEach(name => classes.add(name)) } },
   querySelectorAll: (selector: string) => selector === '.web-download-action'
     ? [webDownload]
-    : selector === '.native-app-actions' ? [androidActions, iosActions] : [androidCard, iosCard],
+    : selector === '.native-app-actions' ? [androidActions, iosActions] : [androidCard, iosCard, windowsCard],
   querySelector: (selector: string) => selector.startsWith('.android') ? (selector.includes('actions') ? androidActions : androidCard) : null,
 };
 applyPlatformVisibility('android');
@@ -32,7 +33,8 @@ assertEqual(classes.has('native-app'), true);
 assertEqual(classes.has('android'), true);
 assertEqual(webDownload.hidden, true);
 assertEqual(androidCard.hidden, false);
-assertEqual(iosCard.hidden, true);
+assertEqual(iosCard.hidden, false);
+assertEqual(windowsCard.hidden, false);
 assertEqual(androidActions.hidden, false);
 assertEqual(iosActions.hidden, true);
 console.log('Mobile shell regression tests passed.');
