@@ -112,12 +112,12 @@ for (const key of Object.keys(SYSTEM_TEXT_CATALOG) as SystemTextKey[]) {
 }
 
 const USER_TEXT_SELECTOR = [
-  '.field .val', '.chip[data-jump]',
+  '.field .val', '.chip[data-jump]', '.premise-item',
   '.node-detail-title', '.node-detail-content', '[data-related-node-id]', '.node-detail-meta b',
   '#kbProfileName', '#kbProfileUsername', '#kbProfileBio',
   '.knowledge-picker-chip', '.knowledge-picker-option > span',
   '.search-item[data-node-id] > span',
-  '#fLogicRule option:not([value=""])', '#decomposeConclusion option',
+  '#fLogicRule option:not([value=""])', '#decomposeConclusion option', '#mergeLogicRule option:not([value=""])',
   'input', 'textarea',
 ].join(',');
 const USER_ATTRIBUTE_SELECTOR = [
@@ -148,6 +148,7 @@ function translateWrappedUserValue(value: string): string | null {
         [/^编辑节点 · 对立观点：(.*)$/s, m => `Edit node · Opposition: ${m[1]}`],
         [/^分解：(.*)$/s, m => `Decompose: ${m[1]}`],
         [/^合并定义：(.*)$/s, m => `Merge definition: ${m[1]}`],
+        [/^合并理论：(.*)$/s, m => `Merge theory: ${m[1]}`],
         [/^合并推理：(.*)$/s, m => `Merge reasoning: ${m[1]}`],
       ]
     : [
@@ -158,6 +159,7 @@ function translateWrappedUserValue(value: string): string | null {
         [/^Edit node · Opposition: (.*)$/s, m => `编辑节点 · 对立观点：${m[1]}`],
         [/^Decompose: (.*)$/s, m => `分解：${m[1]}`],
         [/^Merge definition: (.*)$/s, m => `合并定义：${m[1]}`],
+        [/^Merge theory: (.*)$/s, m => `合并理论：${m[1]}`],
         [/^Merge reasoning: (.*)$/s, m => `合并推理：${m[1]}`],
       ];
   for (const [pattern, render] of patterns) {
@@ -167,11 +169,25 @@ function translateWrappedUserValue(value: string): string | null {
   return null;
 }
 
+function addTemplatePairs(pairs: Array<[string, string]>, from: string, to: string): void {
+  pairs.push([from, to]);
+  const fromParts = from.split(/\{[^}]+\}/);
+  const toParts = to.split(/\{[^}]+\}/);
+  if (fromParts.length !== toParts.length || fromParts.length < 2) return;
+  for (let index = 0; index < fromParts.length; index += 1) {
+    if (fromParts[index] && toParts[index]) pairs.push([fromParts[index], toParts[index]]);
+  }
+}
+
 function replacementPairs(): Array<[string, string]> {
   const pairs: Array<[string, string]> = [];
   const source: AppLocale = locale === 'en' ? 'zh-CN' : 'en';
-  for (const key of Object.keys(en) as TranslationKey[]) pairs.push([catalogs[source][key], catalogs[locale][key]]);
-  for (const key of Object.keys(SYSTEM_TEXT_CATALOG) as SystemTextKey[]) pairs.push([SYSTEM_TEXT_CATALOG[key][source], SYSTEM_TEXT_CATALOG[key][locale]]);
+  for (const key of Object.keys(en) as TranslationKey[]) {
+    addTemplatePairs(pairs, catalogs[source][key], catalogs[locale][key]);
+  }
+  for (const key of Object.keys(SYSTEM_TEXT_CATALOG) as SystemTextKey[]) {
+    addTemplatePairs(pairs, SYSTEM_TEXT_CATALOG[key][source], SYSTEM_TEXT_CATALOG[key][locale]);
+  }
   return pairs
     .filter(([from, to]) => from && from !== to)
     .sort((left, right) => right[0].length - left[0].length);
@@ -185,7 +201,21 @@ function translateSystemTokens(value: string): string {
   return translated;
 }
 
+/**
+ * Safe boundary for arbitrary strings: exact known system literals and known
+ * system wrappers may translate, but free text is returned byte-for-byte.
+ * User/community knowledge values must use this boundary if they ever pass
+ * through localization code outside the DOM ownership checks below.
+ */
 export function translateRuntimeSystemText(value: string): string {
+  const direct = literalLookup.get(value);
+  if (direct) return systemText(direct);
+  return translateWrappedUserValue(value) ?? value;
+}
+
+/** Broad token translation is allowed only after DOM ownership proves the node
+ * is system-owned. It must never be called for arbitrary user/community text. */
+function translateSystemOwnedText(value: string): string {
   const direct = literalLookup.get(value);
   if (direct) return systemText(direct);
   const wrapped = translateWrappedUserValue(value);
@@ -220,7 +250,7 @@ function localizeTextNode(node: Text): void {
     if (node.nodeValue !== desired) node.nodeValue = desired;
     return;
   }
-  const translated = translateRuntimeSystemText(core);
+  const translated = translateSystemOwnedText(core);
   if (translated !== core) node.nodeValue = withOuterWhitespace(original, translated);
 }
 
@@ -247,7 +277,7 @@ function localizeAttribute(element: Element, name: 'placeholder' | 'aria-label' 
     if (raw !== desired) element.setAttribute(name, desired);
     return;
   }
-  const translated = translateRuntimeSystemText(value);
+  const translated = translateSystemOwnedText(value);
   if (translated !== value && raw !== translated) element.setAttribute(name, translated);
 }
 
