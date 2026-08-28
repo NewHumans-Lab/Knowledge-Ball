@@ -1,120 +1,38 @@
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
 import {
-  applyDeterministic5RLayout,
-  compactTriangularCoordinates,
-  computeSemanticBoundaries,
-  EXCLUSION_RADIUS,
-  EXPANSION_UNIT,
-  fibonacciDirections,
-  getLastLayoutDiagnostics,
-  icosahedronMacroDirections,
-  KNOWLEDGE_BALL_RADIUS,
-  LAYOUT_UNIT,
-  MACRO_DIRECTION_COUNT,
-  mapMacroDirectionsToCandidates,
-  positionsCollide,
-  snapToNearestFcc,
+  applyDeterministic5RLayout, generateIcosahedralGrid, getLastLayoutDiagnostics,
+  ICOSAHEDRON_FACES, KNOWLEDGE_BALL_RADIUS, LAYOUT_UNIT, selectSubdivisionFrequency,
   type LayoutNode,
 } from './Deterministic5RLayout';
 
-const EPSILON = 1e-7;
-const node = (id: string, premises: string[] = [], type = 'fact', layer: LayoutNode['declaredLayer'] = 'inner'): LayoutNode => ({ id, premises, type, declaredLayer: layer });
-const fixture = (): LayoutNode[] => [
-  node('shared-a'), node('shared-b'), node('premise-c'),
-  node('reason-1', ['shared-a', 'shared-b'], 'reasoning'),
-  node('conclusion-1', ['reason-1'], 'theorem', 'middle'),
-  node('reason-2', ['shared-a', 'premise-c'], 'reasoning'),
-  node('conclusion-2', ['reason-2'], 'theorem', 'middle'),
-  node('reason-3', ['conclusion-1', 'conclusion-2'], 'reasoning'),
-  node('final-a', ['reason-3'], 'hypothesis', 'outer'),
-  node('final-b', ['reason-3'], 'hypothesis', 'outer'),
+const node=(id:string,premises:string[]=[],type='fact',layer:LayoutNode['declaredLayer']='inner'):LayoutNode=>({id,premises,type,declaredLayer:layer});
+assert.equal(ICOSAHEDRON_FACES.length,20,'the ISG has exactly twenty parent faces');
+const base=generateIcosahedralGrid(LAYOUT_UNIT,1);
+assert.equal(base.vertices.length,12,'shared parent-face corners canonicalize to twelve physical cells');
+assert(base.vertices.every(v=>Math.abs(v.length()-LAYOUT_UNIT)<1e-8),'all cells lie on their shell');
+assert.equal(base.degrees.filter(d=>d===5).length,12,'base topology has twelve pentagonal defects');
+const dense=generateIcosahedralGrid(5*LAYOUT_UNIT);
+assert.equal(dense.degrees.filter(d=>d===5).length,12,'every subdivision retains exactly twelve pentagonal defects');
+assert(dense.degrees.every(d=>d===5||d===6),'all ordinary cells have topological degree six');
+assert(dense.nearestNeighborDistance>=LAYOUT_UNIT-1e-7,'nearest neighbours respect 5R');
+const next=generateIcosahedralGrid(5*LAYOUT_UNIT,selectSubdivisionFrequency(5*LAYOUT_UNIT)+1,'illegal',false);
+assert(next.nearestNeighborDistance<LAYOUT_UNIT,'the selected frequency is the densest legal subdivision');
+assert(generateIcosahedralGrid(8*LAYOUT_UNIT).vertices.length>dense.vertices.length,'larger shells expose more cells');
+
+const fixture=():LayoutNode[]=>[
+ node('a'),node('b'),node('r1',['a','b'],'reasoning'),node('c',['r1'],'theorem','middle'),
+ node('r2',['c'],'reasoning'),node('d',['r2'],'hypothesis','outer'),node('standalone-z'),
 ];
-
-assert.equal(LAYOUT_UNIT, 5 * KNOWLEDGE_BALL_RADIUS, 'knowledge geometry spacing must be 5R');
-assert.equal(EXCLUSION_RADIUS, 5 * KNOWLEDGE_BALL_RADIUS, 'dedup exclusion radius remains 5R');
-assert.equal(EXPANSION_UNIT, 5 * KNOWLEDGE_BALL_RADIUS, 'minimum outward expansion remains 5R');
-assert.equal(positionsCollide(new THREE.Vector3(), new THREE.Vector3(EXCLUSION_RADIUS, 0, 0)), true, 'positions at 5R are reserved');
-assert.equal(positionsCollide(new THREE.Vector3(), new THREE.Vector3(EXCLUSION_RADIUS + 1e-4, 0, 0)), false, 'positions beyond 5R are not reserved');
-
-const compact7 = compactTriangularCoordinates(7);
-assert.deepEqual(compact7[0], [0, 0]);
-assert.equal(new Set(compact7.map(([q, r]) => `${q}:${r}`)).size, 7);
-assert(compact7.some(([, r]) => r !== 0), 'local branch solve must retain two tangential axes');
-
-const snappedOrigin = snapToNearestFcc(new THREE.Vector3(0.1, 0.1, 0.1));
-assert(snappedOrigin.length() < KNOWLEDGE_BALL_RADIUS, 'FCC snapping must remain R-scale rather than becoming a coarse 5R jump');
-const snappedNeighbor = snapToNearestFcc(new THREE.Vector3(KNOWLEDGE_BALL_RADIUS / Math.sqrt(2), KNOWLEDGE_BALL_RADIUS / Math.sqrt(2), 0));
-assert(Math.abs(snappedNeighbor.length() - KNOWLEDGE_BALL_RADIUS) < EPSILON, 'FCC nearest-neighbour distance must remain R');
-
-const macros = icosahedronMacroDirections();
-assert.equal(macros.length, MACRO_DIRECTION_COUNT);
-const fibonacci = fibonacciDirections(89);
-const macroCandidates = mapMacroDirectionsToCandidates(macros, fibonacci);
-assert.equal(new Set(macroCandidates).size, MACRO_DIRECTION_COUNT);
-
-const boundaries = computeSemanticBoundaries([...fixture(), ...Array.from({ length: 9 }, (_, i) => node(`capacity-${i}`))]);
-assert(Math.abs(boundaries.cyanBlue / LAYOUT_UNIT - Math.round(boundaries.cyanBlue / LAYOUT_UNIT)) < EPSILON, 'semantic shells must resolve on the 5R knowledge-spacing scale');
-assert(Math.abs(boundaries.bluePurple / LAYOUT_UNIT - Math.round(boundaries.bluePurple / LAYOUT_UNIT)) < EPSILON, 'semantic shells must resolve on the 5R knowledge-spacing scale');
-assert.equal(boundaries.purpleOuter, null);
-
-const first = fixture();
-applyDeterministic5RLayout(first);
-const diagnostics = getLastLayoutDiagnostics()!;
-assert.equal(diagnostics.usedAngles.size, 1, 'shared premise/conclusion graph remains one connected component');
-assert.equal(diagnostics.occupiedCells.size, first.filter(n => n.type !== 'reasoning').length, 'reasoning consumes no FCC occupancy point');
-assert(diagnostics.reservedCells.size > diagnostics.occupiedCells.size, 'successful placement must reserve surrounding FCC points within 5R');
-
-for (const reasoning of first.filter(n => n.type === 'reasoning')) {
-  const premises = reasoning.premises!.map(id => first.find(n => n.id === id)!.pos!);
-  const conclusions = first.filter(n => n.premises?.includes(reasoning.id)).map(n => n.pos!);
-  const mean = (values: THREE.Vector3[]) => values.reduce((sum, p) => sum.add(p), new THREE.Vector3()).multiplyScalar(1 / values.length);
-  assert(reasoning.pos!.distanceTo(mean(premises).add(mean(conclusions)).multiplyScalar(0.5)) < EPSILON, 'reasoning remains the exact premise/conclusion midpoint');
-}
-
-const [, componentAngle] = [...diagnostics.usedAngles][0]!;
-const direction = fibonacciDirections(89)[componentAngle]!;
-const radialProjection = (id: string) => first.find(n => n.id === id)!.pos!.dot(direction);
-const radialStep = radialProjection('conclusion-1') - radialProjection('shared-a');
-assert(Math.abs(radialStep - LAYOUT_UNIT) <= 2 * KNOWLEDGE_BALL_RADIUS, `adjacent knowledge depth must target 5R before R-scale FCC quantization (actual=${radialStep})`);
-
-const sameDepth = ['premise-c', 'shared-a', 'shared-b'].map(id => first.find(n => n.id === id)!.pos!);
-for (let i = 0; i < sameDepth.length; i++) for (let j = i + 1; j < sameDepth.length; j++) {
-  const distance = sameDepth[i]!.distanceTo(sameDepth[j]!);
-  assert(Math.abs(distance - LAYOUT_UNIT) <= 2 * KNOWLEDGE_BALL_RADIUS, `same-depth triangular neighbours must target 5R before R-scale FCC quantization (actual=${distance})`);
-}
-
-const outer = first.filter(n => n.declaredLayer === 'outer').map(n => n.pos!.dot(direction));
-assert(Math.min(...outer.map(value => Math.abs(value - diagnostics.boundaries.bluePurple))) <= KNOWLEDGE_BALL_RADIUS, 'innermost Purple node must anchor to the Blue/Purple shell before FCC snapping');
-
-const knowledgeKeys = first.filter(n => n.type !== 'reasoning').map(n => {
-  const p = n.pos!;
-  return `${p.x.toFixed(8)}:${p.y.toFixed(8)}:${p.z.toFixed(8)}`;
-});
-assert.equal(new Set(knowledgeKeys).size, knowledgeKeys.length, 'one component may use R-scale FCC detail but may not self-overlap the exact same FCC point');
-
-const second = fixture();
-applyDeterministic5RLayout(second);
-for (const original of first) assert(original.pos!.distanceTo(second.find(n => n.id === original.id)!.pos!) < 1e-9, `${original.id} must be deterministic`);
-assert.deepEqual([...getLastLayoutDiagnostics()!.usedAngles], [...diagnostics.usedAngles]);
-assert.deepEqual([...getLastLayoutDiagnostics()!.macroAssignments], [...diagnostics.macroAssignments]);
-
-const cyanBlueOnly: LayoutNode[] = [
-  node('cyan-start'),
-  node('cyan-reason', ['cyan-start'], 'reasoning'),
-  node('blue-end', ['cyan-reason'], 'theorem', 'middle'),
-];
-applyDeterministic5RLayout(cyanBlueOnly);
-const cyanBlueDiagnostics = getLastLayoutDiagnostics()!;
-const [, cyanBlueAngle] = [...cyanBlueDiagnostics.usedAngles][0]!;
-const cyanBlueDirection = fibonacciDirections(89)[cyanBlueAngle]!;
-assert(Math.abs(cyanBlueOnly[0]!.pos!.dot(cyanBlueDirection) - cyanBlueDiagnostics.boundaries.cyanBlue) <= KNOWLEDGE_BALL_RADIUS, 'Cyan start node must anchor to the Cyan/Blue shell before FCC snapping');
-
-const standalone = Array.from({ length: 13 }, (_, index) => node(`standalone-${String(index).padStart(2, '0')}`));
-applyDeterministic5RLayout(standalone);
-const standaloneDiagnostics = getLastLayoutDiagnostics()!;
-assert.equal(standaloneDiagnostics.macroAssignments.size, MACRO_DIRECTION_COUNT, 'top-12 still receive distinct macro sectors');
-assert.equal(new Set(standaloneDiagnostics.macroAssignments.values()).size, MACRO_DIRECTION_COUNT);
-assert.equal(standaloneDiagnostics.usedAngles.size, standalone.length);
-
-console.log('5R knowledge geometry, R-resolution FCC, 5R exclusion/expansion, shell anchoring and determinism checks passed.');
+const first=fixture();applyDeterministic5RLayout(first);const diag=getLastLayoutDiagnostics()!;
+const knowledge=first.filter(n=>n.type!=='reasoning');
+assert.equal(diag.occupiedCells.size,knowledge.length,'reasoning consumes no occupancy cell');
+assert(knowledge.every(n=>n.address&&diag.grids.get(n.address.shellID)?.vertices[n.address.cellID]),'knowledge authority is a legal shell/cell address');
+assert.equal(new Set(knowledge.map(n=>`${n.address!.shellID}:${n.address!.cellID}`)).size,knowledge.length,'authoritative addresses are unique');
+for(let i=0;i<knowledge.length;i++)for(let j=i+1;j<knowledge.length;j++)assert(knowledge[i]!.pos!.distanceTo(knowledge[j]!.pos!)>=LAYOUT_UNIT-1e-7,'all cross-shell and same-shell pairs satisfy 5R');
+for(const r of first.filter(n=>n.type==='reasoning'))assert.equal(r.address,undefined,'reasoning has no ISG address');
+assert(diag.placementOrder.indexOf('a')<diag.placementOrder.indexOf('standalone-z'),'complex components precede standalone knowledge');
+assert(Math.abs(first.find(n=>n.id==='d')!.pos!.length()-diag.boundaries.bluePurple)<1e-7,'innermost Purple knowledge anchors to a boundary grid cell');
+assert(Math.abs(first.find(n=>n.id==='a')!.pos!.length()-diag.boundaries.cyanBlue)<1e-7,'Cyan start anchors to the Cyan/Blue boundary grid');
+const addresses=[...diag.addresses].map(([id,a])=>[id,a.shellID,a.cellID]);const xyz=first.map(n=>n.pos?.toArray());
+const second=fixture();applyDeterministic5RLayout(second);assert.deepEqual([...getLastLayoutDiagnostics()!.addresses].map(([id,a])=>[id,a.shellID,a.cellID]),addresses);assert.deepEqual(second.map(n=>n.pos?.toArray()),xyz,'identical input derives identical XYZ');
+console.log('Icosahedral spherical grid geometry, authority, atomic occupancy, ordering, anchoring and determinism checks passed.');
