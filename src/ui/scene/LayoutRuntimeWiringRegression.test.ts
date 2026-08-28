@@ -5,6 +5,8 @@ const entry=readFileSync('src/ui/scene/UniformLayerLayout.ts','utf8');
 const implementation=readFileSync('src/ui/scene/Deterministic5RLayout.ts','utf8');
 assert(app.includes("import { applyUniformLayerLayout } from './scene/UniformLayerLayout';"));
 assert(entry.includes("from './Deterministic5RLayout'"),'one narrow runtime layout owner remains');
+assert(entry.includes("lineageRoleFor(node) !== 'rejected'"),'legacy rejected audit records must never enter runtime ISG');
+assert(entry.includes('delete node.address')&&entry.includes('delete node.pos')&&entry.includes('delete node.homePos'),'legacy rejected records must not retain stale spatial authority');
 assert(!existsSync('src/ui/scene/RadialKnowledgeLayout.ts'));
 for(const forbidden of ['FccOccupancy','snapToNearestFcc','FCC_AXIS_STEP','fibonacciDirections','nearestFree','Math.random()'])assert(!implementation.includes(forbidden),`obsolete authority returned: ${forbidden}`);
 assert(implementation.includes('generateIcosahedralGrid'));
