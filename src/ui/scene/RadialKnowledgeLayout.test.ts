@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
   applyDeterministic5RLayout, computeSemanticBoundaries, generateIcosahedralGrid, getLastLayoutDiagnostics,
-  countLayerCrossings, ICOSAHEDRON_FACES, KNOWLEDGE_BALL_RADIUS, LAYOUT_UNIT, selectSubdivisionFrequency,
+  countLayerCrossings, directionLevelDirections, directionLevelSize, ICOSAHEDRON_FACES, LAYOUT_UNIT, selectSubdivisionFrequency,
   type LayoutNode,
 } from './Deterministic5RLayout';
 
@@ -17,6 +17,7 @@ const chain=(prefix:string,length:number,layer:LayoutNode['declaredLayer']):Layo
   }
   return result;
 };
+
 assert.equal(ICOSAHEDRON_FACES.length,20,'the ISG has exactly twenty parent faces');
 const base=generateIcosahedralGrid(LAYOUT_UNIT,1);
 assert.equal(base.vertices.length,12,'shared parent-face corners canonicalize to twelve physical cells');
@@ -29,6 +30,18 @@ assert(dense.nearestNeighborDistance>=LAYOUT_UNIT-1e-7,'nearest neighbours respe
 const next=generateIcosahedralGrid(5*LAYOUT_UNIT,selectSubdivisionFrequency(5*LAYOUT_UNIT)+1,'illegal',false);
 assert(next.nearestNeighborDistance<LAYOUT_UNIT,'the selected frequency is the densest legal subdivision');
 assert(generateIcosahedralGrid(8*LAYOUT_UNIT).vertices.length>dense.vertices.length,'larger shells expose more cells');
+
+// Angular capacity is hierarchical and incremental: 12, then +30, +120, +480 ... .
+assert.equal(directionLevelSize(0),12);
+assert.equal(directionLevelSize(1),30);
+assert.equal(directionLevelSize(2),120);
+assert.equal(directionLevelSize(3),480);
+for(let level=0;level<=3;level++)assert.equal(directionLevelDirections(level).length,directionLevelSize(level),`direction level ${level} exposes exactly its incremental slots`);
+const macro=directionLevelDirections(0);
+for(let i=0;i<macro.length;i+=2)assert(Math.abs(macro[i]!.dot(macro[i+1]!)+1)<1e-10,'the fixed first-twelve order fills antipodal directions in balanced pairs');
+const directionKey=(v:THREE.Vector3)=>`${v.x.toFixed(9)}:${v.y.toFixed(9)}:${v.z.toFixed(9)}`;
+const macroKeys=new Set(macro.map(directionKey));
+assert(directionLevelDirections(1).every(v=>!macroKeys.has(directionKey(v))),'level 1 contains only the thirty newly opened directions');
 
 const minimalSemantic=computeSemanticBoundaries([node('semantic-inner'),node('semantic-middle',[],'fact','middle')]);
 assert.equal(minimalSemantic.cyanBlue,LAYOUT_UNIT,'one Cyan knowledge shell needs exactly one 5R unit');
@@ -85,7 +98,7 @@ const addresses=[...diag.addresses].map(([id,a])=>[id,a.shellID,a.cellID]);const
 const second=fixture();applyDeterministic5RLayout(second);assert.deepEqual([...getLastLayoutDiagnostics()!.addresses].map(([id,a])=>[id,a.shellID,a.cellID]),addresses);assert.deepEqual(second.map(n=>n.pos?.toArray()),xyz,'identical input derives identical XYZ');
 
 const deepChain:LayoutNode[]=[node('k0')];
-for(let i=1;i<5;i++){deepChain.push(node(`chain-r${i}`,[`k${i-1}`],'reasoning'));deepChain.push(node(`k${i}`,[`chain-r${i}`],'fact',i===4?'outer':i>1?'middle':'inner'))}
+for(let i=1;i<5;i++){deepChain.push(node(`chain-r${i}`,[`k${i-1}`],'reasoning'));deepChain.push(node(`k${i}`,[`chain-r${i}`],'fact',i===4?'outer':i>1?'middle':'inner'));}
 applyDeterministic5RLayout(deepChain);const deepDiag=getLastLayoutDiagnostics()!;
 assert(deepChain.filter(n=>n.type!=='reasoning').every(n=>n.pos!.length()>0),'real five-Knowledge chain depth always yields positive radii');
 assert(Math.abs(deepChain.find(n=>n.id==='k4')!.pos!.length()-deepDiag.boundaries.bluePurple)<1e-7,'innermost Purple chain node anchors to the legal Blue/Purple boundary shell');
@@ -97,29 +110,36 @@ const crossingPositions=new Map([
 assert.equal(countLayerCrossings(crossingPositions,[['p1','c2'],['p2','c1']]),1,'crossing utility still measures crossed relations');
 assert.equal(countLayerCrossings(crossingPositions,[['p1','c1'],['p2','c2']]),0,'crossing utility remains diagnostic-only');
 
-// The optimization metric is the sum of real Knowledge-to-Knowledge edges. Reasoning is excluded.
+// Reasoning is excluded from the objective; a new component is solved directly by projected candidate paths, not five swap passes.
 const lengthChain:LayoutNode[]=[node('length-a'),node('length-r',['length-a'],'reasoning'),node('length-b',['length-r'])];
 applyDeterministic5RLayout(lengthChain);const lengthDiag=getLastLayoutDiagnostics()!;const lengthId='length-a';
 const realDistance=lengthChain.find(n=>n.id==='length-a')!.pos!.distanceTo(lengthChain.find(n=>n.id==='length-b')!.pos!);
 assert(Math.abs(lengthDiag.componentLineLengths.get(lengthId)!-realDistance)<1e-7,'component score is exactly the real Knowledge edge length and does not include the Reasoning midpoint');
-assert(lengthDiag.componentLineLengths.get(lengthId)!<=lengthDiag.componentInitialLineLengths.get(lengthId)!+1e-7,'local optimization may shorten but never lengthen the selected compact arrangement');
-assert.equal(lengthDiag.componentOptimizationPasses.get(lengthId),5,'an already-stable chain stops after five complete passes without a new historical minimum');
+assert.equal(lengthDiag.componentOptimizationPasses.get(lengthId),0,'projected candidate search replaces the old five-pass fixed-cap swap optimizer');
 
-// A fixed direction owns exactly the closest compact slots on each shell; nodes never fall through to second/third free cells outside that cap.
-const compact:LayoutNode[]=[node('compact-p1'),node('compact-p2'),node('compact-p3'),node('compact-r',['compact-p1','compact-p2','compact-p3'],'reasoning'),node('compact-c',['compact-r'],'theorem','middle')];
-applyDeterministic5RLayout(compact);const compactDiag=getLastLayoutDiagnostics()!,compactId='compact-c';
-const premise=compact.find(n=>n.id==='compact-p1')!,conclusion=compact.find(n=>n.id==='compact-c')!,premiseGrid=compactDiag.grids.get(premise.address!.shellID)!,directionGrid=compactDiag.grids.get(conclusion.address!.shellID)!,directionCell=compactDiag.usedAngles.get(compactId)!;
-const axis=directionGrid.vertices[directionCell]!.clone().normalize();
-const closestThree=premiseGrid.vertices.map((v,i)=>({i,d:v.clone().normalize().dot(axis)})).sort((a,b)=>b.d-a.d||a.i-b.i).slice(0,3).map(x=>x.i).sort((a,b)=>a-b);
-const usedPremiseCells=compact.filter(n=>n.id.startsWith('compact-p')).map(n=>n.address!.cellID).sort((a,b)=>a-b);
-assert.deepEqual(usedPremiseCells,closestThree,'same-shell branch Knowledge occupies the fixed compact cap around the chosen radial direction');
+// With no obstacle, a simple first chain uses one macro ray. Every next depth projects from the previous Knowledge position and reaches the 5R theoretical minimum.
+const straight=chain('straight',5,'inner');
+applyDeterministic5RLayout(straight);const straightDiag=getLastLayoutDiagnostics()!,straightKnowledge=straight.filter(n=>n.type!=='reasoning');
+for(let i=1;i<straightKnowledge.length;i++){
+  const a=straightKnowledge[i-1]!,b=straightKnowledge[i]!;
+  assert(Math.abs(a.pos!.distanceTo(b.pos!)-LAYOUT_UNIT)<1e-7,'an unobstructed simple chain prefers exactly 5R between adjacent Knowledge nodes');
+  assert(a.pos!.clone().normalize().dot(b.pos!.clone().normalize())>1-1e-10,'an unobstructed simple chain remains on one radial ray through the sphere centre');
+}
+assert(Math.abs(straightDiag.componentLineLengths.get('straight-k0')!-(straightKnowledge.length-1)*LAYOUT_UNIT)<1e-7,'straight-chain total line length reaches its theoretical 5R lower bound');
 
-// If the first required compact cell is already occupied, the next component must change the whole chain direction instead of taking a farther cell.
-const stableHash=(text:string)=>{let h=2166136261;for(const c of text){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0};
-const byBucket=new Map<number,string[]>();for(let i=0;i<100;i++){const id=`dir-${String(i).padStart(3,'0')}`,bucket=stableHash(id)%12,a=byBucket.get(bucket)??[];a.push(id);byBucket.set(bucket,a)}
-const collisionPair=[...byBucket.values()].find(a=>a.length>=2)!.slice(0,2).sort();
-applyDeterministic5RLayout(collisionPair.map(id=>node(id)));const directionDiag=getLastLayoutDiagnostics()!;
-assert((directionDiag.directionSwitchCounts.get(collisionPair[1]!)??0)>0,'a blocked required compact slot changes the whole component direction; no second/third-cell fallback is allowed');
+// The first twelve components consume the fixed balanced macro directions. Only after those twelve slots are owned may level 1 open.
+const thirteen=Array.from({length:13},(_,i)=>node(`slot-${String(i).padStart(2,'0')}`));
+applyDeterministic5RLayout(thirteen);const thirteenDiag=getLastLayoutDiagnostics()!;
+const orderedThirteen=thirteenDiag.placementOrder;
+for(let i=0;i<12;i++){
+  const id=orderedThirteen[i]!;
+  assert.equal(thirteenDiag.componentDirectionLevels.get(id),0,'the first twelve components remain on direction level 0');
+  assert.equal(thirteenDiag.componentDirectionSlots.get(id),i,'the fixed balanced macro order is consumed sequentially');
+}
+const thirteenth=orderedThirteen[12]!;
+assert.equal(thirteenDiag.componentDirectionLevels.get(thirteenth),1,'direction level 1 opens only after all twelve level-0 directions are owned');
+assert.equal(thirteenDiag.componentDirectionSlots.get(thirteenth),0,'the next level starts from its own fixed first slot');
+assert((thirteenDiag.componentExpansionCounts.get(thirteenth)??0)>=1,'a finer angular slot that cannot fit on the coarse inner shell expands outward in 5R steps instead of changing the direction-level rule');
 
 const lineage:LayoutNode[]=[
   {...node('topic-current'),lineage:{topicId:'topic',proposal:'new',role:'current',rank:0}},
@@ -129,5 +149,5 @@ const lineage:LayoutNode[]=[
 applyDeterministic5RLayout(lineage);const lineageDiag=getLastLayoutDiagnostics()!;
 assert(lineage.every(n=>n.address&&lineageDiag.grids.get(n.address.shellID)?.vertices[n.address.cellID]),'visible lineage Knowledge uses legal authoritative ISG cells');
 for(let i=0;i<lineage.length;i++)for(let j=i+1;j<lineage.length;j++)assert(lineage[i]!.pos!.distanceTo(lineage[j]!.pos!)>=LAYOUT_UNIT-1e-7,'lineage Knowledge participates in global 5R spacing');
-assert(lineageDiag.gridBuildCount<60,'one layout run caches repeated shell geometry/frequency requests');
-console.log('Icosahedral grid, independent Semantic sizing, compact radial chain optimization, five-pass convergence, direction switching, authority and determinism checks passed.');
+assert(lineageDiag.gridBuildCount<80,'one layout run caches repeated shell geometry/frequency requests');
+console.log('Hierarchical ISG directions, radial projection candidates, 5R chain preference, semantic sizing, authority and determinism checks passed.');
