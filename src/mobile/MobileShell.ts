@@ -64,7 +64,7 @@ async function checkForUpdate(): Promise<void> {
     setActionStatus(platform, t('mobile.found', { version: manifest.version }));
     await Browser.open({ url: platform === 'ios' ? manifest.ios.url : manifest.android.url });
   } catch (error) {
-    console.error('Unable to check for Android updates', error);
+    console.error('Unable to check for updates', error);
     setActionStatus(platform, t('mobile.updateError'));
   }
 }
@@ -84,10 +84,10 @@ async function shareCurrentApk(): Promise<void> {
     await Filesystem.writeFile({ path: fileName, directory: Directory.Cache, data: btoa(binary) });
     const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
     await Share.share({
-      title: `知识球 Android v${CURRENT_APP_VERSION}`,
-      text: `知识球 Android 当前版本 v${CURRENT_APP_VERSION}`,
+      title: t('mobile.androidShareTitle', { version: CURRENT_APP_VERSION }),
+      text: t('mobile.androidShareText', { version: CURRENT_APP_VERSION }),
       files: [uri],
-      dialogTitle: '分享知识球安装包',
+      dialogTitle: t('mobile.androidShareDialog'),
     });
     setActionStatus('android', t('mobile.shared'));
   } catch (error) {
@@ -99,10 +99,10 @@ async function shareCurrentApk(): Promise<void> {
 async function shareIosVersion(): Promise<void> {
   try {
     await Share.share({
-      title: `知识球 iOS v${CURRENT_APP_VERSION}`,
-      text: `知识球 iOS 当前版本 v${CURRENT_APP_VERSION}，使用 Safari 打开即可安装。`,
+      title: t('mobile.iosShareTitle', { version: CURRENT_APP_VERSION }),
+      text: t('mobile.iosShareText', { version: CURRENT_APP_VERSION }),
       url: IOS_INSTALL_URL,
-      dialogTitle: '分享知识球 iOS 应用',
+      dialogTitle: t('mobile.iosShareDialog'),
     });
     setActionStatus('ios', t('mobile.iosShared'));
   } catch (error) {
