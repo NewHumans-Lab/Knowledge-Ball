@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type HtmlTagDescriptor } from 'vite';
 
 const buildCommit = process.env.GITHUB_SHA ?? 'local';
 const nativeBuild = process.env.CAPACITOR_BUILD === 'true';
@@ -17,7 +17,7 @@ export default defineConfig({
       transformIndexHtml: {
         order: 'pre',
         handler() {
-          const scripts = [
+          const scripts: HtmlTagDescriptor[] = [
             { tag: 'meta', attrs: { name: 'knowledge-ball-build', content: buildCommit }, injectTo: 'head-prepend' },
             { tag: 'script', attrs: { type: 'module', src: '/src/ui/BuildFreshness.ts' }, injectTo: 'body-prepend' },
           ];
