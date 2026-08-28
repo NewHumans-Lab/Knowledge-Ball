@@ -12,6 +12,6 @@ assert(implementation.includes('address?: SpatialAddress'));
 assert(implementation.includes('Inputs are mutated only after a complete component solution exists'));
 assert(implementation.includes('for(const [id,address] of addresses)'),'authoritative node mutation occurs in one final commit after component searches');
 assert(implementation.includes('countLayerCrossings(p,complete)'),'the bounded ISG search measures real relation crossings');
-assert(implementation.includes('const complex=metadata(g).sort(hardness)'),'complexity-first order remains authoritative');
+assert(implementation.includes('complex=metadata(g).sort(hardness)'),'complexity-first order remains authoritative');
 assert(implementation.includes("ordered=[...complex.filter(c=>c.ids.length>1),...complex.filter(c=>c.ids.length===1)]"),'standalone nodes are placed last');
 console.log('Single-owner Icosahedral Spherical Grid runtime architecture checks passed.');
