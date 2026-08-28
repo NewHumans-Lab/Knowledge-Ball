@@ -43,27 +43,26 @@ function verdictEvent(
 }
 
 const correctProjection = pendingProjection('correct');
+assert.equal(correctProjection.state.nodesById.correct.status, 'pending', 'a new submission remains only a pending proposal before settlement');
 const correct = verdictEvent('correct','CORRECT');
 assert.equal(isPublicKnowledgeEvent(correct), true, 'server verdict must be readable through the public event stream');
 assert.equal(isCanonicalPublicKnowledgeEvent(correct), false, 'server verdict must never enter the client upload queue');
 assert.deepEqual(validateDomainEventAgainstState(correct, correctProjection.state), []);
 correctProjection.apply(correct);
 assert.equal(correctProjection.state.nodesById.correct.status, 'verified');
-assert.equal(correctProjection.state.nodesById.correct.hidden, false, 'correct knowledge remains in the default graph');
+assert.equal(correctProjection.state.nodesById.correct.hidden, false, 'accepted proposal becomes ordinary verified Knowledge');
 
 const incorrectProjection = pendingProjection('incorrect');
 const incorrect = verdictEvent('incorrect','INCORRECT');
 assert.deepEqual(validateDomainEventAgainstState(incorrect, incorrectProjection.state), []);
 incorrectProjection.apply(incorrect);
-assert.equal(incorrectProjection.state.nodesById.incorrect.status, 'falsified');
-assert.equal(incorrectProjection.state.nodesById.incorrect.hidden, true, 'incorrect knowledge moves out of the default graph into history/error classification');
+assert.equal(incorrectProjection.state.nodesById.incorrect, undefined, 'failed first-round proposal must disappear instead of becoming falsified Knowledge');
 
 const timeoutProjection = pendingProjection('timeout-v2');
 const timeoutV2 = verdictEvent('timeout-v2','INCORRECT','ORIGINAL_DESIGN_V2','TIMEOUT');
 assert.deepEqual(validateDomainEventAgainstState(timeoutV2, timeoutProjection.state), [], 'V2 timeout failure must be a valid server verdict event');
 timeoutProjection.apply(timeoutV2);
-assert.equal(timeoutProjection.state.nodesById['timeout-v2'].status, 'falsified');
-assert.equal(timeoutProjection.state.nodesById['timeout-v2'].hidden, true, 'V2 insufficient-support timeout must leave the default graph');
+assert.equal(timeoutProjection.state.nodesById['timeout-v2'], undefined, 'failed timeout proposal must also disappear completely');
 
 assert.match(validateDomainEventAgainstState(correct, correctProjection.state)[0] ?? '', /只有待验证节点/, 'a finalized first round cannot settle the same node twice');
 
@@ -76,4 +75,4 @@ const malformedErrors = validateDomainEventEnvelope(malformed);
 assert.ok(malformedErrors.some(error => error.includes('policyVersion')));
 assert.ok(malformedErrors.some(error => error.includes('门槛')));
 
-console.log('Pending vote verdict event/projection regression tests passed');
+console.log('Pending proposal acceptance/deletion verdict regression tests passed');

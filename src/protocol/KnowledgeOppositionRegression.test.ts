@@ -95,7 +95,7 @@ async function run(): Promise<void> {
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById['b-rejected']), 'candidate-opposition');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById.a2), 'current', 'pending opposition cannot change the current head');
   finalize(runtime, 'b-rejected', 'INCORRECT');
-  assert.equal(lineageRoleFor(runtime.projection.state.nodesById['b-rejected']), 'rejected');
+  assert.equal(runtime.projection.state.nodesById['b-rejected'], undefined, 'failed opposition proposal must disappear instead of becoming rejected Knowledge');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById.a2), 'current', 'failed opposition leaves the accepted side untouched');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById.a1), 'history');
 
@@ -176,7 +176,7 @@ async function run(): Promise<void> {
     [['b2', 1], ['b1', 2]],
     'red side must survive deterministic event replay',
   );
-  assert.equal(lineageRoleFor(runtime.projection.state.nodesById['b-rejected']), 'rejected');
+  assert.equal(runtime.projection.state.nodesById['b-rejected'], undefined, 'failed opposition stays absent after deterministic replay');
 
   console.log('Knowledge opposition regression tests passed');
 }
