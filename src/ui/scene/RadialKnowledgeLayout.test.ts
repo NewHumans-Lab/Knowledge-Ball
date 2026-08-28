@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
-  applyDeterministic5RLayout, generateIcosahedralGrid, getLastLayoutDiagnostics,
+  applyDeterministic5RLayout, computeSemanticBoundaries, generateIcosahedralGrid, getLastLayoutDiagnostics,
   countLayerCrossings, ICOSAHEDRON_FACES, KNOWLEDGE_BALL_RADIUS, LAYOUT_UNIT, selectSubdivisionFrequency,
   type LayoutNode,
 } from './Deterministic5RLayout';
 
 const node=(id:string,premises:string[]=[],type='fact',layer:LayoutNode['declaredLayer']='inner'):LayoutNode=>({id,premises,type,declaredLayer:layer});
+const chain=(prefix:string,length:number,layer:LayoutNode['declaredLayer']):LayoutNode[]=>{
+  if(length<1)return [];
+  const result:LayoutNode[]=[node(`${prefix}-k0`,[],'fact',layer)];
+  for(let i=1;i<length;i++){
+    const reasoningId=`${prefix}-r${i}`;
+    result.push(node(reasoningId,[`${prefix}-k${i-1}`],'reasoning',layer));
+    result.push(node(`${prefix}-k${i}`,[reasoningId],'fact',layer));
+  }
+  return result;
+};
 assert.equal(ICOSAHEDRON_FACES.length,20,'the ISG has exactly twenty parent faces');
 const base=generateIcosahedralGrid(LAYOUT_UNIT,1);
 assert.equal(base.vertices.length,12,'shared parent-face corners canonicalize to twelve physical cells');
@@ -19,6 +29,52 @@ assert(dense.nearestNeighborDistance>=LAYOUT_UNIT-1e-7,'nearest neighbours respe
 const next=generateIcosahedralGrid(5*LAYOUT_UNIT,selectSubdivisionFrequency(5*LAYOUT_UNIT)+1,'illegal',false);
 assert(next.nearestNeighborDistance<LAYOUT_UNIT,'the selected frequency is the densest legal subdivision');
 assert(generateIcosahedralGrid(8*LAYOUT_UNIT).vertices.length>dense.vertices.length,'larger shells expose more cells');
+
+const minimalSemantic=computeSemanticBoundaries([node('semantic-inner'),node('semantic-middle',[],'fact','middle')]);
+assert.equal(minimalSemantic.cyanBlue,LAYOUT_UNIT,'one Cyan knowledge shell needs exactly one 5R unit');
+assert.equal(minimalSemantic.bluePurple-minimalSemantic.cyanBlue,LAYOUT_UNIT,'Blue thickness is demand-driven; the old fixed 10R semantic gap is removed');
+
+const independentBase=computeSemanticBoundaries([
+  ...chain('independent-inner',2,'inner'),
+  ...chain('independent-middle',2,'middle'),
+  ...chain('independent-outer',2,'outer'),
+]);
+const longerBlue=computeSemanticBoundaries([
+  ...chain('independent-inner',2,'inner'),
+  ...chain('independent-middle',6,'middle'),
+  ...chain('independent-outer',2,'outer'),
+]);
+assert.equal(longerBlue.cyanBlue,independentBase.cyanBlue,'a longer Blue chain must not enlarge the Cyan radius');
+assert(longerBlue.bluePurple-longerBlue.cyanBlue>independentBase.bluePurple-independentBase.cyanBlue,'Blue thickness follows its own longest-chain demand');
+const longerCyan=computeSemanticBoundaries([
+  ...chain('independent-inner',6,'inner'),
+  ...chain('independent-middle',2,'middle'),
+  ...chain('independent-outer',2,'outer'),
+]);
+assert(longerCyan.cyanBlue>independentBase.cyanBlue,'Cyan radius follows its own longest-chain demand');
+assert.equal(longerCyan.bluePurple-longerCyan.cyanBlue,independentBase.bluePurple-independentBase.cyanBlue,'Cyan growth must not change Blue demand thickness');
+const longerPurple=computeSemanticBoundaries([
+  ...chain('independent-inner',2,'inner'),
+  ...chain('independent-middle',2,'middle'),
+  ...chain('independent-outer',30,'outer'),
+]);
+assert.deepEqual(longerPurple,independentBase,'Purple remains outward-unbounded and cannot push either inner semantic boundary');
+
+const middleWidth12=computeSemanticBoundaries([
+  node('width-inner'),
+  ...Array.from({length:12},(_,i)=>node(`width-middle-${i}`,[],'fact','middle')),
+]);
+const middleWidth13=computeSemanticBoundaries([
+  node('width-inner'),
+  ...Array.from({length:13},(_,i)=>node(`width-middle-${i}`,[],'fact','middle')),
+]);
+assert.equal(middleWidth12.cyanBlue,middleWidth13.cyanBlue,'Blue capacity pressure must not affect Cyan');
+assert(middleWidth13.bluePurple-middleWidth13.cyanBlue>middleWidth12.bluePurple-middleWidth12.cyanBlue,'non-Reasoning peak depth width expands only the affected Semantic layer');
+const reasoningNoise=computeSemanticBoundaries([
+  node('noise-inner'),node('noise-middle',[],'fact','middle'),
+  ...Array.from({length:1000},(_,i)=>node(`noise-r-${i}`,[],'reasoning',i%2?'middle':'inner')),
+]);
+assert.deepEqual(reasoningNoise,minimalSemantic,'Reasoning count must never affect Semantic shell radius or capacity');
 
 const fixture=():LayoutNode[]=>[
  node('a'),node('b'),node('r1',['a','b'],'reasoning'),node('c',['r1'],'theorem','middle'),
@@ -59,4 +115,4 @@ applyDeterministic5RLayout(lineage);const lineageDiag=getLastLayoutDiagnostics()
 assert(lineage.every(n=>n.address&&lineageDiag.grids.get(n.address.shellID)?.vertices[n.address.cellID]),'visible lineage Knowledge uses legal authoritative ISG cells');
 for(let i=0;i<lineage.length;i++)for(let j=i+1;j<lineage.length;j++)assert(lineage[i]!.pos!.distanceTo(lineage[j]!.pos!)>=LAYOUT_UNIT-1e-7,'lineage Knowledge participates in global 5R spacing');
 assert(lineageDiag.gridBuildCount<40,'one layout run caches repeated shell geometry/frequency requests');
-console.log('Icosahedral spherical grid geometry, authority, atomic occupancy, ordering, anchoring and determinism checks passed.');
+console.log('Icosahedral spherical grid geometry, independent Semantic shell sizing, authority, atomic occupancy, ordering, anchoring and determinism checks passed.');
