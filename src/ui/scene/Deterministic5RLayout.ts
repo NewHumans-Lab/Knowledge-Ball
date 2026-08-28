@@ -29,6 +29,7 @@ type Graph={knowledge:LayoutNode[];relations:Relation[];adjacency:Map<string,Set
 type Component={id:string;ids:string[];relations:Relation[];branching:number;layers:number;depth:Map<string,number>;orders:Map<number,string[]>};
 type Placement={id:string;address:SpatialAddress;position:THREE.Vector3};
 type BeamState={placed:Placement[];crossings:number;length:number;key:string};
+type SemanticLayer='inner'|'middle'|'outer';
 
 const ICO_VERTICES=(()=>{const p=(1+Math.sqrt(5))/2;return [[-1,p,0],[1,p,0],[-1,-p,0],[1,-p,0],[0,-1,p],[0,1,p],[0,-1,-p],[0,1,-p],[p,0,-1],[p,0,1],[-p,0,-1],[-p,0,1]].map(v=>new THREE.Vector3(...v).normalize())})();
 export const ICOSAHEDRON_FACES:readonly (readonly [number,number,number])[]=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
@@ -76,14 +77,36 @@ export function generateIcosahedralGrid(radius:number,frequency?:number,shellID=
   const grid=buildGrid(radius,f,shellID,validate);activeGridCache?.set(key,grid);return grid;
 }
 
-function layerOf(n:LayoutNode){return n.effectiveLayer==='outer'||n.layer==='outer'||n.declaredLayer==='outer'?'outer':n.effectiveLayer==='middle'||n.layer==='middle'||n.declaredLayer==='middle'?'middle':'inner'}
+function layerOf(n:LayoutNode):SemanticLayer{return n.effectiveLayer==='outer'||n.layer==='outer'||n.declaredLayer==='outer'?'outer':n.effectiveLayer==='middle'||n.layer==='middle'||n.declaredLayer==='middle'?'middle':'inner'}
 function visibleKnowledge(nodes:readonly LayoutNode[]){return nodes.filter(n=>n.type!=='reasoning'&&!isSystemCoreNodeId(n.id)&&(!n.hidden||!!n.lineage))}
 function capacityAt(radius:number){const f=selectSubdivisionFrequency(radius);return 10*f*f+2}
+function capacityRequirement(width:number){if(width<=0)return 0;let radius=LAYOUT_UNIT;while(capacityAt(radius)<width)radius+=LAYOUT_UNIT;return radius}
+function componentLayerDepths(c:Component,layer:SemanticLayer){return c.ids.filter(id=>layerOf(nodeMapForSizing.get(id)!)===layer).map(id=>c.depth.get(id)!).sort((a,b)=>a-b)}
+let nodeMapForSizing=new Map<string,LayoutNode>();
+function layerChainRequirement(layer:SemanticLayer,componentsMeta:readonly Component[]){
+  let units=0;
+  for(const c of componentsMeta){
+    const own=componentLayerDepths(c,layer);if(!own.length)continue;
+    if(layer==='inner')units=Math.max(units,own[own.length-1]!-own[0]!+1);
+    else if(layer==='middle'){
+      const inner=componentLayerDepths(c,'inner'),outer=componentLayerDepths(c,'outer');
+      const start=inner.length?inner[0]!:own[0]!,end=outer.length?outer[0]!:own[own.length-1]!;
+      units=Math.max(units,Math.max(1,end-start));
+    }
+  }
+  return units*LAYOUT_UNIT;
+}
+function layerPeakDepthWidth(layer:SemanticLayer,componentsMeta:readonly Component[]){
+  const widths=new Map<number,number>();
+  for(const c of componentsMeta){const own=componentLayerDepths(c,layer);if(!own.length)continue;const origin=own[0]!;for(const depth of own){const localDepth=depth-origin;widths.set(localDepth,(widths.get(localDepth)??0)+1)}}
+  return Math.max(0,...widths.values());
+}
+function layerRadiusRequirement(layer:SemanticLayer,componentsMeta:readonly Component[]){return Math.max(layerChainRequirement(layer,componentsMeta),capacityRequirement(layerPeakDepthWidth(layer,componentsMeta)))}
 export function computeSemanticBoundaries(nodes:readonly LayoutNode[]):SemanticBoundaries{
-  const g=buildGraph([...nodes]),componentsMeta=metadata(g),knowledge=visibleKnowledge(nodes),counts=(layer:string)=>knowledge.filter(n=>layerOf(n)===layer).length;
-  const realDepth=Math.max(1,...componentsMeta.map(c=>Math.max(...c.depth.values())+1));
-  const radius=(count:number,min:number)=>{let r=Math.max(min,realDepth*LAYOUT_UNIT);while(capacityAt(r)<count)r+=LAYOUT_UNIT;return r};
-  const cyanBlue=radius(counts('inner'),LAYOUT_UNIT),bluePurple=radius(counts('middle'),cyanBlue+2*LAYOUT_UNIT);
+  const g=buildGraph([...nodes]),componentsMeta=metadata(g);nodeMapForSizing=new Map(g.knowledge.map(n=>[n.id,n]));
+  const cyanBlue=Math.max(LAYOUT_UNIT,layerRadiusRequirement('inner',componentsMeta));
+  const blueThickness=layerRadiusRequirement('middle',componentsMeta);
+  const bluePurple=cyanBlue+blueThickness;
   return Object.freeze({cyanBlue,bluePurple,purpleOuter:null});
 }
 function setPosition(n:LayoutNode,p:THREE.Vector3){n.pos=p.clone();n.homePos=p.clone();n.vel??=new THREE.Vector3();n.vel.set(0,0,0)}
