@@ -56,6 +56,29 @@ export class GraphProjection implements Projection<GraphState> {
     return mastery;
   }
 
+  /**
+   * A first-round failure ends a Proposal; it does not create a falsified
+   * Knowledge record. Energy settlement remains server-authoritative, while the
+   * proposal content and all graph/presentation references disappear from the
+   * projected knowledge state.
+   */
+  private discardFailedProposal(nodeId: string): void {
+    if (!this.state.nodesById[nodeId]) return;
+    delete this.state.nodesById[nodeId];
+    this.pendingMasteryByNodeId.delete(nodeId);
+
+    for (const node of Object.values(this.state.nodesById)) {
+      if (node.premises.includes(nodeId)) {
+        node.premises = node.premises.filter(premiseId => premiseId !== nodeId);
+      }
+      if (node.negatedBy?.includes(nodeId)) {
+        const remaining = node.negatedBy.filter(negatedId => negatedId !== nodeId);
+        node.negatedBy = remaining.length ? remaining : undefined;
+      }
+      if (node.supersededBy === nodeId) node.supersededBy = undefined;
+    }
+  }
+
   private applyOptimizationAdd(event: Extract<DomainEvent, { type: 'KnowledgeAdded' }>): void {
     const optimization = event.payload.optimization;
     if (!optimization || event.payload.edit.mode !== 'atomic') return;
@@ -199,11 +222,19 @@ export class GraphProjection implements Projection<GraphState> {
         const n = this.state.nodesById[event.payload.nodeId];
         if (!n) break;
         if (isOptimizationCandidate(n)) {
-          resolveOptimizationCandidate(Object.values(this.state.nodesById), n.id, event.payload.verdict);
+          if (event.payload.verdict === 'INCORRECT') {
+            this.discardFailedProposal(n.id);
+          } else {
+            resolveOptimizationCandidate(Object.values(this.state.nodesById), n.id, 'CORRECT');
+          }
           break;
         }
         if (isOppositionCandidate(n)) {
-          resolveOppositionCandidate(Object.values(this.state.nodesById), n.id, event.payload.verdict);
+          if (event.payload.verdict === 'INCORRECT') {
+            this.discardFailedProposal(n.id);
+          } else {
+            resolveOppositionCandidate(Object.values(this.state.nodesById), n.id, 'CORRECT');
+          }
           break;
         }
         // New initial rounds use V2. Automatic Lineage V3 CASCADE rounds have an
@@ -215,8 +246,12 @@ export class GraphProjection implements Projection<GraphState> {
         const cascadePolicy = event.payload.policyVersion === 'KNOWLEDGE_LINEAGE_V3_CASCADE'
           || event.payload.policyVersion === 'ORIGINAL_DESIGN_V1';
         if (cascadePolicy && n.status === 'disputed') break;
-        if (event.payload.verdict === 'CORRECT') { n.status = 'verified'; n.hidden = false; }
-        else { n.status = 'falsified'; n.hidden = true; }
+        if (event.payload.verdict === 'CORRECT') {
+          n.status = 'verified';
+          n.hidden = false;
+        } else {
+          this.discardFailedProposal(n.id);
+        }
         break;
       }
       case 'KnowledgeRevalidationStarted': {
