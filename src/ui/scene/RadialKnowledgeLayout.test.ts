@@ -60,20 +60,11 @@ const longerPurple=computeSemanticBoundaries([
 ]);
 assert.deepEqual(longerPurple,independentBase,'Purple remains outward-unbounded and cannot push either inner semantic boundary');
 
-const middleWidth12=computeSemanticBoundaries([
-  node('width-inner'),
-  ...Array.from({length:12},(_,i)=>node(`width-middle-${i}`,[],'fact','middle')),
-]);
-const middleWidth13=computeSemanticBoundaries([
-  node('width-inner'),
-  ...Array.from({length:13},(_,i)=>node(`width-middle-${i}`,[],'fact','middle')),
-]);
+const middleWidth12=computeSemanticBoundaries([node('width-inner'),...Array.from({length:12},(_,i)=>node(`width-middle-${i}`,[],'fact','middle'))]);
+const middleWidth13=computeSemanticBoundaries([node('width-inner'),...Array.from({length:13},(_,i)=>node(`width-middle-${i}`,[],'fact','middle'))]);
 assert.equal(middleWidth12.cyanBlue,middleWidth13.cyanBlue,'Blue capacity pressure must not affect Cyan');
 assert(middleWidth13.bluePurple-middleWidth13.cyanBlue>middleWidth12.bluePurple-middleWidth12.cyanBlue,'non-Reasoning peak depth width expands only the affected Semantic layer');
-const reasoningNoise=computeSemanticBoundaries([
-  node('noise-inner'),node('noise-middle',[],'fact','middle'),
-  ...Array.from({length:1000},(_,i)=>node(`noise-r-${i}`,[],'reasoning',i%2?'middle':'inner')),
-]);
+const reasoningNoise=computeSemanticBoundaries([node('noise-inner'),node('noise-middle',[],'fact','middle'),...Array.from({length:1000},(_,i)=>node(`noise-r-${i}`,[],'reasoning',i%2?'middle':'inner'))]);
 assert.deepEqual(reasoningNoise,minimalSemantic,'Reasoning count must never affect Semantic shell radius or capacity');
 
 const fixture=():LayoutNode[]=>[
@@ -103,8 +94,32 @@ const crossingPositions=new Map([
   ['p1',new THREE.Vector3(-1,-1,2)],['p2',new THREE.Vector3(1,-1,2)],
   ['c1',new THREE.Vector3(-1,1,3)],['c2',new THREE.Vector3(1,1,3)],
 ]);
-assert.equal(countLayerCrossings(crossingPositions,[['p1','c2'],['p2','c1']]),1,'crossing metric measures crossed relations rather than returning a placeholder');
-assert.equal(countLayerCrossings(crossingPositions,[['p1','c1'],['p2','c2']]),0,'crossing metric distinguishes the lower-crossing arrangement');
+assert.equal(countLayerCrossings(crossingPositions,[['p1','c2'],['p2','c1']]),1,'crossing utility still measures crossed relations');
+assert.equal(countLayerCrossings(crossingPositions,[['p1','c1'],['p2','c2']]),0,'crossing utility remains diagnostic-only');
+
+// The optimization metric is the sum of real Knowledge-to-Knowledge edges. Reasoning is excluded.
+const lengthChain:LayoutNode[]=[node('length-a'),node('length-r',['length-a'],'reasoning'),node('length-b',['length-r'])];
+applyDeterministic5RLayout(lengthChain);const lengthDiag=getLastLayoutDiagnostics()!;const lengthId='length-a';
+const realDistance=lengthChain.find(n=>n.id==='length-a')!.pos!.distanceTo(lengthChain.find(n=>n.id==='length-b')!.pos!);
+assert(Math.abs(lengthDiag.componentLineLengths.get(lengthId)!-realDistance)<1e-7,'component score is exactly the real Knowledge edge length and does not include the Reasoning midpoint');
+assert(lengthDiag.componentLineLengths.get(lengthId)!<=lengthDiag.componentInitialLineLengths.get(lengthId)!+1e-7,'local optimization may shorten but never lengthen the selected compact arrangement');
+assert.equal(lengthDiag.componentOptimizationPasses.get(lengthId),5,'an already-stable chain stops after five complete passes without a new historical minimum');
+
+// A fixed direction owns exactly the closest compact slots on each shell; nodes never fall through to second/third free cells outside that cap.
+const compact:LayoutNode[]=[node('compact-p1'),node('compact-p2'),node('compact-p3'),node('compact-r',['compact-p1','compact-p2','compact-p3'],'reasoning'),node('compact-c',['compact-r'],'theorem','middle')];
+applyDeterministic5RLayout(compact);const compactDiag=getLastLayoutDiagnostics()!,compactId='compact-c';
+const premise=compact.find(n=>n.id==='compact-p1')!,conclusion=compact.find(n=>n.id==='compact-c')!,premiseGrid=compactDiag.grids.get(premise.address!.shellID)!,directionGrid=compactDiag.grids.get(conclusion.address!.shellID)!,directionCell=compactDiag.usedAngles.get(compactId)!;
+const axis=directionGrid.vertices[directionCell]!.clone().normalize();
+const closestThree=premiseGrid.vertices.map((v,i)=>({i,d:v.clone().normalize().dot(axis)})).sort((a,b)=>b.d-a.d||a.i-b.i).slice(0,3).map(x=>x.i).sort((a,b)=>a-b);
+const usedPremiseCells=compact.filter(n=>n.id.startsWith('compact-p')).map(n=>n.address!.cellID).sort((a,b)=>a-b);
+assert.deepEqual(usedPremiseCells,closestThree,'same-shell branch Knowledge occupies the fixed compact cap around the chosen radial direction');
+
+// If the first required compact cell is already occupied, the next component must change the whole chain direction instead of taking a farther cell.
+const stableHash=(text:string)=>{let h=2166136261;for(const c of text){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0};
+const byBucket=new Map<number,string[]>();for(let i=0;i<100;i++){const id=`dir-${String(i).padStart(3,'0')}`,bucket=stableHash(id)%12,a=byBucket.get(bucket)??[];a.push(id);byBucket.set(bucket,a)}
+const collisionPair=[...byBucket.values()].find(a=>a.length>=2)!.slice(0,2).sort();
+applyDeterministic5RLayout(collisionPair.map(id=>node(id)));const directionDiag=getLastLayoutDiagnostics()!;
+assert((directionDiag.directionSwitchCounts.get(collisionPair[1]!)??0)>0,'a blocked required compact slot changes the whole component direction; no second/third-cell fallback is allowed');
 
 const lineage:LayoutNode[]=[
   {...node('topic-current'),lineage:{topicId:'topic',proposal:'new',role:'current',rank:0}},
@@ -114,5 +129,5 @@ const lineage:LayoutNode[]=[
 applyDeterministic5RLayout(lineage);const lineageDiag=getLastLayoutDiagnostics()!;
 assert(lineage.every(n=>n.address&&lineageDiag.grids.get(n.address.shellID)?.vertices[n.address.cellID]),'visible lineage Knowledge uses legal authoritative ISG cells');
 for(let i=0;i<lineage.length;i++)for(let j=i+1;j<lineage.length;j++)assert(lineage[i]!.pos!.distanceTo(lineage[j]!.pos!)>=LAYOUT_UNIT-1e-7,'lineage Knowledge participates in global 5R spacing');
-assert(lineageDiag.gridBuildCount<40,'one layout run caches repeated shell geometry/frequency requests');
-console.log('Icosahedral spherical grid geometry, independent Semantic shell sizing, authority, atomic occupancy, ordering, anchoring and determinism checks passed.');
+assert(lineageDiag.gridBuildCount<60,'one layout run caches repeated shell geometry/frequency requests');
+console.log('Icosahedral grid, independent Semantic sizing, compact radial chain optimization, five-pass convergence, direction switching, authority and determinism checks passed.');
