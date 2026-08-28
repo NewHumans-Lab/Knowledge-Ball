@@ -7,7 +7,7 @@ export const LOCALE_STORAGE_KEY = 'knowledge-ball.locale.v1';
 const en = {
   'app.account': 'Account', 'app.settings': 'Settings', 'app.current': 'Current',
   'app.search': 'Ask a question or search knowledge…', 'app.send': 'Search',
-  'app.close': 'Back to Knowledge Ball', 'app.cancel': 'Cancel', 'app.submit': 'Submit knowledge',
+  'app.close': 'Back to Knowledge Ball', 'app.backNodeDetail': 'Back to node details', 'app.cancel': 'Cancel', 'app.submit': 'Submit knowledge',
   'app.brandTagline': 'Living relational field',
   'settings.title': 'Settings', 'settings.appearance': 'Knowledge node sphere',
   'settings.radius': 'Sphere radius (mm)', 'settings.labels': 'Knowledge node labels',
@@ -57,7 +57,7 @@ const en = {
 
 export type TranslationKey = keyof typeof en;
 const zhCN: Record<TranslationKey, string> = {
-  'app.account':'个人账户','app.settings':'设置','app.current':'当前','app.search':'输入问题，或搜索知识节点…','app.send':'搜索','app.close':'返回知识球','app.cancel':'取消','app.submit':'提交知识','app.brandTagline':'动态关系知识场',
+  'app.account':'个人账户','app.settings':'设置','app.current':'当前','app.search':'输入问题，或搜索知识节点…','app.send':'搜索','app.close':'返回知识球','app.backNodeDetail':'返回节点详情','app.cancel':'取消','app.submit':'提交知识','app.brandTagline':'动态关系知识场',
   'settings.title':'设置','settings.appearance':'知识节点球体','settings.radius':'球体半径 (mm)','settings.labels':'知识节点文字标签','settings.fontSize':'字号','settings.color':'颜色','settings.font':'字体','settings.brightness':'亮度','settings.font.default':'默认无衬线','settings.font.serif':'衬线（宋体风格）','settings.font.mono':'等宽','settings.language':'语言','settings.downloads':'下载','settings.downloads.hint':'获取适合你平台的知识球',
   'downloads.title':'下载','downloads.back':'返回设置','downloads.ios.title':'Apple / iOS','downloads.ios.meta':'版本 0.2.0 · iOS 14 及以上。使用 Safari 安装。','downloads.ios.action':'安装 iOS 应用','downloads.android.title':'Android','downloads.android.meta':'版本 0.2.0 · Android 7.0 及以上。','downloads.android.action':'下载 Android 安装包（APK）','downloads.windows.title':'Windows','downloads.windows.meta':'此仓库目前没有 Windows 安装程序。','downloads.unavailable':'暂未提供','downloads.update':'检查更新','downloads.share':'分享当前版本',
   'legend.title':'知识层级','legend.inner':'第一层 · 语义与基础事实','legend.middle':'第二层 · 严谨推理','legend.outer':'第三层 · 概率与争议','legend.help':'第一层包括静态语义关系；第二层只表达推理结构；第三层表达争议或提交时明确声明的不确定 / 概率知识。',
@@ -98,6 +98,15 @@ function interpolate(template: string, values: Record<string, string | number>):
 function systemText(key: RuntimeKey): string {
   if (key in catalogs.en) return catalogs[locale][key as TranslationKey];
   return SYSTEM_TEXT_CATALOG[key as SystemTextKey][locale];
+}
+
+function systemTextVariants(key: RuntimeKey): readonly string[] {
+  if (key in catalogs.en) {
+    const translationKey = key as TranslationKey;
+    return [catalogs.en[translationKey], catalogs['zh-CN'][translationKey]];
+  }
+  const systemKey = key as SystemTextKey;
+  return [SYSTEM_TEXT_CATALOG[systemKey].en, SYSTEM_TEXT_CATALOG[systemKey]['zh-CN']];
 }
 
 const literalLookup = new Map<string, RuntimeKey>();
@@ -259,20 +268,26 @@ function localizeAttribute(element: Element, name: 'placeholder' | 'aria-label' 
   const raw = element.getAttribute(name);
   const value = raw?.trim();
   if (!raw || !value) return;
-  const remembered = translatedAttributes.get(element)?.get(name);
+  const byName = translatedAttributes.get(element);
+  const remembered = byName?.get(name);
   if (remembered) {
-    const desired = systemText(remembered);
-    if (raw !== desired) element.setAttribute(name, desired);
-    return;
+    if (systemTextVariants(remembered).includes(value)) {
+      const desired = systemText(remembered);
+      if (raw !== desired) element.setAttribute(name, desired);
+      return;
+    }
+    // The controller intentionally changed this attribute's semantic meaning.
+    // Drop the stale key before resolving the newly assigned system label.
+    byName?.delete(name);
   }
   const key = literalLookup.get(value);
   if (key) {
-    let byName = translatedAttributes.get(element);
-    if (!byName) {
-      byName = new Map();
-      translatedAttributes.set(element, byName);
+    let nextByName = translatedAttributes.get(element);
+    if (!nextByName) {
+      nextByName = new Map();
+      translatedAttributes.set(element, nextByName);
     }
-    byName.set(name, key);
+    nextByName.set(name, key);
     const desired = systemText(key);
     if (raw !== desired) element.setAttribute(name, desired);
     return;
