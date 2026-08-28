@@ -3,6 +3,7 @@ import {
   applyDeterministic5RLayout,
   type LayoutNode,
 } from './Deterministic5RLayout';
+import { applyReasoningRadialPlacement } from './ReasoningRadialPlacement';
 
 export type UniformLayoutNode = LayoutNode;
 
@@ -15,6 +16,11 @@ export type UniformLayoutNode = LayoutNode;
 export function applyUniformLayerLayout(nodes: LayoutNode[]): void {
   const spatialKnowledge = nodes.filter(node => lineageRoleFor(node) !== 'rejected');
   applyDeterministic5RLayout(spatialKnowledge);
+
+  // Knowledge geometry is final before non-authoritative Reasoning is projected.
+  // Reasoning sits midway between its premise/conclusion radii and shares the
+  // conclusion radial axis, so the Reasoning→Conclusion line passes through the centre.
+  applyReasoningRadialPlacement(spatialKnowledge);
 
   for (const node of nodes) {
     if (lineageRoleFor(node) !== 'rejected') continue;
