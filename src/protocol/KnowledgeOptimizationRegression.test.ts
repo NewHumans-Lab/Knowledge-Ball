@@ -107,8 +107,7 @@ async function run(): Promise<void> {
   );
 
   finalize(runtime, 'v2-rejected', 'INCORRECT');
-  assert.equal(lineageRoleFor(runtime.projection.state.nodesById['v2-rejected']), 'rejected');
-  assert.equal(runtime.projection.state.nodesById['v2-rejected'].hidden, true);
+  assert.equal(runtime.projection.state.nodesById['v2-rejected'], undefined, 'failed optimization proposal must disappear instead of entering lineage history');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById.v1), 'current', 'failed optimization must not move the current head');
 
   await assert.rejects(
@@ -157,7 +156,7 @@ async function run(): Promise<void> {
     [['v2', 1], ['v1', 2]],
     'linear version ordering must survive event replay',
   );
-  assert.equal(lineageRoleFor(runtime.projection.state.nodesById['v2-rejected']), 'rejected', 'failed candidate remains audit-only after replay');
+  assert.equal(runtime.projection.state.nodesById['v2-rejected'], undefined, 'failed optimization stays absent after deterministic replay');
 
   const reasoningPersistence = new MemoryPersistence();
   const reasoningRuntime = boot(reasoningPersistence);
