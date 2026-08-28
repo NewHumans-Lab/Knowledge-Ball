@@ -170,8 +170,7 @@ const verdictClient = client(verdictRemote, new MemoryPersistence(), event =>
   event.type === 'KnowledgeVerdictFinalized' ? 'client-side state validator would reject this authoritative verdict' : null,
 );
 await verdictClient.engine.sync();
-assert.equal(verdictClient.projection.state.nodesById['pending-node']?.status, 'falsified', 'server-authored verdict bypasses state-dependent client rejection');
-assert.equal(verdictClient.projection.state.nodesById['pending-node']?.hidden, true, 'authoritative incorrect verdict hides node');
+assert.equal(verdictClient.projection.state.nodesById['pending-node'], undefined, 'server-authored incorrect verdict deletes the failed Proposal despite state-dependent client validation');
 assert.equal(verdictClient.engine.currentCursor(), '2', 'cursor advances only after authoritative verdict is incorporated');
 
 class MalformedBatchStream implements SyncAdapter {
