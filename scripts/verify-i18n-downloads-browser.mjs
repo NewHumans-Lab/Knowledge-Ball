@@ -102,6 +102,21 @@ async function assertMobileLayout(browser) {
   await context.close();
 }
 
+async function assertIosInstallLocalization(browser) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  page.setDefaultTimeout(10_000);
+  await page.goto(origin, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.setItem('knowledge-ball.locale.v1', 'en'));
+  await page.goto(new URL('ios-install.html', origin).toString(), { waitUntil: 'domcontentloaded' });
+  assert.equal(await page.locator('html').getAttribute('lang'), 'en', 'iOS install page must inherit the persisted English locale');
+  assert.equal((await page.locator('h1').textContent())?.trim(), 'Install the iOS app with Safari', 'iOS install page system copy must localize to English');
+  await page.locator('[data-locale="zh-CN"]').click();
+  assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN', 'iOS install page language control must switch back to Chinese');
+  assert.equal((await page.locator('h1').textContent())?.trim(), '使用 Safari 安装 iOS 应用', 'iOS install page must render Chinese system copy after switching');
+  await context.close();
+}
+
 try {
   await waitForServer();
   const browser = await chromium.launch({ headless: true });
@@ -117,6 +132,7 @@ try {
     assert.deepEqual(errors, [], `locale/download browser acceptance must not emit page errors: ${errors.join(' | ')}`);
     await context.close();
     await assertMobileLayout(browser);
+    await assertIosInstallLocalization(browser);
   } finally {
     await browser.close();
   }
