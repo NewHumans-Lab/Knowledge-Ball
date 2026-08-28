@@ -59,11 +59,13 @@ function buildGrid(radius:number,frequency:number,shellID:string,validate:boolea
 export function selectSubdivisionFrequency(radius:number):number {
   if(radius<=0)throw new Error('ISG radius must be positive');
   const radiusKey=radius.toFixed(9),known=activeFrequencyCache?.get(radiusKey);if(known!==undefined)return known;
-  // Chord length scales linearly at a fixed frequency; binary search avoids repeatedly
-  // constructing every intermediate grid.
-  let lo=1,hi=128;
-  while(lo<hi){const mid=Math.ceil((lo+hi)/2),probe=buildGrid(radius,mid,`probe:${radius}:${mid}`,false);if(probe.nearestNeighborDistance+EPSILON>=LAYOUT_UNIT)lo=mid;else hi=mid-1}
-  activeFrequencyCache?.set(radiusKey,lo);return lo;
+  // Icosahedron edge chord is about 1.05146r. Start at its spacing estimate and
+  // probe only adjacent frequencies; constructing a frequency-64 grid merely to
+  // discover that a small shell needs frequency 2 stalls browser startup.
+  let frequency=Math.max(1,Math.min(128,Math.floor(radius*1.05146/LAYOUT_UNIT)));
+  while(frequency>1&&buildGrid(radius,frequency,`probe:${radius}:${frequency}`,false).nearestNeighborDistance+EPSILON<LAYOUT_UNIT)frequency--;
+  while(frequency<128&&buildGrid(radius,frequency+1,`probe:${radius}:${frequency+1}`,false).nearestNeighborDistance+EPSILON>=LAYOUT_UNIT)frequency++;
+  activeFrequencyCache?.set(radiusKey,frequency);return frequency;
 }
 
 /** Build a class-I geodesic grid; a layout run interns identical radius/frequency geometry. */
