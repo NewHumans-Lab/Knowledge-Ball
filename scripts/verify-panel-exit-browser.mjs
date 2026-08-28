@@ -42,8 +42,8 @@ try {
     const opened = await page.evaluate(id => window.__debug.panel.openNodeAction(id, 'edit'), candidate.id);
     assert.equal(opened, true, 'explicit edit action must open the optimization subview');
     await page.locator('#panel.open').waitFor({ state: 'visible', timeout: 5_000 });
-    assert.match(await page.locator('#panelTitle').innerText(), /^编辑节点 · 优化：/, 'edit action must be in a panel subview');
-    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), '返回节点详情', 'subview close must explicitly mean return to node detail');
+    assert.match(await page.locator('#panelTitle').innerText(), /^编辑节点 · 优化：/, 'Chinese edit action must be in a panel subview');
+    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), '返回节点详情', 'Chinese subview close must explicitly mean return to node detail');
 
     await page.locator('#panelClose').click();
     await page.waitForFunction(
@@ -56,11 +56,35 @@ try {
       candidate,
       { timeout: 5_000 },
     );
-
     await page.locator('#panelClose').click();
     await page.waitForFunction(() => document.querySelector('#panel.open') === null, null, { timeout: 5_000 });
+
+    await page.locator('#btnSettings').click();
+    await page.locator('#settingsOverlay.show').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.locator('#setLocale').selectOption('en');
+    await page.waitForFunction(() => document.documentElement.lang === 'en');
+    await page.locator('#settingsClose').click();
+
+    const openedEnglish = await page.evaluate(id => window.__debug.panel.openNodeAction(id, 'edit'), candidate.id);
+    assert.equal(openedEnglish, true, 'English explicit edit action must open the same optimization subview');
+    await page.locator('#panel.open').waitFor({ state: 'visible', timeout: 5_000 });
+    assert.match(await page.locator('#panelTitle').innerText(), /^Edit node · Optimize:/, 'panel subview system title must localize while preserving the node title');
+    assert.ok((await page.locator('#panelTitle').innerText()).endsWith(candidate.title), 'user-authored node title must remain unchanged inside the localized panel title');
+    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), 'Back to node details', 'English subview close must localize after its semantic label changes');
+
+    await page.locator('#panelClose').click();
+    await page.waitForFunction(
+      ({ title }) => document.querySelector('#panel.open') !== null
+        && document.querySelector('#panelTitle')?.textContent === title
+        && document.querySelector('#panelClose')?.getAttribute('aria-label') === 'Back to Knowledge Ball',
+      candidate,
+      { timeout: 5_000 },
+    );
+    await page.locator('#panelClose').click();
+    await page.waitForFunction(() => document.querySelector('#panel.open') === null, null, { timeout: 5_000 });
+
     assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
-    console.log('Explicit panel exit real mobile-page regression passed');
+    console.log('Explicit panel exit real mobile-page regression passed in zh-CN and en');
   } finally {
     await browser.close();
   }
