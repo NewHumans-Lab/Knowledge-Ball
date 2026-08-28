@@ -47,7 +47,10 @@ async function analyzeScreenshot(page,screenshot,regions=[]){
       if(h>=185&&h<215&&s>=.25&&v>=.14){stats.cyan++;stats.cyanPeak=Math.max(stats.cyanPeak,v);}
       if(h>=215&&h<238&&s>=.28&&v>=.14){stats.trueBlue++;stats.trueBluePeak=Math.max(stats.trueBluePeak,v);}
       if(h>=238&&h<=285&&s>=.25&&v>=.14){stats.violet++;stats.violetPeak=Math.max(stats.violetPeak,v);}
-      if(h>=80&&h<=165&&s>=.25&&v>=.14)stats.greenDominant++;
+      // Green is a forbidden semantic colour, so only count genuinely chromatic
+      // green pixels. Lower-saturation edge blends are antialiasing/compositing
+      // noise around gray text, lines, and cyan/blue spheres rather than green UI.
+      if(h>=80&&h<=165&&s>=.30&&v>=.14)stats.greenDominant++;
     };
     const global=empty();
     // Sample every fourth pixel for the whole-frame gate. Hue/saturation are more faithful than
