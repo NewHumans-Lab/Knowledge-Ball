@@ -7,10 +7,11 @@ assert(app.includes("import { applyUniformLayerLayout } from './scene/UniformLay
 assert(entry.includes("from './Deterministic5RLayout'"),'one narrow runtime layout owner remains');
 assert(!existsSync('src/ui/scene/RadialKnowledgeLayout.ts'));
 for(const forbidden of ['FccOccupancy','snapToNearestFcc','FCC_AXIS_STEP','fibonacciDirections','nearestFree','Math.random()'])assert(!implementation.includes(forbidden),`obsolete authority returned: ${forbidden}`);
-for(const required of ['generateIcosahedralGrid','SpatialAddress','candidateCells','occupied','assignment=draft','processingOrder'])void required;
 assert(implementation.includes('generateIcosahedralGrid'));
 assert(implementation.includes('address?: SpatialAddress'));
-assert(implementation.includes('if(legal)assignment=draft'),'a component is committed only after its full draft is legal');
-assert(implementation.includes('const complex=metadata(g).sort(hardness)'),'complexity-first order remains authoritative');
+assert(implementation.includes('Inputs are mutated only after a complete component solution exists'));
+assert(implementation.includes('for(const [id,address] of addresses)'),'authoritative node mutation occurs in one final commit after component searches');
+assert(implementation.includes('countLayerCrossings(p,complete)'),'the bounded ISG search measures real relation crossings');
+assert(implementation.includes('complex=metadata(g).sort(hardness)'),'complexity-first order remains authoritative');
 assert(implementation.includes("ordered=[...complex.filter(c=>c.ids.length>1),...complex.filter(c=>c.ids.length===1)]"),'standalone nodes are placed last');
 console.log('Single-owner Icosahedral Spherical Grid runtime architecture checks passed.');

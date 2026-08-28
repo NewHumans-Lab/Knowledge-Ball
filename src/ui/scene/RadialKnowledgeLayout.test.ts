@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import {
   applyDeterministic5RLayout, generateIcosahedralGrid, getLastLayoutDiagnostics,
-  ICOSAHEDRON_FACES, KNOWLEDGE_BALL_RADIUS, LAYOUT_UNIT, selectSubdivisionFrequency,
+  countLayerCrossings, ICOSAHEDRON_FACES, KNOWLEDGE_BALL_RADIUS, LAYOUT_UNIT, selectSubdivisionFrequency,
   type LayoutNode,
 } from './Deterministic5RLayout';
 
@@ -35,4 +36,27 @@ assert(Math.abs(first.find(n=>n.id==='d')!.pos!.length()-diag.boundaries.bluePur
 assert(Math.abs(first.find(n=>n.id==='a')!.pos!.length()-diag.boundaries.cyanBlue)<1e-7,'Cyan start anchors to the Cyan/Blue boundary grid');
 const addresses=[...diag.addresses].map(([id,a])=>[id,a.shellID,a.cellID]);const xyz=first.map(n=>n.pos?.toArray());
 const second=fixture();applyDeterministic5RLayout(second);assert.deepEqual([...getLastLayoutDiagnostics()!.addresses].map(([id,a])=>[id,a.shellID,a.cellID]),addresses);assert.deepEqual(second.map(n=>n.pos?.toArray()),xyz,'identical input derives identical XYZ');
+
+const deepChain:LayoutNode[]=[node('k0')];
+for(let i=1;i<5;i++){deepChain.push(node(`chain-r${i}`,[`k${i-1}`],'reasoning'));deepChain.push(node(`k${i}`,[`chain-r${i}`],'fact',i===4?'outer':i>1?'middle':'inner'))}
+applyDeterministic5RLayout(deepChain);const deepDiag=getLastLayoutDiagnostics()!;
+assert(deepChain.filter(n=>n.type!=='reasoning').every(n=>n.pos!.length()>0),'real five-Knowledge chain depth always yields positive radii');
+assert(Math.abs(deepChain.find(n=>n.id==='k4')!.pos!.length()-deepDiag.boundaries.bluePurple)<1e-7,'innermost Purple chain node anchors to the legal Blue/Purple boundary shell');
+
+const crossingPositions=new Map([
+  ['p1',new THREE.Vector3(-1,-1,2)],['p2',new THREE.Vector3(1,-1,2)],
+  ['c1',new THREE.Vector3(-1,1,3)],['c2',new THREE.Vector3(1,1,3)],
+]);
+assert.equal(countLayerCrossings(crossingPositions,[['p1','c2'],['p2','c1']]),1,'crossing metric measures crossed relations rather than returning a placeholder');
+assert.equal(countLayerCrossings(crossingPositions,[['p1','c1'],['p2','c2']]),0,'crossing metric distinguishes the lower-crossing arrangement');
+
+const lineage:LayoutNode[]=[
+  {...node('topic-current'),lineage:{topicId:'topic',proposal:'new',role:'current',rank:0}},
+  {...node('topic-history'),hidden:true,lineage:{topicId:'topic',proposal:'optimization',role:'history',rank:1}},
+  {...node('topic-opposition'),lineage:{topicId:'topic',proposal:'opposition',role:'opposition',rank:1,reasoningSide:'opposition'}},
+];
+applyDeterministic5RLayout(lineage);const lineageDiag=getLastLayoutDiagnostics()!;
+assert(lineage.every(n=>n.address&&lineageDiag.grids.get(n.address.shellID)?.vertices[n.address.cellID]),'visible lineage Knowledge uses legal authoritative ISG cells');
+for(let i=0;i<lineage.length;i++)for(let j=i+1;j<lineage.length;j++)assert(lineage[i]!.pos!.distanceTo(lineage[j]!.pos!)>=LAYOUT_UNIT-1e-7,'lineage Knowledge participates in global 5R spacing');
+assert(lineageDiag.gridBuildCount<40,'one layout run caches repeated shell geometry/frequency requests');
 console.log('Icosahedral spherical grid geometry, authority, atomic occupancy, ordering, anchoring and determinism checks passed.');
