@@ -10,9 +10,10 @@ export const EXPANSION_UNIT = LAYOUT_UNIT;
 export const CROSSING_SWEEP_LIMIT = 12;
 export const MACRO_DIRECTION_COUNT = 12;
 const EPSILON = 1e-7;
-const BEAM_WIDTH = 72;
-const CANDIDATES_PER_NODE = 24;
 const MAX_COMPONENT_EXPANSIONS = 96;
+const MAX_COMPACT_PASSES = 32;
+const NO_IMPROVEMENT_LIMIT = 5;
+const DIRECTION_TRIAL_LIMIT = MACRO_DIRECTION_COUNT + 1;
 
 export type SpatialAddress = Readonly<{ shellID: string; cellID: number }>;
 export interface LayoutNode {
@@ -22,14 +23,35 @@ export interface LayoutNode {
 }
 export type SemanticBoundaries = Readonly<{ cyanBlue:number; bluePurple:number; purpleOuter:null }>;
 export type IcosahedralGrid = Readonly<{ shellID:string; radius:number; frequency:number; parentFaces:readonly (readonly [number,number,number])[]; vertices:readonly THREE.Vector3[]; edges:ReadonlySet<string>; degrees:readonly number[]; nearestNeighborDistance:number }>;
-export type LayoutDiagnostics = Readonly<{ boundaries:SemanticBoundaries; occupiedCells:ReadonlySet<string>; reservedCells:ReadonlySet<string>; usedAngles:ReadonlyMap<string,number>; componentOrders:ReadonlyMap<string,readonly string[]>; macroCandidateAngles:readonly number[]; macroAssignments:ReadonlyMap<string,number>; expansionCount:number; componentExpansionCounts:ReadonlyMap<string,number>; gridBuildCount:number; grids:ReadonlyMap<string,IcosahedralGrid>; addresses:ReadonlyMap<string,SpatialAddress>; placementOrder:readonly string[] }>;
+export type LayoutDiagnostics = Readonly<{
+  boundaries:SemanticBoundaries;
+  occupiedCells:ReadonlySet<string>;
+  reservedCells:ReadonlySet<string>;
+  usedAngles:ReadonlyMap<string,number>;
+  componentOrders:ReadonlyMap<string,readonly string[]>;
+  macroCandidateAngles:readonly number[];
+  macroAssignments:ReadonlyMap<string,number>;
+  expansionCount:number;
+  componentExpansionCounts:ReadonlyMap<string,number>;
+  gridBuildCount:number;
+  grids:ReadonlyMap<string,IcosahedralGrid>;
+  addresses:ReadonlyMap<string,SpatialAddress>;
+  placementOrder:readonly string[];
+  componentInitialLineLengths:ReadonlyMap<string,number>;
+  componentLineLengths:ReadonlyMap<string,number>;
+  componentOptimizationPasses:ReadonlyMap<string,number>;
+  directionSwitchCounts:ReadonlyMap<string,number>;
+}>;
 
+type CrossingEdge=readonly [string,string];
 type Relation={id:string;premises:string[];conclusions:string[]};
-type Graph={knowledge:LayoutNode[];relations:Relation[];adjacency:Map<string,Set<string>>;outgoing:Map<string,Set<string>>;incoming:Map<string,Set<string>>};
+type Graph={knowledge:LayoutNode[];relations:Relation[];adjacency:Map<string,Set<string>>;outgoing:Map<string,Set<string>>;incoming:Map<string,Set<string>>;realEdges:CrossingEdge[]};
 type Component={id:string;ids:string[];relations:Relation[];branching:number;layers:number;depth:Map<string,number>;orders:Map<number,string[]>};
 type Placement={id:string;address:SpatialAddress;position:THREE.Vector3};
-type BeamState={placed:Placement[];crossings:number;length:number;key:string};
 type SemanticLayer='inner'|'middle'|'outer';
+type ShellGroup={shellID:string;radius:number;grid:IcosahedralGrid;ids:string[];slots:number[];depth:number};
+type DirectionSolution={placed:Placement[];initialLength:number;length:number;passes:number;directionCellID:number};
+type SearchAttempt={solution:DirectionSolution|null;directionSwitches:number};
 
 const ICO_VERTICES=(()=>{const p=(1+Math.sqrt(5))/2;return [[-1,p,0],[1,p,0],[-1,-p,0],[1,-p,0],[0,-1,p],[0,1,p],[0,-1,-p],[0,1,-p],[p,0,-1],[p,0,1],[-p,0,-1],[-p,0,1]].map(v=>new THREE.Vector3(...v).normalize())})();
 export const ICOSAHEDRON_FACES:readonly (readonly [number,number,number])[]=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
@@ -42,7 +64,7 @@ let activeGridBuildCount=0;
 function buildGrid(radius:number,frequency:number,shellID:string,validate:boolean):IcosahedralGrid {
   if(radius<=0)throw new Error('ISG radius must be positive');
   if(frequency<1||!Number.isInteger(frequency))throw new Error('ISG frequency must be a positive integer');
-  const vertices:THREE.Vector3[]=[]; const canonical=new Map<string,number>(); const edges=new Set<string>();
+  const vertices:THREE.Vector3[]=[];const canonical=new Map<string,number>();const edges=new Set<string>();
   const cell=(v:THREE.Vector3)=>{const n=v.normalize(),key=vectorKey(n);let id=canonical.get(key);if(id===undefined){id=vertices.length;canonical.set(key,id);vertices.push(n.multiplyScalar(radius));}return id};
   for(const [ai,bi,ci] of ICOSAHEDRON_FACES){const a=ICO_VERTICES[ai]!,b=ICO_VERTICES[bi]!,c=ICO_VERTICES[ci]!,local=new Map<string,number>();
     for(let i=0;i<=frequency;i++)for(let j=0;j<=frequency-i;j++){const k=frequency-i-j;local.set(`${i}:${j}`,cell(a.clone().multiplyScalar(i).addScaledVector(b,j).addScaledVector(c,k)))}
@@ -52,17 +74,13 @@ function buildGrid(radius:number,frequency:number,shellID:string,validate:boolea
   const degrees=vertices.map(()=>0);let nearest=Infinity;for(const key of edges){const [a,b]=key.split(':').map(Number);degrees[a]++;degrees[b]++;nearest=Math.min(nearest,vertices[a]!.distanceTo(vertices[b]!))}
   const grid=Object.freeze({shellID,radius,frequency,parentFaces:ICOSAHEDRON_FACES,vertices,edges,degrees,nearestNeighborDistance:nearest});
   if(validate&&nearest+EPSILON<LAYOUT_UNIT)throw new Error(`Illegal ISG spacing on ${shellID}`);
-  activeGridBuildCount++;
-  return grid;
+  activeGridBuildCount++;return grid;
 }
 
 /** Select the densest subdivision whose shortest spherical chord respects 5R. */
 export function selectSubdivisionFrequency(radius:number):number {
   if(radius<=0)throw new Error('ISG radius must be positive');
   const radiusKey=radius.toFixed(9),known=activeFrequencyCache?.get(radiusKey);if(known!==undefined)return known;
-  // Icosahedron edge chord is about 1.05146r. Start at its spacing estimate and
-  // probe only adjacent frequencies; constructing a frequency-64 grid merely to
-  // discover that a small shell needs frequency 2 stalls browser startup.
   let frequency=Math.max(1,Math.min(128,Math.floor(radius*1.05146/LAYOUT_UNIT)));
   while(frequency>1&&buildGrid(radius,frequency,`probe:${radius}:${frequency}`,false).nearestNeighborDistance+EPSILON<LAYOUT_UNIT)frequency--;
   while(frequency<128&&buildGrid(radius,frequency+1,`probe:${radius}:${frequency+1}`,false).nearestNeighborDistance+EPSILON>=LAYOUT_UNIT)frequency++;
@@ -71,8 +89,7 @@ export function selectSubdivisionFrequency(radius:number):number {
 
 /** Build a class-I geodesic grid; a layout run interns identical radius/frequency geometry. */
 export function generateIcosahedralGrid(radius:number,frequency?:number,shellID=`shell:${radius.toFixed(6)}`,validate=true):IcosahedralGrid {
-  const f=frequency??selectSubdivisionFrequency(radius),key=`${radius.toFixed(9)}:${f}`;
-  const cached=activeGridCache?.get(key);
+  const f=frequency??selectSubdivisionFrequency(radius),key=`${radius.toFixed(9)}:${f}`;const cached=activeGridCache?.get(key);
   if(cached)return cached.shellID===shellID?cached:Object.freeze({...cached,shellID});
   const grid=buildGrid(radius,f,shellID,validate);activeGridCache?.set(key,grid);return grid;
 }
@@ -84,43 +101,30 @@ function capacityRequirement(width:number){if(width<=0)return 0;let radius=LAYOU
 function componentLayerDepths(c:Component,layer:SemanticLayer){return c.ids.filter(id=>layerOf(nodeMapForSizing.get(id)!)===layer).map(id=>c.depth.get(id)!).sort((a,b)=>a-b)}
 let nodeMapForSizing=new Map<string,LayoutNode>();
 function layerChainRequirement(layer:SemanticLayer,componentsMeta:readonly Component[]){
-  let units=0;
-  for(const c of componentsMeta){
-    const own=componentLayerDepths(c,layer);if(!own.length)continue;
+  let units=0;for(const c of componentsMeta){const own=componentLayerDepths(c,layer);if(!own.length)continue;
     if(layer==='inner')units=Math.max(units,own[own.length-1]!-own[0]!+1);
-    else if(layer==='middle'){
-      const inner=componentLayerDepths(c,'inner'),outer=componentLayerDepths(c,'outer');
-      const start=inner.length?inner[0]!:own[0]!,end=outer.length?outer[0]!:own[own.length-1]!;
-      units=Math.max(units,Math.max(1,end-start));
-    }
-  }
-  return units*LAYOUT_UNIT;
+    else if(layer==='middle'){const inner=componentLayerDepths(c,'inner'),outer=componentLayerDepths(c,'outer');const start=inner.length?inner[0]!:own[0]!,end=outer.length?outer[0]!:own[own.length-1]!;units=Math.max(units,Math.max(1,end-start));}
+  }return units*LAYOUT_UNIT;
 }
-function layerPeakDepthWidth(layer:SemanticLayer,componentsMeta:readonly Component[]){
-  const widths=new Map<number,number>();
-  for(const c of componentsMeta){const own=componentLayerDepths(c,layer);if(!own.length)continue;const origin=own[0]!;for(const depth of own){const localDepth=depth-origin;widths.set(localDepth,(widths.get(localDepth)??0)+1)}}
-  return Math.max(0,...widths.values());
-}
+function layerPeakDepthWidth(layer:SemanticLayer,componentsMeta:readonly Component[]){const widths=new Map<number,number>();for(const c of componentsMeta){const own=componentLayerDepths(c,layer);if(!own.length)continue;const origin=own[0]!;for(const depth of own){const localDepth=depth-origin;widths.set(localDepth,(widths.get(localDepth)??0)+1)}}return Math.max(0,...widths.values())}
 function layerRadiusRequirement(layer:SemanticLayer,componentsMeta:readonly Component[]){return Math.max(layerChainRequirement(layer,componentsMeta),capacityRequirement(layerPeakDepthWidth(layer,componentsMeta)))}
 export function computeSemanticBoundaries(nodes:readonly LayoutNode[]):SemanticBoundaries{
   const g=buildGraph([...nodes]),componentsMeta=metadata(g);nodeMapForSizing=new Map(g.knowledge.map(n=>[n.id,n]));
-  const cyanBlue=Math.max(LAYOUT_UNIT,layerRadiusRequirement('inner',componentsMeta));
-  const blueThickness=layerRadiusRequirement('middle',componentsMeta);
-  const bluePurple=cyanBlue+blueThickness;
-  return Object.freeze({cyanBlue,bluePurple,purpleOuter:null});
+  const cyanBlue=Math.max(LAYOUT_UNIT,layerRadiusRequirement('inner',componentsMeta));const blueThickness=layerRadiusRequirement('middle',componentsMeta);return Object.freeze({cyanBlue,bluePurple:cyanBlue+blueThickness,purpleOuter:null});
 }
 function setPosition(n:LayoutNode,p:THREE.Vector3){n.pos=p.clone();n.homePos=p.clone();n.vel??=new THREE.Vector3();n.vel.set(0,0,0)}
+
 function buildGraph(nodes:LayoutNode[]):Graph{
-  const knowledge=visibleKnowledge(nodes),ids=new Set(knowledge.map(n=>n.id));
+  const knowledge=visibleKnowledge(nodes),ids=new Set(knowledge.map(n=>n.id)),realEdgeKeys=new Set<string>();
   const relations=nodes.filter(n=>n.type==='reasoning').map(n=>({id:n.id,premises:[...new Set(n.premises??[])].filter(x=>ids.has(x)).sort(),conclusions:knowledge.filter(k=>k.premises?.includes(n.id)).map(k=>k.id).sort()})).filter(r=>r.premises.length||r.conclusions.length);
   const adjacency=new Map(knowledge.map(n=>[n.id,new Set<string>()])),outgoing=new Map(knowledge.map(n=>[n.id,new Set<string>()])),incoming=new Map(knowledge.map(n=>[n.id,new Set<string>()]));
-  const connect=(a:string,b:string)=>{if(a===b||!ids.has(a)||!ids.has(b))return;adjacency.get(a)!.add(b);adjacency.get(b)!.add(a);outgoing.get(a)!.add(b);incoming.get(b)!.add(a)};
-  for(const r of relations)for(const a of r.premises)for(const b of r.conclusions)connect(a,b);
-  for(const n of knowledge)for(const p of n.premises??[])connect(p,n.id);
-  // Lineage is presentation-related but still one spatial component, never free-float.
+  const connect=(a:string,b:string,real=true)=>{if(a===b||!ids.has(a)||!ids.has(b))return;adjacency.get(a)!.add(b);adjacency.get(b)!.add(a);outgoing.get(a)!.add(b);incoming.get(b)!.add(a);if(real)realEdgeKeys.add(`${a}\u0000${b}`)};
+  for(const r of relations)for(const a of r.premises)for(const b of r.conclusions)connect(a,b,true);
+  for(const n of knowledge)for(const p of n.premises??[])connect(p,n.id,true);
   const topics=new Map<string,LayoutNode[]>();for(const n of knowledge)if(n.lineage){const a=topics.get(topicIdFor(n))??[];a.push(n);topics.set(topicIdFor(n),a)}
-  for(const a of topics.values()){const current=a.find(n=>lineageRoleFor(n)==='current'&&n.lineage?.reasoningSide!=='opposition')??a[0];if(current)for(const n of a)if(n!==current)connect(current.id,n.id)}
-  return{knowledge,relations,adjacency,outgoing,incoming};
+  for(const a of topics.values()){const current=a.find(n=>lineageRoleFor(n)==='current'&&n.lineage?.reasoningSide!=='opposition')??a[0];if(current)for(const n of a)if(n!==current)connect(current.id,n.id,false)}
+  const realEdges=[...realEdgeKeys].map(key=>key.split('\u0000') as [string,string]).sort((x,y)=>x[0].localeCompare(y[0])||x[1].localeCompare(y[1]));
+  return{knowledge,relations,adjacency,outgoing,incoming,realEdges};
 }
 function components(g:Graph){const seen=new Set<string>(),result:string[][]=[];for(const seed of g.knowledge.map(n=>n.id).sort()){if(seen.has(seed))continue;const q=[seed],ids:string[]=[];seen.add(seed);for(let i=0;i<q.length;i++){const id=q[i]!;ids.push(id);for(const x of [...(g.adjacency.get(id)??[])].sort())if(!seen.has(x)){seen.add(x);q.push(x)}}result.push(ids.sort())}return result}
 function depths(ids:string[],g:Graph){const set=new Set(ids),ind=new Map<string,number>(),d=new Map<string,number>();for(const id of ids){const n=[...(g.incoming.get(id)??[])].filter(x=>set.has(x)).length;ind.set(id,n);if(!n)d.set(id,0)}const q=ids.filter(x=>ind.get(x)===0).sort();for(let i=0;i<q.length;i++){const a=q[i]!;for(const b of [...(g.outgoing.get(a)??[])].filter(x=>set.has(x)).sort()){d.set(b,Math.max(d.get(b)??0,(d.get(a)??0)+1));ind.set(b,ind.get(b)!-1);if(!ind.get(b))q.push(b)}}for(const id of ids)if(!d.has(id))d.set(id,Math.max(0,...d.values())+1);return d}
@@ -128,47 +132,71 @@ function metadata(g:Graph):Component[]{const byId=new Map(g.knowledge.map(n=>[n.
 const hardness=(a:Component,b:Component)=>b.ids.length-a.ids.length||b.layers-a.layers||b.branching-a.branching||a.id.localeCompare(b.id);
 function candidateCells(grid:IcosahedralGrid,direction:THREE.Vector3){return grid.vertices.map((v,i)=>({i,d:v.clone().normalize().dot(direction)})).sort((a,b)=>b.d-a.d||a.i-b.i).map(x=>x.i)}
 function addressKey(a:SpatialAddress){return `${a.shellID}:${a.cellID}`}
-function stableDirection(componentId:string,grid:IcosahedralGrid){let h=2166136261;for(const c of componentId){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return grid.vertices[(h>>>0)%grid.vertices.length]!.clone().normalize()}
+function stableHash(text:string){let h=2166136261;for(const c of text){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+function stableDirection(componentId:string,grid:IcosahedralGrid){return grid.vertices[stableHash(componentId)%grid.vertices.length]!.clone().normalize()}
+function directionCandidates(componentId:string,grid:IcosahedralGrid){
+  const result:number[]=[];const add=(i:number)=>{if(!result.includes(i))result.push(i)};add(candidateCells(grid,stableDirection(componentId,grid))[0]!);
+  const offset=stableHash(componentId)%ICO_VERTICES.length;for(let k=0;k<ICO_VERTICES.length&&result.length<DIRECTION_TRIAL_LIMIT;k++){const macro=ICO_VERTICES[(k+offset)%ICO_VERTICES.length]!;add(candidateCells(grid,macro)[0]!)}return result;
+}
 function radialFor(n:LayoutNode,depth:number,c:Component,b:SemanticBoundaries,extra:number){const outer=c.ids.filter(id=>layerOf(nodeMap.get(id)!)==='outer').sort((a,z)=>c.depth.get(a)!-c.depth.get(z)!||a.localeCompare(z));if(outer.length)return b.bluePurple+(depth-c.depth.get(outer[0]!)!)*LAYOUT_UNIT+extra;const inner=c.ids.filter(id=>layerOf(nodeMap.get(id)!)==='inner').sort((a,z)=>c.depth.get(a)!-c.depth.get(z)!||a.localeCompare(z));if(inner.length&&c.ids.some(id=>layerOf(nodeMap.get(id)!)==='middle'))return b.cyanBlue+(depth-c.depth.get(inner[0]!)!)*LAYOUT_UNIT+extra;return Math.max(LAYOUT_UNIT,(layerOf(n)==='middle'?b.cyanBlue:layerOf(n)==='outer'?b.bluePurple:LAYOUT_UNIT)+depth*LAYOUT_UNIT+extra)}
 let nodeMap=new Map<string,LayoutNode>();
 
-type CrossingEdge=readonly [string,string];
-function relationEdges(g:Graph,ids?:Set<string>):CrossingEdge[]{const result:CrossingEdge[]=[];for(const [a,outs] of g.outgoing)for(const b of outs)if(!ids||ids.has(a)&&ids.has(b))result.push([a,b]);return result.sort((x,y)=>x[0].localeCompare(y[0])||x[1].localeCompare(y[1]))}
+function realEdgesFor(g:Graph,c:Component){const ids=new Set(c.ids);return g.realEdges.filter(([a,b])=>ids.has(a)&&ids.has(b))}
+function realKnowledgeLineLength(placed:readonly Placement[],edges:readonly CrossingEdge[]){const positions=new Map(placed.map(p=>[p.id,p.position]));return edges.reduce((sum,[a,b])=>{const p=positions.get(a),q=positions.get(b);return p&&q?sum+p.distanceTo(q):sum},0)}
+function graphAwareOrder(c:Component,g:Graph){const depthsSorted=[...c.orders].sort(([a],[b])=>a-b),rank=new Map<string,number>(),answer:string[]=[];for(const [,ids] of depthsSorted){const sorted=[...ids].sort((a,b)=>{const neighborRank=(id:string)=>[...(g.incoming.get(id)??[]),...(g.outgoing.get(id)??[])].filter(x=>rank.has(x)).reduce((s,x)=>s+rank.get(x)!,0)/Math.max(1,[...(g.incoming.get(id)??[]),...(g.outgoing.get(id)??[])].filter(x=>rank.has(x)).length);return neighborRank(a)-neighborRank(b)||a.localeCompare(b)});sorted.forEach((id,i)=>rank.set(id,i));answer.push(...sorted)}return answer}
+function mappedNeighborCenter(id:string,radius:number,placements:ReadonlyMap<string,Placement>,edges:readonly CrossingEdge[],direction:THREE.Vector3){const neighbors:string[]=[];for(const [a,b] of edges){if(a===id)neighbors.push(b);else if(b===id)neighbors.push(a)}if(!neighbors.length)return direction.clone().multiplyScalar(radius);const center=new THREE.Vector3();let count=0;for(const neighbor of neighbors){const p=placements.get(neighbor)?.position;if(!p||p.lengthSq()<EPSILON)continue;center.add(p.clone().normalize().multiplyScalar(radius));count++}return count?center.multiplyScalar(1/count):direction.clone().multiplyScalar(radius)}
+function placementMap(placed:readonly Placement[]){return new Map(placed.map(p=>[p.id,{id:p.id,address:p.address,position:p.position.clone()}]))}
+function placementArray(map:ReadonlyMap<string,Placement>,order:readonly string[]){return order.map(id=>map.get(id)!).filter(Boolean)}
+function compactShellGroups(c:Component,b:SemanticBoundaries,extra:number,direction:THREE.Vector3,grids:Map<string,IcosahedralGrid>,order:readonly string[]):ShellGroup[]{
+  const byShell=new Map<string,{radius:number;grid:IcosahedralGrid;ids:string[];depth:number}>();
+  for(const id of order){const n=nodeMap.get(id)!,depth=c.depth.get(id)!,radius=radialFor(n,depth,c,b,extra),shellID=`shell:${radius.toFixed(6)}`;let grid=grids.get(shellID);if(!grid){grid=generateIcosahedralGrid(radius,undefined,shellID);grids.set(shellID,grid)}const group=byShell.get(shellID)??{radius,grid,ids:[],depth};group.ids.push(id);group.depth=Math.min(group.depth,depth);byShell.set(shellID,group)}
+  return [...byShell.entries()].map(([shellID,g])=>({shellID,radius:g.radius,grid:g.grid,ids:g.ids,slots:candidateCells(g.grid,direction).slice(0,g.ids.length),depth:g.depth})).sort((a,b)=>a.radius-b.radius||a.shellID.localeCompare(b.shellID));
+}
+function fixedCompactPlacement(groups:readonly ShellGroup[],occupied:ReadonlyMap<string,THREE.Vector3>,order:readonly string[]):Placement[]|null{
+  const result:Placement[]=[];const local:THREE.Vector3[]=[];for(const group of groups){if(group.slots.length<group.ids.length)return null;for(let i=0;i<group.ids.length;i++){const cellID=group.slots[i]!,position=group.grid.vertices[cellID]!;if([...occupied.values()].some(p=>p.distanceTo(position)<LAYOUT_UNIT-EPSILON)||local.some(p=>p.distanceTo(position)<LAYOUT_UNIT-EPSILON))return null;local.push(position);result.push({id:group.ids[i]!,address:{shellID:group.shellID,cellID},position:position.clone()})}}
+  const byId=new Map(result.map(p=>[p.id,p]));return order.map(id=>byId.get(id)!).filter(Boolean);
+}
+function optimizeGroup(group:ShellGroup,map:Map<string,Placement>,allOrder:readonly string[],edges:readonly CrossingEdge[],direction:THREE.Vector3,reverse:boolean){
+  const ids=reverse?[...group.ids].reverse():group.ids;for(const id of ids){const current=map.get(id)!;const target=mappedNeighborCenter(id,group.radius,map,edges,direction);let desiredCell=group.slots[0]!,desiredDistance=Infinity;for(const cellID of group.slots){const d=group.grid.vertices[cellID]!.distanceToSquared(target);if(d<desiredDistance-EPSILON||(Math.abs(d-desiredDistance)<=EPSILON&&cellID<desiredCell)){desiredDistance=d;desiredCell=cellID}}
+    const other=[...map.values()].find(p=>p.address.shellID===group.shellID&&p.address.cellID===desiredCell);if(!other||other.id===id)continue;
+    const before=realKnowledgeLineLength(placementArray(map,allOrder),edges),a=current.address.cellID,b=other.address.cellID;current.address={shellID:group.shellID,cellID:b};current.position=group.grid.vertices[b]!.clone();other.address={shellID:group.shellID,cellID:a};other.position=group.grid.vertices[a]!.clone();const after=realKnowledgeLineLength(placementArray(map,allOrder),edges);if(after>=before-EPSILON){current.address={shellID:group.shellID,cellID:a};current.position=group.grid.vertices[a]!.clone();other.address={shellID:group.shellID,cellID:b};other.position=group.grid.vertices[b]!.clone()}}
+}
+function optimizeFixedDirection(initial:Placement[],groups:readonly ShellGroup[],edges:readonly CrossingEdge[],direction:THREE.Vector3,order:readonly string[]):DirectionSolution{
+  let current=placementMap(initial),best=placementMap(initial),bestLength=realKnowledgeLineLength(initial,edges),noImprovement=0,passes=0;const initialLength=bestLength;
+  while(passes<MAX_COMPACT_PASSES&&noImprovement<NO_IMPROVEMENT_LIMIT){for(const group of groups)optimizeGroup(group,current,order,edges,direction,false);for(const group of [...groups].reverse())optimizeGroup(group,current,order,edges,direction,true);passes++;const length=realKnowledgeLineLength(placementArray(current,order),edges);if(length<bestLength-EPSILON){bestLength=length;best=placementMap(placementArray(current,order));noImprovement=0}else noImprovement++}
+  const placed=placementArray(best,order);return{placed,initialLength,length:bestLength,passes,directionCellID:-1};
+}
+function solveDirection(c:Component,g:Graph,b:SemanticBoundaries,extra:number,occupied:ReadonlyMap<string,THREE.Vector3>,grids:Map<string,IcosahedralGrid>,directionGrid:IcosahedralGrid,directionCellID:number):DirectionSolution|null{
+  const direction=directionGrid.vertices[directionCellID]!.clone().normalize(),order=graphAwareOrder(c,g),groups=compactShellGroups(c,b,extra,direction,grids,order),initial=fixedCompactPlacement(groups,occupied,order);if(!initial)return null;
+  const result=optimizeFixedDirection(initial,groups,realEdgesFor(g,c),direction,order);return{...result,directionCellID};
+}
+function searchComponent(c:Component,g:Graph,b:SemanticBoundaries,extra:number,occupied:ReadonlyMap<string,THREE.Vector3>,grids:Map<string,IcosahedralGrid>):SearchAttempt{
+  const primaryRadius=radialFor(nodeMap.get(c.ids[0]!)!,c.depth.get(c.ids[0]!)!,c,b,extra),primaryShell=`shell:${primaryRadius.toFixed(6)}`;let directionGrid=grids.get(primaryShell);if(!directionGrid){directionGrid=generateIcosahedralGrid(primaryRadius,undefined,primaryShell);grids.set(primaryShell,directionGrid)}
+  let best:DirectionSolution|null=null,directionSwitches=0,noImprovement=0;for(const directionCellID of directionCandidates(c.id,directionGrid)){const solution=solveDirection(c,g,b,extra,occupied,grids,directionGrid,directionCellID);if(!solution){directionSwitches++;continue}if(!best||solution.length<best.length-EPSILON){best=solution;noImprovement=0}else noImprovement++;if(noImprovement>=NO_IMPROVEMENT_LIMIT)break;directionSwitches++}
+  return{solution:best,directionSwitches};
+}
+
 function orient(a:THREE.Vector2,b:THREE.Vector2,c:THREE.Vector2){return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x)}
 function projected(v:THREE.Vector3,axis:THREE.Vector3){const up=Math.abs(axis.y)<.9?new THREE.Vector3(0,1,0):new THREE.Vector3(1,0,0),x=new THREE.Vector3().crossVectors(up,axis).normalize(),y=new THREE.Vector3().crossVectors(axis,x).normalize();return new THREE.Vector2(v.dot(x),v.dot(y))}
-/** Counts proper relation-segment intersections after deterministic tangent-plane projection. */
+/** Diagnostic utility only. Crossings are not an optimization objective. */
 export function countLayerCrossings(positions:ReadonlyMap<string,THREE.Vector3>=new Map(),edges:readonly CrossingEdge[]=[]):number{
   if(edges.length<2)return 0;const mean=[...positions.values()].reduce((s,p)=>s.add(p.clone().normalize()),new THREE.Vector3());if(mean.lengthSq()<EPSILON)mean.set(0,0,1);mean.normalize();let count=0;
-  for(let i=0;i<edges.length;i++)for(let j=i+1;j<edges.length;j++){const [a,b]=edges[i]!,[c,d]=edges[j]!;if(a===c||a===d||b===c||b===d)continue;const pa=positions.get(a),pb=positions.get(b),pc=positions.get(c),pd=positions.get(d);if(!pa||!pb||!pc||!pd)continue;const A=projected(pa,mean),B=projected(pb,mean),C=projected(pc,mean),D=projected(pd,mean);if(orient(A,B,C)*orient(A,B,D)<-EPSILON&&orient(C,D,A)*orient(C,D,B)<-EPSILON)count++}
-  return count;
-}
-function scoreState(placed:Placement[],edges:readonly CrossingEdge[]):Omit<BeamState,'placed'>{const p=new Map(placed.map(x=>[x.id,x.position])),complete=edges.filter(([a,b])=>p.has(a)&&p.has(b)),crossings=countLayerCrossings(p,complete),length=complete.reduce((s,[a,b])=>s+p.get(a)!.distanceTo(p.get(b)!),0),key=placed.map(x=>`${x.address.shellID}:${String(x.address.cellID).padStart(6,'0')}`).join('|');return{crossings,length,key}}
-function compareState(a:BeamState,b:BeamState){return a.crossings-b.crossings||a.length-b.length||a.key.localeCompare(b.key)}
-function graphAwareOrder(c:Component,g:Graph){const depthsSorted=[...c.orders].sort(([a],[b])=>a-b),rank=new Map<string,number>(),answer:string[]=[];for(const [,ids] of depthsSorted){const sorted=[...ids].sort((a,b)=>{const neighborRank=(id:string)=>[...(g.incoming.get(id)??[]),...(g.outgoing.get(id)??[])].filter(x=>rank.has(x)).reduce((s,x)=>s+rank.get(x)!,0)/Math.max(1,[...(g.incoming.get(id)??[]),...(g.outgoing.get(id)??[])].filter(x=>rank.has(x)).length);return neighborRank(a)-neighborRank(b)||a.localeCompare(b)});sorted.forEach((id,i)=>rank.set(id,i));answer.push(...sorted)}return answer}
-function searchComponent(c:Component,g:Graph,b:SemanticBoundaries,extra:number,occupied:ReadonlyMap<string,THREE.Vector3>,grids:Map<string,IcosahedralGrid>):Placement[]|null{
-  const primaryRadius=radialFor(nodeMap.get(c.ids[0]!)!,c.depth.get(c.ids[0]!)!,c,b,extra),primaryShell=`shell:${primaryRadius.toFixed(6)}`;
-  let directionGrid=grids.get(primaryShell);if(!directionGrid){directionGrid=generateIcosahedralGrid(primaryRadius,undefined,primaryShell);grids.set(primaryShell,directionGrid)}const direction=stableDirection(c.id,directionGrid),edges=relationEdges(g,new Set(c.ids));let beam:BeamState[]=[{placed:[],crossings:0,length:0,key:''}];
-  for(const id of graphAwareOrder(c,g)){const n=nodeMap.get(id)!,radius=radialFor(n,c.depth.get(id)!,c,b,extra),shellID=`shell:${radius.toFixed(6)}`;let grid=grids.get(shellID);if(!grid){grid=generateIcosahedralGrid(radius,undefined,shellID);grids.set(shellID,grid)}const candidates=candidateCells(grid,direction),next:BeamState[]=[];
-    for(const state of beam){let accepted=0;for(const cellID of candidates){const position=grid.vertices[cellID]!;if([...occupied.values()].some(p=>p.distanceTo(position)<LAYOUT_UNIT-EPSILON)||state.placed.some(p=>p.position.distanceTo(position)<LAYOUT_UNIT-EPSILON))continue;const placed=[...state.placed,{id,address:{shellID,cellID},position:position.clone()}],score=scoreState(placed,edges);next.push({placed,...score});if(++accepted>=CANDIDATES_PER_NODE)break}}
-    if(!next.length)return null;next.sort(compareState);beam=next.slice(0,BEAM_WIDTH);
-  }
-  return beam.sort(compareState)[0]!.placed;
+  for(let i=0;i<edges.length;i++)for(let j=i+1;j<edges.length;j++){const [a,b]=edges[i]!,[c,d]=edges[j]!;if(a===c||a===d||b===c||b===d)continue;const pa=positions.get(a),pb=positions.get(b),pc=positions.get(c),pd=positions.get(d);if(!pa||!pb||!pc||!pd)continue;const A=projected(pa,mean),B=projected(pb,mean),C=projected(pc,mean),D=projected(pd,mean);if(orient(A,B,C)*orient(A,B,D)<-EPSILON&&orient(C,D,A)*orient(C,D,B)<-EPSILON)count++}return count;
 }
 function placeReasoning(nodes:LayoutNode[],g:Graph){const by=new Map(nodes.map(n=>[n.id,n]));for(const r of g.relations){const n=by.get(r.id);if(!n||!r.premises.length||!r.conclusions.length)continue;const mean=(ids:string[])=>ids.reduce((s,id)=>s.add(by.get(id)?.pos??new THREE.Vector3()),new THREE.Vector3()).multiplyScalar(1/ids.length);setPosition(n,mean(r.premises).add(mean(r.conclusions)).multiplyScalar(.5));delete n.address}}
 function signature(nodes:readonly LayoutNode[]){return [...nodes].sort((a,b)=>a.id.localeCompare(b.id)).map(n=>`${n.id}:${n.type}:${[...(n.premises??[])].sort()}:${n.effectiveLayer??n.layer??n.declaredLayer}:${n.hidden}:${n.lineage?.topicId}:${n.lineage?.role}:${n.lineage?.reasoningSide}`).join('|')}
 
 export function applyDeterministic5RLayout<T extends LayoutNode>(nodes:T[]):T[]{
   const sig=signature(nodes);if(cache?.signature===sig){for(const n of nodes){const p=cache.positions.get(n.id),a=cache.addresses.get(n.id);if(p)setPosition(n,p);if(a)n.address=a}lastDiagnostics=cache.diagnostics;return nodes}
-  activeGridCache=new Map();activeFrequencyCache=new Map();activeGridBuildCount=0;const g=buildGraph(nodes);nodeMap=new Map(nodes.map(n=>[n.id,n]));const boundaries=computeSemanticBoundaries(nodes),complex=metadata(g).sort(hardness),ordered=[...complex.filter(c=>c.ids.length>1),...complex.filter(c=>c.ids.length===1)],occupied=new Map<string,THREE.Vector3>(),grids=new Map<string,IcosahedralGrid>(),addresses=new Map<string,SpatialAddress>(),orders=new Map<string,readonly string[]>(),used=new Map<string,number>(),componentExpansionCounts=new Map<string,number>();let expansionCount=0;
-  // Inputs are mutated only after a complete component solution exists. A failed search
-  // therefore leaves both authoritative addresses and occupancy at the previous commit.
-  for(const c of ordered){let assignment:Placement[]|null=null,attempt=0;for(;attempt<=MAX_COMPONENT_EXPANSIONS&&!assignment;attempt++)assignment=searchComponent(c,g,boundaries,attempt*EXPANSION_UNIT,occupied,grids);if(!assignment)throw new Error(`ISG expansion exhausted for component ${c.id}`);const expansions=Math.max(0,attempt-1);componentExpansionCounts.set(c.id,expansions);expansionCount+=expansions;
-    for(const x of assignment){occupied.set(addressKey(x.address),x.position);addresses.set(x.id,x.address)}orders.set(c.id,graphAwareOrder(c,g));const first=assignment[0];if(first)used.set(c.id,first.address.cellID);
+  activeGridCache=new Map();activeFrequencyCache=new Map();activeGridBuildCount=0;const g=buildGraph(nodes);nodeMap=new Map(nodes.map(n=>[n.id,n]));const boundaries=computeSemanticBoundaries(nodes),complex=metadata(g).sort(hardness),ordered=[...complex.filter(c=>c.ids.length>1),...complex.filter(c=>c.ids.length===1)],occupied=new Map<string,THREE.Vector3>(),grids=new Map<string,IcosahedralGrid>(),addresses=new Map<string,SpatialAddress>(),orders=new Map<string,readonly string[]>(),used=new Map<string,number>(),componentExpansionCounts=new Map<string,number>(),componentInitialLineLengths=new Map<string,number>(),componentLineLengths=new Map<string,number>(),componentOptimizationPasses=new Map<string,number>(),directionSwitchCounts=new Map<string,number>();let expansionCount=0;
+  // Inputs are mutated only after a complete component solution exists. A blocked compact slot changes the whole chain direction; nodes never walk to a second/third cell.
+  for(const c of ordered){let solution:DirectionSolution|null=null,attempt=0,switches=0;for(;attempt<=MAX_COMPONENT_EXPANSIONS&&!solution;attempt++){const searched=searchComponent(c,g,boundaries,attempt*EXPANSION_UNIT,occupied,grids);switches+=searched.directionSwitches;solution=searched.solution}if(!solution)throw new Error(`ISG expansion exhausted for component ${c.id}`);const expansions=Math.max(0,attempt-1);componentExpansionCounts.set(c.id,expansions);expansionCount+=expansions;directionSwitchCounts.set(c.id,switches);componentInitialLineLengths.set(c.id,solution.initialLength);componentLineLengths.set(c.id,solution.length);componentOptimizationPasses.set(c.id,solution.passes);
+    for(const x of solution.placed){occupied.set(addressKey(x.address),x.position);addresses.set(x.id,x.address)}orders.set(c.id,graphAwareOrder(c,g));used.set(c.id,solution.directionCellID);
   }
   // Atomic final commit: all visible Knowledge, including lineage/opposition, receives an ISG address.
   for(const [id,address] of addresses){const n=nodeMap.get(id)!,grid=grids.get(address.shellID)!;n.address=address;setPosition(n,grid.vertices[address.cellID]!)}
   for(const n of nodes.filter(n=>isSystemCoreNodeId(n.id))){const i=Math.max(0,SUN_TRIAD_IDS.indexOf(n.id as never)),a=i*Math.PI*2/SUN_TRIAD_IDS.length;setPosition(n,new THREE.Vector3(Math.cos(a)*SUN_ORBIT_RADIUS,Math.sin(a)*SUN_ORBIT_RADIUS,0));delete n.address}placeReasoning(nodes,g);
-  lastDiagnostics=Object.freeze({boundaries,occupiedCells:new Set(occupied.keys()),reservedCells:new Set(occupied.keys()),usedAngles:used,componentOrders:orders,macroCandidateAngles:[],macroAssignments:new Map(),expansionCount,componentExpansionCounts,gridBuildCount:activeGridBuildCount,grids,addresses,placementOrder:ordered.map(c=>c.id)});cache={signature:sig,positions:new Map(nodes.filter(n=>n.pos).map(n=>[n.id,n.pos!.clone()])),addresses:new Map(addresses),diagnostics:lastDiagnostics};activeGridCache=null;activeFrequencyCache=null;return nodes;
+  lastDiagnostics=Object.freeze({boundaries,occupiedCells:new Set(occupied.keys()),reservedCells:new Set(occupied.keys()),usedAngles:used,componentOrders:orders,macroCandidateAngles:[],macroAssignments:new Map(),expansionCount,componentExpansionCounts,gridBuildCount:activeGridBuildCount,grids,addresses,placementOrder:ordered.map(c=>c.id),componentInitialLineLengths,componentLineLengths,componentOptimizationPasses,directionSwitchCounts});cache={signature:sig,positions:new Map(nodes.filter(n=>n.pos).map(n=>[n.id,n.pos!.clone()])),addresses:new Map(addresses),diagnostics:lastDiagnostics};activeGridCache=null;activeFrequencyCache=null;return nodes;
 }
 let lastDiagnostics:LayoutDiagnostics|null=null;let cache:{signature:string;positions:Map<string,THREE.Vector3>;addresses:Map<string,SpatialAddress>;diagnostics:LayoutDiagnostics}|null=null;
 export function getLastLayoutDiagnostics(){return lastDiagnostics}
