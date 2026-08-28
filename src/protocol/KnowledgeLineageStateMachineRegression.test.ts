@@ -138,14 +138,15 @@ async function run(): Promise<void> {
   importVerified(runtime, 'a1', 'A original');
   importVerified(runtime, 'downstream', 'Depends on A', ['a1']);
 
-  // Failed optimization: immutable current head remains authoritative.
+  // Failed optimization: immutable current head remains authoritative and the
+  // failed Proposal disappears after its energy settlement.
   await executeKnowledgeOptimization(runtime.store, runtime.projection, {
     targetId: 'a1', candidateId: 'a-fail', title: 'A original', reasoning: 'Rejected improvement', declaredLayer: 'middle',
   });
   assert.equal(runtime.projection.state.nodesById['a-fail'].status, 'pending');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById.a1), 'current');
   finalizePending(runtime, 'a-fail', 'INCORRECT');
-  assert.equal(lineageRoleFor(runtime.projection.state.nodesById['a-fail']), 'rejected');
+  assert.equal(runtime.projection.state.nodesById['a-fail'], undefined, 'failed optimization proposal disappears after settlement');
   assert.equal(lineageRoleFor(runtime.projection.state.nodesById.a1), 'current');
 
   // Successful optimization: new immutable ball becomes head; old ball is gray history.
