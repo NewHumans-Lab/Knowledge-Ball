@@ -3,24 +3,34 @@ import {
   applyDeterministic5RLayout,
   type LayoutNode,
 } from './Deterministic5RLayout';
+import { applyOrdinaryLineagePlacement, isOrdinaryLineageSatellite } from './OrdinaryLineagePlacement';
 import { applyReasoningRadialPlacement } from './ReasoningRadialPlacement';
 
 export type UniformLayoutNode = LayoutNode;
 
 /**
- * Runtime spatial boundary: failed proposals are not Knowledge and therefore
- * cannot affect ISG components, semantic boundaries, occupancy, exclusion, or
- * authoritative shell/cell addresses. The explicit cleanup also prevents a
- * legacy rejected object from retaining stale spatial state from an older run.
+ * Runtime spatial boundary:
+ * - rejected first-round proposals never enter Knowledge geometry;
+ * - ordinary history/opposition/candidates are local lineage satellites and do
+ *   not participate in the global main-chain occupancy/compactness search;
+ * - Reasoning keeps its existing non-authoritative radial projection;
+ * - ordinary lineage is projected last from the already-final current anchor.
  */
 export function applyUniformLayerLayout(nodes: LayoutNode[]): void {
   const spatialKnowledge = nodes.filter(node => lineageRoleFor(node) !== 'rejected');
-  applyDeterministic5RLayout(spatialKnowledge);
+  const globalMainChain = spatialKnowledge.filter(node => !isOrdinaryLineageSatellite(node));
 
-  // Knowledge geometry is final before non-authoritative Reasoning is projected.
-  // Reasoning sits midway between its premise/conclusion radii and shares the
-  // conclusion radial axis, so the Reasoning→Conclusion line passes through the centre.
-  applyReasoningRadialPlacement(spatialKnowledge);
+  applyDeterministic5RLayout(globalMainChain);
+
+  // Keep the current Reasoning behaviour isolated from this ordinary-lineage
+  // change. It sees only the global main-chain geometry, never ordinary lineage
+  // satellites, so red/white semantics remain a separate follow-up concern.
+  applyReasoningRadialPlacement(globalMainChain);
+
+  // Ordinary lineage owns its local straight-line geometry after the current
+  // main-chain anchor is final. It may rotate as one rigid line, but compactness
+  // can never bend or interleave history/opposition members.
+  applyOrdinaryLineagePlacement(spatialKnowledge);
 
   for (const node of nodes) {
     if (lineageRoleFor(node) !== 'rejected') continue;
