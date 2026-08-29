@@ -67,6 +67,7 @@ jobs:
           for obsolete in [
               "  assert.equal(runtime.projection.state.nodesById['merge-r1'].hidden, true);\n",
               "  assert.equal(runtime.projection.state.nodesById['merge-c2'].hidden, true);\n",
+              "  assert.equal(runtime.projection.state.nodesById['def-a'].hidden, true, 'merged source must survive as hidden history');\n",
           ]:
               assert obsolete in text, f'missing obsolete merge assertion: {obsolete!r}'
               text = text.replace(obsolete, '')
