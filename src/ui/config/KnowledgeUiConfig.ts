@@ -132,6 +132,6 @@ export const CORE_SUN_LIGHT_DECAY = 2;
 export const CORE_SUN_SHADOW_FAR = LAYER_BANDS.outer.rMax * MAX_GRAPH_ZOOM * 1.1;
 // No uniform ambient contribution: apparent solar illumination is determined by distance and occlusion.
 export const CORE_AMBIENT_LIGHT_INTENSITY = 0;
-/** Legacy compatibility for the core reveal threshold expressed as camera distance. */
+/** Legacy compatibility only. Camera distance no longer drives zoom. */
 export const SUN_REVEAL_CAM_Z = DEFAULT_CAM_Z / CORE_LABEL_REVEAL_ZOOM;
 export function isKnowledgeDomain(value: string): value is KnowledgeDomain { return ['logic','mathematics','physics','biology','chemistry','computer-science','economics','history','philosophy','general'].includes(value); }
