@@ -1,5 +1,6 @@
 import type { KnowledgeLineageMeta } from '../domain/KnowledgeLineage';
 import { isReasoningSideHead, lineageRoleFor } from '../domain/KnowledgeLineage';
+import { reasoningConclusionBindingFor } from '../domain/ReasoningConclusion';
 import type { Mastery } from '../domain/KnowledgeModel';
 import type { NodeStatus } from '../event/Event';
 
@@ -7,12 +8,15 @@ export type KnowledgeVisibilityMode = 'current' | 'personal' | 'all';
 
 export interface KnowledgeLineageViewNode {
   id: string;
+  type?: string;
   status: NodeStatus;
   mastery: Mastery;
   createdByMe?: boolean;
   hidden?: boolean;
   lineage?: KnowledgeLineageMeta;
 }
+
+type PersonalRestrictionNode = Pick<KnowledgeLineageViewNode, 'id' | 'status' | 'lineage'>;
 
 export const KNOWLEDGE_HISTORY_COLOR = 0x8A949E;
 export const KNOWLEDGE_OPPOSITION_COLOR = 0xEE5B63;
@@ -47,11 +51,14 @@ export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
+  // A Reasoning ball without one served ordinary conclusion is semantically
+  // incomplete and must not fall back to an arbitrary free-floating scene node.
+  if (node.type === 'reasoning' && !reasoningConclusionBindingFor(node)) return false;
   if (node.lineage) return true;
   return !node.hidden;
 }
 
-export function nodeRestrictedInPersonalMode(node: KnowledgeLineageViewNode): boolean {
+export function nodeRestrictedInPersonalMode(node: PersonalRestrictionNode): boolean {
   const lineageColor = lineageColorForNode(node);
   return node.status === 'pending'
     || node.status === 'disputed'
@@ -69,7 +76,21 @@ export function nodeVisibleInKnowledgeMode(
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
 
+  const reasoningConclusion = node.type === 'reasoning'
+    ? reasoningConclusionBindingFor(node)
+    : undefined;
+  if (node.type === 'reasoning' && !reasoningConclusion) return false;
+
   if (mode === 'personal') {
+    // Reasoning inherits a hard Personal gate from the ordinary Knowledge ball
+    // it serves. If that conclusion is gray/red/validating, the reasoning ball
+    // is hidden regardless of whether the reasoning itself is white or red.
+    if (reasoningConclusion && nodeRestrictedInPersonalMode({
+      id: reasoningConclusion.conclusionId,
+      status: reasoningConclusion.status,
+      lineage: reasoningConclusion.lineage,
+    })) return false;
+
     const belongsInScene = node.lineage ? true : !node.hidden;
     if (!belongsInScene) return false;
     if (node.createdByMe) return true;
