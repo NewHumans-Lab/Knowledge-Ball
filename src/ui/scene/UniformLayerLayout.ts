@@ -11,10 +11,12 @@ export type UniformLayoutNode = LayoutNode;
 /**
  * Runtime spatial boundary:
  * - rejected first-round proposals never enter Knowledge geometry;
- * - ordinary history/opposition/candidates are local lineage satellites and do
- *   not participate in the global main-chain occupancy/compactness search;
- * - Reasoning keeps its existing non-authoritative radial projection;
- * - ordinary lineage is projected last from the already-final current anchor.
+ * - Current / unrelated ordinary Knowledge are solved by the global main-chain layout first;
+ * - ordinary History/Opposition/candidates then occupy authoritative cells on
+ *   Current's shell along a local 5R ISG coordinate line; if that line is blocked,
+ *   nearby ordinary main-layout nodes are locally repacked because lineage wins;
+ * - Reasoning keeps its existing non-authoritative radial projection and is
+ *   projected only after ordinary Knowledge positions are final.
  */
 export function applyUniformLayerLayout(nodes: LayoutNode[]): void {
   const spatialKnowledge = nodes.filter(node => lineageRoleFor(node) !== 'rejected');
@@ -22,15 +24,17 @@ export function applyUniformLayerLayout(nodes: LayoutNode[]): void {
 
   applyDeterministic5RLayout(globalMainChain);
 
-  // Keep the current Reasoning behaviour isolated from this ordinary-lineage
-  // change. It sees only the global main-chain geometry, never ordinary lineage
-  // satellites, so red/white semantics remain a separate follow-up concern.
-  applyReasoningRadialPlacement(globalMainChain);
-
-  // Ordinary lineage owns its local straight-line geometry after the current
-  // main-chain anchor is final. It may rotate as one rigid line, but compactness
-  // can never bend or interleave history/opposition members.
+  // Ordinary lineage is solved after Current is fixed, but its members are not
+  // free-floating satellites: every member receives a real shellID/cellID and
+  // consumes a cell on the 5R shell coordinate line through Current. A blocked
+  // line may locally move ordinary main-layout blockers, never Reasoning.
   applyOrdinaryLineagePlacement(spatialKnowledge);
+
+  // Keep Reasoning semantics unchanged. Only its projection timing follows the
+  // final ordinary Knowledge geometry so a local ordinary reflow cannot leave a
+  // stale red/white position behind. History/opposition satellites still do not
+  // enter the Reasoning input set.
+  applyReasoningRadialPlacement(globalMainChain);
 
   for (const node of nodes) {
     if (lineageRoleFor(node) !== 'rejected') continue;
