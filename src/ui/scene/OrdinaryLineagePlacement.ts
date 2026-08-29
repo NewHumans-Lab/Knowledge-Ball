@@ -30,6 +30,19 @@ type LineCandidate = Readonly<{
   tie: string;
 }>;
 
+type RelocationHome = Readonly<{
+  shellID: string;
+  radius: number;
+  origin: THREE.Vector3;
+}>;
+
+type SpatialSnapshot = Readonly<{
+  address?: Readonly<{ shellID: string; cellID: number }>;
+  pos?: THREE.Vector3;
+  homePos?: THREE.Vector3;
+  vel?: THREE.Vector3;
+}>;
+
 export function isOrdinaryLineageSatellite(node: LayoutNode): boolean {
   if (node.type === 'reasoning') return false;
   const role = lineageRoleFor(node);
@@ -185,13 +198,13 @@ function pathBendScore(grid: IcosahedralGrid, anchorCell: number, path: readonly
   return score;
 }
 
-function findCoordinateLine(
+function findCoordinateLines(
   family: Family,
   grid: IcosahedralGrid,
   obstacles: readonly LayoutNode[],
   usedCells: ReadonlySet<number>,
   ignoredIds: ReadonlySet<string>,
-): LineCandidate | null {
+): LineCandidate[] {
   const anchorCell = family.anchor.address!.cellID;
   const neighbors = neighborMap(grid);
   const anchorNeighbors = neighbors.get(anchorCell) ?? [];
@@ -242,20 +255,18 @@ function findCoordinateLine(
         const oppositionDirection = tangentDirection(anchorPosition, grid.vertices[oppositionCells[0]!]!);
         oppositeScore = 1 + historyDirection.dot(oppositionDirection);
       }
-      const score = oppositeScore
-        + pathBendScore(grid, anchorCell, historyCells)
-        + pathBendScore(grid, anchorCell, oppositionCells);
       candidates.push({
         historyCells,
         oppositionCells,
-        score,
+        score: oppositeScore
+          + pathBendScore(grid, anchorCell, historyCells)
+          + pathBendScore(grid, anchorCell, oppositionCells),
         tie: `${historyCells.join('.')}:${oppositionCells.join('.')}`,
       });
     }
   }
 
-  candidates.sort((left, right) => left.score - right.score || left.tie.localeCompare(right.tie));
-  return candidates[0] ?? null;
+  return candidates.sort((left, right) => left.score - right.score || left.tie.localeCompare(right.tie));
 }
 
 function familyIds(family: Family): ReadonlySet<string> {
@@ -289,74 +300,204 @@ function candidateCells(candidate: LineCandidate): readonly number[] {
   return [...candidate.historyCells, ...candidate.oppositionCells];
 }
 
+function linePositions(candidate: LineCandidate, grid: IcosahedralGrid): THREE.Vector3[] {
+  return candidateCells(candidate).map(cellID => grid.vertices[cellID]!.clone());
+}
+
+function positionConflictsWithLine(position: THREE.Vector3, reservedLinePositions: readonly THREE.Vector3[]): boolean {
+  return reservedLinePositions.some(reserved => position.distanceTo(reserved) < ORDINARY_LINEAGE_SPACING - EPSILON);
+}
+
 function blockersForCandidate(
   candidate: LineCandidate,
   grid: IcosahedralGrid,
   nodes: readonly LayoutNode[],
   relocatableIds: ReadonlySet<string>,
 ): LayoutNode[] {
-  const positions = candidateCells(candidate).map(cellID => grid.vertices[cellID]!);
+  const positions = linePositions(candidate, grid);
   return nodes
     .filter(node => relocatableIds.has(node.id) && !!node.pos)
-    .filter(node => positions.some(position => position.distanceTo(node.pos!) < ORDINARY_LINEAGE_SPACING - EPSILON))
+    .filter(node => positionConflictsWithLine(node.pos!, positions))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function positionIsLegalForRelocation(
+function snapshotNodes(nodes: readonly LayoutNode[]): Map<string, SpatialSnapshot> {
+  return new Map(nodes.map(node => [node.id, {
+    address: node.address ? { ...node.address } : undefined,
+    pos: node.pos?.clone(),
+    homePos: node.homePos?.clone(),
+    vel: node.vel?.clone(),
+  }]));
+}
+
+function restoreNodes(nodes: readonly LayoutNode[], snapshot: ReadonlyMap<string, SpatialSnapshot>): void {
+  for (const node of nodes) {
+    const saved = snapshot.get(node.id);
+    if (!saved) continue;
+    if (saved.address) node.address = { ...saved.address };
+    else delete node.address;
+    if (saved.pos) node.pos = saved.pos.clone();
+    else delete node.pos;
+    if (saved.homePos) node.homePos = saved.homePos.clone();
+    else delete node.homePos;
+    if (saved.vel) {
+      node.vel ??= new THREE.Vector3();
+      node.vel.copy(saved.vel);
+    } else {
+      delete node.vel;
+    }
+  }
+}
+
+function clearSpatial(node: LayoutNode): void {
+  delete node.address;
+  delete node.pos;
+  delete node.homePos;
+}
+
+function collisionState(
+  subjectId: string,
   position: THREE.Vector3,
   nodes: readonly LayoutNode[],
-  movingIds: ReadonlySet<string>,
-  relocated: ReadonlyMap<string, THREE.Vector3>,
+  relocatableIds: ReadonlySet<string>,
+): Readonly<{ hard: boolean; softIds: readonly string[] }> {
+  const softIds: string[] = [];
+  for (const node of nodes) {
+    if (node.id === subjectId || node.type === 'reasoning' || !node.pos) continue;
+    if (position.distanceTo(node.pos) >= ORDINARY_LINEAGE_SPACING - EPSILON) continue;
+    if (relocatableIds.has(node.id)) softIds.push(node.id);
+    else return { hard: true, softIds: [] };
+  }
+  softIds.sort((left, right) => left.localeCompare(right));
+  return { hard: false, softIds };
+}
+
+function positionIsFreeNow(
+  subjectId: string,
+  position: THREE.Vector3,
+  nodes: readonly LayoutNode[],
   reservedLinePositions: readonly THREE.Vector3[],
 ): boolean {
-  for (const reserved of reservedLinePositions) {
-    if (position.distanceTo(reserved) < ORDINARY_LINEAGE_SPACING - EPSILON) return false;
-  }
+  if (positionConflictsWithLine(position, reservedLinePositions)) return false;
   for (const node of nodes) {
-    if (node.type === 'reasoning' || movingIds.has(node.id) || !node.pos) continue;
+    if (node.id === subjectId || node.type === 'reasoning' || !node.pos) continue;
     if (position.distanceTo(node.pos) < ORDINARY_LINEAGE_SPACING - EPSILON) return false;
-  }
-  for (const relocatedPosition of relocated.values()) {
-    if (position.distanceTo(relocatedPosition) < ORDINARY_LINEAGE_SPACING - EPSILON) return false;
   }
   return true;
 }
 
-function relocateOrdinaryBlockers(
-  blockers: readonly LayoutNode[],
+function assignRelocatedNode(node: LayoutNode, shellID: string, cellID: number, position: THREE.Vector3): void {
+  node.address = { shellID, cellID };
+  node.pos = position.clone();
+  node.homePos = position.clone();
+  node.vel ??= new THREE.Vector3();
+  node.vel.set(0, 0, 0);
+}
+
+/**
+ * Cascading local reflow, analogous to displacement in an occupancy table.
+ * A blocker keeps its semantic shell. It first tries the nearest canonical cell;
+ * if that cell is occupied only by another relocatable ordinary node, that node
+ * is recursively displaced first. Hard lineage anchors/satellites never move.
+ */
+function cascadeRelocate(
+  nodeId: string,
   nodes: readonly LayoutNode[],
+  relocatableNodes: readonly LayoutNode[],
+  relocatableById: ReadonlyMap<string, LayoutNode>,
+  relocationHomes: ReadonlyMap<string, RelocationHome>,
+  relocatableIds: ReadonlySet<string>,
   reservedLinePositions: readonly THREE.Vector3[],
-): void {
-  if (!blockers.length) return;
-  const movingIds = new Set(blockers.map(node => node.id));
-  const relocated = new Map<string, THREE.Vector3>();
+  visiting: ReadonlySet<string>,
+): boolean {
+  if (visiting.has(nodeId)) return false;
+  const node = relocatableById.get(nodeId);
+  const home = relocationHomes.get(nodeId);
+  if (!node || !home) return false;
 
-  for (const blocker of blockers) {
-    const oldPosition = blocker.pos!.clone();
-    const shellID = blocker.address!.shellID;
-    const grid = generateIcosahedralGrid(oldPosition.length(), undefined, shellID);
-    const cells = grid.vertices
-      .map((position, cellID) => ({ cellID, distance: position.distanceToSquared(oldPosition) }))
-      .sort((left, right) => left.distance - right.distance || left.cellID - right.cellID);
+  const entrySnapshot = snapshotNodes(relocatableNodes);
+  const nextVisiting = new Set(visiting);
+  nextVisiting.add(nodeId);
+  const grid = generateIcosahedralGrid(home.radius, undefined, home.shellID);
+  const orderedCells = grid.vertices
+    .map((position, cellID) => ({ cellID, distance: position.distanceToSquared(home.origin) }))
+    .sort((left, right) => left.distance - right.distance || left.cellID - right.cellID);
 
-    let destination: { cellID: number; position: THREE.Vector3 } | null = null;
-    for (const cell of cells) {
-      const position = grid.vertices[cell.cellID]!;
-      if (!positionIsLegalForRelocation(position, nodes, movingIds, relocated, reservedLinePositions)) continue;
-      destination = { cellID: cell.cellID, position: position.clone() };
-      break;
+  for (const cell of orderedCells) {
+    restoreNodes(relocatableNodes, entrySnapshot);
+    clearSpatial(node);
+    const position = grid.vertices[cell.cellID]!;
+    if (positionConflictsWithLine(position, reservedLinePositions)) continue;
+
+    const collision = collisionState(nodeId, position, nodes, relocatableIds);
+    if (collision.hard) continue;
+
+    let displaced = true;
+    for (const softId of collision.softIds) {
+      if (nextVisiting.has(softId) || !cascadeRelocate(
+        softId,
+        nodes,
+        relocatableNodes,
+        relocatableById,
+        relocationHomes,
+        relocatableIds,
+        reservedLinePositions,
+        nextVisiting,
+      )) {
+        displaced = false;
+        break;
+      }
     }
-    if (!destination) {
-      throw new Error(`Ordinary local re-layout has no legal 5R shell cell for blocker: ${blocker.id}`);
-    }
+    if (!displaced || !positionIsFreeNow(nodeId, position, nodes, reservedLinePositions)) continue;
 
-    blocker.address = { shellID, cellID: destination.cellID };
-    blocker.pos = destination.position.clone();
-    blocker.homePos = destination.position.clone();
-    blocker.vel ??= new THREE.Vector3();
-    blocker.vel.set(0, 0, 0);
-    relocated.set(blocker.id, destination.position.clone());
+    assignRelocatedNode(node, home.shellID, cell.cellID, position);
+    return true;
   }
+
+  restoreNodes(relocatableNodes, entrySnapshot);
+  return false;
+}
+
+function tryCandidateWithLocalReflow(
+  candidate: LineCandidate,
+  grid: IcosahedralGrid,
+  nodes: readonly LayoutNode[],
+  relocatableNodes: readonly LayoutNode[],
+  relocatableIds: ReadonlySet<string>,
+): boolean {
+  const blockers = blockersForCandidate(candidate, grid, nodes, relocatableIds);
+  if (!blockers.length) return true;
+
+  const reservedLinePositions = linePositions(candidate, grid);
+  const initialSnapshot = snapshotNodes(relocatableNodes);
+  const relocatableById = new Map(relocatableNodes.map(node => [node.id, node]));
+  const relocationHomes = new Map(relocatableNodes
+    .filter(node => node.address && node.pos)
+    .map(node => [node.id, {
+      shellID: node.address!.shellID,
+      radius: node.pos!.length(),
+      origin: node.pos!.clone(),
+    }] as const));
+
+  for (const initialBlocker of blockers) {
+    // A preceding cascade may already have moved this blocker off the reserved
+    // line, so only displace it again when it still conflicts.
+    if (!initialBlocker.pos || !positionConflictsWithLine(initialBlocker.pos, reservedLinePositions)) continue;
+    if (!cascadeRelocate(
+      initialBlocker.id,
+      nodes,
+      relocatableNodes,
+      relocatableById,
+      relocationHomes,
+      relocatableIds,
+      reservedLinePositions,
+      new Set(),
+    )) {
+      restoreNodes(relocatableNodes, initialSnapshot);
+      return false;
+    }
+  }
+  return true;
 }
 
 function chooseCoordinateLineWithLocalReflow(
@@ -367,28 +508,41 @@ function chooseCoordinateLineWithLocalReflow(
 ): LineCandidate {
   const ownIds = familyIds(family);
   const strictUsed = usedCellsOnShell(nodes, family.anchor.address!.shellID, ownIds);
-  const strict = findCoordinateLine(family, grid, nodes, strictUsed, ownIds);
+  const strict = findCoordinateLines(family, grid, nodes, strictUsed, ownIds)[0];
   if (strict) return strict;
 
-  // Lineage is the stronger invariant. If all legal 5R shell lines are blocked by
-  // ordinary main-layout nodes, temporarily make those ordinary nodes soft,
-  // choose the best canonical coordinate line, then locally repack only the
-  // ordinary blockers. Other lineage anchors and already-placed lineage members
-  // remain hard occupancy and are never displaced by this fallback.
-  const relocatableIds = new Set(nodes
+  // Lineage is the stronger invariant. Existing ordinary main-layout positions
+  // become soft occupancy, while other lineage anchors and already placed
+  // lineage satellites stay hard. Candidate lines are tried in order of the
+  // fewest immediate blockers first, then straightness/opposition quality.
+  const relocatableNodes = nodes
     .filter(node => isRelocatableOrdinary(node, protectedAnchorIds))
-    .map(node => node.id));
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const relocatableIds = new Set(relocatableNodes.map(node => node.id));
   const softIgnored = new Set([...ownIds, ...relocatableIds]);
   const hardUsed = usedCellsOnShell(nodes, family.anchor.address!.shellID, softIgnored);
-  const structural = findCoordinateLine(family, grid, nodes, hardUsed, softIgnored);
-  if (!structural) {
+  const structural = findCoordinateLines(family, grid, nodes, hardUsed, softIgnored)
+    .map(candidate => ({
+      candidate,
+      blockerCount: blockersForCandidate(candidate, grid, nodes, relocatableIds).length,
+    }))
+    .sort((left, right) => left.blockerCount - right.blockerCount
+      || left.candidate.score - right.candidate.score
+      || left.candidate.tie.localeCompare(right.candidate.tie));
+
+  if (!structural.length) {
     throw new Error(`Ordinary lineage has no legal 5R shell coordinate line after local re-layout: ${family.topicId}`);
   }
 
-  const blockers = blockersForCandidate(structural, grid, nodes, relocatableIds);
-  const reservedLinePositions = candidateCells(structural).map(cellID => grid.vertices[cellID]!.clone());
-  relocateOrdinaryBlockers(blockers, nodes, reservedLinePositions);
-  return structural;
+  const baseline = snapshotNodes(relocatableNodes);
+  for (const option of structural) {
+    restoreNodes(relocatableNodes, baseline);
+    if (tryCandidateWithLocalReflow(option.candidate, grid, nodes, relocatableNodes, relocatableIds)) {
+      return option.candidate;
+    }
+  }
+  restoreNodes(relocatableNodes, baseline);
+  throw new Error(`Ordinary lineage local cascading re-layout exhausted all 5R shell lines: ${family.topicId}`);
 }
 
 /**
@@ -400,10 +554,11 @@ function chooseCoordinateLineWithLocalReflow(
  * icosahedral shell grid permits.
  *
  * No future slots are reserved. When membership changes, this local coordinate
- * line is recalculated against the current occupied shell geometry. If ordinary
- * main-layout nodes block every candidate line, lineage wins and only those
- * ordinary blockers are locally repacked onto the nearest legal canonical cells.
- * Reasoning is intentionally outside this ordinary-lineage rule.
+ * line is recalculated against current occupancy. If ordinary main-layout nodes
+ * block every direct candidate, lineage wins and a cascading local reflow moves
+ * only ordinary blockers (and ordinary blockers of those blockers) to their
+ * nearest legal canonical cells on their existing shells. Reasoning is outside
+ * this ordinary-lineage rule.
  */
 export function applyOrdinaryLineagePlacement(nodes: LayoutNode[]): void {
   const families = collectFamilies(nodes);
