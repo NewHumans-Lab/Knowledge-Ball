@@ -18,6 +18,8 @@ export interface KnowledgeLineageViewNode {
   hidden?: boolean;
   lineage?: KnowledgeLineageMeta;
   reasoningConclusion?: ReasoningConclusionBinding;
+  /** Runtime layout projection; authoritative semantic nodes do not persist it. */
+  pos?: unknown;
 }
 
 type PersonalRestrictionNode = Pick<KnowledgeLineageViewNode, 'id' | 'status' | 'lineage'>;
@@ -55,6 +57,11 @@ export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
+  // In the real layout an unbound Reasoning has its spatial state cleared and
+  // therefore cannot render. This `pos` check keeps visibility policy compatible
+  // with tests/debug palette calibration that may temporarily change a fully
+  // positioned ordinary node's visual type after layout has already completed.
+  if (node.type === 'reasoning' && !reasoningConclusionBindingFor(node) && !node.pos) return false;
   if (node.lineage) return true;
   return !node.hidden;
 }
@@ -80,13 +87,14 @@ export function nodeVisibleInKnowledgeMode(
   const reasoningConclusion = node.type === 'reasoning'
     ? reasoningConclusionBindingFor(node)
     : undefined;
+  if (node.type === 'reasoning' && !reasoningConclusion && !node.pos) return false;
 
   if (mode === 'personal') {
     // Reasoning inherits a hard Personal gate from the ordinary Knowledge ball
     // it serves. If that conclusion is gray/red/validating, the reasoning ball
     // is hidden regardless of whether the reasoning itself is white or red.
-    // A semantically invalid Reasoning cannot reach this policy in a real layout
-    // because ReasoningRadialPlacement clears its spatial state first.
+    // A semantically invalid Reasoning cannot reach the real scene because its
+    // layout projection clears all spatial state.
     if (reasoningConclusion && nodeRestrictedInPersonalMode({
       id: reasoningConclusion.conclusionId,
       status: reasoningConclusion.status,
