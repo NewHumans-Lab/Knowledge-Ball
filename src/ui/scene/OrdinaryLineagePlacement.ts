@@ -1,15 +1,19 @@
 import * as THREE from 'three';
 import { lineageRoleFor, topicIdFor } from '../../domain/KnowledgeLineage';
-import { KNOWLEDGE_BALL_RADIUS, type LayoutNode } from './Deterministic5RLayout';
+import {
+  generateIcosahedralGrid,
+  LAYOUT_UNIT,
+  type IcosahedralGrid,
+  type LayoutNode,
+} from './Deterministic5RLayout';
 
 /**
- * In the current layout vocabulary one ordinary Knowledge-ball diameter is R.
- * Stable/pending ordinary lineage neighbours therefore use exactly one diameter.
+ * Ordinary Knowledge lineage advances by one authoritative ISG shell-grid step.
+ * The layout unit is the project's 5R spacing unit.
  */
-export const ORDINARY_LINEAGE_SPACING = 2 * KNOWLEDGE_BALL_RADIUS;
+export const ORDINARY_LINEAGE_SPACING = LAYOUT_UNIT;
 
 const EPSILON = 1e-7;
-const AXIS_CANDIDATE_COUNT = 180;
 
 type Family = Readonly<{
   topicId: string;
@@ -18,11 +22,11 @@ type Family = Readonly<{
   oppositionSide: readonly LayoutNode[];
 }>;
 
-type AxisCandidate = Readonly<{
-  tangent: THREE.Vector3;
-  positions: ReadonlyMap<string, THREE.Vector3>;
-  compactness: number;
-  angleIndex: number;
+type LineCandidate = Readonly<{
+  historyCells: readonly number[];
+  oppositionCells: readonly number[];
+  score: number;
+  tie: string;
 }>;
 
 export function isOrdinaryLineageSatellite(node: LayoutNode): boolean {
@@ -32,15 +36,6 @@ export function isOrdinaryLineageSatellite(node: LayoutNode): boolean {
     || role === 'opposition'
     || role === 'candidate-history'
     || role === 'candidate-opposition';
-}
-
-function stableHash(text: string): number {
-  let hash = 2166136261;
-  for (const char of text) {
-    hash ^= char.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
 }
 
 function rankThenId(left: LayoutNode, right: LayoutNode): number {
@@ -62,7 +57,7 @@ function collectFamilies(nodes: readonly LayoutNode[]): Family[] {
   const families: Family[] = [];
   for (const [topicId, members] of byTopic) {
     const anchor = members.find(node => lineageRoleFor(node) === 'current');
-    if (!anchor?.pos || anchor.pos.lengthSq() <= EPSILON) continue;
+    if (!anchor?.pos || !anchor.address || anchor.pos.lengthSq() <= EPSILON) continue;
 
     const pendingHistory = members
       .filter(node => lineageRoleFor(node) === 'candidate-history')
@@ -89,130 +84,196 @@ function collectFamilies(nodes: readonly LayoutNode[]): Family[] {
   return families.sort((left, right) => left.topicId.localeCompare(right.topicId));
 }
 
-function tangentBasis(radial: THREE.Vector3): readonly [THREE.Vector3, THREE.Vector3] {
-  const candidates = [
-    new THREE.Vector3(1, 0, 0),
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(0, 0, 1),
-  ].sort((left, right) => Math.abs(left.dot(radial)) - Math.abs(right.dot(radial)));
-  const first = candidates[0]!
-    .clone()
-    .addScaledVector(radial, -candidates[0]!.dot(radial))
+function edgeKey(left: number, right: number): string {
+  return left < right ? `${left}:${right}` : `${right}:${left}`;
+}
+
+function neighborMap(grid: IcosahedralGrid): ReadonlyMap<number, readonly number[]> {
+  const result = new Map<number, number[]>();
+  const add = (left: number, right: number) => {
+    const list = result.get(left) ?? [];
+    list.push(right);
+    result.set(left, list);
+  };
+  for (const edge of grid.edges) {
+    const [left, right] = edge.split(':').map(Number);
+    add(left!, right!);
+    add(right!, left!);
+  }
+  for (const list of result.values()) list.sort((left, right) => left - right);
+  return result;
+}
+
+function tangentDirection(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3 {
+  const radial = from.clone().normalize();
+  return to.clone()
+    .sub(from)
+    .addScaledVector(radial, -to.clone().sub(from).dot(radial))
     .normalize();
-  const second = radial.clone().cross(first).normalize();
-  return [first, second];
 }
 
-function positionAtOffset(
-  radial: THREE.Vector3,
-  tangent: THREE.Vector3,
-  radius: number,
-  stepAngle: number,
-  offset: number,
-): THREE.Vector3 {
-  const angle = stepAngle * offset;
-  return radial.clone()
-    .multiplyScalar(Math.cos(angle))
-    .addScaledVector(tangent, Math.sin(angle))
-    .multiplyScalar(radius);
-}
-
-function internalSpacingIsLegal(positions: readonly THREE.Vector3[]): boolean {
-  for (let left = 0; left < positions.length; left++) {
-    for (let right = left + 1; right < positions.length; right++) {
-      if (positions[left]!.distanceTo(positions[right]!) + EPSILON < ORDINARY_LINEAGE_SPACING) return false;
-    }
+function cellIsFree(
+  grid: IcosahedralGrid,
+  cellID: number,
+  obstacles: readonly LayoutNode[],
+  ignoredIds: ReadonlySet<string>,
+  usedCells: ReadonlySet<number>,
+): boolean {
+  if (usedCells.has(cellID)) return false;
+  const position = grid.vertices[cellID];
+  if (!position) return false;
+  for (const obstacle of obstacles) {
+    if (ignoredIds.has(obstacle.id) || !obstacle.pos) continue;
+    if (position.distanceTo(obstacle.pos) < ORDINARY_LINEAGE_SPACING - EPSILON) return false;
   }
   return true;
 }
 
-function candidateFor(
-  family: Family,
-  tangent: THREE.Vector3,
+function continueLine(
+  grid: IcosahedralGrid,
+  neighbors: ReadonlyMap<number, readonly number[]>,
+  anchorCell: number,
+  firstCell: number,
+  length: number,
   obstacles: readonly LayoutNode[],
-  angleIndex: number,
-): AxisCandidate | null {
-  const radius = family.anchor.pos!.length();
-  if (ORDINARY_LINEAGE_SPACING > 2 * radius + EPSILON) return null;
-  const stepAngle = 2 * Math.asin(Math.min(1, ORDINARY_LINEAGE_SPACING / (2 * radius)));
-  const maxSideDepth = Math.max(family.historySide.length, family.oppositionSide.length);
-  if (maxSideDepth * stepAngle >= Math.PI - EPSILON) return null;
+  ignoredIds: ReadonlySet<string>,
+  globallyUsed: ReadonlySet<number>,
+): readonly number[] | null {
+  if (length === 0) return [];
+  const path = [firstCell];
+  const locallyUsed = new Set<number>([anchorCell, ...globallyUsed, firstCell]);
+  let previous = anchorCell;
+  let current = firstCell;
 
-  const positions = new Map<string, THREE.Vector3>();
-  family.historySide.forEach((node, index) => {
-    positions.set(node.id, positionAtOffset(
-      family.anchor.pos!.clone().normalize(), tangent, radius, stepAngle, -(index + 1),
-    ));
-  });
-  family.oppositionSide.forEach((node, index) => {
-    positions.set(node.id, positionAtOffset(
-      family.anchor.pos!.clone().normalize(), tangent, radius, stepAngle, index + 1,
-    ));
-  });
-
-  const familyPositions = [...positions.values()];
-  if (!internalSpacingIsLegal([family.anchor.pos!, ...familyPositions])) return null;
-
-  let compactness = 0;
-  const familyIds = new Set([family.anchor.id, ...positions.keys()]);
-  for (const position of familyPositions) {
-    let nearest = Infinity;
-    for (const obstacle of obstacles) {
-      if (familyIds.has(obstacle.id) || !obstacle.pos) continue;
-      const distance = position.distanceTo(obstacle.pos);
-      if (distance + EPSILON < ORDINARY_LINEAGE_SPACING) return null;
-      nearest = Math.min(nearest, distance);
-    }
-    if (Number.isFinite(nearest)) compactness += nearest;
+  while (path.length < length) {
+    const currentPosition = grid.vertices[current]!;
+    const incoming = tangentDirection(currentPosition, grid.vertices[previous]!).multiplyScalar(-1);
+    const options = (neighbors.get(current) ?? [])
+      .filter(cellID => cellID !== previous)
+      .filter(cellID => cellIsFree(grid, cellID, obstacles, ignoredIds, locallyUsed))
+      .map(cellID => {
+        const outgoing = tangentDirection(currentPosition, grid.vertices[cellID]!);
+        return { cellID, straightness: incoming.dot(outgoing) };
+      })
+      .sort((left, right) => right.straightness - left.straightness || left.cellID - right.cellID);
+    const next = options[0]?.cellID;
+    if (next === undefined) return null;
+    path.push(next);
+    locallyUsed.add(next);
+    previous = current;
+    current = next;
   }
 
-  return { tangent: tangent.clone(), positions, compactness, angleIndex };
+  return path;
 }
 
-function chooseAxis(family: Family, obstacles: readonly LayoutNode[]): AxisCandidate {
-  const radial = family.anchor.pos!.clone().normalize();
-  const [basisU, basisV] = tangentBasis(radial);
-  const start = stableHash(family.topicId) % AXIS_CANDIDATE_COUNT;
-  let best: AxisCandidate | null = null;
+function pathBendScore(grid: IcosahedralGrid, anchorCell: number, path: readonly number[]): number {
+  if (path.length <= 1) return 0;
+  let previous = anchorCell;
+  let current = path[0]!;
+  let score = 0;
+  for (let index = 1; index < path.length; index++) {
+    const next = path[index]!;
+    const currentPosition = grid.vertices[current]!;
+    const incoming = tangentDirection(currentPosition, grid.vertices[previous]!).multiplyScalar(-1);
+    const outgoing = tangentDirection(currentPosition, grid.vertices[next]!);
+    score += 1 - incoming.dot(outgoing);
+    previous = current;
+    current = next;
+  }
+  return score;
+}
 
-  for (let step = 0; step < AXIS_CANDIDATE_COUNT; step++) {
-    const angleIndex = (start + step) % AXIS_CANDIDATE_COUNT;
-    const angle = (2 * Math.PI * angleIndex) / AXIS_CANDIDATE_COUNT;
-    const tangent = basisU.clone()
-      .multiplyScalar(Math.cos(angle))
-      .addScaledVector(basisV, Math.sin(angle))
-      .normalize();
-    const candidate = candidateFor(family, tangent, obstacles, angleIndex);
-    if (!candidate) continue;
-    if (!best
-      || candidate.compactness < best.compactness - EPSILON
-      || (Math.abs(candidate.compactness - best.compactness) <= EPSILON && candidate.angleIndex < best.angleIndex)) {
-      best = candidate;
+function chooseCoordinateLine(
+  family: Family,
+  grid: IcosahedralGrid,
+  obstacles: readonly LayoutNode[],
+  globallyUsed: ReadonlySet<number>,
+): LineCandidate {
+  const anchorCell = family.anchor.address!.cellID;
+  const neighbors = neighborMap(grid);
+  const anchorNeighbors = neighbors.get(anchorCell) ?? [];
+  const ignoredIds = new Set([
+    family.anchor.id,
+    ...family.historySide.map(node => node.id),
+    ...family.oppositionSide.map(node => node.id),
+  ]);
+  const candidates: LineCandidate[] = [];
+
+  const historyStarts = family.historySide.length ? anchorNeighbors : [-1];
+  const oppositionStarts = family.oppositionSide.length ? anchorNeighbors : [-1];
+
+  for (const historyStart of historyStarts) {
+    if (historyStart >= 0 && !cellIsFree(grid, historyStart, obstacles, ignoredIds, globallyUsed)) continue;
+    for (const oppositionStart of oppositionStarts) {
+      if (historyStart >= 0 && oppositionStart === historyStart) continue;
+      if (oppositionStart >= 0 && !cellIsFree(grid, oppositionStart, obstacles, ignoredIds, globallyUsed)) continue;
+
+      const historyCells = historyStart < 0
+        ? []
+        : continueLine(
+          grid,
+          neighbors,
+          anchorCell,
+          historyStart,
+          family.historySide.length,
+          obstacles,
+          ignoredIds,
+          globallyUsed,
+        );
+      if (!historyCells) continue;
+
+      const historyUsed = new Set<number>([...globallyUsed, ...historyCells]);
+      const oppositionCells = oppositionStart < 0
+        ? []
+        : continueLine(
+          grid,
+          neighbors,
+          anchorCell,
+          oppositionStart,
+          family.oppositionSide.length,
+          obstacles,
+          ignoredIds,
+          historyUsed,
+        );
+      if (!oppositionCells) continue;
+
+      let oppositeScore = 0;
+      if (historyCells.length && oppositionCells.length) {
+        const anchorPosition = grid.vertices[anchorCell]!;
+        const historyDirection = tangentDirection(anchorPosition, grid.vertices[historyCells[0]!]!);
+        const oppositionDirection = tangentDirection(anchorPosition, grid.vertices[oppositionCells[0]!]!);
+        oppositeScore = 1 + historyDirection.dot(oppositionDirection);
+      }
+      const score = oppositeScore
+        + pathBendScore(grid, anchorCell, historyCells)
+        + pathBendScore(grid, anchorCell, oppositionCells);
+      candidates.push({
+        historyCells,
+        oppositionCells,
+        score,
+        tie: `${historyCells.join('.')}:${oppositionCells.join('.')}`,
+      });
     }
   }
 
-  if (!best) {
-    throw new Error(`Ordinary lineage has no collision-free tangent axis: ${family.topicId}`);
-  }
+  candidates.sort((left, right) => left.score - right.score || left.tie.localeCompare(right.tie));
+  const best = candidates[0];
+  if (!best) throw new Error(`Ordinary lineage has no collision-free 5R shell coordinate line: ${family.topicId}`);
   return best;
 }
 
 /**
- * Ordinary Knowledge lineage is a local rigid family, not part of the global
- * main-chain occupancy search:
+ * Ordinary Knowledge lineage keeps Current as the global anchor, while every
+ * existing History/Opposition member occupies an authoritative cell on the same
+ * shell. Members advance one ISG coordinate-line edge at a time (the project's
+ * nominal 5R layout unit). History and Opposition choose the most nearly opposite
+ * directions through Current, and deeper members continue as straight as the
+ * icosahedral shell grid permits.
  *
- *   history ... <- current -> opposition ...
- *
- * Existing members only are placed; no future slots are reserved. Every family
- * member stays on the anchor radius, adjacent family centres are exactly R apart,
- * and the tangent-plane projection is one straight line. The whole line may
- * rotate around the anchor radial axis to avoid current geometry. Among legal
- * orientations, the most compact current arrangement wins.
- *
- * These local lineage positions intentionally have no global ISG address. The
- * current head remains the globally authoritative anchor; history/opposition are
- * derived local geometry and are recomputed whenever the local neighbourhood
- * changes.
+ * No future slots are reserved. When membership changes, this local coordinate
+ * line is recalculated against the current occupied shell geometry. Reasoning is
+ * intentionally outside this ordinary-lineage rule.
  */
 export function applyOrdinaryLineagePlacement(nodes: LayoutNode[]): void {
   const satellites = nodes.filter(isOrdinaryLineageSatellite);
@@ -223,17 +284,41 @@ export function applyOrdinaryLineagePlacement(nodes: LayoutNode[]): void {
     node.vel?.set(0, 0, 0);
   }
 
+  const globallyUsedByShell = new Map<string, Set<number>>();
+  for (const node of nodes) {
+    if (!node.address || isOrdinaryLineageSatellite(node)) continue;
+    const used = globallyUsedByShell.get(node.address.shellID) ?? new Set<number>();
+    used.add(node.address.cellID);
+    globallyUsedByShell.set(node.address.shellID, used);
+  }
+
   const families = collectFamilies(nodes);
   for (const family of families) {
-    const candidate = chooseAxis(family, nodes);
-    for (const [nodeId, position] of candidate.positions) {
-      const node = nodes.find(item => item.id === nodeId);
-      if (!node) continue;
+    const shellID = family.anchor.address!.shellID;
+    const radius = family.anchor.pos!.length();
+    const grid = generateIcosahedralGrid(radius, undefined, shellID);
+    const globallyUsed = globallyUsedByShell.get(shellID) ?? new Set<number>();
+    globallyUsed.add(family.anchor.address!.cellID);
+
+    const candidate = chooseCoordinateLine(family, grid, nodes, globallyUsed);
+    const assignments = [
+      ...family.historySide.map((node, index) => [node, candidate.historyCells[index]!] as const),
+      ...family.oppositionSide.map((node, index) => [node, candidate.oppositionCells[index]!] as const),
+    ];
+
+    for (const [node, cellID] of assignments) {
+      const position = grid.vertices[cellID]!.clone();
+      node.address = { shellID, cellID };
       node.pos = position.clone();
       node.homePos = position.clone();
       node.vel ??= new THREE.Vector3();
       node.vel.set(0, 0, 0);
-      delete node.address;
+      globallyUsed.add(cellID);
     }
+    globallyUsedByShell.set(shellID, globallyUsed);
   }
+}
+
+export function isCoordinateLineStep(grid: IcosahedralGrid, leftCellID: number, rightCellID: number): boolean {
+  return grid.edges.has(edgeKey(leftCellID, rightCellID));
 }
