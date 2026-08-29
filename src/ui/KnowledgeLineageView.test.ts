@@ -37,6 +37,31 @@ function node(
   };
 }
 
+const verifiedConclusion = Object.freeze({
+  conclusionId: 'served-conclusion',
+  conclusionTopicId: 'served-conclusion-topic',
+  status: 'verified' as const,
+  lineage: {
+    topicId: 'served-conclusion-topic', proposal: 'new' as const, role: 'current' as const, rank: 0,
+  },
+});
+const grayConclusion = Object.freeze({
+  conclusionId: 'served-conclusion-old',
+  conclusionTopicId: 'served-conclusion-topic',
+  status: 'verified' as const,
+  lineage: {
+    topicId: 'served-conclusion-topic', proposal: 'optimization' as const, targetId: 'served-conclusion', role: 'history' as const, rank: 1,
+  },
+});
+const redConclusion = Object.freeze({
+  conclusionId: 'served-conclusion-red',
+  conclusionTopicId: 'served-conclusion-red',
+  status: 'falsified' as const,
+  lineage: {
+    topicId: 'served-conclusion-red', proposal: 'new' as const, role: 'current' as const, rank: 0,
+  },
+});
+
 assert.equal(nextKnowledgeVisibilityMode('current'), 'personal');
 assert.equal(nextKnowledgeVisibilityMode('personal'), 'all');
 assert.equal(nextKnowledgeVisibilityMode('all'), 'current');
@@ -76,35 +101,40 @@ for (const pending of [pendingHistory, pendingOpposition]) {
 }
 
 const whiteHead: KnowledgeLineageViewNode = {
-  id: 'reason-white', status: 'verified', mastery: 'none', hidden: false,
+  id: 'reason-white', type: 'reasoning', status: 'verified', mastery: 'none', hidden: false,
+  reasoningConclusion: verifiedConclusion,
   lineage: {
     topicId: 'reason-topic', proposal: 'new', role: 'current', rank: 0,
     reasoningSide: 'normal', reasoningSideRank: 0, reasoningDominant: false,
   },
 };
 const redHead: KnowledgeLineageViewNode = {
-  id: 'reason-red', status: 'verified', mastery: 'none', hidden: false,
+  id: 'reason-red', type: 'reasoning', status: 'verified', mastery: 'none', hidden: false,
+  reasoningConclusion: verifiedConclusion,
   lineage: {
     topicId: 'reason-topic', proposal: 'opposition', targetId: 'reason-white', role: 'opposition', rank: 1,
     reasoningSide: 'opposition', reasoningSideRank: 0, reasoningDominant: true,
   },
 };
 const whiteHistory: KnowledgeLineageViewNode = {
-  id: 'reason-white-old', status: 'verified', mastery: 'none', hidden: true,
+  id: 'reason-white-old', type: 'reasoning', status: 'verified', mastery: 'none', hidden: true,
+  reasoningConclusion: verifiedConclusion,
   lineage: {
     topicId: 'reason-topic', proposal: 'optimization', targetId: 'reason-white', role: 'history', rank: 1,
     reasoningSide: 'normal', reasoningSideRank: 1, reasoningDominant: false,
   },
 };
 const redHistory: KnowledgeLineageViewNode = {
-  id: 'reason-red-old', status: 'verified', mastery: 'none', hidden: true,
+  id: 'reason-red-old', type: 'reasoning', status: 'verified', mastery: 'none', hidden: true,
+  reasoningConclusion: verifiedConclusion,
   lineage: {
     topicId: 'reason-topic', proposal: 'optimization', targetId: 'reason-red', role: 'opposition', rank: 2,
     reasoningSide: 'opposition', reasoningSideRank: 1, reasoningDominant: false,
   },
 };
 const whiteCounterCandidate: KnowledgeLineageViewNode = {
-  id: 'reason-white-candidate', status: 'pending', mastery: 'none', hidden: false,
+  id: 'reason-white-candidate', type: 'reasoning', status: 'pending', mastery: 'none', hidden: false,
+  reasoningConclusion: verifiedConclusion,
   lineage: {
     topicId: 'reason-topic', proposal: 'opposition', targetId: 'reason-red', role: 'candidate-opposition', rank: 0,
     reasoningSide: 'normal', reasoningSideRank: 0, reasoningDominant: false,
@@ -119,10 +149,30 @@ assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'current'), false);
 assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'current'), false);
 assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'all'), true);
 assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'all'), true);
+assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHead, mastery:'touched' }, 'personal'), true, 'white reasoning may enter Personal only while its served conclusion is unrestricted');
 assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, mastery:'touched' }, 'personal'), false, 'non-owned red reasoning head stays out of Personal');
-assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, createdByMe:true }, 'personal'), true, 'own red reasoning head remains visible in Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, createdByMe:true }, 'personal'), true, 'own red reasoning head remains visible while its served conclusion is unrestricted');
 assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHistory, mastery:'touched' }, 'personal'), false, 'non-owned gray reasoning history stays out of Personal');
 assert.equal(nodeVisibleInKnowledgeMode(whiteCounterCandidate, 'personal'), false, 'non-owned pending white counter-candidate stays out of Personal');
+
+// New semantic inheritance rule: conclusion color/state is a hard Personal gate.
+// It runs before Reasoning's own white/red color and before the created-by-me exception.
+assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHead, mastery:'mastered', reasoningConclusion:grayConclusion }, 'personal'), false, 'white reasoning must disappear with a gray served conclusion');
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, createdByMe:true, reasoningConclusion:grayConclusion }, 'personal'), false, 'red reasoning must disappear with a gray served conclusion even when the reasoning itself is owned');
+assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHead, createdByMe:true, reasoningConclusion:redConclusion }, 'personal'), false, 'white reasoning must disappear with a red served conclusion');
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, createdByMe:true, reasoningConclusion:redConclusion }, 'personal'), false, 'red reasoning must disappear with a red served conclusion');
+assert.equal(
+  edgeVisibleInKnowledgeMode(
+    { ...whiteHead, mastery:'mastered', reasoningConclusion:grayConclusion },
+    { ...current, mastery:'mastered' },
+    'personal',
+    true,
+    () => false,
+  ),
+  false,
+  'a hidden conclusion-owned reasoning ball must also remove its Personal edge',
+);
+
 assert.equal(lineageColorForNode(whiteHead), null, 'normal reasoning head keeps structural white');
 assert.equal(lineageColorForNode(redHead), KNOWLEDGE_OPPOSITION_COLOR, 'opposition reasoning head stays red even when dominant');
 assert.equal(lineageColorForNode(whiteHistory), KNOWLEDGE_HISTORY_COLOR);
@@ -176,6 +226,7 @@ assert.equal(nodeBelongsInLineageScene(whiteHead), true);
 assert.equal(nodeBelongsInLineageScene(redHead), true);
 assert.equal(nodeBelongsInLineageScene(whiteHistory), true);
 assert.equal(nodeBelongsInLineageScene(redHistory), true);
+assert.equal(nodeBelongsInLineageScene({ ...whiteHead, reasoningConclusion:undefined }), false, 'unbound Reasoning must not degrade into a free-floating scene ball');
 assert.equal(nodeBelongsInLineageScene(rejected), false);
 
 assert.equal(lineageColorForNode(history), KNOWLEDGE_HISTORY_COLOR);
@@ -188,4 +239,4 @@ assert.equal(nodeShouldPulse({ status:'pending' }), true);
 assert.equal(nodeShouldPulse({ status:'disputed' }), true);
 assert.equal(nodeShouldPulse({ status:'verified' }), false);
 
-console.log('Knowledge Lineage Current/Personal/All and reasoning two-camp visibility tests passed');
+console.log('Knowledge Lineage Current/Personal/All and conclusion-owned reasoning visibility tests passed');
