@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
+import './ShellLabelBudget.test';
 import {
   cameraDistanceForZoom,
   clampGraphZoom,
