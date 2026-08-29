@@ -109,7 +109,10 @@ try{
     const original=await page.evaluate(id=>{
       const node=window.__debug.renderNodes.find(candidate=>candidate.id===id);if(!node)return null;
       const saved={id,type:node.type,status:node.status,mastery:node.mastery,effectiveLayer:node.effectiveLayer};
-      node.type='reasoning';node.status='verified';node.mastery='none';
+      // Use an actually valid structural-white node type for palette control. A
+      // Reasoning ball must own one concrete conclusion and cannot be fabricated
+      // solely for visual calibration under the production semantic rules.
+      node.type='logic-symbol';node.status='verified';node.mastery='none';
       window.__debug.scene.markDirty();window.__debug.scene.start();return saved;
     },calibrationId);
     assert.ok(original,'calibration node must exist');
