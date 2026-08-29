@@ -17,6 +17,12 @@ import {
   shouldRenderEdge,
 } from './KnowledgeScene';
 import {
+  STABLE_LABEL_MAX,
+  STABLE_LABEL_MIN,
+  selectStableShellLabels,
+  type StableShellLabelCandidate,
+} from './StableShellLabelBudget';
+import {
   CORE_AMBIENT_LIGHT_INTENSITY,
   CORE_SUN_LIGHT_INTENSITY,
   CORE_SUN_RADIUS,
@@ -141,6 +147,30 @@ assert.equal(pendingPulseAtCycleMs(PENDING_PULSE_PERIOD_MS).opacityFactor, 1);
 assert.equal(pendingPulsePhaseMs('pending-a'), pendingPulsePhaseMs('pending-a'));
 assert(new Set(['pending-a','pending-b','pending-c','pending-d'].map(pendingPulsePhaseMs)).size > 1, 'pending nodes must not all share one phase');
 
+const labelCandidates: StableShellLabelCandidate[] = Array.from({ length: 24 }, (_, index) => ({
+  id: `label-${index}`,
+  x: 45 + (index % 3) * 150,
+  y: 50 + Math.floor(index / 3) * 100,
+  shellRadius: 1_000 - index,
+}));
+const withOffscreen = [{ id: 'offscreen-outer', x: -10, y: 100, shellRadius: 10_000 }, ...labelCandidates];
+const initialBudget = selectStableShellLabels(withOffscreen, new Set(), 390, 844);
+assert.equal(initialBudget.size, STABLE_LABEL_MAX, 'more than 18 on-screen labels must be trimmed to 18');
+assert(!initialBudget.has('offscreen-outer'), 'off-screen labels must never enter the budget even when their shell is outermost');
+for (let index = 0; index < STABLE_LABEL_MAX; index += 1) {
+  assert(initialBudget.has(`label-${index}`), 'outer shells must win before inner shells when spacing is legal');
+}
+const stableBand = new Set(Array.from({ length: 14 }, (_, index) => `label-${index + 4}`));
+const stableResult = selectStableShellLabels(labelCandidates, stableBand, 390, 844);
+assert.deepEqual([...stableResult].sort(), [...stableBand].sort(), '12..18 retained labels must not reshuffle');
+const belowMinimum = new Set(Array.from({ length: 10 }, (_, index) => `label-${index}`));
+const replenished = selectStableShellLabels(labelCandidates, belowMinimum, 390, 844);
+assert.equal(replenished.size, STABLE_LABEL_MIN, 'fewer than 12 retained labels must be replenished only to 12');
+assert(replenished.has('label-10') && replenished.has('label-11'), 'replenishment must add the outermost remaining legal shells first');
+const tooMany = new Set(labelCandidates.map(candidate => candidate.id));
+const trimmed = selectStableShellLabels(labelCandidates, tooMany, 390, 844);
+assert.equal(trimmed.size, STABLE_LABEL_MAX, 'more than 18 retained labels must trim to 18');
+
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const syncEdgesStart = sceneSource.indexOf('const syncEdges =');
 const visibilityStart = sceneSource.indexOf('const applyVisibility =');
@@ -193,6 +223,8 @@ assert(labelsStart >= 0 && pickStart > labelsStart, 'label projection block must
 const labelsSource = sceneSource.slice(labelsStart, pickStart);
 assert(labelsSource.includes('const frontFacing = isCoreNodeId(n.id) || worldPos.dot(camera.position) > 0;'), 'ordinary labels must be limited to the camera-facing hemisphere while core labels keep their own rule');
 assert(labelsSource.includes('&& frontFacing'), 'front-facing status must participate directly in label display');
+assert(labelsSource.includes('selectStableShellLabels'), 'large-mobile labels must use the stable shell-priority 12..18 selector');
+assert(!labelsSource.includes('index % 4'), 'large-mobile labels must not fall back to arbitrary index thinning');
 const applyNodeStylesStart = sceneSource.indexOf('const applyNodeStyles =');
 const visibilitySource = sceneSource.slice(visibilityStart, applyNodeStylesStart);
 assert(!visibilitySource.includes('dot(camera.position)'), 'hemisphere filtering is presentation-only and must not become node/edge visibility authority');
