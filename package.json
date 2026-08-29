@@ -32,7 +32,7 @@
     "test:architecture": "node scripts/verify-scheme7-architecture.mjs && node scripts/verify-energy-migration.mjs && node scripts/verify-revalidation-v1-migration.mjs && node scripts/verify-viewpoint-reconciliation.mjs && node scripts/verify-lineage-cascade.mjs && node scripts/verify-lineage-spec-convergence.mjs && node scripts/verify-lineage-v3-final-hardening.mjs && node scripts/verify-reasoning-link.mjs && node scripts/verify-total-energy.mjs && node scripts/verify-account-ui.mjs && node scripts/verify-issue45-regressions.mjs && node scripts/verify-personal-account-state.mjs && node scripts/verify-visibility-runtime-architecture.mjs && node scripts/verify-projection-edit-delta.mjs && node scripts/verify-knowledge-surface-state.mjs && node scripts/verify-create-ownership.mjs && node scripts/verify-cascade-authority.mjs",
     "test:auth": "npx esbuild src/auth/AuthClientRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/auth-regression.mjs && node .test-dist/auth-regression.mjs",
     "test:browser-cloud": "node scripts/verify-cloud-authority-browser.mjs",
-    "test:browser-mobile": "node scripts/verify-mobile-browser.mjs",
+    "test:browser-mobile": "node scripts/verify-mobile-browser.mjs && node scripts/verify-chain-isolation-browser.mjs",
     "test:issue51-browser": "node scripts/verify-issue51-browser.mjs",
     "test:rus19-browser": "node scripts/verify-rus19-idle-scene.mjs",
     "test:rus19-performance": "npx esbuild src/performance/Rus19ComplexityBenchmark.ts --bundle --platform=node --format=esm --outfile=.test-dist/rus19-performance.mjs && node .test-dist/rus19-performance.mjs",
