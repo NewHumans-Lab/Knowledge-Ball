@@ -148,6 +148,7 @@ const CORE_NODE_ENGLISH_LABELS: Readonly<Record<string, string>> = Object.freeze
   n2: 'Law of Excluded Middle',
   n16: 'Law of Non-Contradiction',
 });
+const LABEL_SPHERE_GAP_PX = 4;
 
 export function isCoreNodeId(id: string): boolean {
   return isSystemCoreNodeId(id);
@@ -451,6 +452,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const ndc = new THREE.Vector2();
   const worldPos = new THREE.Vector3();
   const projectedPos = new THREE.Vector3();
+  const shellWorldScale = new THREE.Vector3();
+  const labelAnchorWorld = new THREE.Vector3();
+  const labelAnchorProjected = new THREE.Vector3();
+  const cameraUp = new THREE.Vector3();
   let relationIndexNodes: readonly KnowledgeSceneNode[] | null = null;
   let relationIndex = createKnowledgeRelationIndex([]);
 
@@ -501,6 +506,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const label = document.createElement('div');
     label.className = 'node-label';
     label.textContent = displayLabelForNode(n);
+    label.style.transform = 'translate(-50%, -100%)';
     labelsLayer.appendChild(label);
     labelMap[n.id] = label;
     return nodeMap[n.id] = {
@@ -758,6 +764,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const labels = () => {
     scene.updateMatrixWorld(true);
+    cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
     const allNodes = getNodes();
     const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const activeNodes = allNodes.filter(node => Boolean(nodeMap[node.id]));
@@ -767,8 +774,12 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       if (!label || !record) return null;
       record.group.getWorldPosition(worldPos);
       projectedPos.copy(worldPos).project(camera);
+      record.shell.getWorldScale(shellWorldScale);
+      const renderedSphereRadius = Math.max(Math.abs(shellWorldScale.x), Math.abs(shellWorldScale.y), Math.abs(shellWorldScale.z));
+      labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius);
+      labelAnchorProjected.copy(labelAnchorWorld).project(camera);
       const frontFacing = isCoreNodeId(n.id) || worldPos.dot(camera.position) > 0;
-      const onScreen = projectedPos.x >= -1 && projectedPos.x <= 1 && projectedPos.y >= -1 && projectedPos.y <= 1;
+      const onScreen = labelAnchorProjected.x >= -1 && labelAnchorProjected.x <= 1 && labelAnchorProjected.y >= -1 && labelAnchorProjected.y <= 1;
       const baseVisible = record.group.visible
         && frontFacing
         && onScreen
@@ -780,7 +791,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
         label,
         baseVisible,
         x: (projectedPos.x * .5 + .5) * host.clientWidth,
-        y: (-projectedPos.y * .5 + .5) * host.clientHeight,
+        y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight - LABEL_SPHERE_GAP_PX,
         shellRadius: worldPos.length(),
       };
     }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -802,7 +813,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       if (!visible) return;
       entry.label.style.left = `${entry.x}px`;
       entry.label.style.top = `${entry.y}px`;
-      entry.label.style.transform = 'translate(-50%, 10px)';
+      entry.label.style.transform = 'translate(-50%, -100%)';
       entry.label.style.opacity = String(labelBrightness);
       entry.label.classList.toggle('selected', selectedId === entry.n.id);
     });
