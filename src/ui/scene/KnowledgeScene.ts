@@ -726,8 +726,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       if (!label || !record) return;
       record.group.getWorldPosition(worldPos);
       const projected = worldPos.clone().project(camera);
+      const frontFacing = isCoreNodeId(n.id) || worldPos.dot(camera.position) > 0;
       const visible = record.group.visible
         && detailNodeId !== n.id
+        && frontFacing
         && (!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)
         && projected.z > -1
         && projected.z < 1

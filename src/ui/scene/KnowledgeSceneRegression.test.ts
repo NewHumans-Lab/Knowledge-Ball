@@ -187,5 +187,14 @@ assert(sceneSource.includes('new THREE.MeshMatcapMaterial'), 'ordinary semantic 
 assert(/matcap:\s*nodeMatcapTex/.test(sceneSource), 'ordinary shells must share the neutral matcap');
 assert(/antialias:\s*KNOWLEDGE_SCENE_THEME\.renderer\.antialias/.test(sceneSource));
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'));
+const labelsStart = sceneSource.indexOf('const labels =');
+const pickStart = sceneSource.indexOf('const pick =');
+assert(labelsStart >= 0 && pickStart > labelsStart, 'label projection block must remain discoverable');
+const labelsSource = sceneSource.slice(labelsStart, pickStart);
+assert(labelsSource.includes('const frontFacing = isCoreNodeId(n.id) || worldPos.dot(camera.position) > 0;'), 'ordinary labels must be limited to the camera-facing hemisphere while core labels keep their own rule');
+assert(labelsSource.includes('&& frontFacing'), 'front-facing status must participate directly in label display');
+const applyNodeStylesStart = sceneSource.indexOf('const applyNodeStyles =');
+const visibilitySource = sceneSource.slice(visibilityStart, applyNodeStylesStart);
+assert(!visibilitySource.includes('dot(camera.position)'), 'hemisphere filtering is presentation-only and must not become node/edge visibility authority');
 
 console.log('Knowledge scene canonical-chain regression tests passed');
