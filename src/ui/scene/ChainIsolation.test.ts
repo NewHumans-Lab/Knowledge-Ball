@@ -40,7 +40,7 @@ const eligible = new Set(['a', 'r1', 'b']);
 assert.deepEqual([...connectedChainIds('b', nodes, edges, eligible)].sort(), ['a', 'b', 'r1'].sort(), 'chain resolution must respect the currently visible graph');
 
 const center = middleShellChainCenter(nodes, chain);
-assert(Math.abs(center.x - 136.36737602222409) < 1e-9, 'middle occupied shell must be selected from knowledge nodes');
+assert(Math.abs(center.x - 136) < 1e-12, 'middle occupied shell must be selected from knowledge nodes');
 assert(Math.abs(center.y) < 1e-12 && Math.abs(center.z) < 1e-12, 'all chain knowledge nodes on the middle shell must share the anchor centroid');
 const isolatedCenter = middleShellChainCenter(nodes, new Set(['other']));
 assert(isolatedCenter.distanceTo(v(-200)) < 1e-12, 'single-node chain must center that node on the former sun position');
