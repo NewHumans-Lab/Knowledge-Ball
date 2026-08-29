@@ -4,12 +4,15 @@ import {
   lineageRoleFor,
   topicIdFor,
 } from '../../domain/KnowledgeLineage';
+import { createKnowledgeRelationIndex } from '../../domain/KnowledgeRelations';
 import { reasoningConclusionBindingFor } from '../../domain/ReasoningConclusion';
 import { LAYOUT_UNIT, type LayoutNode } from './Deterministic5RLayout';
 
 const EPSILON = 1e-12;
 const SPACING_EPSILON = 1e-7;
 const MAX_ANCHOR_SEARCH_RING = 64;
+
+type ReasoningRuntimeNode = LayoutNode & { reasoningIsolated?: boolean };
 
 function meanRadius(nodes: readonly LayoutNode[]): number {
   return nodes.reduce((sum, node) => sum + node.pos!.length(), 0) / nodes.length;
@@ -279,7 +282,9 @@ function applyPosition(reasoning: LayoutNode, position: THREE.Vector3): void {
  * - winning history extends from P0 in the opposite direction at 5R steps;
  * - losing history continues beyond the losing head at 5R steps;
  * - a pending candidate sits 5R from its target on the perpendicular tangent;
- * - every pair of positioned Reasoning balls is kept at least 5R apart.
+ * - every pair of positioned Reasoning balls is kept at least 5R apart;
+ * - a Reasoning node with zero canonical semantic edges is marked isolated and
+ *   receives no dedicated Reasoning geometry, so the scene can suppress it;
  *
  * P0 starts at the original radial midpoint between ordinary premises and the
  * served concrete conclusion. If an unrelated Reasoning family would collide,
@@ -288,12 +293,35 @@ function applyPosition(reasoning: LayoutNode, position: THREE.Vector3): void {
  */
 export function applyReasoningRadialPlacement(nodes: LayoutNode[]): void {
   const byId = new Map(nodes.map(node => [node.id, node]));
-  const reasoningNodes = nodes.filter(node => node.type === 'reasoning');
-  reasoningNodes.forEach(clearReasoningSpatialState);
+  const reasoningNodes = nodes.filter(node => node.type === 'reasoning') as ReasoningRuntimeNode[];
+  reasoningNodes.forEach(reasoning => {
+    clearReasoningSpatialState(reasoning);
+    delete reasoning.reasoningIsolated;
+  });
+
+  // Canonical topology is the authority for isolation. LayoutNode intentionally
+  // carries no UI title, so project only the semantic fields required by the
+  // relation index. Geometry availability is deliberately NOT used as a proxy.
+  const relationNodes = nodes.map(node => ({
+    id: node.id,
+    title: node.id,
+    premises: node.premises ?? [],
+    type: node.type as Parameters<typeof createKnowledgeRelationIndex>[0][number]['type'],
+    lineage: node.lineage,
+  }));
+  const connectedReasoningIds = new Set<string>();
+  for (const edge of createKnowledgeRelationIndex(relationNodes).edges) {
+    if (byId.get(edge.fromId)?.type === 'reasoning') connectedReasoningIds.add(edge.fromId);
+    if (byId.get(edge.toId)?.type === 'reasoning') connectedReasoningIds.add(edge.toId);
+  }
+  for (const reasoning of reasoningNodes) {
+    reasoning.reasoningIsolated = !connectedReasoningIds.has(reasoning.id);
+  }
 
   const families = new Map<string, LayoutNode[]>();
   for (const reasoning of reasoningNodes) {
     if (lineageRoleFor(reasoning) === 'rejected') continue;
+    if (reasoning.reasoningIsolated) continue;
     const binding = reasoningConclusionBindingFor(reasoning);
     const conclusion = binding ? byId.get(binding.conclusionId) : undefined;
     if (!binding || !conclusion?.pos || conclusion.type === 'reasoning' || conclusion.pos.lengthSq() <= EPSILON) continue;

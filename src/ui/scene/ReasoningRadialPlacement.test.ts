@@ -77,11 +77,16 @@ const dualRedHistory=node('dual-red-h1',['dual-premise'],'reasoning');
 dualRedHistory.lineage=lineage('dual-topic','optimization','opposition',1,'opposition',1,false,'dual-red');
 const dualPending=node('dual-pending',['dual-premise'],'reasoning');
 dualPending.lineage=lineage('dual-topic','optimization','candidate-history',0,'normal',0,false,'dual-white');
+const dualStray=node('dual-stray',['dual-premise'],'reasoning');
+dualStray.lineage=lineage('dual-topic','optimization','current',0,undefined,undefined,false,'dual-white');
+dualStray.pos=new THREE.Vector3(9,9,9);
+dualStray.homePos=dualStray.pos.clone();
 const dualConclusion=node('dual-conclusion',['dual-white'],'theorem','middle');
 dualConclusion.pos=new THREE.Vector3(0,0,200);
 dualConclusion.homePos=dualConclusion.pos.clone();
-const dualNodes=[dualPremise,dualWhite,dualRed,dualWhiteHistory,dualRedHistory,dualPending,dualConclusion];
+const dualNodes=[dualPremise,dualWhite,dualRed,dualWhiteHistory,dualRedHistory,dualPending,dualStray,dualConclusion];
 bindReasoningConclusions(dualNodes);
+assert.equal(reasoningConclusionBindingFor(dualStray)?.conclusionId,'dual-conclusion','malformed stray can still inherit a concrete conclusion binding before topology validation');
 applyReasoningRadialPlacement(dualNodes);
 
 const expectedDualP0=new THREE.Vector3(0,0,150);
@@ -90,6 +95,8 @@ assert(Math.abs(dualWhite.pos!.distanceTo(dualRed.pos!)-LAYOUT_UNIT)<1e-7,'losin
 assert(Math.abs(dualWhite.pos!.distanceTo(dualWhiteHistory.pos!)-LAYOUT_UNIT)<1e-7,'winning-side nearest history must be exactly one 5R step behind P0');
 assert(Math.abs(dualRed.pos!.distanceTo(dualRedHistory.pos!)-LAYOUT_UNIT)<1e-7,'losing-side nearest history must continue exactly one 5R step beyond its head');
 assert(Math.abs(dualWhite.pos!.distanceTo(dualPending.pos!)-LAYOUT_UNIT)<1e-7,'pending Reasoning must be exactly 5R from the head it targets');
+assert.equal(dualStray.pos,undefined,'a conclusion-bound Reasoning with zero canonical relation edges must not receive standalone geometry');
+assert.equal(dualStray.homePos,undefined,'zero-edge Reasoning must not retain stale home geometry');
 
 const positionedDualReasoning=[dualWhite,dualRed,dualWhiteHistory,dualRedHistory,dualPending];
 for(let i=0;i<positionedDualReasoning.length;i+=1){
@@ -107,6 +114,7 @@ assert(near(dualRed.pos!,expectedDualP0),'when red wins, the red head must move 
 assert(Math.abs(dualRed.pos!.distanceTo(dualWhite.pos!)-LAYOUT_UNIT)<1e-7,'when red wins, the losing white head must remain exactly 5R from P0');
 assert(Math.abs(dualRed.pos!.distanceTo(dualRedHistory.pos!)-LAYOUT_UNIT)<1e-7,'red history must become the winning-side 5R history chain when red dominates');
 assert(Math.abs(dualWhite.pos!.distanceTo(dualWhiteHistory.pos!)-LAYOUT_UNIT)<1e-7,'white history must continue beyond the losing white head when red dominates');
+assert.equal(dualStray.pos,undefined,'zero-edge stray must remain absent after dominance changes');
 
 // Unrelated Reasoning families can have colliding raw radial P0 candidates. The
 // Reasoning-only collision pass must move the later family, never Knowledge, and
@@ -140,4 +148,4 @@ for(let i=0;i<allPositionedReasoning.length;i+=1){
 assert(!near(collisionReasoning.pos!,expectedDualP0),'a later unrelated Reasoning family with a colliding raw P0 must move to the nearest legal Reasoning-only anchor');
 assert.equal(collisionReasoning.address,undefined,'collision resolution must not turn Reasoning into an authoritative ISG occupant');
 
-console.log('Reasoning winner-P0, 5R lineage separation, pending placement and cross-family spacing checks passed.');
+console.log('Reasoning winner-P0, 5R lineage separation, zero-edge isolation, pending placement and cross-family spacing checks passed.');
