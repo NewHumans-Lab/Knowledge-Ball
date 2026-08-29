@@ -39,4 +39,14 @@ conclusion.pos!.applyAxisAngle(new THREE.Vector3(0,1,0),0.13);
 applyReasoningRadialPlacement(nodes);
 assert(reasoning.pos!.clone().cross(conclusion.pos!).length()<1e-7,'Reasoning must follow its served conclusion after that ordinary ball moves');
 
+// Invalid/unbound Reasoning may never retain a stale position from an older
+// render generation and become a free-floating visual ball.
+const orphan=node('orphan-reasoning',['reasoning-premise-a'],'reasoning');
+orphan.pos=new THREE.Vector3(10,20,30);orphan.homePos=orphan.pos.clone();orphan.vel=new THREE.Vector3(1,1,1);
+applyReasoningRadialPlacement([...nodes,orphan]);
+assert.equal(orphan.pos,undefined,'unbound Reasoning must have no renderable position');
+assert.equal(orphan.homePos,undefined,'unbound Reasoning must have no stale home position');
+assert.equal(orphan.address,undefined,'unbound Reasoning never receives spatial authority');
+assert(orphan.vel!.lengthSq()===0,'unbound Reasoning velocity must be neutralized');
+
 console.log('Reasoning single-conclusion semantic ownership and radial-follow checks passed.');
