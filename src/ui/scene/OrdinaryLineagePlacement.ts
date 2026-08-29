@@ -8,9 +8,9 @@ import {
 } from './Deterministic5RLayout';
 
 /**
- * Ordinary Knowledge lineage advances by one authoritative ISG shell-grid step.
- * LAYOUT_UNIT is the project's 5R centre-spacing rule; actual shell chords can
- * be slightly larger because positions must remain on canonical ISG cells.
+ * Ordinary Knowledge lineage uses the project-wide 5R centre-spacing unit.
+ * Canonical shell chords may be slightly longer because every position must be
+ * a real ISG cell, but they may never be shorter than this unit.
  */
 export const ORDINARY_LINEAGE_SPACING = LAYOUT_UNIT;
 
@@ -28,6 +28,13 @@ type LineCandidate = Readonly<{
   oppositionCells: readonly number[];
   score: number;
   tie: string;
+}>;
+
+type AnchorHome = Readonly<{
+  shellID: string;
+  radius: number;
+  position: THREE.Vector3;
+  cellID: number;
 }>;
 
 type RelocationHome = Readonly<{
@@ -95,7 +102,20 @@ function collectFamilies(nodes: readonly LayoutNode[]): Family[] {
     });
   }
 
-  return families.sort((left, right) => left.topicId.localeCompare(right.topicId));
+  // Harder / longer lineages own search order, but not permanent priority: the
+  // recursive solver backtracks earlier placements if a later family cannot fit.
+  return families.sort((left, right) =>
+    (right.historySide.length + right.oppositionSide.length)
+      - (left.historySide.length + left.oppositionSide.length)
+    || left.topicId.localeCompare(right.topicId));
+}
+
+function familyMembers(family: Family): LayoutNode[] {
+  return [family.anchor, ...family.historySide, ...family.oppositionSide];
+}
+
+function familyIds(family: Family): ReadonlySet<string> {
+  return new Set(familyMembers(family).map(node => node.id));
 }
 
 function edgeKey(left: number, right: number): string {
@@ -121,9 +141,7 @@ function neighborMap(grid: IcosahedralGrid): ReadonlyMap<number, readonly number
 function tangentDirection(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3 {
   const radial = from.clone().normalize();
   const chord = to.clone().sub(from);
-  return chord
-    .addScaledVector(radial, -chord.dot(radial))
-    .normalize();
+  return chord.addScaledVector(radial, -chord.dot(radial)).normalize();
 }
 
 function cellIsFree(
@@ -151,11 +169,11 @@ function continueLine(
   length: number,
   obstacles: readonly LayoutNode[],
   ignoredIds: ReadonlySet<string>,
-  globallyUsed: ReadonlySet<number>,
+  usedCells: ReadonlySet<number>,
 ): readonly number[] | null {
   if (length === 0) return [];
   const path = [firstCell];
-  const locallyUsed = new Set<number>([anchorCell, ...globallyUsed, firstCell]);
+  const locallyUsed = new Set<number>([anchorCell, ...usedCells, firstCell]);
   let previous = anchorCell;
   let current = firstCell;
 
@@ -165,10 +183,10 @@ function continueLine(
     const options = (neighbors.get(current) ?? [])
       .filter(cellID => cellID !== previous)
       .filter(cellID => cellIsFree(grid, cellID, obstacles, ignoredIds, locallyUsed))
-      .map(cellID => {
-        const outgoing = tangentDirection(currentPosition, grid.vertices[cellID]!);
-        return { cellID, straightness: incoming.dot(outgoing) };
-      })
+      .map(cellID => ({
+        cellID,
+        straightness: incoming.dot(tangentDirection(currentPosition, grid.vertices[cellID]!)),
+      }))
       .sort((left, right) => right.straightness - left.straightness || left.cellID - right.cellID);
     const next = options[0]?.cellID;
     if (next === undefined) return null;
@@ -177,7 +195,6 @@ function continueLine(
     previous = current;
     current = next;
   }
-
   return path;
 }
 
@@ -209,7 +226,6 @@ function findCoordinateLines(
   const neighbors = neighborMap(grid);
   const anchorNeighbors = neighbors.get(anchorCell) ?? [];
   const candidates: LineCandidate[] = [];
-
   const historyStarts = family.historySide.length ? anchorNeighbors : [-1];
   const oppositionStarts = family.oppositionSide.length ? anchorNeighbors : [-1];
 
@@ -223,7 +239,6 @@ function findCoordinateLines(
         ? []
         : continueLine(grid, neighbors, anchorCell, historyStart, family.historySide.length, obstacles, ignoredIds, usedCells);
       if (!historyCells) continue;
-
       const historyUsed = new Set<number>([...usedCells, ...historyCells]);
       const oppositionCells = oppositionStart < 0
         ? []
@@ -247,54 +262,13 @@ function findCoordinateLines(
       });
     }
   }
-
   return candidates.sort((left, right) => left.score - right.score || left.tie.localeCompare(right.tie));
-}
-
-function familyIds(family: Family): ReadonlySet<string> {
-  return new Set([
-    family.anchor.id,
-    ...family.historySide.map(node => node.id),
-    ...family.oppositionSide.map(node => node.id),
-  ]);
 }
 
 function usedCellsOnShell(nodes: readonly LayoutNode[], shellID: string, ignoredIds: ReadonlySet<string>): ReadonlySet<number> {
   return new Set(nodes
     .filter(node => node.type !== 'reasoning' && node.address?.shellID === shellID && !ignoredIds.has(node.id))
     .map(node => node.address!.cellID));
-}
-
-function isRelocatableOrdinary(node: LayoutNode, protectedAnchorIds: ReadonlySet<string>): boolean {
-  return node.type !== 'reasoning'
-    && lineageRoleFor(node) !== 'rejected'
-    && !isOrdinaryLineageSatellite(node)
-    && !protectedAnchorIds.has(node.id)
-    && !!node.address
-    && !!node.pos;
-}
-
-function candidateCells(candidate: LineCandidate): readonly number[] {
-  return [...candidate.historyCells, ...candidate.oppositionCells];
-}
-
-function linePositions(candidate: LineCandidate, grid: IcosahedralGrid): THREE.Vector3[] {
-  return candidateCells(candidate).map(cellID => grid.vertices[cellID]!.clone());
-}
-
-function conflictsWithReserved(position: THREE.Vector3, reservedPositions: readonly THREE.Vector3[]): boolean {
-  return reservedPositions.some(reserved => position.distanceTo(reserved) < ORDINARY_LINEAGE_SPACING - EPSILON);
-}
-
-function blockersForPositions(
-  reservedPositions: readonly THREE.Vector3[],
-  nodes: readonly LayoutNode[],
-  relocatableIds: ReadonlySet<string>,
-): LayoutNode[] {
-  return nodes
-    .filter(node => relocatableIds.has(node.id) && !!node.pos)
-    .filter(node => conflictsWithReserved(node.pos!, reservedPositions))
-    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function snapshotNodes(nodes: readonly LayoutNode[]): Map<string, SpatialSnapshot> {
@@ -329,6 +303,42 @@ function clearSpatial(node: LayoutNode): void {
   delete node.homePos;
 }
 
+function clearFamily(family: Family): void {
+  for (const node of familyMembers(family)) clearSpatial(node);
+}
+
+function clearFamilySatellites(family: Family): void {
+  for (const node of [...family.historySide, ...family.oppositionSide]) clearSpatial(node);
+}
+
+function assignCanonical(node: LayoutNode, shellID: string, cellID: number, position: THREE.Vector3): void {
+  node.address = { shellID, cellID };
+  node.pos = position.clone();
+  node.homePos = position.clone();
+  node.vel ??= new THREE.Vector3();
+  node.vel.set(0, 0, 0);
+}
+
+function assignFamilyLine(family: Family, grid: IcosahedralGrid, shellID: string, candidate: LineCandidate): void {
+  clearFamilySatellites(family);
+  family.historySide.forEach((node, index) => {
+    const cellID = candidate.historyCells[index]!;
+    assignCanonical(node, shellID, cellID, grid.vertices[cellID]!);
+  });
+  family.oppositionSide.forEach((node, index) => {
+    const cellID = candidate.oppositionCells[index]!;
+    assignCanonical(node, shellID, cellID, grid.vertices[cellID]!);
+  });
+}
+
+function allFamilyPositions(families: readonly Family[]): THREE.Vector3[] {
+  return families.flatMap(family => familyMembers(family).flatMap(node => node.pos ? [node.pos.clone()] : []));
+}
+
+function conflictsWithReserved(position: THREE.Vector3, reservedPositions: readonly THREE.Vector3[]): boolean {
+  return reservedPositions.some(reserved => position.distanceTo(reserved) < ORDINARY_LINEAGE_SPACING - EPSILON);
+}
+
 function collisionState(
   subjectId: string,
   position: THREE.Vector3,
@@ -360,14 +370,11 @@ function positionIsFreeNow(
   return true;
 }
 
-function assignRelocatedNode(node: LayoutNode, shellID: string, cellID: number, position: THREE.Vector3): void {
-  node.address = { shellID, cellID };
-  node.pos = position.clone();
-  node.homePos = position.clone();
-  node.vel ??= new THREE.Vector3();
-  node.vel.set(0, 0, 0);
-}
-
+/**
+ * Soft ordinary blockers preserve their semantic shell. If the nearest legal
+ * canonical cell is occupied by another soft ordinary node, displacement
+ * cascades until a free cell is found or this branch is proven impossible.
+ */
 function cascadeRelocate(
   nodeId: string,
   nodes: readonly LayoutNode[],
@@ -396,7 +403,6 @@ function cascadeRelocate(
     clearSpatial(node);
     const position = grid.vertices[cell.cellID]!;
     if (conflictsWithReserved(position, reservedPositions)) continue;
-
     const collision = collisionState(nodeId, position, nodes, relocatableIds);
     if (collision.hard) continue;
 
@@ -417,27 +423,27 @@ function cascadeRelocate(
       }
     }
     if (!displaced || !positionIsFreeNow(nodeId, position, nodes, reservedPositions)) continue;
-
-    assignRelocatedNode(node, home.shellID, cell.cellID, position);
+    assignCanonical(node, home.shellID, cell.cellID, position);
     return true;
   }
-
   restoreNodes(relocatableNodes, entrySnapshot);
   return false;
 }
 
-function tryReservedPositionsWithLocalReflow(
-  reservedPositions: readonly THREE.Vector3[],
+function tryReflowSoftOrdinary(
   nodes: readonly LayoutNode[],
-  relocatableNodes: readonly LayoutNode[],
-  relocatableIds: ReadonlySet<string>,
+  softOrdinary: readonly LayoutNode[],
+  reservedPositions: readonly THREE.Vector3[],
 ): boolean {
-  const blockers = blockersForPositions(reservedPositions, nodes, relocatableIds);
+  const blockers = softOrdinary
+    .filter(node => node.pos && conflictsWithReserved(node.pos, reservedPositions))
+    .sort((left, right) => left.id.localeCompare(right.id));
   if (!blockers.length) return true;
 
-  const initialSnapshot = snapshotNodes(relocatableNodes);
-  const relocatableById = new Map(relocatableNodes.map(node => [node.id, node]));
-  const relocationHomes = new Map(relocatableNodes
+  const initialSnapshot = snapshotNodes(softOrdinary);
+  const relocatableById = new Map(softOrdinary.map(node => [node.id, node]));
+  const relocatableIds = new Set(softOrdinary.map(node => node.id));
+  const relocationHomes = new Map(softOrdinary
     .filter(node => node.address && node.pos)
     .map(node => [node.id, {
       shellID: node.address!.shellID,
@@ -445,174 +451,115 @@ function tryReservedPositionsWithLocalReflow(
       origin: node.pos!.clone(),
     }] as const));
 
-  for (const initialBlocker of blockers) {
-    if (!initialBlocker.pos || !conflictsWithReserved(initialBlocker.pos, reservedPositions)) continue;
+  for (const blocker of blockers) {
+    if (!blocker.pos || !conflictsWithReserved(blocker.pos, reservedPositions)) continue;
     if (!cascadeRelocate(
-      initialBlocker.id,
+      blocker.id,
       nodes,
-      relocatableNodes,
+      softOrdinary,
       relocatableById,
       relocationHomes,
       relocatableIds,
       reservedPositions,
       new Set(),
     )) {
-      restoreNodes(relocatableNodes, initialSnapshot);
+      restoreNodes(softOrdinary, initialSnapshot);
       return false;
     }
   }
   return true;
 }
 
-function structuralOptions(
-  family: Family,
-  grid: IcosahedralGrid,
+function solveLineageFamilies(
+  index: number,
+  families: readonly Family[],
   nodes: readonly LayoutNode[],
-  relocatableIds: ReadonlySet<string>,
-  softIgnored: ReadonlySet<string>,
-  hardUsed: ReadonlySet<number>,
-): readonly LineCandidate[] {
-  return findCoordinateLines(family, grid, nodes, hardUsed, softIgnored)
-    .map(candidate => ({
-      candidate,
-      blockerCount: blockersForPositions(
-        [family.anchor.pos!.clone(), ...linePositions(candidate, grid)],
-        nodes,
-        relocatableIds,
-      ).length,
-    }))
-    .sort((left, right) => left.blockerCount - right.blockerCount
-      || left.candidate.score - right.candidate.score
-      || left.candidate.tie.localeCompare(right.candidate.tie))
-    .map(option => option.candidate);
-}
-
-function tryFamilyAtCurrentAnchor(
-  family: Family,
-  grid: IcosahedralGrid,
-  nodes: readonly LayoutNode[],
-  relocatableNodes: readonly LayoutNode[],
-  relocatableIds: ReadonlySet<string>,
-  softIgnored: ReadonlySet<string>,
-  hardUsed: ReadonlySet<number>,
-): LineCandidate | null {
-  const baseline = snapshotNodes(relocatableNodes);
-  for (const candidate of structuralOptions(family, grid, nodes, relocatableIds, softIgnored, hardUsed)) {
-    restoreNodes(relocatableNodes, baseline);
-    const reserved = [family.anchor.pos!.clone(), ...linePositions(candidate, grid)];
-    if (tryReservedPositionsWithLocalReflow(reserved, nodes, relocatableNodes, relocatableIds)) return candidate;
+  anchorHomes: ReadonlyMap<string, AnchorHome>,
+  softOrdinary: readonly LayoutNode[],
+  softIds: ReadonlySet<string>,
+  softBaseline: ReadonlyMap<string, SpatialSnapshot>,
+): boolean {
+  if (index >= families.length) {
+    restoreNodes(softOrdinary, softBaseline);
+    return tryReflowSoftOrdinary(nodes, softOrdinary, allFamilyPositions(families));
   }
-  restoreNodes(relocatableNodes, baseline);
-  return null;
-}
 
-function chooseCoordinateLineWithLocalReflow(
-  family: Family,
-  grid: IcosahedralGrid,
-  nodes: readonly LayoutNode[],
-  protectedAnchorIds: ReadonlySet<string>,
-): LineCandidate {
+  const family = families[index]!;
+  const home = anchorHomes.get(family.anchor.id);
+  if (!home) return false;
+  const grid = generateIcosahedralGrid(home.radius, undefined, home.shellID);
   const ownIds = familyIds(family);
-  const strictUsed = usedCellsOnShell(nodes, family.anchor.address!.shellID, ownIds);
-  const strict = findCoordinateLines(family, grid, nodes, strictUsed, ownIds)[0];
-  if (strict) return strict;
+  const ignoredIds = new Set([...softIds, ...ownIds]);
+  const anchorCandidates = grid.vertices
+    .map((position, cellID) => ({
+      cellID,
+      distance: position.distanceToSquared(home.position),
+      original: cellID === home.cellID ? 0 : 1,
+    }))
+    .sort((left, right) => left.original - right.original || left.distance - right.distance || left.cellID - right.cellID);
 
-  const relocatableNodes = nodes
-    .filter(node => isRelocatableOrdinary(node, protectedAnchorIds))
-    .sort((left, right) => left.id.localeCompare(right.id));
-  const relocatableIds = new Set(relocatableNodes.map(node => node.id));
-  const softIgnored = new Set([...ownIds, ...relocatableIds]);
-  const hardUsed = usedCellsOnShell(nodes, family.anchor.address!.shellID, softIgnored);
+  for (const anchorCandidate of anchorCandidates) {
+    clearFamily(family);
+    const usedBeforeAnchor = usedCellsOnShell(nodes, home.shellID, ignoredIds);
+    if (!cellIsFree(grid, anchorCandidate.cellID, nodes, ignoredIds, usedBeforeAnchor)) continue;
+    assignCanonical(family.anchor, home.shellID, anchorCandidate.cellID, grid.vertices[anchorCandidate.cellID]!);
 
-  const sameAnchor = tryFamilyAtCurrentAnchor(
-    family,
-    grid,
-    nodes,
-    relocatableNodes,
-    relocatableIds,
-    softIgnored,
-    hardUsed,
-  );
-  if (sameAnchor) return sameAnchor;
-
-  // If keeping Current fixed makes every valid 5R coordinate line impossible,
-  // the lineage group itself becomes the local re-layout unit. Current may move
-  // to the nearest canonical cell on the same semantic shell; its History and
-  // Opposition lines are then recomputed from that new anchor. Other lineage
-  // anchors remain hard, so one family cannot destroy another family's geometry.
-  const anchorSnapshot = snapshotNodes([family.anchor]);
-  const ordinaryBaseline = snapshotNodes(relocatableNodes);
-  const originalPosition = family.anchor.pos!.clone();
-  const originalCellID = family.anchor.address!.cellID;
-  const anchorCells = grid.vertices
-    .map((position, cellID) => ({ cellID, distance: position.distanceToSquared(originalPosition) }))
-    .filter(candidate => candidate.cellID !== originalCellID)
-    .sort((left, right) => left.distance - right.distance || left.cellID - right.cellID);
-
-  for (const anchorCell of anchorCells) {
-    restoreNodes([family.anchor], anchorSnapshot);
-    restoreNodes(relocatableNodes, ordinaryBaseline);
-    if (!cellIsFree(grid, anchorCell.cellID, nodes, softIgnored, hardUsed)) continue;
-
-    assignRelocatedNode(family.anchor, family.anchor.address!.shellID, anchorCell.cellID, grid.vertices[anchorCell.cellID]!);
-    const candidate = tryFamilyAtCurrentAnchor(
-      family,
-      grid,
-      nodes,
-      relocatableNodes,
-      relocatableIds,
-      softIgnored,
-      hardUsed,
-    );
-    if (candidate) return candidate;
+    const usedForLine = usedCellsOnShell(nodes, home.shellID, ignoredIds);
+    const lineCandidates = findCoordinateLines(family, grid, nodes, usedForLine, ignoredIds);
+    for (const lineCandidate of lineCandidates) {
+      assignFamilyLine(family, grid, home.shellID, lineCandidate);
+      if (solveLineageFamilies(index + 1, families, nodes, anchorHomes, softOrdinary, softIds, softBaseline)) return true;
+      clearFamilySatellites(family);
+    }
   }
-
-  restoreNodes([family.anchor], anchorSnapshot);
-  restoreNodes(relocatableNodes, ordinaryBaseline);
-  throw new Error(`Ordinary lineage local family re-layout exhausted all 5R shell anchors: ${family.topicId}`);
+  clearFamily(family);
+  return false;
 }
 
 /**
- * Ordinary Knowledge lineage keeps Current at its main-layout anchor whenever
- * possible. Every existing History/Opposition member occupies an authoritative
- * cell on the same shell, advancing one canonical ISG edge per nominal 5R step.
+ * Ordinary lineage is solved as one joint high-priority occupancy problem rather
+ * than greedily freezing one family at a time. Each family first tries its main-
+ * layout Current cell, then nearby canonical cells on the same semantic shell;
+ * recursion backtracks earlier families when a later lineage cannot fit.
  *
- * No future slots are reserved. If all lines around Current are blocked, ordinary
- * blockers cascade to nearby legal cells. If Current itself is the local deadlock,
- * the whole lineage group may move Current to the nearest canonical cell on the
- * same shell and recompute its two coordinate-line sides there. Reasoning remains
- * outside this ordinary-lineage rule and is projected after ordinary geometry.
+ * History/Opposition/pending members always consume real shellID/cellID positions
+ * along adjacent ISG edges at the nominal 5R spacing. No future cells are held.
+ * Only after every lineage is legal are conflicting ordinary non-lineage nodes
+ * cascaded to nearby legal cells on their own existing shells. Reasoning is never
+ * occupancy and is projected later from the final ordinary Knowledge geometry.
  */
 export function applyOrdinaryLineagePlacement(nodes: LayoutNode[]): void {
   const families = collectFamilies(nodes);
-  const protectedAnchorIds = new Set(families.map(family => family.anchor.id));
+  if (!families.length) return;
 
-  const satellites = nodes.filter(isOrdinaryLineageSatellite);
-  for (const node of satellites) {
-    delete node.address;
-    delete node.pos;
-    delete node.homePos;
-    node.vel?.set(0, 0, 0);
-  }
+  const familyNodeIds = new Set(families.flatMap(family => familyMembers(family).map(node => node.id)));
+  const familyNodes = families.flatMap(family => familyMembers(family));
+  const familySnapshot = snapshotNodes(familyNodes);
+  const anchorHomes = new Map(families.map(family => [family.anchor.id, {
+    shellID: family.anchor.address!.shellID,
+    radius: family.anchor.pos!.length(),
+    position: family.anchor.pos!.clone(),
+    cellID: family.anchor.address!.cellID,
+  }] as const));
 
-  for (const family of families) {
-    const shellID = family.anchor.address!.shellID;
-    const radius = family.anchor.pos!.length();
-    const grid = generateIcosahedralGrid(radius, undefined, shellID);
-    const candidate = chooseCoordinateLineWithLocalReflow(family, grid, nodes, protectedAnchorIds);
-    const assignments = [
-      ...family.historySide.map((node, index) => [node, candidate.historyCells[index]!] as const),
-      ...family.oppositionSide.map((node, index) => [node, candidate.oppositionCells[index]!] as const),
-    ];
+  const softOrdinary = nodes
+    .filter(node => node.type !== 'reasoning'
+      && lineageRoleFor(node) !== 'rejected'
+      && !familyNodeIds.has(node.id)
+      && !!node.address
+      && !!node.pos)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const softIds = new Set(softOrdinary.map(node => node.id));
+  const softBaseline = snapshotNodes(softOrdinary);
 
-    for (const [node, cellID] of assignments) {
-      const position = grid.vertices[cellID]!.clone();
-      node.address = { shellID, cellID };
-      node.pos = position.clone();
-      node.homePos = position.clone();
-      node.vel ??= new THREE.Vector3();
-      node.vel.set(0, 0, 0);
-    }
+  // All lineage families enter one joint solve. Their old satellite positions and
+  // even their Current anchors are candidates, not immutable reservations.
+  for (const family of families) clearFamily(family);
+
+  if (!solveLineageFamilies(0, families, nodes, anchorHomes, softOrdinary, softIds, softBaseline)) {
+    restoreNodes(familyNodes, familySnapshot);
+    restoreNodes(softOrdinary, softBaseline);
+    throw new Error('Ordinary lineage joint 5R shell-coordinate solve has no legal arrangement');
   }
 }
 
