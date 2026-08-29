@@ -72,7 +72,7 @@ jobs:
               assert obsolete in text, f'missing obsolete merge assertion: {obsolete!r}'
               text = text.replace(obsolete, '')
           text = text.replace("'merge-c'", "'c1'")
-          event_test.write_text(text)
+          event_test.write_text(text.rstrip() + '\n')
 
           adversarial = Path('src/protocol/ProtocolAdversarialRegression.test.ts')
           text = adversarial.read_text()
@@ -81,7 +81,7 @@ jobs:
               '', text, flags=re.S,
           )
           assert count == 1, f'expected one adversarial merge fixture block, got {count}'
-          adversarial.write_text(text)
+          adversarial.write_text(text.rstrip() + '\n')
 
           detail_test = Path('src/ui/panels/NodeDetailRegression.test.ts')
           text = detail_test.read_text()
@@ -92,7 +92,10 @@ jobs:
           anchor = "assert(!detail.includes(\"derive: '基于此新增'\"), 'legacy combined 基于此新增 action must stay removed');\n"
           assert anchor in text
           text = text.replace(anchor, anchor + "assert(!detail.includes(\"merge: '合并'\") && !detail.includes(\"| 'merge'\"), 'removed merge action must not return to the detail engine');\n", 1)
-          detail_test.write_text(text)
+          detail_test.write_text(text.rstrip() + '\n')
+
+          protocol_test = Path('src/protocol/KnowledgeEditingProtocol.test.ts')
+          protocol_test.write_text(protocol_test.read_text().rstrip() + '\n')
 
           for path in ['src/protocol/KnowledgeEditEventRegression.test.ts', 'src/protocol/ProtocolAdversarialRegression.test.ts']:
               source = Path(path).read_text()
