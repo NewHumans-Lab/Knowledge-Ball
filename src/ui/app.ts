@@ -381,6 +381,12 @@ function openNode(id: string): void {
     panel.closeNodePanel();
     knowledgeSurfaceState.open('detail', id);
     nodeDetail.open(id);
+    if (performance.getEntriesByName('knowledge-node-tap-start', 'mark').length) {
+      performance.mark?.('knowledge-node-detail-open');
+      performance.measure?.('knowledge-node-detail-latency', 'knowledge-node-tap-start', 'knowledge-node-detail-open');
+      performance.clearMarks?.('knowledge-node-tap-start');
+      performance.clearMarks?.('knowledge-node-detail-open');
+    }
   } else {
     panel.openNodePanel(id);
   }

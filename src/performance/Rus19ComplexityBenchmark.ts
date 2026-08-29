@@ -4,6 +4,7 @@ import type { GraphNode } from '../graph/Node';
 import { createKnowledgeGraphIndex, effectivePremiseIds } from '../domain/KnowledgeGraphIndex';
 import { currentNodeForTopic, topicIdFor } from '../domain/KnowledgeLineage';
 import { bindReasoningConclusions } from '../domain/ReasoningConclusion';
+import type { ProtocolNode } from '../protocol/KnowledgeEditingProtocol';
 import { generateIcosahedralGrid, nearbyCandidateCells, type LayoutNode } from '../ui/scene/Deterministic5RLayout';
 import { applyUniformLayerLayout } from '../ui/scene/UniformLayerLayout';
 
@@ -55,6 +56,35 @@ const legacyNearest = () => grid.vertices.map((vertex, index) => ({ index, dista
   .sort((left, right) => left.distance - right.distance || left.index - right.index).slice(0, 7).map(value => value.index);
 assert.deepEqual(nearbyCandidateCells(grid, target, 7), legacyNearest());
 
+const dagNodes: ProtocolNode[] = Array.from({ length: 1_000 }, (_, index) => ({
+  id: `dag-${index}`, title: `DAG ${index}`, type: 'fact', reasoning: `DAG ${index}`,
+  premises: index ? [`dag-${index - 1}`] : [], status: 'verified',
+}));
+const dagQueries = Array.from({ length: 25 }, (_, index) => [`dag-${index}`, 'dag-999'] as const);
+const downstream = () => {
+  const result = new Map<string, string[]>();
+  for (const node of dagNodes) for (const premiseId of node.premises) {
+    const children = result.get(premiseId) ?? [];
+    children.push(node.id);
+    result.set(premiseId, children);
+  }
+  return result;
+};
+const reaches = (index: ReadonlyMap<string, readonly string[]>, fromId: string, targetId: string) => {
+  const seen = new Set([fromId]), queue = [fromId];
+  while (queue.length) for (const child of index.get(queue.shift()!) ?? []) {
+    if (child === targetId) return true;
+    if (!seen.has(child)) { seen.add(child); queue.push(child); }
+  }
+  return fromId === targetId;
+};
+const legacyDagResults = () => dagQueries.map(([fromId, targetId]) => reaches(downstream(), fromId, targetId));
+const indexedDagResults = () => {
+  const index = downstream();
+  return dagQueries.map(([fromId, targetId]) => reaches(index, fromId, targetId));
+};
+assert.deepEqual(indexedDagResults(), legacyDagResults());
+
 let layoutGeneration = 0;
 const layoutFixture = () => {
   const prefix = `layout-${layoutGeneration++}`;
@@ -72,6 +102,8 @@ const results = {
   projectionLegacyMs: elapsed(legacyPremises),
   projectionIndexedMs: elapsed(indexedPremises),
   reasoningIndexedMs: elapsed(() => bindReasoningConclusions(structuredClone(reasoningNodes)), 5) / 5,
+  dagRepeatedIndexMs: elapsed(legacyDagResults, 10) / 10,
+  dagSharedIndexMs: elapsed(indexedDagResults, 10) / 10,
   nearestFullSortMs: elapsed(legacyNearest, 100) / 100,
   nearestTopKMs: elapsed(() => nearbyCandidateCells(grid, target, 7), 100) / 100,
   nearestCellCount: grid.vertices.length,

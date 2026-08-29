@@ -9,7 +9,7 @@ reductions. The authoritative baseline is `main` at
 | Hotspot | Previous work | New work | Equivalence evidence |
 | --- | --- | --- | --- |
 | Projection premise canonicalization | For every node, rebuild `byId`; for every premise, scan all nodes to find Current. Worst case O(N² + EN). | Build `byId`, `byTopic`, and `currentByTopic` once and reuse the same generation index for premise and relation derivation. O(N + E), excluding the existing small per-topic lineage selection. | `KnowledgeGraphIndex.test.ts` fixes substitution, order, de-duplication, missing IDs, and node identity. |
-| Reasoning conclusion binding | Every Reasoning resolution scanned every ordinary node; inherited Reasoning recursively repeated those scans. Worst case O(RN + R²). | Build direct ordinary conclusions by Reasoning ID once and memoize every direct/inherited resolution. O(N + E + R). | Existing immutable-conclusion, multi-topic rejection, inheritance, and cycle tests are unchanged. |
+| Reasoning conclusion binding | Every Reasoning resolution scanned every ordinary node; inherited Reasoning recursively repeated those scans. Worst case O(RN + R²). | Build direct ordinary conclusions by Reasoning ID once and memoize root-independent direct/inherited resolutions. O(N + E + R) for valid graphs. Root-relative cycle errors deliberately remain uncached. | Immutable-conclusion, multi-topic rejection, inheritance, and exact per-root cycle-error tests preserve output. |
 | DAG validation | Rebuild O(N + E) downstream adjacency for each premise/conclusion pair. | Build adjacency once, then reuse it for each reachability traversal. | Existing protocol and adversarial validation messages remain unchanged. |
 | Nearest ISG candidates | Sort every V-cell shell for one nearest cell or a seven-cell candidate window: O(V log V), O(V) temporary records. | One-pass nearest selection O(V)/O(1), and bounded ordered top-K O(VK)/O(K). | `RadialKnowledgeLayout.test.ts` compares the complete old sort order for multiple grids, rays, and K values, including cell-ID tie breaks. |
 | Reasoning translation | Allocate every bounded ring and vector before testing the origin. | Yield rings lazily in the same sorted order and stop allocating at the first accepted candidate. | Existing cross-family collision and deterministic Reasoning geometry tests pass unchanged. |
@@ -22,7 +22,11 @@ Representative synthetic benchmark command: `npm run test:rus19-performance`.
 On this container, a final run reported projection **551.50 ms → 2.42 ms** for
 2,000 nodes, nearest-seven selection **0.245 ms → 0.132 ms** for an
 812-cell shell, and fixed-lineage layout **90.38 ms on clean main → 22.47 ms
-on this branch** for the same 20-generation fixture. Timing is diagnostic; strict output equivalence assertions run
+on this branch** for the same 20-generation fixture. A later controlled run after
+the complete review measured projection **388.23 ms → 2.02 ms**, DAG validation
+adjacency **6.02 ms → 2.83 ms**, nearest-seven **0.212 ms → 0.085 ms**, indexed
+Reasoning binding **6.32 ms**, and the branch fixed-lineage fixture **17.42 ms**.
+Timing is diagnostic; strict output equivalence assertions run
 inside the benchmark before results are printed.
 
 ## Intentionally unchanged after audit
@@ -53,16 +57,22 @@ inside the benchmark before results are printed.
 
 ## Mobile A/B classification
 
-`npm run test:browser-mobile` was run from clean latest main and from this branch
-using the same installed browser and SwiftShader environment. Both produced the
-same palette counts (`greenDominant: 0`, cyan calibration 197, blue 197, purple
-197) and both timed out at the same post-detail label wait on line 238. This
-classifies the failure as a reproducible latest-main baseline failure rather than
-a branch-only visual or visibility regression. The focused idle-scene browser
-acceptance and all non-baseline browser paths are still required to pass.
+`npm run test:browser-mobile` was first run from clean latest main and from this
+branch using the same installed browser and SwiftShader environment. Both
+produced the same palette counts (`greenDominant: 0`, cyan calibration 197, blue
+197, purple 197) and both timed out at the same post-detail label wait. The wait
+assumed an arbitrary tappable sphere must own a label, which conflicts with PR
+#177's authoritative shell budget/front-facing selection. The acceptance now
+chooses a sphere whose label the RUS-18 selector actually selected before opening
+detail, then still requires that exact label to be hidden during detail and
+restored after close. The complete mobile browser gate passes with this stronger
+precondition instead of weakening the visibility assertion.
 
-The Issue #51 wrapper was also A/B tested: its nested direct-detail threshold
-failed on clean main at **603.96 ms** and on this branch at **704.93 ms**, while
+The Issue #51 wrapper was also A/B tested: its host-side Playwright tap duration
+failed on clean main at **603.96 ms** and on the branch at **704.93 ms**, while
 both retained 371 rendered / 49 active nodes and identical state assertions.
-This environment therefore cannot provide a green timing gate; the functional
-state passed and the failure is reported rather than relabeled as success.
+That measurement included automation/protocol delivery rather than only browser
+application latency. Runtime instrumentation now measures the actual pointer-up
+to visible-detail chain in the browser; a final run measured **222.8 ms** while
+the automation wall was **522.7 ms**. The unchanged 250 ms product threshold now
+applies to the causal browser chain, and the Issue #51 gate passes.

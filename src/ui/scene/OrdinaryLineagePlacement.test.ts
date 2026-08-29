@@ -7,6 +7,7 @@ import {
   type LayoutNode,
 } from './Deterministic5RLayout';
 import {
+  applyFixedAnchorOrdinaryLineageFootprint,
   applyOrdinaryLineagePlacement,
   isCoordinateLineStep,
   isOrdinaryLineageSatellite,
@@ -15,6 +16,16 @@ import {
 import { applyUniformLayerLayout } from './UniformLayerLayout';
 
 const EPSILON = 1e-6;
+
+const cloneLayoutNodes = (nodes: readonly LayoutNode[]): LayoutNode[] => nodes.map(node => ({
+  ...node,
+  premises: node.premises ? [...node.premises] : undefined,
+  lineage: node.lineage ? { ...node.lineage } : undefined,
+  address: node.address ? { ...node.address } : undefined,
+  pos: node.pos?.clone(),
+  homePos: node.homePos?.clone(),
+  vel: node.vel?.clone(),
+}));
 
 function ordinary(
   id: string,
@@ -39,6 +50,63 @@ function ordinary(
 
 assert.equal(ORDINARY_LINEAGE_SPACING, LAYOUT_UNIT);
 assert.equal(ORDINARY_LINEAGE_SPACING, 5 * KNOWLEDGE_BALL_RADIUS, 'ordinary lineage uses the 5R layout unit');
+
+// Freeze the exact legacy footprint-planner contract over multiple anchor,
+// depth, and hard-obstacle states. The legacy planner accepted the general
+// solver only when it kept the proposed anchor cell; the direct solver must
+// return the same acceptance result and, when accepted, identical satellite
+// addresses in the identical stable node order.
+const equivalenceGrid = generateIcosahedralGrid(180, undefined, 'footprint-equivalence-shell');
+for (const anchorCell of [0, 1, 7, 19]) {
+  const neighbors = [...equivalenceGrid.edges]
+    .map(edge => edge.split(':').map(Number) as [number, number])
+    .filter(([left, right]) => left === anchorCell || right === anchorCell)
+    .map(([left, right]) => left === anchorCell ? right : left)
+    .sort((left, right) => left - right);
+  for (const [historyLength, oppositionLength] of [[1, 0], [0, 1], [1, 1], [2, 1], [3, 2]] as const) {
+    for (const blockedCells of [[], neighbors.slice(0, 1), neighbors.slice(0, 3), neighbors]) {
+      const anchor: LayoutNode = {
+        id: 'equivalence-current', type: 'fact', premises: [],
+        lineage: { topicId: 'equivalence-topic', proposal: 'new', role: 'current', rank: 0 },
+        address: { shellID: equivalenceGrid.shellID, cellID: anchorCell },
+        pos: equivalenceGrid.vertices[anchorCell]!.clone(),
+        homePos: equivalenceGrid.vertices[anchorCell]!.clone(),
+      };
+      const satellites: LayoutNode[] = [
+        ...Array.from({ length: historyLength }, (_, index): LayoutNode => ({
+          id: `equivalence-history-${index}`, type: 'fact', premises: [],
+          lineage: { topicId: 'equivalence-topic', proposal: 'optimization', targetId: anchor.id, role: 'history', rank: index + 1 },
+        })),
+        ...Array.from({ length: oppositionLength }, (_, index): LayoutNode => ({
+          id: `equivalence-opposition-${index}`, type: 'fact', premises: [],
+          lineage: { topicId: 'equivalence-topic', proposal: 'opposition', targetId: anchor.id, role: 'opposition', rank: index + 1 },
+        })),
+      ];
+      const obstacles = blockedCells.map((cellID, index): LayoutNode => ({
+        id: `__hard-${index}`, type: 'logic-symbol', premises: [],
+        pos: equivalenceGrid.vertices[cellID]!.clone(), homePos: equivalenceGrid.vertices[cellID]!.clone(),
+      }));
+      const fixture = [anchor, ...satellites, ...obstacles];
+      const direct = cloneLayoutNodes(fixture);
+      const legacy = cloneLayoutNodes(fixture);
+      const directAccepted = applyFixedAnchorOrdinaryLineageFootprint(direct);
+      let legacyAccepted = false;
+      try {
+        applyOrdinaryLineagePlacement(legacy);
+        legacyAccepted = legacy[0]!.address?.shellID === equivalenceGrid.shellID
+          && legacy[0]!.address?.cellID === anchorCell;
+      } catch {
+        legacyAccepted = false;
+      }
+      assert.equal(directAccepted, legacyAccepted, `fixed footprint acceptance must match legacy at anchor ${anchorCell}`);
+      if (directAccepted) {
+        const addresses = (nodes: readonly LayoutNode[]) => nodes.slice(1, 1 + satellites.length)
+          .map(node => [node.id, node.address?.shellID, node.address?.cellID]);
+        assert.deepEqual(addresses(direct), addresses(legacy), `fixed footprint addresses must match legacy at anchor ${anchorCell}`);
+      }
+    }
+  }
+}
 
 const runtimeNodes: LayoutNode[] = [
   ordinary('ordinary-current', 'current', 0),

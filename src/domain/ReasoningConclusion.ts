@@ -119,7 +119,11 @@ function resolveReasoningConclusionInternal<T extends ReasoningConclusionSemanti
   if (target?.type === 'reasoning' && active(target)) {
     const inherited = resolveReasoningConclusionInternal(target, byId, conclusionsByReasoningId, cache, visiting);
     visiting.delete(reasoning.id);
-    cache.set(reasoning.id, inherited);
+    // A cycle error names the first repeated node for this resolution root.
+    // Sharing that root-relative error through the generation cache would make
+    // later validation entries report the earlier root instead of themselves.
+    // Successful/empty resolutions are root-independent and remain memoized.
+    if (!inherited.error) cache.set(reasoning.id, inherited);
     return inherited;
   }
 
