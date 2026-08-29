@@ -1,4 +1,4 @@
-name: Temporary remove edit merge v3
+name: Temporary sync cleanup to latest main
 
 on:
   push:
@@ -8,100 +8,26 @@ permissions:
   contents: write
 
 jobs:
-  cleanup:
+  sync-and-verify:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: cleanup/remove-edit-merge-and-1s-hold
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-      - name: Apply complete cleanup codemod
-        shell: bash
+      - name: Merge latest main and remove obsolete temporary workflows
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import textwrap
-          raw = Path('.github/workflows/tmp-remove-edit-merge.yml').read_text()
-          begin = "          python3 <<'PY'\n"
-          end = "\n          PY\n"
-          start = raw.index(begin) + len(begin)
-          stop = raw.index(end, start)
-          script = textwrap.dedent(raw[start:stop])
-          lines = script.splitlines()
-          out=[]; i=0; removed=False
-          while i < len(lines):
-              if lines[i].strip() == 'sub(ui_test,' and i + 1 < len(lines) and 'mergeConclusionType' in lines[i + 1]:
-                  i += 3
-                  removed=True
-                  continue
-              out.append(lines[i]); i += 1
-          assert removed
-          script='\n'.join(out)+'\n'
-          anchor = "replace(app, '  onMergeDefinitions: mergeDefinitions,\\n', '')\n"
-          extra = anchor + "replace(app, '  edit: AddEdit | DecomposeEdit | MergeEdit,\\n', '  edit: AddEdit | DecomposeEdit,\\n')\n"
-          assert anchor in script
-          script = script.replace(anchor, extra, 1)
-          old_scan = "if source.is_file() and source.suffix in {'.ts','.tsx','.js','.mjs'}:"
-          new_scan = "if source.is_file() and source.suffix in {'.ts','.tsx','.js','.mjs'} and not source.name.endswith('.test.ts'):"
-          assert old_scan in script
-          script = script.replace(old_scan, new_scan, 1)
-          Path('/tmp/remove-edit-merge.py').write_text(script)
-          PY
-          python3 /tmp/remove-edit-merge.py
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          event_test = Path('src/protocol/KnowledgeEditEventRegression.test.ts')
-          text = event_test.read_text()
-          text, count = re.subn(
-              r"\n  await addAtomic\(runtime, 'def-a'.*?assert\.deepEqual\(runtime\.projection\.state\.nodesById\['merge-c'\]\.premises, \['merge-r'\]\);",
-              '', text, flags=re.S,
-          )
-          assert count == 1, f'expected one merge event fixture block, got {count}'
-          for obsolete in [
-              "  assert.equal(runtime.projection.state.nodesById['merge-r1'].hidden, true);\n",
-              "  assert.equal(runtime.projection.state.nodesById['merge-c2'].hidden, true);\n",
-              "  assert.equal(runtime.projection.state.nodesById['def-a'].hidden, true, 'merged source must survive as hidden history');\n",
-          ]:
-              assert obsolete in text, f'missing obsolete merge assertion: {obsolete!r}'
-              text = text.replace(obsolete, '')
-          text = text.replace("'merge-c'", "'c1'")
-          event_test.write_text(text.rstrip() + '\n')
-
-          adversarial = Path('src/protocol/ProtocolAdversarialRegression.test.ts')
-          text = adversarial.read_text()
-          text, count = re.subn(
-              r"\nconst definitions = \[.*?\nassert\.deepEqual\(\n  theoryMerge\.nodes\.find\(candidate => candidate\.id === 'theory-dependent'\)\?\.premises,\n  \['tc3'\],\n  'active dependants must be redirected to the unified theory conclusion',\n\);",
-              '', text, flags=re.S,
-          )
-          assert count == 1, f'expected one adversarial merge fixture block, got {count}'
-          adversarial.write_text(text.rstrip() + '\n')
-
-          detail_test = Path('src/ui/panels/NodeDetailRegression.test.ts')
-          text = detail_test.read_text()
-          old = "for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解', '合并']) {"
-          new = "for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解']) {"
-          assert old in text, 'detail action expectation did not include legacy merge action'
-          text = text.replace(old, new, 1)
-          anchor = "assert(!detail.includes(\"derive: '基于此新增'\"), 'legacy combined 基于此新增 action must stay removed');\n"
-          assert anchor in text
-          text = text.replace(anchor, anchor + "assert(!detail.includes(\"merge: '合并'\") && !detail.includes(\"| 'merge'\"), 'removed merge action must not return to the detail engine');\n", 1)
-          detail_test.write_text(text.rstrip() + '\n')
-
-          protocol_test = Path('src/protocol/KnowledgeEditingProtocol.test.ts')
-          protocol_test.write_text(protocol_test.read_text().rstrip() + '\n')
-
-          for path in ['src/protocol/KnowledgeEditEventRegression.test.ts', 'src/protocol/ProtocolAdversarialRegression.test.ts']:
-              source = Path(path).read_text()
-              assert "kind: 'merge'" not in source, f'obsolete merge fixture remains in {path}'
-              assert 'KnowledgeMerged' not in source, f'obsolete merge event assertion remains in {path}'
-          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit origin/main
+          git rm .github/workflows/tmp-remove-edit-merge.yml .github/workflows/tmp-remove-edit-merge-v2.yml
+      - run: npm ci
       - name: Build
         run: npm run build
       - name: Full tests
@@ -109,13 +35,8 @@ jobs:
       - name: I18n tests
         run: npm run test:i18n
       - name: Diff sanity
+        run: git diff --check
+      - name: Commit temporary workflow cleanup and push
         run: |
-          git diff --check
-          git status --short
-      - name: Commit cleanup
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src scripts
-          git commit -m "Remove edit merge flow and use one-second hold"
+          git commit -m "Remove temporary cleanup workflows"
           git push origin HEAD:cleanup/remove-edit-merge-and-1s-hold
