@@ -96,9 +96,13 @@ export function nodeNormallyVisibleInCurrent(
     if (!reasoningConclusion || !conclusionVisibleInCurrent(reasoningConclusion)) return false;
     if (!isReasoningSideHead(node)) return false;
 
-    // Two-camp Reasoning shows only the winning/dominant head. A pre-two-camp
-    // legacy current Reasoning has no side metadata and remains its sole winner.
-    if (node.lineage?.reasoningSide) return node.lineage.reasoningDominant === true;
+    // Current represents a surviving valid inference only. A dominant white head
+    // is visible; if the red/opposition head wins, the entire stable Reasoning
+    // family disappears from Current. All mode still renders both camps/history.
+    if (node.lineage?.reasoningSide) {
+      return node.lineage.reasoningSide === 'normal'
+        && node.lineage.reasoningDominant === true;
+    }
     return lineageRoleFor(node) === 'current' && !node.hidden;
   }
 
@@ -142,7 +146,8 @@ export function nodeVisibleInKnowledgeMode(
   if (node.status === 'pending') return true;
 
   // Non-pending Reasoning has no detail-overlay escape hatch: if its conclusion
-  // is hidden, or it is the losing/history side, Current must keep it hidden.
+  // is hidden, it is losing/history, or the red camp has won, Current keeps the
+  // whole stable Reasoning family hidden.
   if (node.type === 'reasoning') return nodeNormallyVisibleInCurrent(node, reasoningConclusion);
 
   // Ordinary gray/red related balls may still be temporarily revealed by an
