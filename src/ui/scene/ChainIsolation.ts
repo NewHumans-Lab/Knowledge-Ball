@@ -10,6 +10,7 @@ export const CHAIN_ISOLATION_CORE_SCALE = 0.08;
 export type ChainIsolationNode = Readonly<{
   id: string;
   type?: string;
+  address?: Readonly<{ shellID: string; cellID: number }>;
   pos?: THREE.Vector3;
   homePos?: THREE.Vector3;
 }>;
@@ -82,13 +83,30 @@ export function middleShellChainCenter(
   };
   if (!candidates.length) return fallback();
 
-  const shells: Array<{ radius: number; positions: THREE.Vector3[] }> = [];
-  const sorted = [...candidates].sort((a, b) => a.position.length() - b.position.length() || a.node.id.localeCompare(b.node.id));
-  for (const entry of sorted) {
-    const radius = entry.position.length();
-    const shell = shells.find(value => Math.abs(value.radius - radius) <= SHELL_RADIUS_EPSILON);
-    if (shell) shell.positions.push(entry.position);
-    else shells.push({ radius, positions: [entry.position] });
+  const canonicalShells = new Map<string, THREE.Vector3[]>();
+  for (const entry of candidates) {
+    const shellID = entry.node.address?.shellID;
+    if (!shellID) continue;
+    const positions = canonicalShells.get(shellID) ?? [];
+    positions.push(entry.position);
+    canonicalShells.set(shellID, positions);
+  }
+
+  const shells: Array<{ radius: number; positions: THREE.Vector3[] }> = canonicalShells.size
+    ? [...canonicalShells.values()].map(positions => ({
+      radius: positions.reduce((sum, position) => sum + position.length(), 0) / positions.length,
+      positions,
+    }))
+    : [];
+
+  if (!shells.length) {
+    const sorted = [...candidates].sort((a, b) => a.position.length() - b.position.length() || a.node.id.localeCompare(b.node.id));
+    for (const entry of sorted) {
+      const radius = entry.position.length();
+      const shell = shells.find(value => Math.abs(value.radius - radius) <= SHELL_RADIUS_EPSILON);
+      if (shell) shell.positions.push(entry.position);
+      else shells.push({ radius, positions: [entry.position] });
+    }
   }
   shells.sort((a, b) => a.radius - b.radius);
 
