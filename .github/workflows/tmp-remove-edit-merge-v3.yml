@@ -53,6 +53,34 @@ jobs:
           Path('/tmp/remove-edit-merge.py').write_text(script)
           PY
           python3 /tmp/remove-edit-merge.py
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          event_test = Path('src/protocol/KnowledgeEditEventRegression.test.ts')
+          text = event_test.read_text()
+          text, count = re.subn(
+              r"\n  await addAtomic\(runtime, 'def-a'.*?assert\.deepEqual\(runtime\.projection\.state\.nodesById\['merge-c'\]\.premises, \['merge-r'\]\);",
+              '', text, flags=re.S,
+          )
+          assert count == 1, f'expected one merge event fixture block, got {count}'
+          text = text.replace("'merge-c'", "'c1'")
+          event_test.write_text(text)
+
+          adversarial = Path('src/protocol/ProtocolAdversarialRegression.test.ts')
+          text = adversarial.read_text()
+          text, count = re.subn(
+              r"\nconst definitions = \[.*?\nassert\.deepEqual\(\n  theoryMerge\.nodes\.find\(candidate => candidate\.id === 'theory-dependent'\)\?\.premises,\n  \['tc3'\],\n  'active dependants must be redirected to the unified theory conclusion',\n\);",
+              '', text, flags=re.S,
+          )
+          assert count == 1, f'expected one adversarial merge fixture block, got {count}'
+          adversarial.write_text(text)
+
+          for path in ['src/protocol/KnowledgeEditEventRegression.test.ts', 'src/protocol/ProtocolAdversarialRegression.test.ts']:
+              source = Path(path).read_text()
+              assert "kind: 'merge'" not in source, f'obsolete merge fixture remains in {path}'
+              assert 'KnowledgeMerged' not in source, f'obsolete merge event assertion remains in {path}'
+          PY
       - name: Build
         run: npm run build
       - name: Full tests
