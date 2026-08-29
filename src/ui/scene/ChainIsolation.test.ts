@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import {
   CHAIN_ISOLATION_ABSORB_FRACTION,
@@ -64,5 +65,24 @@ const exitFinal = chainIsolationRenderPosition(authoritative, anchor, true, fals
 assert(exitFinal.distanceTo(authoritative) < 1e-12, 'exit must restore authoritative position exactly');
 assert.equal(chainIsolationNodeScale(false, false, 0), 0, 'outside nodes stay hidden at the start of exit');
 assert.equal(chainIsolationNodeScale(false, false, 1), 1, 'outside nodes must restore to full size');
+
+const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
+assert(sceneSource.includes('chainHoldTimer = window.setTimeout'), 'scene must wire a real hold timer instead of treating ordinary taps as chain isolation');
+assert(sceneSource.includes('}, CHAIN_ISOLATION_LONG_PRESS_MS);'), 'hold timer must use the shared 2.5 second threshold');
+assert(sceneSource.includes('Math.hypot(point.x - downX, point.y - downY) > CHAIN_ISOLATION_MOVE_TOLERANCE_PX'), 'movement must cancel a pending long press');
+assert(sceneSource.includes('beginChainIsolation(draggedNodeId)'), 'long press must enter isolation for the picked knowledge node');
+assert(sceneSource.includes('anchorCenter: middleShellChainCenter(nodes, chainIds)'), 'isolation center must come from the chain middle shell, never the long-pressed node');
+assert(sceneSource.includes("mode = chainIsolationState ? 'rotate' : draggedNodeId ? 'node' : 'rotate'"), 'isolated chain must rotate as a rigid view instead of dragging authoritative nodes');
+assert(sceneSource.includes("if (chainIsolationState?.phase === 'isolated') {\n        beginChainIsolationExit();"), 'blank tap in stable isolation must start the reverse animation');
+assert(sceneSource.includes('window.setTimeout(() => callbacks.onNodeTap(nodeId), 0)'), 'knowledge-node tap must keep the existing detail-opening path inside isolation');
+assert(sceneSource.includes('worldGroup.quaternion.copy(state.exitQuaternion).slerp(state.normalQuaternion, progress)'), 'exit must restore the pre-isolation orientation');
+assert(sceneSource.includes('graphZoom = THREE.MathUtils.lerp(state.exitGraphZoom, state.normalGraphZoom, progress)'), 'exit must restore the pre-isolation zoom');
+assert(sceneSource.includes('coreSunGroup.scale.setScalar(sunScale)'), 'sun must visibly shrink and regrow during the transition');
+const presentationStart = sceneSource.indexOf('const applyChainIsolationPresentation =');
+const pointerStart = sceneSource.indexOf('const down =', presentationStart);
+assert(presentationStart >= 0 && pointerStart > presentationStart, 'chain-isolation presentation block must remain discoverable');
+const presentationSource = sceneSource.slice(presentationStart, pointerStart);
+assert(!/node\.pos\.(?:add|copy|lerp|set)/.test(presentationSource), 'isolation presentation must never mutate canonical node positions');
+assert(presentationSource.includes('record.group.position.copy(rendered)'), 'isolation must change render transforms only');
 
 console.log('Chain isolation tests passed');
