@@ -260,11 +260,14 @@ try {
 
 assert.equal(nodeBelongsInLineageScene(history), true);
 assert.equal(nodeBelongsInLineageScene(opposition), true);
-assert.equal(nodeBelongsInLineageScene(whiteHead), true);
-assert.equal(nodeBelongsInLineageScene(redHead), true);
-assert.equal(nodeBelongsInLineageScene(whiteHistory), true);
-assert.equal(nodeBelongsInLineageScene(redHistory), true);
-assert.equal(nodeBelongsInLineageScene({ ...whiteHead, reasoningConclusion:undefined }), false, 'unbound Reasoning must not degrade into a free-floating scene ball');
+assert.equal(nodeBelongsInLineageScene(whiteHead), false, 'Reasoning without a canonical layout position must not enter the 3D scene');
+assert.equal(nodeBelongsInLineageScene(redHead), false, 'unpositioned red Reasoning must not appear as a standalone ball');
+assert.equal(nodeBelongsInLineageScene({ ...whiteHead, pos:{} }), true, 'positioned connected Reasoning belongs in the scene');
+assert.equal(nodeBelongsInLineageScene({ ...redHead, pos:{} }), true);
+assert.equal(nodeBelongsInLineageScene({ ...whiteHistory, pos:{} }), true);
+assert.equal(nodeBelongsInLineageScene({ ...redHistory, pos:{} }), true);
+assert.equal(nodeBelongsInLineageScene({ ...whiteHead, reasoningConclusion:undefined }), false, 'unbound and unpositioned Reasoning must not degrade into a free-floating scene ball');
+assert.equal(nodeBelongsInLineageScene({ ...whiteHead, reasoningConclusion:undefined, pos:{} }), true, 'already-positioned compatibility nodes may still be recolored as Reasoning after layout');
 assert.equal(nodeBelongsInLineageScene(rejected), false);
 
 assert.equal(lineageColorForNode(history), KNOWLEDGE_HISTORY_COLOR);
@@ -277,4 +280,4 @@ assert.equal(nodeShouldPulse({ status:'pending' }), true);
 assert.equal(nodeShouldPulse({ status:'disputed' }), true);
 assert.equal(nodeShouldPulse({ status:'verified' }), false);
 
-console.log('Knowledge Lineage pending-first Current, Personal, All and red-winner-hidden Reasoning visibility tests passed');
+console.log('Knowledge Lineage pending-first Current, Personal, All, red-winner-hidden and isolated-Reasoning visibility tests passed');

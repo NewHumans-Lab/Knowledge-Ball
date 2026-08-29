@@ -4,6 +4,7 @@ import {
   lineageRoleFor,
   topicIdFor,
 } from '../../domain/KnowledgeLineage';
+import { createKnowledgeRelationIndex } from '../../domain/KnowledgeRelations';
 import { reasoningConclusionBindingFor } from '../../domain/ReasoningConclusion';
 import { LAYOUT_UNIT, type LayoutNode } from './Deterministic5RLayout';
 
@@ -279,7 +280,9 @@ function applyPosition(reasoning: LayoutNode, position: THREE.Vector3): void {
  * - winning history extends from P0 in the opposite direction at 5R steps;
  * - losing history continues beyond the losing head at 5R steps;
  * - a pending candidate sits 5R from its target on the perpendicular tangent;
- * - every pair of positioned Reasoning balls is kept at least 5R apart.
+ * - every pair of positioned Reasoning balls is kept at least 5R apart;
+ * - a Reasoning node with zero canonical semantic edges receives no position and
+ *   therefore can never appear as a free-floating standalone ball.
  *
  * P0 starts at the original radial midpoint between ordinary premises and the
  * served concrete conclusion. If an unrelated Reasoning family would collide,
@@ -291,9 +294,26 @@ export function applyReasoningRadialPlacement(nodes: LayoutNode[]): void {
   const reasoningNodes = nodes.filter(node => node.type === 'reasoning');
   reasoningNodes.forEach(clearReasoningSpatialState);
 
+  // Canonical topology is the authority for whether a Reasoning ball actually
+  // participates in Knowledge. LayoutNode intentionally carries no UI title, so
+  // project only the semantic fields required by the relation index.
+  const relationNodes = nodes.map(node => ({
+    id: node.id,
+    title: node.id,
+    premises: node.premises ?? [],
+    type: node.type as Parameters<typeof createKnowledgeRelationIndex>[0][number]['type'],
+    lineage: node.lineage,
+  }));
+  const connectedReasoningIds = new Set<string>();
+  for (const edge of createKnowledgeRelationIndex(relationNodes).edges) {
+    if (byId.get(edge.fromId)?.type === 'reasoning') connectedReasoningIds.add(edge.fromId);
+    if (byId.get(edge.toId)?.type === 'reasoning') connectedReasoningIds.add(edge.toId);
+  }
+
   const families = new Map<string, LayoutNode[]>();
   for (const reasoning of reasoningNodes) {
     if (lineageRoleFor(reasoning) === 'rejected') continue;
+    if (!connectedReasoningIds.has(reasoning.id)) continue;
     const binding = reasoningConclusionBindingFor(reasoning);
     const conclusion = binding ? byId.get(binding.conclusionId) : undefined;
     if (!binding || !conclusion?.pos || conclusion.type === 'reasoning' || conclusion.pos.lengthSq() <= EPSILON) continue;

@@ -57,10 +57,13 @@ export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
-  // A real Reasoning without one concrete conclusion has no legal semantic/spatial
-  // owner. Tests may temporarily recolor an already-positioned ordinary node as
-  // reasoning after layout, hence the `pos` compatibility exception.
-  if (node.type === 'reasoning' && !reasoningConclusionBindingFor(node) && !node.pos) return false;
+  // Reasoning geometry is granted only after canonical semantic topology proves
+  // that the node has at least one real relation. Zero-edge/orphan Reasoning is
+  // left without `pos` by the layout pass and must never fall back to a random
+  // standalone scene position. Tests may still recolor an already-positioned
+  // ordinary node as Reasoning after layout, so a positioned compatibility node
+  // is allowed even without a semantic binding.
+  if (node.type === 'reasoning' && !node.pos) return false;
   if (node.lineage) return true;
   return !node.hidden;
 }
