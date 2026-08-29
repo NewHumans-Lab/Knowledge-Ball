@@ -57,28 +57,6 @@ export interface DecomposeEdit {
   intermediateConclusions: NewProtocolNode[];
 }
 
-export interface DefinitionMergeEdit {
-  kind: 'merge';
-  mode: 'definition';
-  sourceNodeIds: string[];
-  semanticKey: string;
-  mergedDefinition: NewProtocolNode;
-}
-
-export interface TheoryMergeEdit {
-  kind: 'merge';
-  mode: 'theory';
-  chains: ReasoningChain[];
-  /** Explicit identity for the inference process; validated before conclusion identity. */
-  reasoningSemanticKey: string;
-  semanticKey: string;
-  /** Created before the merged conclusion in the same atomic event. */
-  mergedReasoning: NewProtocolNode;
-  mergedConclusion: NewProtocolNode;
-}
-
-export type MergeEdit = DefinitionMergeEdit | TheoryMergeEdit;
-
 export interface AddAtomicEdit {
   kind: 'add';
   mode: 'atomic';
@@ -108,7 +86,7 @@ export interface AddReasoningLinkEdit {
 }
 
 export type AddEdit = AddAtomicEdit | AddTheoryEdit | AddReasoningLinkEdit;
-export type KnowledgeEdit = NegateEdit | DecomposeEdit | MergeEdit | AddEdit;
+export type KnowledgeEdit = NegateEdit | DecomposeEdit | AddEdit;
 
 export interface KnowledgeEditResult {
   nodes: ProtocolNode[];
@@ -396,63 +374,6 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
     errors.push(...validateDraftBatch(nodes, [...edit.reasoningSteps, ...edit.intermediateConclusions]));
   }
 
-  if (edit.kind === 'merge' && edit.mode === 'definition') {
-    if (edit.sourceNodeIds.length < 2) errors.push('定义合并至少需要两个来源定义');
-    if (unique(edit.sourceNodeIds).length !== edit.sourceNodeIds.length) errors.push('定义合并来源不能重复');
-    const sources = edit.sourceNodeIds.map(id => byId.get(id));
-    for (let i = 0; i < sources.length; i++) {
-      const source = sources[i];
-      const id = edit.sourceNodeIds[i];
-      if (!source) errors.push(`来源定义不存在: ${id}`);
-      else if (!active(source)) errors.push(`来源定义当前不可用: ${id}`);
-      else if (source.type !== 'definition') errors.push(`来源节点不是定义: ${id}`);
-    }
-    const descriptions = new Set(sources.filter(Boolean).map(node => canonicalKnowledgeText(node!.reasoning)));
-    if (sources.length >= 2 && descriptions.size < 2) {
-      errors.push('定义合并需要同一定义的至少两种不同语言描述，不能提交完全重复文本');
-    }
-    if (!edit.semanticKey.trim()) errors.push('定义合并必须提供语义等价标识');
-    if (edit.mergedDefinition.type !== 'definition') errors.push('合并结果必须是 definition 类型');
-    errors.push(...validateDraftBatch(nodes, [edit.mergedDefinition]));
-  }
-
-  if (edit.kind === 'merge' && edit.mode === 'theory') {
-    if (edit.chains.length < 2) errors.push('理论合并至少需要两条推理链');
-    const conclusionIds = edit.chains.map(chain => chain.conclusionId);
-    const reasoningIds = edit.chains.map(chain => chain.reasoningId);
-    if (unique(conclusionIds).length !== conclusionIds.length) errors.push('理论合并的来源结论不能重复');
-    if (unique(reasoningIds).length !== reasoningIds.length) errors.push('理论合并必须先选择彼此独立的推理过程');
-
-    for (const chain of edit.chains) errors.push(...validateReasoningChain(nodes, chain));
-    const first = edit.chains[0];
-    const firstReasoning = first ? byId.get(first.reasoningId) : undefined;
-    const firstConclusion = first ? byId.get(first.conclusionId) : undefined;
-    for (const chain of edit.chains.slice(1)) {
-      const reasoning = byId.get(chain.reasoningId);
-      const conclusion = byId.get(chain.conclusionId);
-      if (!first || !sameSet(first.premiseIds, chain.premiseIds)) {
-        errors.push('理论合并要求所有推理链具有相同前提');
-      }
-      if (firstReasoning && reasoning && firstReasoning.logicRuleId !== reasoning.logicRuleId) {
-        errors.push('理论合并要求推理过程使用同一逻辑符号');
-      }
-      if (firstConclusion && conclusion && firstConclusion.type !== conclusion.type) {
-        errors.push('理论合并要求来源结论具有相同知识类型');
-      }
-    }
-
-    if (!edit.reasoningSemanticKey.trim()) errors.push('理论合并必须先提供推理过程语义等价标识');
-    if (!edit.semanticKey.trim()) errors.push('理论合并必须提供语义等价标识');
-    if (edit.mergedReasoning.type !== 'reasoning') errors.push('合并推理过程必须是 reasoning 类型');
-    if (edit.mergedConclusion.type === 'reasoning' || ATOMIC_TYPES.has(edit.mergedConclusion.type)) {
-      errors.push('合并后的理论结论类型无效');
-    }
-    if (firstConclusion && edit.mergedConclusion.type !== firstConclusion.type) {
-      errors.push('合并后的理论结论必须保持来源结论类型');
-    }
-    errors.push(...validateDraftBatch(nodes, [edit.mergedReasoning, edit.mergedConclusion]));
-  }
-
   return unique(errors);
 }
 
@@ -562,52 +483,6 @@ function mutateKnowledgeEditInPlace(nodes: ProtocolNode[], edit: KnowledgeEdit):
     original.hidden = true;
   }
 
-  if (edit.kind === 'merge' && edit.mode === 'definition') {
-    const sources = edit.sourceNodeIds.map(id => byId.get(id)!);
-    const aliases = unique(sources.flatMap(node => [node.title, ...(node.aliases ?? [])]));
-    const merged = nodeFromDraft(edit.mergedDefinition, []);
-    merged.aliases = aliases;
-    merged.semanticKey = edit.semanticKey.trim();
-    append(merged);
-
-    for (const source of sources) {
-      source.supersededBy = merged.id;
-      source.status = 'suspended';
-      source.hidden = true;
-    }
-    for (const node of nodes) {
-      if (node.hidden || node.supersededBy) continue;
-      node.premises = node.premises.map(id => edit.sourceNodeIds.includes(id) ? merged.id : id);
-    }
-  }
-
-  if (edit.kind === 'merge' && edit.mode === 'theory') {
-    const mergedReasoning = nodeFromDraft(edit.mergedReasoning, edit.chains[0].premiseIds);
-    mergedReasoning.semanticKey = edit.reasoningSemanticKey.trim();
-    append(mergedReasoning);
-    const sourceConclusions = edit.chains.map(chain => byId.get(chain.conclusionId)!);
-    const aliases = unique(sourceConclusions.flatMap(node => [node.title, ...(node.aliases ?? [])]));
-    const mergedConclusion = nodeFromDraft(edit.mergedConclusion, [edit.mergedReasoning.id]);
-    mergedConclusion.aliases = aliases;
-    mergedConclusion.semanticKey = edit.semanticKey.trim();
-    append(mergedConclusion);
-
-    for (const chain of edit.chains) {
-      const reasoning = byId.get(chain.reasoningId)!;
-      const conclusion = byId.get(chain.conclusionId)!;
-      reasoning.supersededBy = edit.mergedReasoning.id;
-      conclusion.supersededBy = edit.mergedConclusion.id;
-      reasoning.status = 'suspended';
-      conclusion.status = 'suspended';
-      reasoning.hidden = true;
-      conclusion.hidden = true;
-    }
-    const sourceConclusionIds = new Set(edit.chains.map(chain => chain.conclusionId));
-    for (const node of nodes) {
-      if (node.hidden || node.supersededBy) continue;
-      node.premises = node.premises.map(id => sourceConclusionIds.has(id) ? mergedConclusion.id : id);
-    }
-  }
 }
 
 /**

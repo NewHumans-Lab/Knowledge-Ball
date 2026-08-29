@@ -62,18 +62,20 @@ assert.doesNotMatch(
 );
 assert.match(
   panelController,
-  /export type PanelNodeAction = 'edit' \| 'negate' \| 'decompose' \| 'merge' \| 'resolve' \| 'dispute'/,
-  'all existing non-create node operations must remain available',
+  /export type PanelNodeAction = 'edit' \| 'negate' \| 'decompose' \| 'resolve' \| 'dispute'/,
+  'all supported non-create node operations must remain available',
 );
+assert.doesNotMatch(panelController, /\| 'merge'|btnMerge|openMergeForm|onMergeDefinitions|onMergeTheories/,
+  'removed merge operation must not survive in the panel action contract');
 assert.match(
   panelController,
   /openNodeAction\(id: string, action: PanelNodeAction\): boolean/,
   'PanelController must expose one explicit semantic entry point for NodeDetail actions',
 );
-for (const action of ['edit', 'negate', 'decompose', 'merge', 'resolve', 'dispute']) {
+for (const action of ['edit', 'negate', 'decompose', 'resolve', 'dispute']) {
   assert.ok(
     panelController.includes(`executeNodeAction(id, '${action}')`),
-    `legacy panel action ${action} must share the explicit implementation`,
+    `panel action ${action} must share the explicit implementation`,
   );
 }
 

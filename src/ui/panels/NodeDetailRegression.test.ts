@@ -21,10 +21,11 @@ assert(!detail.includes('node-detail-content-label'), 'near-node detail must not
 assert(!detail.includes('>内容<'), 'the standalone content heading must stay removed');
 assert(detail.indexOf('node-detail-content') < detail.indexOf('node-detail-meta'), 'knowledge content must appear before contributor/time metadata');
 assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributor and time must remain two ordered footer rows');
-for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解', '合并']) {
+for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解']) {
   assert(detail.includes(action), `single detail engine must expose ${action}`);
 }
 assert(!detail.includes("derive: '基于此新增'"), 'legacy combined 基于此新增 action must stay removed');
+assert(!detail.includes("merge: '合并'") && !detail.includes("| 'merge'"), 'removed merge action must not return to the detail engine');
 assert(detail.includes("derive: '新增'") && detail.includes("'derive-reasoning': '新增推理'"), 'detail must expose two explicit create actions');
 assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit from a copied legacy controller');
 assert.equal(existsSync('src/ui/panels/NodeDetailLineageUi.ts'), false, 'near-node detail must have exactly one DOM/lifecycle owner');

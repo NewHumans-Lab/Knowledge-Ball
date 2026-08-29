@@ -195,73 +195,22 @@ assert.deepEqual(decomposed.find(item => item.id === 'r-step-2')?.premises, ['mi
 assert.deepEqual(decomposed.find(item => item.id === 'c1')?.premises, ['r-step-2']);
 assert.equal(decomposed.find(item => item.id === 'r1')?.hidden, true);
 
-// Definitions merge from distinct descriptions of the same declared semantic identity.
-const definitions = [
-  ...base,
-  node('def-en', 'definition', [], 'A prime has exactly two positive divisors'),
-  node('def-zh', 'definition', [], '质数只有两个正因数'),
-];
-const mergedDefinitions = apply(definitions, {
-  kind: 'merge',
-  mode: 'definition',
-  sourceNodeIds: ['def-en', 'def-zh'],
-  semanticKey: 'definition:prime-number',
-  mergedDefinition: {
-    id: 'def-prime',
-    title: 'Prime number — canonical definition',
-    type: 'definition',
-    reasoning: 'Canonical multilingual definition of a prime number',
-  },
-});
-assert.deepEqual(mergedDefinitions.find(item => item.id === 'def-prime')?.aliases?.sort(), ['def-en', 'def-zh']);
-assert.equal(mergedDefinitions.find(item => item.id === 'def-en')?.hidden, true);
-assert.equal(mergedDefinitions.find(item => item.id === 'def-zh')?.hidden, true);
-
-// Theory merge first proves inference equivalence, then creates its unified conclusion.
-const theoryNodes = [
-  ...base,
-  node('r2', 'reasoning', ['p1', 'p2'], 'The same implication expressed in alternative wording', { logicRuleId: 'logic-mp' }),
-  node('c2', 'theorem', ['r2'], 'Alternative conclusion wording'),
-];
-const mergedTheory = apply(theoryNodes, {
-  kind: 'merge',
-  mode: 'theory',
-  chains: [
-    chain,
-    { premiseIds: ['p2', 'p1'], reasoningId: 'r2', conclusionId: 'c2' },
-  ],
-  reasoningSemanticKey: 'inference:shared-p1-p2',
-  semanticKey: 'theorem:shared-result',
-  mergedReasoning: {
-    id: 'r-merged',
-    title: 'Unified inference',
-    type: 'reasoning',
-    reasoning: 'Canonical synthesis of the shared inference',
-    logicRuleId: 'logic-mp',
-  },
-  mergedConclusion: {
-    id: 'c-merged',
-    title: 'Unified conclusion',
-    type: 'theorem',
-    reasoning: 'Canonical description of the shared result',
-  },
-});
-assert.deepEqual(mergedTheory.find(item => item.id === 'c-merged')?.aliases?.sort(), ['c1', 'c2']);
-assert.deepEqual(mergedTheory.find(item => item.id === 'c-merged')?.premises, ['r-merged']);
-assert.equal(mergedTheory.find(item => item.id === 'r1')?.hidden, true);
-assert.equal(mergedTheory.find(item => item.id === 'c2')?.hidden, true);
-
 // Historical hidden nodes reserve titles; duplicate descriptions are advisory only.
-const duplicateHidden = validateKnowledgeEdit(mergedDefinitions, {
+const hiddenHistory = [
+  ...base,
+  node('def-en', 'definition', [], 'A prime has exactly two positive divisors', { hidden: true, status: 'suspended', supersededBy: 'def-current' }),
+  node('def-current', 'definition', [], 'Current canonical prime definition'),
+];
+const duplicateHidden = validateKnowledgeEdit(hiddenHistory, {
   kind: 'add',
   mode: 'atomic',
   node: { id: 'duplicate-hidden', title: 'def-en', type: 'definition', reasoning: 'A fresh description' },
 });
 assert(duplicateHidden.some(error => error.includes('标题')));
-const duplicateHiddenDescription = validateKnowledgeEdit(mergedDefinitions, {
+const duplicateHiddenDescription = validateKnowledgeEdit(hiddenHistory, {
   kind: 'add',
   mode: 'atomic',
-  node: { id: 'duplicate-hidden-description', title: 'Fresh title', type: 'fact', reasoning: '质数只有两个正因数' },
+  node: { id: 'duplicate-hidden-description', title: 'Fresh title', type: 'fact', reasoning: 'A prime has exactly two positive divisors' },
 });
 assert.deepEqual(duplicateHiddenDescription, []);
 
@@ -274,17 +223,3 @@ const invalidPremises = validateKnowledgeEdit(base, {
   conclusion: { id: 'bad-c', title: 'Bad conclusion', type: 'theorem', reasoning: 'Bad conclusion text' },
 });
 assert(invalidPremises.some(error => error.includes('普通知识结论')));
-
-// A unified conclusion replaces source conclusions in every active downstream chain.
-const downstreamNodes = [
-  ...theoryNodes,
-  node('r-downstream', 'reasoning', ['c1'], 'Downstream inference', { logicRuleId: 'logic-mp' }),
-  node('c-downstream', 'theorem', ['r-downstream'], 'Downstream conclusion'),
-];
-const downstreamMerged = apply(downstreamNodes, {
-  kind: 'merge', mode: 'theory', chains: [chain, { premiseIds: ['p2', 'p1'], reasoningId: 'r2', conclusionId: 'c2' }],
-  reasoningSemanticKey: 'inference:downstream', semanticKey: 'theorem:downstream',
-  mergedReasoning: { id: 'r-unified', title: 'Unified inference downstream', type: 'reasoning', reasoning: 'Canonical downstream source inference', logicRuleId: 'logic-mp' },
-  mergedConclusion: { id: 'c-unified', title: 'Unified conclusion downstream', type: 'theorem', reasoning: 'Canonical downstream result' },
-});
-assert.deepEqual(downstreamMerged.find(item => item.id === 'r-downstream')?.premises, ['c-unified']);

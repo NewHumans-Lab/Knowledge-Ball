@@ -24,7 +24,6 @@ import { executeKnowledgeEdit } from '../command/KnowledgeEdit';
 import {
   type AddEdit,
   type DecomposeEdit,
-  type MergeEdit,
 } from '../protocol/KnowledgeEditingProtocol';
 import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
 import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
@@ -60,8 +59,6 @@ import {
   type CreateNodePayload,
   type DecomposeNodePayload,
   type LineageCandidatePayload,
-  type MergeDefinitionPayload,
-  type MergeTheoryPayload,
   type PanelNodeSummary,
 } from './panels/PanelController';
 import {
@@ -290,33 +287,11 @@ function getNodeDetailById(id: string): NodeDetailNode | null {
   } : null;
 }
 
-function reasoningParentForDetail(node: KnowledgeSceneNode): KnowledgeSceneNode | null {
-  const parents = node.premises
-    .map(id => getNodeById(id))
-    .filter((candidate): candidate is KnowledgeSceneNode => candidate?.type === 'reasoning');
-  return parents.length === 1 ? parents[0] : null;
-}
-
-function canMergeFromDetail(node: KnowledgeSceneNode): boolean {
-  if (node.type === 'definition') return renderNodes.some(candidate => candidate.id !== node.id && candidate.type === 'definition' && lineageRoleFor(candidate) === 'current');
-  if (['axiom', 'definition', 'fact', 'logic-symbol', 'reasoning'].includes(node.type)) return false;
-  const reasoning = reasoningParentForDetail(node);
-  if (!reasoning) return false;
-  const premiseKey = [...new Set(reasoning.premises)].sort().join('\0');
-  return renderNodes.some(candidate => {
-    if (candidate.id === node.id || candidate.type !== node.type || lineageRoleFor(candidate) !== 'current') return false;
-    const otherReasoning = reasoningParentForDetail(candidate);
-    if (!otherReasoning || otherReasoning.id === reasoning.id || otherReasoning.logicRuleId !== reasoning.logicRuleId) return false;
-    return [...new Set(otherReasoning.premises)].sort().join('\0') === premiseKey;
-  });
-}
-
 function getNodeDetailActions(id: string): NodeDetailAction[] {
   const node = getNodeById(id);
   if (!node || lineageRoleFor(node) !== 'current') return [];
   const actions: NodeDetailAction[] = ['edit', 'derive', 'derive-reasoning'];
   if (node.type === 'reasoning') actions.push('decompose');
-  if (canMergeFromDetail(node)) actions.push('merge');
   if (node.status !== 'falsified' && node.status !== 'suspended') actions.push('negate');
   if (node.status === 'suspended') actions.push('resolve');
   if (node.status === 'disputed') actions.push('dispute');
@@ -500,7 +475,7 @@ async function createReasoningKnowledge(payload: CreateReasoningKnowledgePayload
 }
 
 async function applyKnowledgeEdit(
-  edit: AddEdit | DecomposeEdit | MergeEdit,
+  edit: AddEdit | DecomposeEdit,
   declaredLayers?: Readonly<Record<string, UserKnowledgeLayer>>,
 ): Promise<void> {
   await executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers);
@@ -553,59 +528,6 @@ async function decomposeKnowledgeNode(id: string, payload: DecomposeNodePayload)
   await applyKnowledgeEdit(edit);
 }
 
-async function mergeDefinitions(payload: MergeDefinitionPayload): Promise<void> {
-  const edit: MergeEdit = {
-    kind: 'merge',
-    mode: 'definition',
-    sourceNodeIds: payload.sourceNodeIds,
-    semanticKey: payload.semanticKey,
-    mergedDefinition: {
-      id: generateNodeId(),
-      title: payload.mergedDefinition.title,
-      type: 'definition',
-      reasoning: payload.mergedDefinition.description,
-    },
-  };
-  await applyKnowledgeEdit(edit);
-}
-
-async function mergeTheories(payload: MergeTheoryPayload): Promise<void> {
-  const chains = payload.sourceConclusionIds.map(conclusionId => {
-    const conclusion = projection.state.nodesById[conclusionId];
-    const reasoningParents = conclusion?.premises
-      .map(id => projection.state.nodesById[id])
-      .filter(node => node?.type === 'reasoning') ?? [];
-    if (!conclusion || reasoningParents.length !== 1) throw new Error(`结论缺少唯一推理过程: ${conclusionId}`);
-    const reasoning = reasoningParents[0]!;
-    return {
-      premiseIds: [...reasoning.premises],
-      reasoningId: reasoning.id,
-      conclusionId,
-    };
-  });
-  const edit: MergeEdit = {
-    kind: 'merge',
-    mode: 'theory',
-    chains,
-    reasoningSemanticKey: payload.reasoningSemanticKey,
-    semanticKey: payload.semanticKey,
-    mergedReasoning: {
-      id: generateNodeId(),
-      title: payload.mergedReasoning.title,
-      type: 'reasoning',
-      reasoning: payload.mergedReasoning.reasoning,
-      logicRuleId: payload.mergedReasoning.logicRuleId,
-    },
-    mergedConclusion: {
-      id: generateNodeId(),
-      title: payload.mergedConclusion.title,
-      type: payload.mergedConclusion.type,
-      reasoning: payload.mergedConclusion.description,
-    },
-  };
-  await applyKnowledgeEdit(edit);
-}
-
 async function resolveKnowledgeNode(id: string): Promise<void> {
   await cmdResolveNode(store, { nodeId: id }, commitPublicEvent);
 }
@@ -653,8 +575,6 @@ panel = new PanelController({
   onOptimizeNode: optimizeKnowledgeNode,
   onOpposeNode: opposeKnowledgeNode,
   onDecomposeNode: decomposeKnowledgeNode,
-  onMergeDefinitions: mergeDefinitions,
-  onMergeTheories: mergeTheories,
   onResolveNode: resolveKnowledgeNode,
   onDisputeNode: disputeKnowledgeNode,
   onSetMastery: setKnowledgeMastery,

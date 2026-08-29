@@ -7,7 +7,7 @@ import { validateKnowledgeEdit, type ProtocolNode } from '../protocol/KnowledgeE
 
 const editKindByType = {
   KnowledgeAdded: 'add', KnowledgeNegated: 'negate', KnowledgeDecomposed: 'decompose',
-  KnowledgeMerged: 'merge', KnowledgeStatusChanged: 'status', KnowledgeNodeEdited: 'update',
+  KnowledgeStatusChanged: 'status', KnowledgeNodeEdited: 'update',
 } as const;
 
 function safeCount(value: number, allowZero = true): boolean {
@@ -136,7 +136,7 @@ export function validateDomainEventAgainstState(event: DomainEvent, state: Graph
       if (event.payload.optimization) return validateOptimizationEvent(event, state);
       if (event.payload.opposition) return validateOppositionEvent(event, state);
       return validateKnowledgeEdit(protocolNodes(state), event.payload.edit);
-    case 'KnowledgeNegated': case 'KnowledgeDecomposed': case 'KnowledgeMerged':
+    case 'KnowledgeNegated': case 'KnowledgeDecomposed':
       return validateKnowledgeEdit(protocolNodes(state), event.payload.edit);
     case 'KnowledgeStatusChanged': {
       const target = state.nodesById[event.payload.edit.nodeId];

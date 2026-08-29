@@ -21,7 +21,7 @@ import {
   type KnowledgeNodeType,
 } from '../config/KnowledgeUiConfig';
 
-export type NodeDetailAction = 'edit' | 'derive' | 'derive-reasoning' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
+export type NodeDetailAction = 'edit' | 'derive' | 'derive-reasoning' | 'negate' | 'decompose' | 'resolve' | 'dispute';
 
 export interface NodeDetailNode {
   id: string;
@@ -57,7 +57,6 @@ const ACTION_LABEL: Readonly<Record<NodeDetailAction, string>> = Object.freeze({
   'derive-reasoning': '新增推理',
   negate: '提出对立观点',
   decompose: '分解',
-  merge: '合并',
   resolve: '重新验证',
   dispute: '争议',
 });
