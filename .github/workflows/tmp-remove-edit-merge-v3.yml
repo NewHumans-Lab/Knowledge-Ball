@@ -64,6 +64,12 @@ jobs:
               '', text, flags=re.S,
           )
           assert count == 1, f'expected one merge event fixture block, got {count}'
+          for obsolete in [
+              "  assert.equal(runtime.projection.state.nodesById['merge-r1'].hidden, true);\n",
+              "  assert.equal(runtime.projection.state.nodesById['merge-c2'].hidden, true);\n",
+          ]:
+              assert obsolete in text, f'missing obsolete merge assertion: {obsolete!r}'
+              text = text.replace(obsolete, '')
           text = text.replace("'merge-c'", "'c1'")
           event_test.write_text(text)
 
