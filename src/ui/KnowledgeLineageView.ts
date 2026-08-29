@@ -1,6 +1,9 @@
 import type { KnowledgeLineageMeta } from '../domain/KnowledgeLineage';
 import { isReasoningSideHead, lineageRoleFor } from '../domain/KnowledgeLineage';
-import { reasoningConclusionBindingFor } from '../domain/ReasoningConclusion';
+import {
+  reasoningConclusionBindingFor,
+  type ReasoningConclusionBinding,
+} from '../domain/ReasoningConclusion';
 import type { Mastery } from '../domain/KnowledgeModel';
 import type { NodeStatus } from '../event/Event';
 
@@ -14,6 +17,7 @@ export interface KnowledgeLineageViewNode {
   createdByMe?: boolean;
   hidden?: boolean;
   lineage?: KnowledgeLineageMeta;
+  reasoningConclusion?: ReasoningConclusionBinding;
 }
 
 type PersonalRestrictionNode = Pick<KnowledgeLineageViewNode, 'id' | 'status' | 'lineage'>;
