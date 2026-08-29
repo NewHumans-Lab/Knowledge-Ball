@@ -40,6 +40,27 @@ async function assertDesktopLayout(page) {
   await page.locator('#downloadsClose').click();
 }
 
+async function assertLabelSizeControl(page) {
+  await page.locator('#settingsOverlay.show').waitFor({ state: 'visible' });
+  const slider = page.locator('#setLabelSize');
+  const original = await slider.inputValue();
+  await slider.evaluate(input => {
+    input.value = '18';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--label-size').trim() === '18px');
+  await page.waitForFunction(() => [...document.querySelectorAll('.node-label')].some(label => getComputedStyle(label).display !== 'none'));
+  const renderedSize = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('.node-label')].find(candidate => getComputedStyle(candidate).display !== 'none');
+    return label ? getComputedStyle(label).fontSize : null;
+  });
+  assert.equal(renderedSize, '18px', 'Settings font-size slider must change the computed size of a real visible node label');
+  await slider.evaluate((input, value) => {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, original);
+}
+
 async function assertLocaleAndRuntime(page) {
   const select = page.locator('#setLocale');
   await select.selectOption('en');
@@ -128,6 +149,7 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin, { waitUntil: 'domcontentloaded' });
     await assertDesktopLayout(page);
+    await assertLabelSizeControl(page);
     await assertLocaleAndRuntime(page);
     assert.deepEqual(errors, [], `locale/download browser acceptance must not emit page errors: ${errors.join(' | ')}`);
     await context.close();
@@ -136,7 +158,7 @@ try {
   } finally {
     await browser.close();
   }
-  console.log('Downloads responsive layout and zh-CN/en browser acceptance passed');
+  console.log('Downloads responsive layout, label-size setting, and zh-CN/en browser acceptance passed');
 } finally {
   server.kill('SIGTERM');
 }
