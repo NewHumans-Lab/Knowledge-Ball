@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { reasoningConclusionBindingFor } from '../../domain/ReasoningConclusion';
 import { applyUniformLayerLayout } from './UniformLayerLayout';
 import { applyReasoningRadialPlacement } from './ReasoningRadialPlacement';
@@ -34,8 +35,7 @@ assert(reasoning.homePos!.distanceTo(reasoning.pos!)<1e-12,'Reasoning home posit
 
 // The binding is semantic, not a one-time XYZ copy. If the served conclusion
 // moves after ordinary local reflow, Reasoning must recompute on that ball's ray.
-const rotatedConclusion=conclusion.pos!.clone().applyAxisAngle({x:0,y:1,z:0} as never,0.13);
-conclusion.pos!.copy(rotatedConclusion);
+conclusion.pos!.applyAxisAngle(new THREE.Vector3(0,1,0),0.13);
 applyReasoningRadialPlacement(nodes);
 assert(reasoning.pos!.clone().cross(conclusion.pos!).length()<1e-7,'Reasoning must follow its served conclusion after that ordinary ball moves');
 
