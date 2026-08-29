@@ -1,5 +1,9 @@
 import type { KnowledgeLineageMeta } from '../domain/KnowledgeLineage';
 import { isReasoningSideHead, lineageRoleFor } from '../domain/KnowledgeLineage';
+import {
+  reasoningConclusionBindingFor,
+  type ReasoningConclusionBinding,
+} from '../domain/ReasoningConclusion';
 import type { Mastery } from '../domain/KnowledgeModel';
 import type { NodeStatus } from '../event/Event';
 
@@ -7,12 +11,18 @@ export type KnowledgeVisibilityMode = 'current' | 'personal' | 'all';
 
 export interface KnowledgeLineageViewNode {
   id: string;
+  type?: string;
   status: NodeStatus;
   mastery: Mastery;
   createdByMe?: boolean;
   hidden?: boolean;
   lineage?: KnowledgeLineageMeta;
+  reasoningConclusion?: ReasoningConclusionBinding;
+  /** Runtime layout projection; authoritative semantic nodes do not persist it. */
+  pos?: unknown;
 }
+
+type PersonalRestrictionNode = Pick<KnowledgeLineageViewNode, 'id' | 'status' | 'lineage'>;
 
 export const KNOWLEDGE_HISTORY_COLOR = 0x8A949E;
 export const KNOWLEDGE_OPPOSITION_COLOR = 0xEE5B63;
@@ -47,17 +57,52 @@ export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
+  // A real Reasoning without one concrete conclusion has no legal semantic/spatial
+  // owner. Tests may temporarily recolor an already-positioned ordinary node as
+  // reasoning after layout, hence the `pos` compatibility exception.
+  if (node.type === 'reasoning' && !reasoningConclusionBindingFor(node) && !node.pos) return false;
   if (node.lineage) return true;
   return !node.hidden;
 }
 
-export function nodeRestrictedInPersonalMode(node: KnowledgeLineageViewNode): boolean {
+/** Legacy helper retained for callers/tests. Pending/disputed are not Personal bans. */
+export function nodeRestrictedInPersonalMode(node: PersonalRestrictionNode): boolean {
   const lineageColor = lineageColorForNode(node);
-  return node.status === 'pending'
-    || node.status === 'disputed'
-    || node.status === 'falsified'
+  return node.status === 'falsified'
     || lineageColor === KNOWLEDGE_HISTORY_COLOR
     || lineageColor === KNOWLEDGE_OPPOSITION_COLOR;
+}
+
+/**
+ * Current-mode conclusion gate used by Reasoning. Pending has the highest visual
+ * priority and therefore remains visible even when another field would normally
+ * hide the ball. Otherwise only the ordinary Current ball is a visible conclusion.
+ */
+export function conclusionVisibleInCurrent(binding: ReasoningConclusionBinding): boolean {
+  if (binding.status === 'pending') return true;
+  if (binding.hidden || binding.status === 'falsified') return false;
+  return (binding.lineage?.role ?? 'current') === 'current';
+}
+
+/** Current visibility without the temporary detail-overlay presentation lens. */
+export function nodeNormallyVisibleInCurrent(
+  node: KnowledgeLineageViewNode,
+  reasoningConclusion = node.type === 'reasoning' ? reasoningConclusionBindingFor(node) : undefined,
+): boolean {
+  // Highest-priority rule: every legitimate pending ball is visible in Current.
+  if (node.status === 'pending') return true;
+
+  if (node.type === 'reasoning') {
+    if (!reasoningConclusion || !conclusionVisibleInCurrent(reasoningConclusion)) return false;
+    if (!isReasoningSideHead(node)) return false;
+
+    // Two-camp Reasoning shows only the winning/dominant head. A pre-two-camp
+    // legacy current Reasoning has no side metadata and remains its sole winner.
+    if (node.lineage?.reasoningSide) return node.lineage.reasoningDominant === true;
+    return lineageRoleFor(node) === 'current' && !node.hidden;
+  }
+
+  return lineageRoleFor(node) === 'current' && !node.hidden;
 }
 
 export function nodeVisibleInKnowledgeMode(
@@ -69,31 +114,41 @@ export function nodeVisibleInKnowledgeMode(
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
 
-  if (mode === 'personal') {
-    const belongsInScene = node.lineage ? true : !node.hidden;
-    if (!belongsInScene) return false;
-    if (node.createdByMe) return true;
-    if (nodeRestrictedInPersonalMode(node)) return false;
-    return node.mastery !== 'none';
-  }
-
-  // An opened detail is a temporary presentation lens in Current/All only.
-  // Personal remains a strict private projection and does not leak non-owned
-  // gray/red/validating nodes merely because another detail is open.
-  if (nodeVisibleBecauseDetailIsOpen(node.id)) return true;
-
-  // Pending lineage proposals remain globally visible while being judged, but
-  // Personal handled them above using the ownership exception.
-  if (isPendingLineageCandidate(node)) return true;
+  const reasoningConclusion = node.type === 'reasoning'
+    ? reasoningConclusionBindingFor(node)
+    : undefined;
+  if (node.type === 'reasoning' && !reasoningConclusion && !node.pos) return false;
 
   if (mode === 'all') return node.lineage ? true : !node.hidden;
 
-  // Reasoning is the deliberate Current-mode exception: both stable camp heads
-  // remain visible so white="reasoning valid" and red="reasoning invalid" keep
-  // permanent meaning. Dominance is shown by which head owns the logical chain,
-  // not by recoloring or hiding the other head. Gray histories stay hidden.
-  if (isReasoningSideHead(node)) return true;
-  return role === 'current' && (node.lineage ? true : !node.hidden);
+  if (mode === 'personal') {
+    // Reasoning is always subordinate to its concrete conclusion. If that
+    // conclusion is gray/red/hidden in the normal Current projection, no white,
+    // red, winning, losing, owned, or mastered Reasoning may leak into Personal.
+    if (node.type === 'reasoning' && (!reasoningConclusion || !conclusionVisibleInCurrent(reasoningConclusion))) {
+      return false;
+    }
+
+    // Personal = my own submissions, plus lit nodes that normally belong in
+    // Current. Ownership may expose my own history/failed Reasoning only while
+    // its concrete conclusion passes the gate above.
+    if (node.createdByMe) return true;
+    if (node.mastery === 'none') return false;
+    return nodeNormallyVisibleInCurrent(node, reasoningConclusion);
+  }
+
+  // Current: pending visibility is absolute and precedes conclusion/dominance,
+  // history, hidden-state, and detail-presentation rules.
+  if (node.status === 'pending') return true;
+
+  // Non-pending Reasoning has no detail-overlay escape hatch: if its conclusion
+  // is hidden, or it is the losing/history side, Current must keep it hidden.
+  if (node.type === 'reasoning') return nodeNormallyVisibleInCurrent(node, reasoningConclusion);
+
+  // Ordinary gray/red related balls may still be temporarily revealed by an
+  // opened detail, preserving the existing detail-navigation presentation.
+  if (nodeVisibleBecauseDetailIsOpen(node.id)) return true;
+  return nodeNormallyVisibleInCurrent(node);
 }
 
 export function edgeVisibleInKnowledgeMode(
@@ -114,8 +169,8 @@ export function edgeVisibleInKnowledgeMode(
 
 /**
  * Reasoning color is camp-stable at side rank 0: normal is white/structural,
- * opposition is red. Older versions on either side are gray. Pending
- * optimization candidates retain the existing gray candidate treatment.
+ * opposition is red. Older versions on either side are gray. Pending candidates
+ * keep their semantic side/history color even though Current visibility is forced.
  */
 export function lineageColorForNode(node: Pick<KnowledgeLineageViewNode, 'id' | 'lineage'>): number | null {
   const role = lineageRoleFor(node);

@@ -95,8 +95,9 @@ export interface AddTheoryEdit {
 }
 
 /**
- * Create one real reasoning-process ball between already-existing knowledge balls.
- * No premise or conclusion text can be materialized as a new node by this edit.
+ * Create one real reasoning-process ball between existing Knowledge balls.
+ * `conclusionIds` remains an array for event/replay compatibility, but every new
+ * reasoning-link must contain exactly one concrete immutable conclusion ID.
  */
 export interface AddReasoningLinkEdit {
   kind: 'add';
@@ -256,8 +257,7 @@ function validateReasoningLink(nodes: ProtocolNode[], edit: AddReasoningLinkEdit
   const byId = indexNodes(nodes);
   if (edit.requiredPremiseIds.length === 0) errors.push('新增推理至少需要选择一个已有前提');
   if (unique(edit.requiredPremiseIds).length !== edit.requiredPremiseIds.length) errors.push('新增推理的前提不能重复');
-  if (edit.conclusionIds.length === 0) errors.push('新增推理至少需要选择一个已有结论');
-  if (unique(edit.conclusionIds).length !== edit.conclusionIds.length) errors.push('新增推理的结论不能重复');
+  if (edit.conclusionIds.length !== 1) errors.push('新增推理必须且只能选择一个已有结论');
 
   for (const id of edit.requiredPremiseIds) {
     const premise = byId.get(id);

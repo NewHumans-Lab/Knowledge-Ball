@@ -39,6 +39,7 @@ const base: ProtocolNode[] = [
   node('p-reasoning', 'reasoning', ['p-current'], { lineage: current('p-reasoning') }),
   node('p-logic', 'logic-symbol', [], { lineage: current('p-logic') }),
   node('conclusion', 'theorem', []),
+  node('conclusion-2', 'theorem', []),
   node('conclusion-pending', 'hypothesis', [], { status: 'pending' }),
   node('conclusion-history', 'fact', [], { lineage: { topicId: 'topic-c', proposal: 'new', role: 'history', rank: 1 } }),
   node('conclusion-reasoning', 'reasoning', ['p-current']),
@@ -61,12 +62,15 @@ function edit(overrides: Partial<AddReasoningLinkEdit> = {}): AddReasoningLinkEd
 }
 
 assert.deepEqual(validateKnowledgeEdit(base, edit()), []);
+assert(validateKnowledgeEdit(base, edit({ conclusionIds: [] })).some(error => error.includes('必须且只能选择一个')));
+assert(validateKnowledgeEdit(base, edit({ conclusionIds: ['conclusion', 'conclusion-2'] })).some(error => error.includes('必须且只能选择一个')), 'one Reasoning may never serve two concrete conclusions');
 
 const result = applyKnowledgeEdit(base, edit());
 assert.deepEqual(result.errors, []);
 assert.equal(result.nodes.filter(item => item.id === 'r-new').length, 1, 'reasoning-link creates exactly one node');
 assert.deepEqual(result.nodes.find(item => item.id === 'r-new')?.premises, ['p-current']);
 assert.deepEqual(result.nodes.find(item => item.id === 'conclusion')?.premises, ['r-new']);
+assert.equal(result.nodes.find(item => item.id === 'conclusion-2')?.premises.length, 0, 'a Reasoning attaches only to its one concrete conclusion');
 assert.equal(result.nodes.find(item => item.id === 'conclusion')?.title, 'conclusion', 'existing conclusion identity/content is preserved');
 
 const preservesExistingParents = applyKnowledgeEdit(
@@ -95,6 +99,9 @@ const cyclic = [
 ];
 assert(validateKnowledgeEdit(cyclic, edit({ requiredPremiseIds: ['b'], conclusionIds: ['a'] })).some(error => error.includes('依赖环')));
 
+// Premise identity remains topic-normalized, but conclusion identity is the exact
+// immutable ball. Optimizing a conclusion therefore does not silently retarget an
+// existing Reasoning to the newer ball.
 const identityNodes: ProtocolNode[] = [
   node('identity-premise', 'fact', [], { lineage: { ...current('identity-premise'), topicId: 'premise-topic' } }),
   node('identity-conclusion-old', 'theorem', ['identity-reasoning'], {
@@ -102,7 +109,7 @@ const identityNodes: ProtocolNode[] = [
     lineage: { topicId: 'conclusion-topic', proposal: 'new', role: 'history', rank: 1 },
   }),
   node('identity-conclusion-current', 'theorem', ['identity-reasoning'], {
-    lineage: { ...current('identity-conclusion-current'), topicId: 'conclusion-topic' },
+    lineage: { topicId: 'conclusion-topic', proposal: 'optimization', targetId: 'identity-conclusion-old', role: 'current', rank: 0 },
   }),
   node('identity-reasoning', 'reasoning', ['identity-premise'], {
     title: 'Existing endpoint reasoning',
@@ -113,16 +120,20 @@ const identityNodes: ProtocolNode[] = [
 const identityState: GraphState = {
   nodesById: Object.fromEntries(identityNodes.map(item => [item.id, { ...item, mastery: 'none' as const }])),
 };
-const duplicate = findExistingReasoningForLink(
-  identityState,
-  ['identity-premise'],
-  ['identity-conclusion-current'],
+assert.equal(
+  findExistingReasoningForLink(identityState, ['identity-premise'], ['identity-conclusion-old'])?.id,
+  'identity-reasoning',
+  'same premise topics and same concrete conclusion must resolve to the existing Reasoning',
 );
-assert.equal(duplicate?.id, 'identity-reasoning', 'same premise/conclusion topics must resolve to the existing reasoning regardless of prose');
+assert.equal(
+  findExistingReasoningForLink(identityState, ['identity-premise'], ['identity-conclusion-current']),
+  null,
+  'a newer immutable conclusion ball is a different Reasoning endpoint even when its topic is the same',
+);
 assert.equal(
   findExistingReasoningForLink(identityState, ['identity-premise'], ['conclusion']),
   null,
-  'different conclusions remain a different reasoning identity',
+  'a different concrete conclusion remains a different Reasoning identity',
 );
 
-console.log('Explicit reasoning-link protocol regression tests passed');
+console.log('Single-concrete-conclusion reasoning-link protocol regression tests passed');

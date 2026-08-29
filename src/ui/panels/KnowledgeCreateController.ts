@@ -31,6 +31,7 @@ export interface CreateReasoningKnowledgePayload {
   title: string;
   premiseIds: string[];
   reasoning: string;
+  /** Kept as an array for command/event compatibility; UI always supplies exactly one. */
   conclusionIds: string[];
 }
 
@@ -69,8 +70,9 @@ export function isReasoningPremiseCandidate(node: KnowledgeCreateNode): boolean 
 }
 
 /**
- * Product rule: conclusions are existing knowledge balls. Their review/lineage
- * state is intentionally not filtered; only reasoning-process balls are invalid.
+ * Conclusions are existing Knowledge balls. Their review/lineage state is not
+ * filtered; a Reasoning ball itself cannot be selected as another Reasoning's
+ * concrete conclusion.
  */
 export function isReasoningConclusionCandidate(node: KnowledgeCreateNode): boolean {
   return node.type !== 'reasoning';
@@ -205,8 +207,8 @@ export class KnowledgeCreateController {
             <label for="reasoningBody">推理过程</label>
             <textarea id="reasoningBody" data-create-reasoning placeholder="逐步写清楚从前提到结论的推理过程…"></textarea>
           </div>
-          ${this.pickerMarkup('conclusion', '结论', '搜索已有结论节点…')}
-          <div class="knowledge-create-note">搜索框只用于筛选已有节点，不能把输入文字直接当作新节点。选中的节点会固定显示在列表顶部。</div>
+          ${this.pickerMarkup('conclusion', '结论（只能选择一个）', '搜索已有结论节点…')}
+          <div class="knowledge-create-note">一个推理球固定服务一个具体结论球。前提可以选择多个，结论只能选择一个；重新选择结论会替换之前的选择。</div>
         </div>
         ${this.footerMarkup('提交推理')}
       </section>
@@ -259,8 +261,12 @@ export class KnowledgeCreateController {
       const id = target.dataset.pickerNodeId;
       if (!id) return;
       const selected = kind === 'premise' ? this.selectedPremises : this.selectedConclusions;
-      if (selected.has(id)) selected.delete(id);
-      else selected.add(id);
+      if (selected.has(id)) {
+        selected.delete(id);
+      } else {
+        if (kind === 'conclusion') selected.clear();
+        selected.add(id);
+      }
       this.renderPicker(kind, search.value);
       search.focus();
     });
@@ -345,8 +351,8 @@ export class KnowledgeCreateController {
       const conclusionIds = [...this.selectedConclusions].filter(id => currentConclusionIds.has(id));
       if (premiseIds.length === 0) throw new Error('请从已有节点中选择至少一个前提。');
       if (!reasoning) throw new Error('请填写推理过程。');
-      if (conclusionIds.length === 0) throw new Error('请从已有节点中选择至少一个结论。');
-      if (premiseIds.some(id => conclusionIds.includes(id))) {
+      if (conclusionIds.length !== 1) throw new Error('请从已有节点中选择且只能选择一个结论。');
+      if (premiseIds.includes(conclusionIds[0]!)) {
         throw new Error('同一个节点不能同时作为这条推理的前提和结论。');
       }
       await this.onCreateReasoning({ title, premiseIds, reasoning, conclusionIds });

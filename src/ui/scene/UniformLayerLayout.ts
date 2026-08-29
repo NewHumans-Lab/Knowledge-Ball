@@ -1,4 +1,5 @@
 import { lineageRoleFor } from '../../domain/KnowledgeLineage';
+import { bindReasoningConclusions } from '../../domain/ReasoningConclusion';
 import {
   applyDeterministic5RLayout,
   type LayoutNode,
@@ -11,14 +12,18 @@ export type UniformLayoutNode = LayoutNode;
 /**
  * Runtime spatial boundary:
  * - rejected first-round proposals never enter Knowledge geometry;
+ * - every Reasoning family is first bound semantically to the one ordinary
+ *   Knowledge conclusion it serves; any ordinary Knowledge ball may be a conclusion;
  * - Current / unrelated ordinary Knowledge are solved by the global main-chain layout first;
  * - ordinary History/Opposition/candidates then occupy authoritative cells on
  *   Current's shell along a local 5R ISG coordinate line; if that line is blocked,
  *   nearby ordinary main-layout nodes are locally repacked because lineage wins;
- * - Reasoning keeps its existing non-authoritative radial projection and is
- *   projected only after ordinary Knowledge positions are final.
+ * - Reasoning remains non-authoritative and is projected only after its served
+ *   conclusion has reached its final ordinary-Knowledge position.
  */
 export function applyUniformLayerLayout(nodes: LayoutNode[]): void {
+  bindReasoningConclusions(nodes);
+
   const spatialKnowledge = nodes.filter(node => lineageRoleFor(node) !== 'rejected');
   const globalMainChain = spatialKnowledge.filter(node => !isOrdinaryLineageSatellite(node));
 
@@ -30,11 +35,11 @@ export function applyUniformLayerLayout(nodes: LayoutNode[]): void {
   // line may locally move ordinary main-layout blockers, never Reasoning.
   applyOrdinaryLineagePlacement(spatialKnowledge);
 
-  // Keep Reasoning semantics unchanged. Only its projection timing follows the
-  // final ordinary Knowledge geometry so a local ordinary reflow cannot leave a
-  // stale red/white position behind. History/opposition satellites still do not
-  // enter the Reasoning input set.
-  applyReasoningRadialPlacement(globalMainChain);
+  // Reasoning now receives the full post-lineage Knowledge set because the ball
+  // it serves may itself be a gray/red ordinary lineage member. The semantic
+  // binding decides which single conclusion owns it; geometry never averages
+  // multiple conclusions or invents a separate owner.
+  applyReasoningRadialPlacement(spatialKnowledge);
 
   for (const node of nodes) {
     if (lineageRoleFor(node) !== 'rejected') continue;

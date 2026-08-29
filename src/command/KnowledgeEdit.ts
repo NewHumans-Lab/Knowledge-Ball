@@ -5,6 +5,7 @@ import {
 } from '../event/Event';
 import type { UserKnowledgeLayer } from '../domain/KnowledgeLayerPolicy';
 import { lineageRoleFor, topicIdFor } from '../domain/KnowledgeLineage';
+import { resolveReasoningConclusion } from '../domain/ReasoningConclusion';
 import type { EventCommitter } from '../event/EventCommitter';
 import type { EventStore } from '../event/EventStore';
 import type { GraphNode } from '../graph/Node';
@@ -53,17 +54,19 @@ function sameCanonicalSet(left: readonly string[], right: readonly string[]): bo
 }
 
 /**
- * A reasoning node is identified by its endpoint topics, not by its prose.
- * Historical/current versions of the same endpoint knowledge collapse to the same
- * topic identity, so changing wording can never create a parallel inference node.
+ * A reasoning node is identified by its premise topics plus the exact immutable
+ * conclusion ball it serves. Premise version changes therefore cannot create a
+ * duplicate, while a different concrete conclusion version is intentionally a
+ * different Reasoning relationship.
  */
 export function findExistingReasoningForLink(
   state: GraphState,
   premiseIds: readonly string[],
   conclusionIds: readonly string[],
 ): GraphNode | null {
+  if (conclusionIds.length !== 1) return null;
   const expectedPremises = canonicalTopicSet(state, premiseIds);
-  const expectedConclusions = canonicalTopicSet(state, conclusionIds);
+  const expectedConclusionId = conclusionIds[0]!;
   const nodes = Object.values(state.nodesById);
 
   for (const reasoning of nodes) {
@@ -71,11 +74,8 @@ export function findExistingReasoningForLink(
     const actualPremises = canonicalTopicSet(state, reasoning.premises);
     if (!sameCanonicalSet(actualPremises, expectedPremises)) continue;
 
-    const directConclusionIds = nodes
-      .filter(node => node.type !== 'reasoning' && node.premises.includes(reasoning.id))
-      .map(node => node.id);
-    const actualConclusions = canonicalTopicSet(state, directConclusionIds);
-    if (sameCanonicalSet(actualConclusions, expectedConclusions)) return reasoning;
+    const concreteConclusion = resolveReasoningConclusion(reasoning, nodes);
+    if (concreteConclusion?.id === expectedConclusionId) return reasoning;
   }
   return null;
 }
@@ -110,7 +110,7 @@ export async function executeKnowledgeEdit(
       edit.conclusionIds,
     );
     if (existing) {
-      errors.push(`推理节点已存在：${existing.title}（同样的前提与结论只能有一个推理节点）`);
+      errors.push(`推理节点已存在：${existing.title}（同样的前提与具体结论只能有一个推理节点）`);
     }
   }
   performance.mark?.('knowledge-edit-validate-end');
