@@ -8,6 +8,13 @@ function meanRadius(nodes: readonly LayoutNode[]): number {
   return nodes.reduce((sum, node) => sum + node.pos!.length(), 0) / nodes.length;
 }
 
+function clearReasoningSpatialState(reasoning: LayoutNode): void {
+  delete reasoning.address;
+  delete reasoning.pos;
+  delete reasoning.homePos;
+  reasoning.vel?.set(0, 0, 0);
+}
+
 /**
  * Reasoning is a non-authoritative visual node. Knowledge positions are already
  * final when this projection runs, so Reasoning must never influence ISG
@@ -36,7 +43,9 @@ export function applyReasoningRadialPlacement(nodes: LayoutNode[]): void {
       .filter((node): node is LayoutNode => !!node?.pos && node.type !== 'reasoning' && node.pos.lengthSq() > EPSILON);
 
     if (!binding || !conclusion?.pos || conclusion.type === 'reasoning' || conclusion.pos.lengthSq() <= EPSILON || !premises.length) {
-      delete reasoning.address;
+      // Invalid/incomplete Reasoning must not inherit a stale position from a
+      // prior render generation and become a free-floating semantic orphan.
+      clearReasoningSpatialState(reasoning);
       continue;
     }
 
