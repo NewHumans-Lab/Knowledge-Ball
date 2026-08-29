@@ -122,18 +122,11 @@ function appendCanonicalEdge(
  */
 function collectCanonicalKnowledgeEdges(
   nodes: readonly KnowledgeRelationNode[],
+  byId: ReadonlyMap<string, KnowledgeRelationNode>,
+  membersByTopic: ReadonlyMap<string, readonly KnowledgeRelationNode[]>,
 ): CanonicalKnowledgeEdge[] {
-  const byId = new Map(nodes.map(node => [node.id, node] as const));
-  const membersByTopic = new Map<string, KnowledgeRelationNode[]>();
   const seen = new Set<string>();
   const edges: CanonicalKnowledgeEdge[] = [];
-
-  for (const node of nodes) {
-    const topicId = topicIdFor(node);
-    const members = membersByTopic.get(topicId);
-    if (members) members.push(node);
-    else membersByTopic.set(topicId, [node]);
-  }
 
   const activeTopicIds: string[] = [];
   const dominantByTopic = new Map<string, KnowledgeRelationNode>();
@@ -237,9 +230,22 @@ function collectCanonicalKnowledgeEdges(
 
 export function createKnowledgeRelationIndex(
   nodes: readonly KnowledgeRelationNode[],
+  generationIndex?: Readonly<{
+    byId: ReadonlyMap<string, KnowledgeRelationNode>;
+    byTopic: ReadonlyMap<string, readonly KnowledgeRelationNode[]>;
+  }>,
 ): KnowledgeRelationIndex {
-  const byId = new Map(nodes.map(node => [node.id, node] as const));
-  const canonicalEdges = collectCanonicalKnowledgeEdges(nodes);
+  const byId = generationIndex?.byId ?? new Map(nodes.map(node => [node.id, node] as const));
+  const byTopic = generationIndex?.byTopic ?? (() => {
+    const grouped = new Map<string, KnowledgeRelationNode[]>();
+    for (const node of nodes) {
+      const members = grouped.get(topicIdFor(node));
+      if (members) members.push(node);
+      else grouped.set(topicIdFor(node), [node]);
+    }
+    return grouped;
+  })();
+  const canonicalEdges = collectCanonicalKnowledgeEdges(nodes, byId, byTopic);
   const bucketsById = new Map<string, RelationBuckets>();
 
   const buckets = (id: string): RelationBuckets => {

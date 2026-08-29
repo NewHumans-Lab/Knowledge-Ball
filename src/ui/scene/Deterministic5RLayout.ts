@@ -372,7 +372,14 @@ function metadata(g:Graph):Component[]{
   });
 }
 const hardness=(a:Component,b:Component)=>b.ids.length-a.ids.length||b.layers-a.layers||b.branching-a.branching||a.id.localeCompare(b.id);
-function candidateCells(grid:IcosahedralGrid,direction:THREE.Vector3){return grid.vertices.map((v,i)=>({i,d:v.clone().normalize().dot(direction)})).sort((a,b)=>b.d-a.d||a.i-b.i).map(x=>x.i)}
+export function nearestDirectionCell(grid:IcosahedralGrid,direction:THREE.Vector3){
+  let best=0,bestDot=-Infinity;
+  for(let i=0;i<grid.vertices.length;i++){
+    const dot=grid.vertices[i]!.clone().normalize().dot(direction);
+    if(dot>bestDot||(dot===bestDot&&i<best)){best=i;bestDot=dot;}
+  }
+  return best;
+}
 function addressKey(a:SpatialAddress){return `${a.shellID}:${a.cellID}`}
 function radialFor(n:LayoutNode,depth:number,c:Component,b:SemanticBoundaries,extra:number){
   const outer=c.ids.filter(id=>layerOf(nodeMap.get(id)!)==='outer').sort((a,z)=>c.depth.get(a)!-c.depth.get(z)!||a.localeCompare(z));
@@ -426,8 +433,16 @@ function legalCandidate(position:THREE.Vector3,occupied:ReadonlyMap<string,THREE
   for(const p of placed.values())if(p.position.distanceTo(position)<LAYOUT_UNIT-EPSILON)return false;
   return true;
 }
-function nearbyCandidateCells(grid:IcosahedralGrid,target:THREE.Vector3,count:number){
-  return grid.vertices.map((v,i)=>({i,d:v.distanceToSquared(target)})).sort((a,b)=>a.d-b.d||a.i-b.i).slice(0,Math.min(count,grid.vertices.length)).map(x=>x.i);
+export function nearbyCandidateCells(grid:IcosahedralGrid,target:THREE.Vector3,count:number){
+  const limit=Math.min(count,grid.vertices.length),best:{i:number;d:number}[]=[];
+  for(let i=0;i<grid.vertices.length;i++){
+    const candidate={i,d:grid.vertices[i]!.distanceToSquared(target)};
+    let insert=best.findIndex(value=>candidate.d<value.d||(candidate.d===value.d&&candidate.i<value.i));
+    if(insert<0)insert=best.length;
+    if(insert<limit)best.splice(insert,0,candidate);
+    if(best.length>limit)best.pop();
+  }
+  return best.map(value=>value.i);
 }
 function compareCandidatePath(a:CandidatePath,b:CandidatePath){return a.lineLength-b.lineLength||a.guide-b.guide||a.tie.localeCompare(b.tie)}
 
@@ -601,7 +616,7 @@ function remapComponentOutward(c:Component,shift:number,grids:Map<string,Icosahe
       planned.push({id,address:oldAddress,position:grid.vertices[oldAddress.cellID]?.clone()??oldPosition.clone()});
       continue;
     }
-    const radius=oldPosition.length()+shift,grid=gridAt(radius,grids),ray=oldPosition.clone().normalize(),cellID=candidateCells(grid,ray)[0]!;
+    const radius=oldPosition.length()+shift,grid=gridAt(radius,grids),ray=oldPosition.clone().normalize(),cellID=nearestDirectionCell(grid,ray);
     planned.push({id,address:{shellID:grid.shellID,cellID},position:grid.vertices[cellID]!.clone()});
   }
   return planned;

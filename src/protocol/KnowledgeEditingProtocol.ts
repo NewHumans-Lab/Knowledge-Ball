@@ -228,8 +228,7 @@ function validateCounterexamples(nodes: ProtocolNode[], edit: NegateEdit): strin
   return errors;
 }
 
-function reachesDownstream(nodes: ProtocolNode[], fromId: string, targetId: string): boolean {
-  if (fromId === targetId) return true;
+function downstreamIndex(nodes: readonly ProtocolNode[]): ReadonlyMap<string, readonly string[]> {
   const downstream = new Map<string, string[]>();
   for (const node of nodes) {
     for (const premiseId of node.premises) {
@@ -238,6 +237,11 @@ function reachesDownstream(nodes: ProtocolNode[], fromId: string, targetId: stri
       downstream.set(premiseId, list);
     }
   }
+  return downstream;
+}
+
+function reachesDownstream(downstream: ReadonlyMap<string, readonly string[]>, fromId: string, targetId: string): boolean {
+  if (fromId === targetId) return true;
   const seen = new Set<string>([fromId]);
   const queue = [fromId];
   while (queue.length) {
@@ -278,9 +282,10 @@ function validateReasoningLink(nodes: ProtocolNode[], edit: AddReasoningLinkEdit
   if (edit.reasoning.type !== 'reasoning') errors.push('新增推理必须创建 reasoning 类型白球');
   errors.push(...validateDraftBatch(nodes, [edit.reasoning]));
 
+  const downstream = downstreamIndex(nodes);
   for (const conclusionId of edit.conclusionIds) {
     for (const premiseId of edit.requiredPremiseIds) {
-      if (reachesDownstream(nodes, conclusionId, premiseId)) {
+      if (reachesDownstream(downstream, conclusionId, premiseId)) {
         errors.push(`新增推理会形成依赖环: ${premiseId} → ${conclusionId}`);
       }
     }

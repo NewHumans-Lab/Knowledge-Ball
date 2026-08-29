@@ -115,6 +115,7 @@ try {
   const pointBeforeTap = await page.evaluate(nodeId => window.__debug.scene.screenPositionForNode(nodeId), target.id);
   assert.ok(pointBeforeTap, 'direct-detail target must remain renderable before tap');
   const graphFlushesBeforeDetailTap = await page.evaluate(() => window.__debug.projectionRenderScheduler.flushCount());
+  await page.evaluate(() => performance.clearMeasures('knowledge-node-detail-latency'));
   const detailTapStarted = performance.now();
   await deadline(page.touchscreen.tap(target.x, target.y), 1_000, 'direct detail tap');
   const detailTapWall = performance.now() - detailTapStarted;
@@ -135,11 +136,13 @@ try {
       activeCount: window.__debug.scene.getActiveNodeCount(),
       graphFlushes: window.__debug.projectionRenderScheduler.flushCount(),
       pointAfterTap: window.__debug.scene.screenPositionForNode(nodeId),
+      detailLatency: performance.getEntriesByName('knowledge-node-detail-latency').at(-1)?.duration ?? null,
     };
   }, { beforeCount: before, nodeId: target.id }), 250, 'post-tap responsiveness');
 
   console.log(JSON.stringify({ detailTapWall, lodState, state }, null, 2));
-  assert.ok(detailTapWall <= 250, `direct detail tap took ${detailTapWall.toFixed(1)}ms`);
+  assert.ok(state.detailLatency !== null && state.detailLatency <= 250,
+    `in-browser tap-to-detail latency took ${state.detailLatency?.toFixed(1) ?? 'unmeasured'}ms (automation wall ${detailTapWall.toFixed(1)}ms)`);
   assert.ok(state.pointAfterTap, 'direct-detail target must remain renderable after detail opens');
   assert.ok(Math.hypot(state.pointAfterTap.x - pointBeforeTap.x, state.pointAfterTap.y - pointBeforeTap.y) <= 2, 'opening detail must preserve the current graph orientation');
   assert.ok(state.activeCount <= mobileActiveNodeTarget, `selected-node relation retention must remain within the ${mobileActiveNodeTarget}-node working set`);

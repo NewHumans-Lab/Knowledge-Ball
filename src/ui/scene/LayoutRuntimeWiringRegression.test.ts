@@ -23,7 +23,8 @@ assert(entry.indexOf('createOrdinaryLineageFootprintPlanner(spatialKnowledge)')<
 assert(entry.indexOf('applyDeterministic5RLayout(globalMainChain, { footprintPlanner, footprintSignature })')<entry.indexOf('commitOrdinaryLineageFootprints(spatialKnowledge, getLastLayoutDiagnostics())'),'selected local lineage cells are materialized only after the global candidate solve has accepted them');
 assert(entry.indexOf('commitOrdinaryLineageFootprints(spatialKnowledge, getLastLayoutDiagnostics())')<entry.indexOf('applyReasoningRadialPlacement(spatialKnowledge)'),'Reasoning projection must follow the final position of any ordinary served conclusion, including gray/red lineage balls');
 assert(!entry.includes('applyOrdinaryLineagePlacement(spatialKnowledge)'),'ordinary lineage must not be inserted as a post-global reflow anymore');
-assert(ordinaryLineageFootprint.includes('applyOrdinaryLineagePlacement(temporary)'),'the pre-global footprint must reuse the existing ordinary-lineage solver unchanged');
+assert(ordinaryLineageFootprint.includes('applyFixedAnchorOrdinaryLineageFootprint(temporary)'),'the pre-global footprint must use the direct fixed-anchor solve instead of the general repair solver');
+assert(!ordinaryLineageFootprint.includes('applyOrdinaryLineagePlacement(temporary)'),'global candidates must not invoke family backtracking, relocation recursion, or full-shell anchor ordering');
 assert(ordinaryLineageFootprint.includes('clonedAnchor.address.cellID !== cellID'),'a footprint that needs to move its proposed Current anchor must reject that global candidate instead of mutating it later');
 assert(ordinaryLineageFootprint.includes('commitOrdinaryLineageFootprints'),'accepted footprint occupancy must be materialized from global diagnostics without a second lineage solve');
 assert(implementation.includes('footprintPlanner'),'the main solver may receive already-solved local occupancy before scoring a candidate');

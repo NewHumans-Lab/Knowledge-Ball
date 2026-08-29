@@ -215,8 +215,8 @@ class ReasoningSpatialIndex {
   }
 }
 
-function translationCandidates(geometry: FamilyGeometry): THREE.Vector3[] {
-  const candidates = [new THREE.Vector3()];
+function* translationCandidates(geometry: FamilyGeometry): Generator<THREE.Vector3> {
+  yield new THREE.Vector3();
   for (let ring = 1; ring <= MAX_ANCHOR_SEARCH_RING; ring += 1) {
     const coordinates: Array<readonly [number, number]> = [];
     for (let x = -ring; x <= ring; x += 1) {
@@ -231,13 +231,12 @@ function translationCandidates(geometry: FamilyGeometry): THREE.Vector3[] {
       return leftDistance - rightDistance || left[0] - right[0] || left[1] - right[1];
     });
     for (const [x, y] of coordinates) {
-      candidates.push(
+      yield (
         geometry.tangent.clone().multiplyScalar(x * LAYOUT_UNIT)
-          .add(geometry.bitangent.clone().multiplyScalar(y * LAYOUT_UNIT)),
+          .add(geometry.bitangent.clone().multiplyScalar(y * LAYOUT_UNIT))
       );
     }
   }
-  return candidates;
 }
 
 function familyPositions(

@@ -579,6 +579,30 @@ export function applyOrdinaryLineagePlacement(nodes: LayoutNode[]): void {
   }
 }
 
+/**
+ * Solve the footprint-only case used while the global solver tests one fixed
+ * Current cell. Unlike the general post-layout repair solver, this path has one
+ * family, no relocatable ordinary nodes, and may not move its anchor. Running
+ * family backtracking, relocation snapshots, and full-shell anchor ordering for
+ * that restricted state is therefore redundant.
+ */
+export function applyFixedAnchorOrdinaryLineageFootprint(nodes: LayoutNode[]): boolean {
+  const families = collectFamilies(nodes);
+  if (families.length !== 1) return false;
+  const family = families[0]!;
+  const anchor = family.anchor;
+  if (!anchor.address || !anchor.pos) return false;
+
+  const grid = generateIcosahedralGrid(anchor.pos.length(), undefined, anchor.address.shellID);
+  const ownIds = familyIds(family);
+  const usedCells = usedCellsOnShell(nodes, anchor.address.shellID, ownIds);
+  const candidates = findCoordinateLines(family, grid, nodes, usedCells, ownIds);
+  const candidate = candidates[0];
+  if (!candidate) return false;
+  assignFamilyLine(family, grid, anchor.address.shellID, candidate);
+  return true;
+}
+
 export function isCoordinateLineStep(grid: IcosahedralGrid, leftCellID: number, rightCellID: number): boolean {
   return grid.edges.has(edgeKey(leftCellID, rightCellID));
 }

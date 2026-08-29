@@ -47,13 +47,8 @@ export function isPendingLineageCandidate(node: KnowledgeLineageViewNode): boole
   return role === 'candidate-history' || role === 'candidate-opposition';
 }
 
-export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
-  if (typeof document === 'undefined') return false;
-  const root = document.getElementById('nodeDetailOverlay');
-  if (!root?.classList.contains('open')) return false;
-  if (root.dataset.nodeId === nodeId) return true;
-  return Array.from(root.querySelectorAll<HTMLElement>('[data-related-node-id]'))
-    .some(element => element.dataset.relatedNodeId === nodeId);
+export function nodeVisibleBecauseDetailIsOpen(nodeId: string, detailVisibleIds?: ReadonlySet<string>): boolean {
+  return detailVisibleIds?.has(nodeId) ?? false;
 }
 
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
@@ -118,6 +113,7 @@ export function nodeVisibleInKnowledgeMode(
   node: KnowledgeLineageViewNode,
   mode: KnowledgeVisibilityMode,
   isCore = false,
+  detailVisibleIds?: ReadonlySet<string>,
 ): boolean {
   if (isCore) return true;
   const role = lineageRoleFor(node);
@@ -157,7 +153,7 @@ export function nodeVisibleInKnowledgeMode(
 
   // Ordinary gray/red related balls may still be temporarily revealed by an
   // opened detail, preserving the existing detail-navigation presentation.
-  if (nodeVisibleBecauseDetailIsOpen(node.id)) return true;
+  if (nodeVisibleBecauseDetailIsOpen(node.id, detailVisibleIds)) return true;
   return nodeNormallyVisibleInCurrent(node);
 }
 
@@ -167,13 +163,14 @@ export function edgeVisibleInKnowledgeMode(
   mode: KnowledgeVisibilityMode,
   geometryVisible: boolean,
   isCore: (id: string) => boolean,
+  detailVisibleIds?: ReadonlySet<string>,
 ): boolean {
   return Boolean(
     geometryVisible
       && from
       && to
-      && nodeVisibleInKnowledgeMode(from, mode, isCore(from.id))
-      && nodeVisibleInKnowledgeMode(to, mode, isCore(to.id)),
+      && nodeVisibleInKnowledgeMode(from, mode, isCore(from.id), detailVisibleIds)
+      && nodeVisibleInKnowledgeMode(to, mode, isCore(to.id), detailVisibleIds),
   );
 }
 

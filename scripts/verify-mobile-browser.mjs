@@ -209,8 +209,18 @@ try{
     await page.locator('#accountClose').click();
     await page.locator('#accountOverlay').waitFor({state:'hidden'});
 
-    const target=targets[0];
     await page.evaluate(()=>window.__debug.scene.start());
+    await page.waitForTimeout(100);
+    const target=await page.evaluate(()=>window.__debug.renderNodes
+      .filter(node=>!['n1','n2','n16'].includes(node.id))
+      .map(node=>{
+        const label=[...document.querySelectorAll('.node-label')].find(candidate=>candidate.textContent?.trim()===node.title);
+        const point=window.__debug.scene.screenPositionForNode(node.id);
+        return label?.style.display!== 'none'&&point&&point.x>24&&point.x<366&&point.y>88&&point.y<808
+          ? {...point,id:node.id,title:node.title}
+          : null;
+      }).find(Boolean)??null);
+    assert.ok(target,'direct-detail regression must use a label selected by the authoritative RUS-18 shell budget');
     const pointBeforeDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
     assert.ok(pointBeforeDetail,'direct-detail target must remain renderable before tap');
     await page.touchscreen.tap(target.x,target.y);

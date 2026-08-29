@@ -5,11 +5,10 @@ import { GraphProjection } from '../projection/GraphProjection';
 import { nodeList } from '../state/GraphState';
 import type { GraphNode } from '../graph/Node';
 import {
-  currentNodeForTopic,
   lineageRoleFor,
-  topicIdFor,
 } from '../domain/KnowledgeLineage';
 import { createKnowledgeRelationIndex } from '../domain/KnowledgeRelations';
+import { createKnowledgeGraphIndex, effectivePremiseIds } from '../domain/KnowledgeGraphIndex';
 import {
   declaredLayerForNode,
   effectiveLayerForNode,
@@ -159,24 +158,16 @@ function generateNodeId(): string {
   return `n-${crypto.randomUUID()}`;
 }
 
-function effectivePremiseIds(node: GraphNode, allNodes: readonly GraphNode[]): string[] {
-  const byId = new Map(allNodes.map(item => [item.id, item] as const));
-  return [...new Set(node.premises.map(premiseId => {
-    const premise = byId.get(premiseId);
-    if (!premise) return premiseId;
-    return currentNodeForTopic(allNodes, topicIdFor(premise))?.id ?? premiseId;
-  }))];
-}
-
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
-  knowledgeRelationIndex = createKnowledgeRelationIndex(domainNodes);
+  const graphIndex = createKnowledgeGraphIndex(domainNodes);
+  knowledgeRelationIndex = createKnowledgeRelationIndex(domainNodes, graphIndex);
 
   // All formal lineage balls stay in scene data. Current/Personal/All owns their
   // visibility; rejected audit-only candidates and legacy hidden records do not.
   layoutNodes = domainNodes.map(dn => {
     const rendered = renderNodeFromDomain(dn);
-    rendered.premises = effectivePremiseIds(dn, domainNodes);
+    rendered.premises = effectivePremiseIds(dn, graphIndex);
     return rendered;
   });
   applyUniformLayerLayout(layoutNodes);
@@ -237,10 +228,7 @@ function getNodeById(id: string): KnowledgeSceneNode | null {
   return renderNodes.find(n => n.id === id) ?? null;
 }
 
-function getPanelNodeById(id: string): PanelNodeSummary | null {
-  const n = getNodeById(id);
-  if (!n || lineageRoleFor(n) !== 'current') return null;
-
+function panelNodeSummary(n: KnowledgeSceneNode): PanelNodeSummary {
   return {
     id: n.id,
     title: n.title,
@@ -257,23 +245,16 @@ function getPanelNodeById(id: string): PanelNodeSummary | null {
   };
 }
 
+function getPanelNodeById(id: string): PanelNodeSummary | null {
+  const n = getNodeById(id);
+  if (!n || lineageRoleFor(n) !== 'current') return null;
+  return panelNodeSummary(n);
+}
+
 function getPanelNodes(): PanelNodeSummary[] {
   return renderNodes
     .filter(n => lineageRoleFor(n) === 'current')
-    .map(n => ({
-      id: n.id,
-      title: n.title,
-      type: n.type,
-      status: n.status,
-      mastery: n.mastery,
-      reasoning: n.reasoning,
-      premises: n.premises,
-      declaredLayer: n.declaredLayer,
-      effectiveLayer: n.effectiveLayer,
-      logicRuleId: n.logicRuleId,
-      aliases: n.aliases,
-      semanticKey: n.semanticKey,
-    }));
+    .map(panelNodeSummary);
 }
 
 function getKnowledgeCreateNodes(): KnowledgeCreateNode[] {
@@ -400,6 +381,12 @@ function openNode(id: string): void {
     panel.closeNodePanel();
     knowledgeSurfaceState.open('detail', id);
     nodeDetail.open(id);
+    if (performance.getEntriesByName('knowledge-node-tap-start', 'mark').length) {
+      performance.mark?.('knowledge-node-detail-open');
+      performance.measure?.('knowledge-node-detail-latency', 'knowledge-node-tap-start', 'knowledge-node-detail-open');
+      performance.clearMarks?.('knowledge-node-tap-start');
+      performance.clearMarks?.('knowledge-node-detail-open');
+    }
   } else {
     panel.openNodePanel(id);
   }

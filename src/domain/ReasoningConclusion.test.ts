@@ -95,4 +95,13 @@ assert.ok(validateReasoningConclusionBindings(ambiguous).some(error => error.inc
 const unbound: ReasoningConclusionSemanticNode[] = [node('p', 'fact'), node('r', 'reasoning', ['p'])];
 assert.ok(validateReasoningConclusionBindings(unbound).some(error => error.includes('must serve one concrete ordinary conclusion')));
 
+const inheritanceCycle: ReasoningConclusionSemanticNode[] = [
+  node('cycle-a', 'reasoning', [], { topicId:'cycle-topic', proposal:'optimization', targetId:'cycle-b', role:'history', rank:1 }),
+  node('cycle-b', 'reasoning', [], { topicId:'cycle-topic', proposal:'optimization', targetId:'cycle-a', role:'history', rank:2 }),
+];
+assert.deepEqual(validateReasoningConclusionBindings(inheritanceCycle), [
+  'Reasoning conclusion inheritance cycle: cycle-a',
+  'Reasoning conclusion inheritance cycle: cycle-b',
+], 'generation memoization must preserve each validation root\'s exact cycle error');
+
 console.log('Reasoning-to-concrete-conclusion semantic binding regression tests passed');

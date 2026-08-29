@@ -220,43 +220,19 @@ assert.equal(lineageColorForNode(whiteHistory), KNOWLEDGE_HISTORY_COLOR);
 assert.equal(lineageColorForNode(redHistory), KNOWLEDGE_HISTORY_COLOR);
 assert.equal(lineageColorForNode(whiteCounterCandidate), null);
 
-const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
-let detailOpen = true;
-const relatedElements = [
-  { dataset: { relatedNodeId: 'history' } },
-  { dataset: { relatedNodeId: 'opposition' } },
-  { dataset: { relatedNodeId: 'reason-white' } },
-  { dataset: { relatedNodeId: 'reason-red' } },
-  { dataset: { relatedNodeId: 'reason-white-old' } },
-  { dataset: { relatedNodeId: 'reason-red-old' } },
-];
-const fakeDetailRoot = {
-  classList: { contains: (name: string) => name === 'open' && detailOpen },
-  dataset: { nodeId: 'current' },
-  querySelectorAll: () => relatedElements,
-};
-Object.defineProperty(globalThis, 'document', {
-  configurable: true,
-  value: { getElementById: (id: string) => id === 'nodeDetailOverlay' ? fakeDetailRoot : null },
-});
-try {
-  assert.equal(nodeVisibleBecauseDetailIsOpen('current'), true);
-  assert.equal(nodeVisibleBecauseDetailIsOpen('history'), true);
-  assert.equal(nodeVisibleBecauseDetailIsOpen('opposition'), true);
-  assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), true, 'ordinary gray history may still be temporarily revealed by detail');
-  assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), true, 'ordinary red opposition may still be temporarily revealed by detail');
-  assert.equal(nodeVisibleInKnowledgeMode(whiteHead, 'current'), false, 'detail must not resurrect the losing Reasoning head');
-  assert.equal(nodeVisibleInKnowledgeMode(redHead, 'current'), false, 'detail must not resurrect a red-winning Reasoning head');
-  assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'current'), false, 'detail must not resurrect Reasoning history');
-  assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'current'), false, 'detail must not resurrect losing/winning Reasoning history');
-  assert.equal(nodeVisibleInKnowledgeMode(rejected, 'current'), false);
-  detailOpen = false;
-  assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), false);
-  assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), false);
-} finally {
-  if (originalDocumentDescriptor) Object.defineProperty(globalThis, 'document', originalDocumentDescriptor);
-  else Reflect.deleteProperty(globalThis, 'document');
-}
+const detailVisibleIds = new Set(['current', 'history', 'opposition', 'reason-white', 'reason-red', 'reason-white-old', 'reason-red-old']);
+assert.equal(nodeVisibleBecauseDetailIsOpen('current', detailVisibleIds), true);
+assert.equal(nodeVisibleBecauseDetailIsOpen('history', detailVisibleIds), true);
+assert.equal(nodeVisibleBecauseDetailIsOpen('opposition', detailVisibleIds), true);
+assert.equal(nodeVisibleInKnowledgeMode(history, 'current', false, detailVisibleIds), true, 'ordinary gray history may still be temporarily revealed by detail');
+assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current', false, detailVisibleIds), true, 'ordinary red opposition may still be temporarily revealed by detail');
+assert.equal(nodeVisibleInKnowledgeMode(whiteHead, 'current', false, detailVisibleIds), false, 'detail must not resurrect the losing Reasoning head');
+assert.equal(nodeVisibleInKnowledgeMode(redHead, 'current', false, detailVisibleIds), false, 'detail must not resurrect a red-winning Reasoning head');
+assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'current', false, detailVisibleIds), false, 'detail must not resurrect Reasoning history');
+assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'current', false, detailVisibleIds), false, 'detail must not resurrect losing/winning Reasoning history');
+assert.equal(nodeVisibleInKnowledgeMode(rejected, 'current', false, detailVisibleIds), false);
+assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), false);
+assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), false);
 
 assert.equal(nodeBelongsInLineageScene(history), true);
 assert.equal(nodeBelongsInLineageScene(opposition), true);

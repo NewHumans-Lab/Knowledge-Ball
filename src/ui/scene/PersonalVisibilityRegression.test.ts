@@ -32,9 +32,9 @@ assert(!syncEdgesSource.includes('collectKnowledgeChainEdges'), 'visibility/runt
 assert(!syncEdgesSource.includes('logicRuleId'), 'visibility/runtime edge ownership must not restore logic metadata as a line');
 assert(!syncEdgesSource.includes('twinGroup'), 'visibility/runtime edge ownership must not restore legacy twin links');
 assert(/\.userData\.geometryVisible\s*=\s*true/.test(sceneSource), 'edge geometry validity must be stored independently from mode visibility');
-assert(sceneSource.includes('syncEdges(allNodes)'), 'relation lifecycle and geometry must be derived from the complete graph, not the current mobile LOD node subset');
+assert(sceneSource.includes('syncPositionsAndEdges(allNodes)'), 'relation lifecycle and geometry must be derived from the complete graph, not the current mobile LOD node subset');
 assert(!sceneSource.includes('syncEdges(activeNodes)'), 'mobile LOD membership must never create, remove, or restore relation lines');
-assert(/setVisibilityMode:\s*mode\s*=>\s*\{\s*visibilityMode\s*=\s*mode;\s*applyVisibility\(\);\s*largeGraphDirty\s*=\s*true;\s*\}/.test(sceneSource), 'Current/Personal/All mode changes must apply endpoint visibility immediately and then invalidate LOD membership');
+assert(/setVisibilityMode:\s*mode\s*=>\s*\{\s*visibilityMode\s*=\s*mode;\s*applyVisibility\(\);\s*largeGraphDirty\s*=\s*true;\s*graphDirty\s*=\s*true;\s*\}/.test(sceneSource), 'Current/Personal/All mode changes must apply endpoint visibility immediately and then invalidate graph/LOD membership');
 assert(!/setVisibilityMode:[^}]*syncEdges\(/s.test(sceneSource), 'visibility mode changes must never synchronously rebuild relation geometry');
 
 const geometryMatch = /const\s+updateLineGeometry\s*=/.exec(sceneSource);
@@ -44,9 +44,9 @@ const geometrySource = sceneSource.slice(geometryMatch.index, syncEdgesMatch.ind
 assert(!geometrySource.includes('.visible'), 'edge geometry updates must never own line visibility');
 
 const visibilityMatch = /const\s+applyVisibility\s*=/.exec(sceneSource);
-const syncMatch = /const\s+sync\s*=/.exec(sceneSource);
-assert(visibilityMatch && syncMatch && syncMatch.index > visibilityMatch.index, 'knowledge-mode visibility implementation must remain discoverable');
-const visibilitySource = sceneSource.slice(visibilityMatch.index, syncMatch.index);
+const styleMatch = /const\s+applyNodeStyles\s*=/.exec(sceneSource);
+assert(visibilityMatch && styleMatch && styleMatch.index > visibilityMatch.index, 'knowledge-mode visibility implementation must remain discoverable');
+const visibilitySource = sceneSource.slice(visibilityMatch.index, styleMatch.index);
 assert(visibilitySource.includes('edgeVisibleInKnowledgeMode('), 'edge visibility must be derived from Current/Personal/All endpoint state through one canonical rule');
 assert(!visibilitySource.includes('visibleIds'), 'edge visibility must not depend on whichever nodes currently have rendered meshes');
 assert(!visibilitySource.includes('homePos'), 'visibility changes must never alter fixed layout slots');
