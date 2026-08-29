@@ -2,9 +2,15 @@ import { lineageRoleFor } from '../../domain/KnowledgeLineage';
 import { bindReasoningConclusions } from '../../domain/ReasoningConclusion';
 import {
   applyDeterministic5RLayout,
+  getLastLayoutDiagnostics,
   type LayoutNode,
 } from './Deterministic5RLayout';
-import { applyOrdinaryLineagePlacement, isOrdinaryLineageSatellite } from './OrdinaryLineagePlacement';
+import { isOrdinaryLineageSatellite } from './OrdinaryLineagePlacement';
+import {
+  commitOrdinaryLineageFootprints,
+  createOrdinaryLineageFootprintPlanner,
+  ordinaryLineageFootprintSignature,
+} from './OrdinaryLineageFootprint';
 import { applyReasoningRadialPlacement } from './ReasoningRadialPlacement';
 
 export type UniformLayoutNode = LayoutNode;
@@ -14,31 +20,29 @@ export type UniformLayoutNode = LayoutNode;
  * - rejected first-round proposals never enter Knowledge geometry;
  * - every Reasoning family is first bound semantically to the one ordinary
  *   Knowledge conclusion it serves; any ordinary Knowledge ball may be a conclusion;
- * - Current / unrelated ordinary Knowledge are solved by the global main-chain layout first;
- * - ordinary History/Opposition/candidates then occupy authoritative cells on
- *   Current's shell along a local 5R ISG coordinate line; if that line is blocked,
- *   nearby ordinary main-layout nodes are locally repacked because lineage wins;
- * - Reasoning remains non-authoritative and is projected only after its served
- *   conclusion has reached its final ordinary-Knowledge position.
+ * - ordinary History/Opposition/candidates are solved first as a local 5R
+ *   shell-coordinate footprint around their Current anchor candidate;
+ * - the unchanged global main-chain solver then evaluates Current/unrelated
+ *   Knowledge with those local footprint cells already reserved, so real-edge
+ *   compactness and 5R preference are optimized with lineage present from the
+ *   start instead of being disturbed by a later insertion/reflow;
+ * - Reasoning remains non-authoritative and is projected only after final
+ *   ordinary-Knowledge geometry is committed.
  */
 export function applyUniformLayerLayout(nodes: LayoutNode[]): void {
   bindReasoningConclusions(nodes);
 
   const spatialKnowledge = nodes.filter(node => lineageRoleFor(node) !== 'rejected');
   const globalMainChain = spatialKnowledge.filter(node => !isOrdinaryLineageSatellite(node));
+  const footprintPlanner = createOrdinaryLineageFootprintPlanner(spatialKnowledge);
+  const footprintSignature = ordinaryLineageFootprintSignature(spatialKnowledge);
 
-  applyDeterministic5RLayout(globalMainChain);
+  applyDeterministic5RLayout(globalMainChain, { footprintPlanner, footprintSignature });
+  commitOrdinaryLineageFootprints(spatialKnowledge, getLastLayoutDiagnostics());
 
-  // Ordinary lineage is solved after Current is fixed, but its members are not
-  // free-floating satellites: every member receives a real shellID/cellID and
-  // consumes a cell on the 5R shell coordinate line through Current. A blocked
-  // line may locally move ordinary main-layout blockers, never Reasoning.
-  applyOrdinaryLineagePlacement(spatialKnowledge);
-
-  // Reasoning now receives the full post-lineage Knowledge set because the ball
-  // it serves may itself be a gray/red ordinary lineage member. The semantic
-  // binding decides which single conclusion owns it; geometry never averages
-  // multiple conclusions or invents a separate owner.
+  // Reasoning receives the full final Knowledge set because the concrete ball it
+  // serves may itself be a gray/red ordinary lineage member. Geometry never
+  // averages multiple conclusions or invents a separate owner.
   applyReasoningRadialPlacement(spatialKnowledge);
 
   for (const node of nodes) {

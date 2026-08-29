@@ -39,6 +39,18 @@ export type IcosahedralGrid = Readonly<{
   degrees:readonly number[];
   nearestNeighborDistance:number;
 }>;
+export type LayoutFootprintPlacement = Readonly<{ id:string; address:SpatialAddress; position:THREE.Vector3 }>;
+export type LayoutFootprintPlanner = (context:Readonly<{
+  anchor:LayoutNode;
+  grid:IcosahedralGrid;
+  cellID:number;
+  occupied:ReadonlyMap<string,THREE.Vector3>;
+  placed:ReadonlyMap<string,LayoutFootprintPlacement>;
+}>)=>readonly LayoutFootprintPlacement[]|null;
+export type DeterministicLayoutOptions = Readonly<{
+  footprintPlanner?:LayoutFootprintPlanner;
+  footprintSignature?:string;
+}>;
 export type LayoutDiagnostics = Readonly<{
   boundaries:SemanticBoundaries;
   occupiedCells:ReadonlySet<string>;
@@ -82,7 +94,7 @@ type Component={
   depth:Map<string,number>;
   orders:Map<number,string[]>;
 };
-type Placement={id:string;address:SpatialAddress;position:THREE.Vector3};
+type Placement=LayoutFootprintPlacement;
 type SemanticLayer='inner'|'middle'|'outer';
 type ShellGroup={shellID:string;radius:number;grid:IcosahedralGrid;ids:string[];depth:number};
 type DirectionSolution={
@@ -423,10 +435,12 @@ function compareCandidatePath(a:CandidatePath,b:CandidatePath){return a.lineLeng
  * A component direction is only an insertion anchor. After the first shell, every Knowledge node searches a small
  * candidate set around the radial projection of already placed real neighbours. The retained path with the shortest
  * real Knowledge-to-Knowledge line length wins; Reasoning never enters this objective.
+ * Optional local footprints only reserve already-solved side-branch cells before
+ * the unchanged real-edge scoring runs; they never add score terms of their own.
  */
 function solveDirection(
   c:Component,g:Graph,b:SemanticBoundaries,extra:number,occupied:ReadonlyMap<string,THREE.Vector3>,grids:Map<string,IcosahedralGrid>,
-  direction:THREE.Vector3,directionLevel:number,directionSlot:number,
+  direction:THREE.Vector3,directionLevel:number,directionSlot:number,footprintPlanner?:LayoutFootprintPlanner,
 ):DirectionSolution|null {
   const order=graphAwareOrder(c,g),groups=shellGroups(c,b,extra,grids,order),edges=realEdgesFor(g,c),neighbors=edgeNeighborMap(edges);
   let paths:CandidatePath[]=[{placed:[],byId:new Map(),lineLength:0,guide:0,tie:''}];
@@ -441,10 +455,20 @@ function solveDirection(
           if(!legalCandidate(position,occupied,path.byId))continue;
           const placement:Placement={id,address:{shellID:group.shellID,cellID},position:position.clone()};
           const byId=new Map(path.byId);byId.set(id,placement);
+          const footprint=footprintPlanner?.({anchor:nodeMap.get(id)!,grid:group.grid,cellID,occupied,placed:byId})??[];
+          if(footprint===null)continue;
+          let footprintLegal=true;
+          for(const reserved of footprint){
+            if(reserved.id===id||byId.has(reserved.id)||!legalCandidate(reserved.position,occupied,byId)){
+              footprintLegal=false;break;
+            }
+            byId.set(reserved.id,reserved);
+          }
+          if(!footprintLegal)continue;
           let increment=0;
           for(const neighbor of neighbors.get(id)??[]){const p=path.byId.get(neighbor)?.position;if(p)increment+=p.distanceTo(position);}
           expanded.push({
-            placed:[...path.placed,placement],
+            placed:[...path.placed,placement,...footprint],
             byId,
             lineLength:path.lineLength+increment,
             guide:path.guide+position.distanceToSquared(target)/(LAYOUT_UNIT*LAYOUT_UNIT),
@@ -485,12 +509,13 @@ function activeDirectionLevel(allocator:DirectionAllocator){
 }
 function searchComponent(
   c:Component,g:Graph,b:SemanticBoundaries,extra:number,occupied:ReadonlyMap<string,THREE.Vector3>,grids:Map<string,IcosahedralGrid>,allocator:DirectionAllocator,
+  footprintPlanner?:LayoutFootprintPlanner,
 ):SearchAttempt {
   const level=activeDirectionLevel(allocator),directions=directionLevelDirections(level),used=allocator.used.get(level)??new Set<number>();
   let directionSwitches=0;
   for(let slot=0;slot<directions.length;slot++){
     if(used.has(slot))continue;
-    const solution=solveDirection(c,g,b,extra,occupied,grids,directions[slot]!,level,slot);
+    const solution=solveDirection(c,g,b,extra,occupied,grids,directions[slot]!,level,slot,footprintPlanner);
     if(solution)return{solution,directionSwitches,level};
     directionSwitches++;
   }
@@ -503,12 +528,13 @@ function searchComponent(
  */
 function placeFreshComponent(
   c:Component,g:Graph,b:SemanticBoundaries,occupied:ReadonlyMap<string,THREE.Vector3>,grids:Map<string,IcosahedralGrid>,allocator:DirectionAllocator,
+  footprintPlanner?:LayoutFootprintPlanner,
 ){
   let expansions=0,directionSwitches=0;
   for(;;){
     const extra=expansions*EXPANSION_UNIT;
     if(!Number.isFinite(extra))throw new Error(`Non-finite outward expansion for component ${c.id}`);
-    const searched=searchComponent(c,g,b,extra,occupied,grids,allocator);
+    const searched=searchComponent(c,g,b,extra,occupied,grids,allocator,footprintPlanner);
     directionSwitches+=searched.directionSwitches;
     if(searched.solution){
       reserveDirection(allocator,searched.solution.directionLevel,searched.solution.directionSlot);
@@ -600,13 +626,13 @@ function restoreSpatialSnapshot(nodes:LayoutNode[],snapshot:ReadonlyMap<string,N
   }
 }
 function commitSpatialState(nodes:LayoutNode[],g:Graph,addresses:ReadonlyMap<string,SpatialAddress>,grids:ReadonlyMap<string,IcosahedralGrid>){
-  for(const [id,address] of addresses){const n=nodeMap.get(id)!,grid=grids.get(address.shellID);if(!grid)throw new Error(`Missing ISG grid ${address.shellID} during atomic commit`);n.address=address;setPosition(n,grid.vertices[address.cellID]!);}
+  for(const [id,address] of addresses){const n=nodeMap.get(id),grid=grids.get(address.shellID);if(!n)continue;if(!grid)throw new Error(`Missing ISG grid ${address.shellID} during atomic commit`);n.address=address;setPosition(n,grid.vertices[address.cellID]!);}
   for(const n of nodes.filter(n=>isSystemCoreNodeId(n.id))){const i=Math.max(0,SUN_TRIAD_IDS.indexOf(n.id as never)),a=i*Math.PI*2/SUN_TRIAD_IDS.length;setPosition(n,new THREE.Vector3(Math.cos(a)*SUN_ORBIT_RADIUS,Math.sin(a)*SUN_ORBIT_RADIUS,0));delete n.address;}
   placeReasoning(nodes,g);
 }
 
-export function applyDeterministic5RLayout<T extends LayoutNode>(nodes:T[]):T[]{
-  const sig=signature(nodes);
+export function applyDeterministic5RLayout<T extends LayoutNode>(nodes:T[],options:DeterministicLayoutOptions={}):T[]{
+  const sig=`${signature(nodes)}::footprint:${options.footprintSignature??(options.footprintPlanner?'enabled':'none')}`;
   if(cache?.signature===sig){
     for(const n of nodes){const p=cache.positions.get(n.id),a=cache.addresses.get(n.id);if(p)setPosition(n,p);if(a)n.address=a;}
     lastDiagnostics=cache.diagnostics;return nodes;
@@ -622,7 +648,7 @@ export function applyDeterministic5RLayout<T extends LayoutNode>(nodes:T[]):T[]{
   const macroAssignments=new Map<string,number>();
   let expansionCount=0,placementOrder:Component[]=ordered;
   const acceptFresh=(c:Component)=>{
-    const placed=placeFreshComponent(c,g,boundaries,occupied,grids,allocator),solution=placed.solution;
+    const placed=placeFreshComponent(c,g,boundaries,occupied,grids,allocator,options.footprintPlanner),solution=placed.solution;
     componentExpansionCounts.set(c.id,placed.expansions);expansionCount+=placed.expansions;directionSwitchCounts.set(c.id,placed.directionSwitches);
     componentInitialLineLengths.set(c.id,solution.initialLength);componentLineLengths.set(c.id,solution.length);componentOptimizationPasses.set(c.id,solution.passes);
     componentDirectionLevels.set(c.id,solution.directionLevel);componentDirectionSlots.set(c.id,solution.directionSlot);
@@ -632,7 +658,7 @@ export function applyDeterministic5RLayout<T extends LayoutNode>(nodes:T[]):T[]{
   };
   try{
     const deltas=cache?boundaryDeltas(cache.boundaries,boundaries):null;
-    const canRemap=!!cache&&!!deltas&&(deltas.cyan>EPSILON||deltas.blue>EPSILON)&&isWhole5RStep(deltas.cyan)&&isWhole5RStep(deltas.blue);
+    const canRemap=!options.footprintPlanner&&!!cache&&!!deltas&&(deltas.cyan>EPSILON||deltas.blue>EPSILON)&&isWhole5RStep(deltas.cyan)&&isWhole5RStep(deltas.blue);
     if(canRemap){
       const reusable=ordered.filter(c=>cache!.components.get(c.id)?.signature===componentSignature(c)&&c.ids.every(id=>cache!.positions.has(id)&&cache!.addresses.has(id))),reusableIds=new Set(reusable.map(c=>c.id)),fresh=ordered.filter(c=>!reusableIds.has(c.id));
       placementOrder=[...reusable,...fresh];
@@ -653,7 +679,7 @@ export function applyDeterministic5RLayout<T extends LayoutNode>(nodes:T[]):T[]{
       // Inputs are mutated only after a complete component solution exists. Direction slots are reserved only after the whole component passes global 5R checks.
       for(const c of ordered)acceptFresh(c);
     }
-    if(addresses.size!==g.knowledge.length)throw new Error('Atomic occupancy rebuild lost Knowledge placements');
+    if(g.knowledge.some(node=>!addresses.has(node.id)))throw new Error('Atomic occupancy rebuild lost Knowledge placements');
     const finalPlacements=[...addresses].map(([id,address])=>{const grid=grids.get(address.shellID);if(!grid)throw new Error(`Missing final grid ${address.shellID}`);return{id,address,position:grid.vertices[address.cellID]!.clone()};});
     if(!placementsAreLegal(finalPlacements,new Map()))throw new Error('Atomic occupancy rebuild violates global 5R spacing');
     // Atomic final commit: no input node is mutated until every remapped/new component and the rebuilt occupancy have passed.
