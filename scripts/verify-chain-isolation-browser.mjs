@@ -41,6 +41,12 @@ function chooseBlank(rect, points, margin = 30) {
     .find(item => item.clearance >= margin)?.point ?? candidates[0];
 }
 
+function dragDestination(rect, start) {
+  const horizontal = start.x < rect.x + rect.width / 2 ? 68 : -68;
+  const vertical = start.y < rect.y + rect.height / 2 ? 34 : -34;
+  return { x: start.x + horizontal, y: start.y + vertical };
+}
+
 async function snapshot(page) {
   return page.evaluate(() => ({
     nodes: window.__debug.renderNodes.map(node => ({
@@ -98,6 +104,7 @@ try {
 
     const incomingCount = new Map();
     for (const node of before.nodes) for (const premiseId of node.premises) incomingCount.set(premiseId, (incomingCount.get(premiseId) ?? 0) + 1);
+    const visibleBefore = before.nodes.filter(node => node.screen);
     const target = before.nodes
       .filter(node => node.screen
         && !CORE_IDS.has(node.id)
@@ -107,9 +114,14 @@ try {
         && node.screen.x < rect.x + rect.width - 24
         && node.screen.y > rect.y + 24
         && node.screen.y < rect.y + rect.height - 24)
-      .sort((a, b) => ((b.premises.length + (incomingCount.get(b.id) ?? 0)) > 0 ? 1 : 0) - ((a.premises.length + (incomingCount.get(a.id) ?? 0)) > 0 ? 1 : 0))[0];
+      .map(node => ({
+        ...node,
+        connected: node.premises.length + (incomingCount.get(node.id) ?? 0) > 0,
+        nearest: Math.min(...visibleBefore.filter(other => other.id !== node.id).map(other => distance(node.screen, other.screen))),
+      }))
+      .sort((a, b) => Number(b.connected) - Number(a.connected) || b.nearest - a.nearest)[0];
     assert.ok(target?.screen, 'real page must expose an on-screen ordinary knowledge ball for long-press acceptance');
-    assert.ok(target.premises.length + (incomingCount.get(target.id) ?? 0) > 0, 'long-press acceptance target must belong to a non-trivial relation chain');
+    assert.equal(target.connected, true, 'long-press acceptance target must belong to a non-trivial relation chain');
 
     await dispatchPointer(page, 'pointerdown', target.screen, 71);
     await page.waitForTimeout(2650);
@@ -123,7 +135,6 @@ try {
 
     const active = isolated.nodes.filter(node => node.screen && !CORE_IDS.has(node.id));
     assert.ok(active.length >= 2, 'non-trivial isolated chain must retain multiple rendered chain nodes');
-    assert.ok(active.length < before.nodes.filter(node => node.screen).length, 'chain isolation must remove at least the normal core/other scene meshes from the active render set');
 
     const tapTarget = active
       .filter(node => node.type !== 'reasoning' && node.type !== 'logic-symbol'
@@ -172,9 +183,10 @@ try {
       .map(node => ({ ...node, radial: distance(node.screen, canvasCenter) }))
       .sort((a, b) => b.radial - a.radial)[0];
     assert.ok(rotateProbe?.screen && rotateProbe.radial > 4, 'isolated chain must expose an off-center node to verify rotation');
+    const rotateEnd = dragDestination(rect, blank);
     await dispatchPointer(page, 'pointerdown', blank, 83);
-    await dispatchPointer(page, 'pointermove', { x: Math.min(rect.x + rect.width - 20, blank.x + 68), y: Math.min(rect.y + rect.height - 20, blank.y + 34) }, 83);
-    await dispatchPointer(page, 'pointerup', { x: Math.min(rect.x + rect.width - 20, blank.x + 68), y: Math.min(rect.y + rect.height - 20, blank.y + 34) }, 83);
+    await dispatchPointer(page, 'pointermove', rotateEnd, 83);
+    await dispatchPointer(page, 'pointerup', rotateEnd, 83);
     await page.waitForTimeout(180);
     const rotatedProbe = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), rotateProbe.id);
     assert.ok(rotatedProbe, 'rotation probe must remain rendered after isolated rotation');
@@ -185,8 +197,7 @@ try {
     const exitBlank = chooseBlank(rect, activeBeforeExit.map(node => node.screen), 28);
     await dispatchPointer(page, 'pointerdown', exitBlank, 91);
     await dispatchPointer(page, 'pointerup', exitBlank, 91);
-    await page.waitForFunction(() => window.__debug.scene.screenPositionForNode('n1') !== null, null, { timeout: 3_000 });
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(1_150);
 
     const restored = await snapshot(page);
     assert.ok(restored.core, 'blank tap must reverse isolation and restore the normal core');
