@@ -102,8 +102,8 @@ function collectFamilies(nodes: readonly LayoutNode[]): Family[] {
     });
   }
 
-  // Harder / longer lineages own search order, but not permanent priority: the
-  // recursive solver backtracks earlier placements if a later family cannot fit.
+  // Search harder / longer lineage families first, but recursive backtracking can
+  // still revise an earlier family when a later one cannot fit.
   return families.sort((left, right) =>
     (right.historySide.length + right.oppositionSide.length)
       - (left.historySide.length + left.oppositionSide.length)
@@ -371,9 +371,15 @@ function positionIsFreeNow(
 }
 
 /**
- * Soft ordinary blockers preserve their semantic shell. If the nearest legal
- * canonical cell is occupied by another soft ordinary node, displacement
- * cascades until a free cell is found or this branch is proven impossible.
+ * Soft ordinary blockers first search their original shell. If the shell has no
+ * legal capacity after lineage claims its authoritative cells, the search grows
+ * radially outward in exact 5R increments, mirroring the main layout's expansion
+ * rule. The authoritative shellID is rebuilt from the destination radius.
+ *
+ * A candidate occupied only by another soft ordinary node can recursively displace
+ * that node. With finite hard occupancy, the outward loop eventually reaches a
+ * shell outside the occupied radial envelope; there is deliberately no fixed
+ * expansion-count ceiling.
  */
 function cascadeRelocate(
   nodeId: string,
@@ -393,39 +399,48 @@ function cascadeRelocate(
   const entrySnapshot = snapshotNodes(relocatableNodes);
   const nextVisiting = new Set(visiting);
   nextVisiting.add(nodeId);
-  const grid = generateIcosahedralGrid(home.radius, undefined, home.shellID);
-  const orderedCells = grid.vertices
-    .map((position, cellID) => ({ cellID, distance: position.distanceToSquared(home.origin) }))
-    .sort((left, right) => left.distance - right.distance || left.cellID - right.cellID);
+  const homeRay = home.origin.clone().normalize();
 
-  for (const cell of orderedCells) {
-    restoreNodes(relocatableNodes, entrySnapshot);
-    clearSpatial(node);
-    const position = grid.vertices[cell.cellID]!;
-    if (conflictsWithReserved(position, reservedPositions)) continue;
-    const collision = collisionState(nodeId, position, nodes, relocatableIds);
-    if (collision.hard) continue;
+  for (let expansion = 0;; expansion++) {
+    const radius = home.radius + expansion * LAYOUT_UNIT;
+    if (!Number.isFinite(radius)) break;
+    const shellID = expansion === 0 ? home.shellID : `shell:${radius.toFixed(6)}`;
+    const grid = generateIcosahedralGrid(radius, undefined, shellID);
+    const target = homeRay.clone().multiplyScalar(radius);
+    const orderedCells = grid.vertices
+      .map((position, cellID) => ({ cellID, distance: position.distanceToSquared(target) }))
+      .sort((left, right) => left.distance - right.distance || left.cellID - right.cellID);
 
-    let displaced = true;
-    for (const softId of collision.softIds) {
-      if (nextVisiting.has(softId) || !cascadeRelocate(
-        softId,
-        nodes,
-        relocatableNodes,
-        relocatableById,
-        relocationHomes,
-        relocatableIds,
-        reservedPositions,
-        nextVisiting,
-      )) {
-        displaced = false;
-        break;
+    for (const cell of orderedCells) {
+      restoreNodes(relocatableNodes, entrySnapshot);
+      clearSpatial(node);
+      const position = grid.vertices[cell.cellID]!;
+      if (conflictsWithReserved(position, reservedPositions)) continue;
+      const collision = collisionState(nodeId, position, nodes, relocatableIds);
+      if (collision.hard) continue;
+
+      let displaced = true;
+      for (const softId of collision.softIds) {
+        if (nextVisiting.has(softId) || !cascadeRelocate(
+          softId,
+          nodes,
+          relocatableNodes,
+          relocatableById,
+          relocationHomes,
+          relocatableIds,
+          reservedPositions,
+          nextVisiting,
+        )) {
+          displaced = false;
+          break;
+        }
       }
+      if (!displaced || !positionIsFreeNow(nodeId, position, nodes, reservedPositions)) continue;
+      assignCanonical(node, shellID, cell.cellID, position);
+      return true;
     }
-    if (!displaced || !positionIsFreeNow(nodeId, position, nodes, reservedPositions)) continue;
-    assignCanonical(node, home.shellID, cell.cellID, position);
-    return true;
   }
+
   restoreNodes(relocatableNodes, entrySnapshot);
   return false;
 }
@@ -525,8 +540,9 @@ function solveLineageFamilies(
  * History/Opposition/pending members always consume real shellID/cellID positions
  * along adjacent ISG edges at the nominal 5R spacing. No future cells are held.
  * Only after every lineage is legal are conflicting ordinary non-lineage nodes
- * cascaded to nearby legal cells on their own existing shells. Reasoning is never
- * occupancy and is projected later from the final ordinary Knowledge geometry.
+ * locally repacked. Same-shell capacity is preferred; exhaustion expands the
+ * affected ordinary node outward by 5R increments with a matching new shellID.
+ * Reasoning is never occupancy and is projected later from final ordinary geometry.
  */
 export function applyOrdinaryLineagePlacement(nodes: LayoutNode[]): void {
   const families = collectFamilies(nodes);
