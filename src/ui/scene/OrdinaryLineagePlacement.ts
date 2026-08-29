@@ -9,7 +9,8 @@ import {
 
 /**
  * Ordinary Knowledge lineage advances by one authoritative ISG shell-grid step.
- * The layout unit is the project's 5R spacing unit.
+ * LAYOUT_UNIT is the project's 5R centre-spacing rule; actual shell chords can
+ * be slightly larger because positions must remain on canonical ISG cells.
  */
 export const ORDINARY_LINEAGE_SPACING = LAYOUT_UNIT;
 
@@ -106,9 +107,9 @@ function neighborMap(grid: IcosahedralGrid): ReadonlyMap<number, readonly number
 
 function tangentDirection(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3 {
   const radial = from.clone().normalize();
-  return to.clone()
-    .sub(from)
-    .addScaledVector(radial, -to.clone().sub(from).dot(radial))
+  const chord = to.clone().sub(from);
+  return chord
+    .addScaledVector(radial, -chord.dot(radial))
     .normalize();
 }
 
