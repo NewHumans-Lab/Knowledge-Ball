@@ -129,6 +129,14 @@ const redHead: KnowledgeLineageViewNode = {
     reasoningSide: 'opposition', reasoningSideRank: 0, reasoningDominant: true,
   },
 };
+const whiteWinningHead: KnowledgeLineageViewNode = {
+  ...whiteHead,
+  lineage: { ...whiteHead.lineage!, reasoningDominant: true },
+};
+const redLosingHead: KnowledgeLineageViewNode = {
+  ...redHead,
+  lineage: { ...redHead.lineage!, reasoningDominant: false },
+};
 const whiteHistory: KnowledgeLineageViewNode = {
   id: 'reason-white-old', type: 'reasoning', status: 'verified', mastery: 'none', hidden: true,
   reasoningConclusion: verifiedConclusion,
@@ -154,11 +162,16 @@ const whiteCounterCandidate: KnowledgeLineageViewNode = {
   },
 };
 
-// Current with a normally visible conclusion: only the winner survives.
-assert.equal(nodeVisibleInKnowledgeMode(whiteHead, 'current'), false, 'losing white head must be hidden');
-assert.equal(nodeVisibleInKnowledgeMode(redHead, 'current'), true, 'dominant red head owns the visible live chain');
+// Current: a white winner is visible. If red wins, the entire stable Reasoning
+// family disappears from Current; All still exposes every camp/history ball.
+assert.equal(nodeVisibleInKnowledgeMode(whiteWinningHead, 'current'), true, 'dominant white head is the visible surviving inference');
+assert.equal(nodeVisibleInKnowledgeMode(redLosingHead, 'current'), false, 'losing red head stays hidden when white wins');
+assert.equal(nodeVisibleInKnowledgeMode(whiteHead, 'current'), false, 'losing white head must be hidden when red wins');
+assert.equal(nodeVisibleInKnowledgeMode(redHead, 'current'), false, 'dominant red means no stable Reasoning ball is shown in Current');
 assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'current'), false, 'winner/loser histories stay hidden');
 assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'current'), false);
+assert.equal(nodeVisibleInKnowledgeMode(whiteHead, 'all'), true);
+assert.equal(nodeVisibleInKnowledgeMode(redHead, 'all'), true);
 assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'all'), true);
 assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'all'), true);
 
@@ -167,16 +180,21 @@ assert.equal(nodeVisibleInKnowledgeMode(whiteCounterCandidate, 'current'), true)
 assert.equal(nodeVisibleInKnowledgeMode({ ...whiteCounterCandidate, reasoningConclusion:grayConclusion }, 'current'), true, 'pending Reasoning stays visible even when its conclusion is gray');
 assert.equal(nodeVisibleInKnowledgeMode({ ...whiteCounterCandidate, reasoningConclusion:redConclusion }, 'current'), true, 'pending Reasoning stays visible even when its conclusion is red');
 
-// Non-pending Reasoning is subordinate to its concrete conclusion.
+// Non-pending Reasoning is subordinate to its concrete conclusion, and a red
+// winner remains hidden even when that conclusion itself is Current/pending-visible.
 assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, reasoningConclusion:grayConclusion }, 'current'), false);
 assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, reasoningConclusion:redConclusion }, 'current'), false);
-assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, reasoningConclusion:pendingConclusion }, 'current'), true, 'a visible pending conclusion may host its dominant Reasoning');
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, reasoningConclusion:pendingConclusion }, 'current'), false, 'red-winning stable Reasoning stays hidden in Current');
+assert.equal(nodeVisibleInKnowledgeMode({ ...whiteWinningHead, reasoningConclusion:pendingConclusion }, 'current'), true, 'white winner may display when its conclusion is pending-visible');
 
 // Personal: own Reasoning may expose its own losing/history ball, but never when
-// the concrete conclusion is gray/red/hidden. Lit non-owned Reasoning still must
-// be normal Current-visible, so only the dominant winner enters.
-assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, mastery:'touched' }, 'personal'), true, 'lit dominant Reasoning enters Personal');
+// the concrete conclusion is gray/red/hidden. Lit non-owned Reasoning must first
+// be normally Current-visible, so a red winner does not enter Personal merely by
+// being lit; an owned red winner remains inspectable under the Personal rule.
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, mastery:'touched' }, 'personal'), false, 'lit red winner is not normally Current-visible');
+assert.equal(nodeVisibleInKnowledgeMode({ ...whiteWinningHead, mastery:'touched' }, 'personal'), true, 'lit white winner enters Personal');
 assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHead, mastery:'touched' }, 'personal'), false, 'lit losing Reasoning does not enter Personal');
+assert.equal(nodeVisibleInKnowledgeMode({ ...redHead, createdByMe:true }, 'personal'), true, 'own red winner remains inspectable in Personal while conclusion is normal');
 assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHead, createdByMe:true }, 'personal'), true, 'own losing Reasoning may be inspected in Personal while conclusion is normal');
 assert.equal(nodeVisibleInKnowledgeMode({ ...whiteHistory, createdByMe:true }, 'personal'), true, 'own Reasoning history may be inspected in Personal while conclusion is normal');
 assert.equal(nodeVisibleInKnowledgeMode(whiteCounterCandidate, 'personal'), false);
@@ -208,6 +226,7 @@ const relatedElements = [
   { dataset: { relatedNodeId: 'history' } },
   { dataset: { relatedNodeId: 'opposition' } },
   { dataset: { relatedNodeId: 'reason-white' } },
+  { dataset: { relatedNodeId: 'reason-red' } },
   { dataset: { relatedNodeId: 'reason-white-old' } },
   { dataset: { relatedNodeId: 'reason-red-old' } },
 ];
@@ -227,6 +246,7 @@ try {
   assert.equal(nodeVisibleInKnowledgeMode(history, 'current'), true, 'ordinary gray history may still be temporarily revealed by detail');
   assert.equal(nodeVisibleInKnowledgeMode(opposition, 'current'), true, 'ordinary red opposition may still be temporarily revealed by detail');
   assert.equal(nodeVisibleInKnowledgeMode(whiteHead, 'current'), false, 'detail must not resurrect the losing Reasoning head');
+  assert.equal(nodeVisibleInKnowledgeMode(redHead, 'current'), false, 'detail must not resurrect a red-winning Reasoning head');
   assert.equal(nodeVisibleInKnowledgeMode(whiteHistory, 'current'), false, 'detail must not resurrect Reasoning history');
   assert.equal(nodeVisibleInKnowledgeMode(redHistory, 'current'), false, 'detail must not resurrect losing/winning Reasoning history');
   assert.equal(nodeVisibleInKnowledgeMode(rejected, 'current'), false);
@@ -257,4 +277,4 @@ assert.equal(nodeShouldPulse({ status:'pending' }), true);
 assert.equal(nodeShouldPulse({ status:'disputed' }), true);
 assert.equal(nodeShouldPulse({ status:'verified' }), false);
 
-console.log('Knowledge Lineage pending-first Current, Personal, All and winner-only Reasoning visibility tests passed');
+console.log('Knowledge Lineage pending-first Current, Personal, All and red-winner-hidden Reasoning visibility tests passed');
