@@ -161,7 +161,7 @@ function generateNodeId(): string {
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
   const graphIndex = createKnowledgeGraphIndex(domainNodes);
-  knowledgeRelationIndex = createKnowledgeRelationIndex(domainNodes);
+  knowledgeRelationIndex = createKnowledgeRelationIndex(domainNodes, graphIndex);
 
   // All formal lineage balls stay in scene data. Current/Personal/All owns their
   // visibility; rejected audit-only candidates and legacy hidden records do not.
@@ -228,10 +228,7 @@ function getNodeById(id: string): KnowledgeSceneNode | null {
   return renderNodes.find(n => n.id === id) ?? null;
 }
 
-function getPanelNodeById(id: string): PanelNodeSummary | null {
-  const n = getNodeById(id);
-  if (!n || lineageRoleFor(n) !== 'current') return null;
-
+function panelNodeSummary(n: KnowledgeSceneNode): PanelNodeSummary {
   return {
     id: n.id,
     title: n.title,
@@ -248,23 +245,16 @@ function getPanelNodeById(id: string): PanelNodeSummary | null {
   };
 }
 
+function getPanelNodeById(id: string): PanelNodeSummary | null {
+  const n = getNodeById(id);
+  if (!n || lineageRoleFor(n) !== 'current') return null;
+  return panelNodeSummary(n);
+}
+
 function getPanelNodes(): PanelNodeSummary[] {
   return renderNodes
     .filter(n => lineageRoleFor(n) === 'current')
-    .map(n => ({
-      id: n.id,
-      title: n.title,
-      type: n.type,
-      status: n.status,
-      mastery: n.mastery,
-      reasoning: n.reasoning,
-      premises: n.premises,
-      declaredLayer: n.declaredLayer,
-      effectiveLayer: n.effectiveLayer,
-      logicRuleId: n.logicRuleId,
-      aliases: n.aliases,
-      semanticKey: n.semanticKey,
-    }));
+    .map(panelNodeSummary);
 }
 
 function getKnowledgeCreateNodes(): KnowledgeCreateNode[] {

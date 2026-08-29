@@ -84,5 +84,19 @@ const diagnostics = getLastLayoutDiagnostics();
 assert(diagnostics, 'uniform layout must expose deterministic diagnostics');
 assert(diagnostics.addresses.has('b-history'), 'gray footprint must already be reserved inside the main global solve');
 assert(diagnostics.addresses.has('b-opposition'), 'red footprint must already be reserved inside the main global solve');
+assert.deepEqual(nodes.map(node => [node.id, node.address?.shellID ?? null, node.address?.cellID ?? null]), [
+  ['a', 'shell:36.000000', 2],
+  ['r-ab', null, null],
+  ['b', 'shell:72.000000', 5],
+  ['b-history', 'shell:72.000000', 14],
+  ['b-opposition', 'shell:72.000000', 8],
+  ['r-bc', null, null],
+  ['c', 'shell:108.000000', 9],
+], 'latest-main golden authoritative shell/cell output must remain byte-for-byte stable');
+assert.deepEqual(diagnostics.placementOrder, ['a'], 'component placement order remains frozen');
+assert.deepEqual(diagnostics.boundaries, { cyanBlue: 108, bluePurple: 108, purpleOuter: null }, 'semantic boundaries remain frozen');
+assert.equal(diagnostics.componentExpansionCounts.get('a'), 0, 'golden fixture must not add outward expansion');
+assert.equal(diagnostics.componentDirectionLevels.get('a'), 0);
+assert.equal(diagnostics.componentDirectionSlots.get('a'), 0);
 
 console.log('Ordinary lineage is pre-solved as a 5R footprint before unchanged global compact scoring.');

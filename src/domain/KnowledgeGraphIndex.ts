@@ -4,6 +4,7 @@ import { currentNodeForTopic, topicIdFor } from './KnowledgeLineage';
 /** Graph-generation-local facts shared while building the rendered projection. */
 export interface KnowledgeGraphIndex {
   readonly byId: ReadonlyMap<string, GraphNode>;
+  readonly byTopic: ReadonlyMap<string, readonly GraphNode[]>;
   readonly currentByTopic: ReadonlyMap<string, GraphNode>;
 }
 
@@ -23,7 +24,7 @@ export function createKnowledgeGraphIndex(nodes: readonly GraphNode[]): Knowledg
     const current = currentNodeForTopic(members, topicId);
     if (current) currentByTopic.set(topicId, current);
   }
-  return Object.freeze({ byId, currentByTopic });
+  return Object.freeze({ byId, byTopic, currentByTopic });
 }
 
 export function effectivePremiseIds(node: GraphNode, index: KnowledgeGraphIndex): string[] {

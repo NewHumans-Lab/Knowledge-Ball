@@ -34,6 +34,8 @@
     "test:browser-cloud": "node scripts/verify-cloud-authority-browser.mjs",
     "test:browser-mobile": "node scripts/verify-mobile-browser.mjs",
     "test:issue51-browser": "node scripts/verify-issue51-browser.mjs",
+    "test:rus19-browser": "node scripts/verify-rus19-idle-scene.mjs",
+    "test:rus19-performance": "npx esbuild src/performance/Rus19ComplexityBenchmark.ts --bundle --platform=node --format=esm --outfile=.test-dist/rus19-performance.mjs && node .test-dist/rus19-performance.mjs",
     "test:bootstrap": "npx esbuild src/bootstrap/RemoteFirstBootstrap.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/remote-first-bootstrap.mjs && node .test-dist/remote-first-bootstrap.mjs",
     "test:i18n": "npx esbuild src/i18n/Locale.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/locale.mjs && node .test-dist/locale.mjs"
   },

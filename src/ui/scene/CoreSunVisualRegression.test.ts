@@ -71,7 +71,7 @@ assert(!demoSource.includes("await addAtomic('n1'"), 'demo seed must not write L
 assert(!demoSource.includes("await addAtomic('n2'"), 'demo seed must not write Law of Excluded Middle into the event stream');
 assert(!demoSource.includes("await addAtomic('n16'"), 'demo seed must not write Law of Non-Contradiction into the event stream');
 assert(!demoSource.includes("['n1', 'n2']"), 'demo reasoning must not use system core as public premises');
-const largeIdleStart = sceneSource.indexOf('if (largeMobileGraph && !largeGraphDirty)');
+const largeIdleStart = sceneSource.indexOf('if (largeMobileGraph && !largeGraphDirty && !sceneWorkDirty)');
 const largeIdleEnd = sceneSource.indexOf('const dt = Math.min(clock.getDelta(), .05);', largeIdleStart);
 const largeIdleSource = sceneSource.slice(largeIdleStart, largeIdleEnd);
 assert(largeIdleSource.includes('updateCoreOrbit(time);'), 'large mobile graph idle frames must continue advancing the core orbit');

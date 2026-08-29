@@ -102,6 +102,7 @@ export interface KnowledgeSceneRuntime {
   getCameraZ: () => number;
   getVisibleEdgeCount: () => number;
   getActiveNodeCount: () => number;
+  getWorkMetrics: () => Readonly<{ synchronizationPasses: number; idleFrames: number }>;
   screenPositionForNode: (id: string) => { x: number; y: number } | null;
 }
 
@@ -291,6 +292,11 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let running = false;
   let overlayVisible = false;
   let largeGraphDirty = true;
+  let graphDirty = true;
+  let styleDirty = true;
+  let positionDirty = true;
+  let synchronizationPasses = 0;
+  let idleFrames = 0;
   let rafId = 0;
   let frameTimer: number | null = null;
   let labelBrightness = 1;
@@ -298,6 +304,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let visibilityMode: KnowledgeVisibilityMode = 'current';
   let selectedId: string | null = null;
   let detailNodeId: string | null = null;
+  let detailVisibleIds = new Set<string>();
   let draggedNodeId: string | null = null;
   let returningNodeId: string | null = null;
   let graphZoom = 1.27;
@@ -426,7 +433,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const ndc = new THREE.Vector2();
   const worldPos = new THREE.Vector3();
   const projectedPos = new THREE.Vector3();
-  let lastEdgeSync = 0;
   let relationIndexNodes: readonly KnowledgeSceneNode[] | null = null;
   let relationIndex = createKnowledgeRelationIndex([]);
 
@@ -534,7 +540,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const activeNodesForRender = (nodes: KnowledgeSceneNode[]) => {
-    const eligible = nodes.filter(node => nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(node.id)));
+    const eligible = nodes.filter(node => nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(node.id), detailVisibleIds));
     if (!mobilePerformance || eligible.length <= MOBILE_ACTIVE_NODE_TARGET) {
       mobileActiveNodeIds = new Set(eligible.map(node => node.id));
       return eligible;
@@ -602,7 +608,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const visible = Boolean(
         node
           && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom))
-          && nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(id)),
+          && nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(id), detailVisibleIds),
       );
       record.group.visible = visible;
       if (labelMap[id]) labelMap[id].style.display = visible && detailNodeId !== id ? '' : 'none';
@@ -617,23 +623,17 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
             visibilityMode,
             edge.userData.geometryVisible === true,
             isCoreNodeId,
+            detailVisibleIds,
           ),
       );
     });
   };
 
-  const sync = () => {
-    camera.position.setLength(cameraDistanceForZoom(graphZoom));
-    const allNodes = getNodes();
-    allNodes.forEach(node => { if (!hasFiniteCoordinates(node.pos)) place(node); });
-    const activeNodes = activeNodesForRender(allNodes);
-    const activeIds = new Set(activeNodes.map(node => node.id));
+  const applyNodeStyles = (nodes: readonly KnowledgeSceneNode[]) => {
     pendingNodeIds.clear();
-    Object.keys(nodeMap).forEach(id => { if (!activeIds.has(id)) removeNodeRecord(id); });
-
-    activeNodes.forEach(n => {
-      const record = ensure(n);
-      record.group.position.copy(n.pos!);
+    nodes.forEach(n => {
+      const record = nodeMap[n.id];
+      if (!record) return;
       record.group.scale.setScalar(1);
       const core = isCoreNodeId(n.id);
       const pending = !core && nodeShouldPulse(n);
@@ -664,14 +664,28 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
         material.emissiveIntensity = .34;
       }
     });
+  };
 
-    edgesGroup.visible = true;
-    const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
-    const now = performance.now();
-    if (largeMobileGraph || draggedNodeId || returningNodeId || now - lastEdgeSync >= 100) {
-      syncEdges(allNodes);
-      lastEdgeSync = now;
+  const syncPositionsAndEdges = (nodes: KnowledgeSceneNode[]) => {
+    for (const node of nodes) {
+      const record = nodeMap[node.id];
+      if (record && node.pos) record.group.position.copy(node.pos);
     }
+    edgesGroup.visible = true;
+    syncEdges(nodes);
+  };
+
+  const sync = () => {
+    camera.position.setLength(cameraDistanceForZoom(graphZoom));
+    const allNodes = getNodes();
+    allNodes.forEach(node => { if (!hasFiniteCoordinates(node.pos)) place(node); });
+    const activeNodes = activeNodesForRender(allNodes);
+    const activeIds = new Set(activeNodes.map(node => node.id));
+    Object.keys(nodeMap).forEach(id => { if (!activeIds.has(id)) removeNodeRecord(id); });
+    activeNodes.forEach(n => ensure(n));
+
+    applyNodeStyles(activeNodes);
+    syncPositionsAndEdges(allNodes);
     applyVisibility();
   };
 
@@ -695,18 +709,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       if (!record) return;
       const screenOrbit = coreOrbitScreenPosition(index, timeMs * .001 * SUN_ANGULAR_SPEED);
       record.group.position.copy(screenOrbit.applyQuaternion(inverseWorldRotation));
-    });
-  };
-
-  const physics = (_dt: number) => {
-    const nodes = getNodes();
-    nodes.forEach(n => {
-      if (!hasFiniteCoordinates(n.pos)) place(n);
-      if (draggedNodeId === n.id || returningNodeId === n.id || isCoreNodeId(n.id)) return;
-      n.homePos ??= n.pos!.clone();
-      n.pos!.copy(n.homePos!);
-      n.vel ??= new THREE.Vector3();
-      n.vel.set(0, 0, 0);
     });
   };
 
@@ -833,6 +835,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       worldGroup.rotation.y += (e.clientX - lastX) * .004;
       worldGroup.rotation.x += (e.clientY - lastY) * .004;
       largeGraphDirty = true;
+      if (mobilePerformance) graphDirty = true;
     } else if (mode === 'node' && draggedNodeId) {
       const node = getNodes().find(value => value.id === draggedNodeId);
       if (node?.pos) {
@@ -840,6 +843,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
         const delta = new THREE.Vector3((e.clientX - lastX) * .45 * viewScale, -(e.clientY - lastY) * .45 * viewScale, 0).applyQuaternion(worldGroup.quaternion.clone().invert());
         node.pos.add(delta);
         largeGraphDirty = true;
+        positionDirty = true;
       }
     }
     lastX = e.clientX;
@@ -857,10 +861,12 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     if (moved && !pinchOccurred && releasedDraggedNodeId && !isCoreNodeId(releasedDraggedNodeId)) {
       returningNodeId = releasedDraggedNodeId;
       largeGraphDirty = true;
+      positionDirty = true;
     }
     if (nodeId) {
       selectedId = nodeId;
       largeGraphDirty = true;
+      graphDirty = true;
       if (isCoreNodeId(nodeId)) {
         overlayVisible = true;
         labelsLayer.style.display = 'none';
@@ -905,6 +911,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     e.preventDefault();
     graphZoom = clampGraphZoom(graphZoom * Math.exp(-e.deltaY * .0015));
     largeGraphDirty = true;
+    graphDirty = true;
   };
 
   const resize = () => {
@@ -913,6 +920,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     renderer.setSize(host.clientWidth, host.clientHeight);
     document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
     largeGraphDirty = true;
+    graphDirty = true;
   };
 
   const scheduleFrame = () => {
@@ -937,7 +945,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       return;
     }
     lastFrameAt = time;
-    if (largeMobileGraph && !largeGraphDirty) {
+    const sceneWorkDirty = graphDirty || styleDirty || positionDirty;
+    if (largeMobileGraph && !largeGraphDirty && !sceneWorkDirty) {
       updateCoreOrbit(time);
       if (pendingNodeIds.size > 0) applyPendingPulse(time);
       labels();
@@ -946,9 +955,24 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       return;
     }
     const dt = Math.min(clock.getDelta(), .05);
-    if (!largeMobileGraph) physics(dt);
     const returnStillActive = updateReturningNode(dt);
-    sync();
+    if (returnStillActive) positionDirty = true;
+    if (graphDirty) {
+      sync();
+      synchronizationPasses += 1;
+      graphDirty = false;
+      styleDirty = false;
+      positionDirty = false;
+    } else if (styleDirty || positionDirty) {
+      const allNodes = getNodes();
+      if (styleDirty) applyNodeStyles(allNodes);
+      if (positionDirty) syncPositionsAndEdges(allNodes);
+      synchronizationPasses += 1;
+      styleDirty = false;
+      positionDirty = false;
+    } else {
+      idleFrames += 1;
+    }
     updateCoreOrbit(time);
     applyPendingPulse(time);
     labels();
@@ -969,6 +993,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     clock.start();
     lastFrameAt = 0;
     largeGraphDirty = true;
+    graphDirty = true;
     frame();
   };
 
@@ -980,7 +1005,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   resize();
 
   return {
-    markDirty: () => { largeGraphDirty = true; },
+    markDirty: () => { largeGraphDirty = true; graphDirty = true; },
     start: () => {
       if (!running) {
         running = true;
@@ -1000,10 +1025,18 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     },
     setDetailNode: id => {
       detailNodeId = id;
+      detailVisibleIds = new Set(id ? [id] : []);
+      if (id) {
+        const relations = relationIndexFor(getNodes()).relationsFor(id);
+        for (const items of Object.values(relations)) {
+          for (const item of items) detailVisibleIds.add(item.id);
+        }
+      }
       // Detail identity is presentation state only. Opening or navigating detail
       // must preserve the user's current 3D orientation.
       applyVisibility();
       largeGraphDirty = true;
+      graphDirty = true;
     },
     resize,
     setLabelBrightness: n => {
@@ -1013,20 +1046,24 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     setNodeRadius: n => {
       nodeRadiusMM = THREE.MathUtils.clamp(n, .1, 30);
       largeGraphDirty = true;
+      styleDirty = true;
     },
     setVisibilityMode: mode => {
       visibilityMode = mode;
       applyVisibility();
       largeGraphDirty = true;
+      graphDirty = true;
     },
     setHideUntouched: enabled => {
       visibilityMode = enabled ? 'personal' : 'current';
       applyVisibility();
       largeGraphDirty = true;
+      graphDirty = true;
     },
     getCameraZ: () => camera.position.z,
     getVisibleEdgeCount: () => Object.values(edgeMap).filter(edge => edge.visible).length,
     getActiveNodeCount: () => Object.keys(nodeMap).length,
+    getWorkMetrics: () => Object.freeze({ synchronizationPasses, idleFrames }),
     screenPositionForNode: id => {
       const record = nodeMap[id];
       if (!record) return null;

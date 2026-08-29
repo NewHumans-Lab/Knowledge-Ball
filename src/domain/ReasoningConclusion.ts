@@ -41,15 +41,17 @@ function active(node: ReasoningConclusionSemanticNode | undefined): boolean {
   return Boolean(node && lineageRoleFor(node) !== 'rejected');
 }
 
-function directConclusionsFor<T extends ReasoningConclusionSemanticNode>(
-  reasoningId: string,
-  nodes: readonly T[],
-): T[] {
-  return nodes.filter(node =>
-    node.type !== 'reasoning'
-      && active(node)
-      && (node.premises ?? []).includes(reasoningId),
-  );
+function directConclusionsIndex<T extends ReasoningConclusionSemanticNode>(nodes: readonly T[]): ReadonlyMap<string, readonly T[]> {
+  const result = new Map<string, T[]>();
+  for (const node of nodes) {
+    if (node.type === 'reasoning' || !active(node)) continue;
+    for (const premiseId of node.premises ?? []) {
+      const conclusions = result.get(premiseId);
+      if (conclusions) conclusions.push(node);
+      else result.set(premiseId, [node]);
+    }
+  }
+  return result;
 }
 
 /**
@@ -61,9 +63,9 @@ function directConclusionsFor<T extends ReasoningConclusionSemanticNode>(
  */
 function directConcreteConclusion<T extends ReasoningConclusionSemanticNode>(
   reasoningId: string,
-  nodes: readonly T[],
+  conclusionsByReasoningId: ReadonlyMap<string, readonly T[]>,
 ): Resolution<T> {
-  const direct = directConclusionsFor(reasoningId, nodes);
+  const direct = [...(conclusionsByReasoningId.get(reasoningId) ?? [])];
   if (!direct.length) return {};
 
   const topicIds = [...new Set(direct.map(topicIdFor))].sort();
@@ -89,19 +91,23 @@ function directConcreteConclusion<T extends ReasoningConclusionSemanticNode>(
 
 function resolveReasoningConclusionInternal<T extends ReasoningConclusionSemanticNode>(
   reasoning: T,
-  nodes: readonly T[],
   byId: ReadonlyMap<string, T>,
+  conclusionsByReasoningId: ReadonlyMap<string, readonly T[]>,
+  cache: Map<string, Resolution<T>>,
   visiting: Set<string>,
 ): Resolution<T> {
+  const cached = cache.get(reasoning.id);
+  if (cached) return cached;
   if (reasoning.type !== 'reasoning' || !active(reasoning)) return {};
   if (visiting.has(reasoning.id)) {
     return { error: `Reasoning conclusion inheritance cycle: ${reasoning.id}` };
   }
   visiting.add(reasoning.id);
 
-  const direct = directConcreteConclusion(reasoning.id, nodes);
+  const direct = directConcreteConclusion(reasoning.id, conclusionsByReasoningId);
   if (direct.error || direct.conclusion) {
     visiting.delete(reasoning.id);
+    cache.set(reasoning.id, direct);
     return direct;
   }
 
@@ -111,13 +117,16 @@ function resolveReasoningConclusionInternal<T extends ReasoningConclusionSemanti
   const targetId = reasoning.lineage?.targetId;
   const target = targetId ? byId.get(targetId) : undefined;
   if (target?.type === 'reasoning' && active(target)) {
-    const inherited = resolveReasoningConclusionInternal(target, nodes, byId, visiting);
+    const inherited = resolveReasoningConclusionInternal(target, byId, conclusionsByReasoningId, cache, visiting);
     visiting.delete(reasoning.id);
+    cache.set(reasoning.id, inherited);
     return inherited;
   }
 
   visiting.delete(reasoning.id);
-  return {};
+  const empty = {};
+  cache.set(reasoning.id, empty);
+  return empty;
 }
 
 export function resolveReasoningConclusion<T extends ReasoningConclusionSemanticNode>(
@@ -125,9 +134,10 @@ export function resolveReasoningConclusion<T extends ReasoningConclusionSemantic
   nodes: readonly T[],
 ): T | undefined {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
+  const conclusionsByReasoningId = directConclusionsIndex(nodes);
   const source = typeof reasoning === 'string' ? byId.get(reasoning) : reasoning;
   if (!source) return undefined;
-  return resolveReasoningConclusionInternal(source, nodes, byId, new Set()).conclusion;
+  return resolveReasoningConclusionInternal(source, byId, conclusionsByReasoningId, new Map(), new Set()).conclusion;
 }
 
 /**
@@ -137,14 +147,11 @@ export function resolveReasoningConclusion<T extends ReasoningConclusionSemantic
  */
 export function bindReasoningConclusions<T extends ReasoningConclusionSemanticNode>(nodes: T[]): void {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
+  const conclusionsByReasoningId = directConclusionsIndex(nodes);
   const cache = new Map<string, Resolution<T>>();
 
   const resolve = (node: T): Resolution<T> => {
-    const cached = cache.get(node.id);
-    if (cached) return cached;
-    const result = resolveReasoningConclusionInternal(node, nodes, byId, new Set());
-    cache.set(node.id, result);
-    return result;
+    return resolveReasoningConclusionInternal(node, byId, conclusionsByReasoningId, cache, new Set());
   };
 
   for (const node of nodes) {
@@ -181,10 +188,12 @@ export function reasoningConclusionBindingFor(
 export function validateReasoningConclusionBindings<T extends ReasoningConclusionSemanticNode>(nodes: readonly T[]): string[] {
   const errors: string[] = [];
   const byId = new Map(nodes.map(node => [node.id, node] as const));
+  const conclusionsByReasoningId = directConclusionsIndex(nodes);
+  const cache = new Map<string, Resolution<T>>();
 
   for (const node of nodes) {
     if (node.type !== 'reasoning' || !active(node)) continue;
-    const result = resolveReasoningConclusionInternal(node, nodes, byId, new Set());
+    const result = resolveReasoningConclusionInternal(node, byId, conclusionsByReasoningId, cache, new Set());
     if (result.error) errors.push(result.error);
     else if (!result.conclusion) errors.push(`reasoning node must serve one concrete ordinary conclusion: ${node.id}`);
   }

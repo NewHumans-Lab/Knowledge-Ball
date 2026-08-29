@@ -18,7 +18,7 @@ assert.match(app, /let knowledgeRelationIndex = createKnowledgeRelationIndex\(\[
 const syncStart = app.indexOf('function syncNodesFromProjection(): void {');
 const syncEnd = app.indexOf('\n}', syncStart);
 const syncBlock = app.slice(syncStart, syncEnd + 2);
-assert.match(syncBlock, /knowledgeRelationIndex = createKnowledgeRelationIndex\(domainNodes\)/, 'projection-to-view generation change must rebuild the detail relation index exactly at the topology boundary');
+assert.match(syncBlock, /knowledgeRelationIndex = createKnowledgeRelationIndex\(domainNodes, graphIndex\)/, 'projection-to-view generation change must rebuild detail relations from the shared generation index exactly at the topology boundary');
 assert.match(app, /getRelations: id => knowledgeRelationIndex\.relationsFor\(id\)/, 'node detail must read indexed adjacency instead of rescanning all graph nodes');
 assert.doesNotMatch(app, /buildKnowledgeRelations\(id, nodeList\(projection\.state\)\)/, 'node detail refresh must not rebuild canonical topology');
 

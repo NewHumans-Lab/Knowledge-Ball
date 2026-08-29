@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
   applyDeterministic5RLayout, computeSemanticBoundaries, generateIcosahedralGrid, getLastLayoutDiagnostics,
-  countLayerCrossings, directionLevelDirections, directionLevelSize, ICOSAHEDRON_FACES, LAYOUT_UNIT, selectSubdivisionFrequency,
+  countLayerCrossings, directionLevelDirections, directionLevelSize, ICOSAHEDRON_FACES, LAYOUT_UNIT,
+  nearbyCandidateCells, nearestDirectionCell, selectSubdivisionFrequency,
   type LayoutNode,
 } from './Deterministic5RLayout';
 
@@ -28,6 +29,21 @@ assert.equal(dense.degrees.filter(d=>d===5).length,12,'every subdivision retains
 assert(dense.degrees.every(d=>d===5||d===6),'all ordinary cells have topological degree six');
 assert(dense.nearestNeighborDistance>=LAYOUT_UNIT-1e-7,'nearest neighbours respect 5R');
 const next=generateIcosahedralGrid(5*LAYOUT_UNIT,selectSubdivisionFrequency(5*LAYOUT_UNIT)+1,'illegal',false);
+for (const grid of [base, dense]) {
+  for (const direction of [new THREE.Vector3(1, 2, 3), new THREE.Vector3(-2, 1, .5), grid.vertices[0]!.clone()]) {
+    const legacyDirection = grid.vertices.map((vertex, index) => ({ index, dot: vertex.clone().normalize().dot(direction) }))
+      .sort((left, right) => right.dot - left.dot || left.index - right.index)[0]!.index;
+    assert.equal(nearestDirectionCell(grid, direction), legacyDirection, 'linear nearest-direction selection preserves full-sort tie-breaking');
+    const target = direction.clone().normalize().multiplyScalar(grid.radius);
+    for (const count of [1, 3, 7, 15]) {
+      const legacyNearby = grid.vertices.map((vertex, index) => ({ index, distance: vertex.distanceToSquared(target) }))
+        .sort((left, right) => left.distance - right.distance || left.index - right.index)
+        .slice(0, Math.min(count, grid.vertices.length))
+        .map(value => value.index);
+      assert.deepEqual(nearbyCandidateCells(grid, target, count), legacyNearby, 'bounded top-K selection preserves full-sort candidate order');
+    }
+  }
+}
 assert(next.nearestNeighborDistance<LAYOUT_UNIT,'the selected frequency is the densest legal subdivision');
 assert(generateIcosahedralGrid(8*LAYOUT_UNIT).vertices.length>dense.vertices.length,'larger shells expose more cells');
 

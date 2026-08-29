@@ -6,7 +6,7 @@ import {
   type LayoutFootprintPlacement,
   type LayoutNode,
 } from './Deterministic5RLayout';
-import { applyOrdinaryLineagePlacement, isOrdinaryLineageSatellite } from './OrdinaryLineagePlacement';
+import { applyFixedAnchorOrdinaryLineageFootprint, isOrdinaryLineageSatellite } from './OrdinaryLineagePlacement';
 
 type FootprintFamily = Readonly<{
   anchor: LayoutNode;
@@ -93,11 +93,7 @@ export function createOrdinaryLineageFootprintPlanner(nodes: readonly LayoutNode
     }
 
     const temporary = [clonedAnchor, ...clonedSatellites, ...obstacles];
-    try {
-      applyOrdinaryLineagePlacement(temporary);
-    } catch {
-      return null;
-    }
+    if (!applyFixedAnchorOrdinaryLineageFootprint(temporary)) return null;
 
     if (clonedAnchor.address?.shellID !== grid.shellID || clonedAnchor.address.cellID !== cellID) return null;
 
