@@ -45,6 +45,18 @@ import {
   openSystemCoreCard,
 } from '../systemCore/SystemCoreContent';
 import {
+  CHAIN_ISOLATION_ABSORB_FRACTION,
+  CHAIN_ISOLATION_CORE_SCALE,
+  CHAIN_ISOLATION_ENTER_MS,
+  CHAIN_ISOLATION_EXIT_MS,
+  CHAIN_ISOLATION_LONG_PRESS_MS,
+  CHAIN_ISOLATION_MOVE_TOLERANCE_PX,
+  chainIsolationNodeScale,
+  chainIsolationRenderPosition,
+  connectedChainIds,
+  middleShellChainCenter,
+} from './ChainIsolation';
+import {
   MOBILE_ACTIVE_NODE_TARGET,
   selectMobileActiveNodeIds,
   type MobileSceneCandidate,
@@ -120,6 +132,16 @@ type NodeMeshRecord = {
 };
 type Layer = NonNullable<KnowledgeSceneNode['layer']>;
 type PersonalVisibilityNode = Pick<KnowledgeSceneNode, 'id' | 'mastery'>;
+type ChainIsolationRuntimeState = {
+  phase: 'entering' | 'isolated' | 'exiting';
+  startedAt: number;
+  chainIds: Set<string>;
+  anchorCenter: THREE.Vector3;
+  normalQuaternion: THREE.Quaternion;
+  normalGraphZoom: number;
+  exitQuaternion?: THREE.Quaternion;
+  exitGraphZoom?: number;
+};
 
 const CORE_NODE_ENGLISH_LABELS: Readonly<Record<string, string>> = Object.freeze({
   n1: 'Law of Identity',
@@ -303,6 +325,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
   let visibleLabelIds = new Set<string>();
+  let chainIsolationState: ChainIsolationRuntimeState | null = null;
+  let chainHoldTimer: number | null = null;
+  let chainHoldPointerId: number | null = null;
+  let chainHoldTriggered = false;
   const mobilePerformance = window.matchMedia('(max-width: 640px)').matches;
   const publicGetNodes = getNodes;
   const systemCoreNodes: KnowledgeSceneNode[] = createSystemCoreSceneNodes();
@@ -533,6 +559,11 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const activeNodesForRender = (nodes: KnowledgeSceneNode[]) => {
     const eligible = nodes.filter(node => nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(node.id), detailVisibleIds));
+    if (chainIsolationState?.phase === 'isolated') {
+      const isolated = eligible.filter(node => chainIsolationState!.chainIds.has(node.id));
+      mobileActiveNodeIds = new Set(isolated.map(node => node.id));
+      return isolated;
+    }
     if (!mobilePerformance || eligible.length <= MOBILE_ACTIVE_NODE_TARGET) {
       mobileActiveNodeIds = new Set(eligible.map(node => node.id));
       return eligible;
@@ -541,6 +572,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     // to the stable full graph generation; hidden/non-candidate forced IDs are
     // ignored by selectMobileActiveNodeIds because they are absent from candidates.
     const forced = selectedRelationIds(nodes);
+    if (chainIsolationState) for (const id of chainIsolationState.chainIds) forced.add(id);
     mobileActiveNodeIds = selectMobileActiveNodeIds(mobileCandidates(eligible), mobileActiveNodeIds, forced);
     return eligible.filter(node => mobileActiveNodeIds.has(node.id));
   };
@@ -597,8 +629,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const byId = new Map(getNodes().map(node => [node.id, node] as const));
     for (const [id, record] of Object.entries(nodeMap)) {
       const node = byId.get(id);
+      const isolationVisible = !chainIsolationState || record.group.userData.chainIsolationVisible !== false;
       const visible = Boolean(
-        node
+        isolationVisible
+          && node
           && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom))
           && nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(id), detailVisibleIds),
       );
@@ -607,8 +641,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     Object.values(edgeMap).forEach(edge => {
       const endpoints = edge.userData.edgeEndpoints as [string, string] | undefined;
+      const isolationVisible = !chainIsolationState || edge.userData.chainIsolationVisible !== false;
       edge.visible = Boolean(
-        endpoints
+        isolationVisible
+          && endpoints
           && edgeVisibleInKnowledgeMode(
             byId.get(endpoints[0]),
             byId.get(endpoints[1]),
@@ -796,8 +832,145 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     return typeof hit === 'string' ? hit : null;
   };
 
+  const clearChainHold = () => {
+    if (chainHoldTimer !== null) clearTimeout(chainHoldTimer);
+    chainHoldTimer = null;
+    chainHoldPointerId = null;
+  };
+
+  const beginChainIsolation = (seedId: string) => {
+    if (chainIsolationState || isCoreNodeId(seedId)) return false;
+    const nodes = getNodes();
+    nodes.forEach(node => { if (!hasFiniteCoordinates(node.pos)) place(node); });
+    const eligibleIds = new Set(nodes
+      .filter(node => !isCoreNodeId(node.id) && nodeVisibleInKnowledgeMode(node, visibilityMode, false, detailVisibleIds))
+      .map(node => node.id));
+    const chainIds = new Set(connectedChainIds(seedId, nodes, relationIndexFor(nodes).edges, eligibleIds));
+    if (!chainIds.size) return false;
+    if (returningNodeId) {
+      const returning = nodes.find(node => node.id === returningNodeId);
+      if (returning?.pos && returning.homePos) returning.pos.copy(returning.homePos);
+      returningNodeId = null;
+    }
+    chainIsolationState = {
+      phase: 'entering',
+      startedAt: performance.now(),
+      chainIds,
+      anchorCenter: middleShellChainCenter(nodes, chainIds),
+      normalQuaternion: worldGroup.quaternion.clone(),
+      normalGraphZoom: graphZoom,
+    };
+    selectedId = null;
+    largeGraphDirty = true;
+    graphDirty = true;
+    return true;
+  };
+
+  const beginChainIsolationExit = () => {
+    if (!chainIsolationState || chainIsolationState.phase !== 'isolated') return false;
+    chainIsolationState.phase = 'exiting';
+    chainIsolationState.startedAt = performance.now();
+    chainIsolationState.exitQuaternion = worldGroup.quaternion.clone();
+    chainIsolationState.exitGraphZoom = graphZoom;
+    largeGraphDirty = true;
+    graphDirty = true;
+    return true;
+  };
+
+  const applyChainIsolationPresentation = (time: number) => {
+    const state = chainIsolationState;
+    if (!state) {
+      coreSunGroup.scale.setScalar(1);
+      return false;
+    }
+    const entering = state.phase !== 'exiting';
+    const duration = entering ? CHAIN_ISOLATION_ENTER_MS : CHAIN_ISOLATION_EXIT_MS;
+    const rawProgress = state.phase === 'isolated' ? 1 : THREE.MathUtils.clamp((time - state.startedAt) / duration, 0, 1);
+    const progress = smoothStep01(rawProgress);
+    const renderPositions = new Map<string, THREE.Vector3>();
+    const nodes = getNodes();
+
+    if (state.phase === 'exiting' && state.exitQuaternion && state.exitGraphZoom !== undefined) {
+      worldGroup.quaternion.copy(state.exitQuaternion).slerp(state.normalQuaternion, progress);
+      graphZoom = THREE.MathUtils.lerp(state.exitGraphZoom, state.normalGraphZoom, progress);
+      worldGroup.scale.setScalar(graphZoom);
+    }
+
+    const sunScale = entering
+      ? THREE.MathUtils.lerp(1, CHAIN_ISOLATION_CORE_SCALE, Math.min(1, progress / CHAIN_ISOLATION_ABSORB_FRACTION))
+      : progress <= CHAIN_ISOLATION_ABSORB_FRACTION
+        ? CHAIN_ISOLATION_CORE_SCALE
+        : THREE.MathUtils.lerp(
+          CHAIN_ISOLATION_CORE_SCALE,
+          1,
+          (progress - CHAIN_ISOLATION_ABSORB_FRACTION) / (1 - CHAIN_ISOLATION_ABSORB_FRACTION),
+        );
+    coreSunGroup.scale.setScalar(sunScale);
+
+    for (const node of nodes) {
+      const record = nodeMap[node.id];
+      if (!record || !node.pos) continue;
+      if (isCoreNodeId(node.id)) {
+        record.group.userData.chainIsolationVisible = false;
+        if (labelMap[node.id]) labelMap[node.id].style.display = 'none';
+        continue;
+      }
+      const inChain = state.chainIds.has(node.id);
+      const rendered = chainIsolationRenderPosition(node.pos, state.anchorCenter, inChain, entering, progress);
+      renderPositions.set(node.id, rendered);
+      record.group.position.copy(rendered);
+      const isolationScale = chainIsolationNodeScale(inChain, entering, progress);
+      const pulseScale = pendingNodeIds.has(node.id) ? pendingPulseState(node.id, time).scale : 1;
+      record.group.scale.setScalar(isolationScale * pulseScale);
+      const baseVisible = nodeVisibleInKnowledgeMode(node, visibilityMode, false, detailVisibleIds);
+      const stageVisible = state.phase === 'isolated' ? inChain : isolationScale > .002;
+      record.group.userData.chainIsolationVisible = baseVisible && stageVisible;
+      if (labelMap[node.id] && !record.group.userData.chainIsolationVisible) labelMap[node.id].style.display = 'none';
+    }
+
+    for (const edge of Object.values(edgeMap)) {
+      const endpoints = edge.userData.edgeEndpoints as [string, string] | undefined;
+      if (!endpoints) {
+        edge.userData.chainIsolationVisible = false;
+        continue;
+      }
+      const [fromId, toId] = endpoints;
+      const inChainEdge = state.chainIds.has(fromId) && state.chainIds.has(toId);
+      const stageVisible = state.phase === 'isolated'
+        ? inChainEdge
+        : entering
+          ? inChainEdge || progress < CHAIN_ISOLATION_ABSORB_FRACTION
+          : inChainEdge || progress > CHAIN_ISOLATION_ABSORB_FRACTION;
+      edge.userData.chainIsolationVisible = stageVisible;
+      const a = renderPositions.get(fromId);
+      const b = renderPositions.get(toId);
+      if (a && b) updateLineGeometry(edge, a, b);
+    }
+    applyVisibility();
+
+    if (state.phase === 'entering' && rawProgress >= 1) {
+      state.phase = 'isolated';
+      graphDirty = true;
+      largeGraphDirty = true;
+      return true;
+    }
+    if (state.phase === 'exiting' && rawProgress >= 1) {
+      worldGroup.quaternion.copy(state.normalQuaternion);
+      graphZoom = state.normalGraphZoom;
+      worldGroup.scale.setScalar(graphZoom);
+      coreSunGroup.scale.setScalar(1);
+      chainIsolationState = null;
+      graphDirty = true;
+      largeGraphDirty = true;
+      return true;
+    }
+    return state.phase !== 'isolated';
+  };
+
   const down = (e: PointerEvent) => {
     if (overlayVisible) return;
+    clearChainHold();
+    chainHoldTriggered = false;
     if (e.pointerType === 'mouse') renderer.domElement.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     downX = lastX = e.clientX;
@@ -816,12 +989,39 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       if (draggedNodeId !== returningNodeId && returning?.pos && returning.homePos) returning.pos.copy(returning.homePos);
       returningNodeId = null;
     }
-    mode = draggedNodeId ? 'node' : 'rotate';
+    mode = chainIsolationState ? 'rotate' : draggedNodeId ? 'node' : 'rotate';
+    if (!chainIsolationState && draggedNodeId && !isCoreNodeId(draggedNodeId)) {
+      chainHoldPointerId = e.pointerId;
+      chainHoldTimer = window.setTimeout(() => {
+        if (chainHoldPointerId !== e.pointerId || !pointers.has(e.pointerId) || !draggedNodeId) return;
+        const point = pointers.get(e.pointerId)!;
+        if (Math.hypot(point.x - downX, point.y - downY) > CHAIN_ISOLATION_MOVE_TOLERANCE_PX) return;
+        if (beginChainIsolation(draggedNodeId)) {
+          chainHoldTriggered = true;
+          mode = null;
+        }
+        clearChainHold();
+      }, CHAIN_ISOLATION_LONG_PRESS_MS);
+    }
   };
 
   const move = (e: PointerEvent) => {
     if (overlayVisible || !pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (chainIsolationState && chainIsolationState.phase !== 'isolated') {
+      lastX = e.clientX;
+      lastY = e.clientY;
+      return;
+    }
+    if (chainHoldTimer !== null && chainHoldPointerId === e.pointerId) {
+      const distance = Math.hypot(e.clientX - downX, e.clientY - downY);
+      if (distance <= CHAIN_ISOLATION_MOVE_TOLERANCE_PX) {
+        lastX = e.clientX;
+        lastY = e.clientY;
+        return;
+      }
+      clearChainHold();
+    }
     if (mode === 'pinch' && pointers.size >= 2) {
       const [a, b] = [...pointers.values()];
       const dist = Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1);
@@ -849,12 +1049,14 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const up = (e: PointerEvent) => {
     if (overlayVisible) return;
     performance.mark?.('knowledge-node-tap-start');
+    const holdTriggered = chainHoldTriggered;
+    if (chainHoldPointerId === e.pointerId) clearChainHold();
     pointers.delete(e.pointerId);
     if (renderer.domElement.hasPointerCapture(e.pointerId)) renderer.domElement.releasePointerCapture(e.pointerId);
     const moved = Math.hypot(e.clientX - downX, e.clientY - downY) > 6;
     const releasedDraggedNodeId = draggedNodeId;
-    const nodeId = !moved && !pinchOccurred ? draggedNodeId : null;
-    if (moved && !pinchOccurred && releasedDraggedNodeId && !isCoreNodeId(releasedDraggedNodeId)) {
+    const nodeId = !holdTriggered && !moved && !pinchOccurred ? draggedNodeId : null;
+    if (!chainIsolationState && mode === 'node' && moved && !pinchOccurred && releasedDraggedNodeId && !isCoreNodeId(releasedDraggedNodeId)) {
       returningNodeId = releasedDraggedNodeId;
       largeGraphDirty = true;
       positionDirty = true;
@@ -882,21 +1084,26 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
         // the user's chosen 3D orientation.
         window.setTimeout(() => callbacks.onNodeTap(nodeId), 0);
       }
-    } else if (!moved && !pinchOccurred) {
-      const now = performance.now();
-      if (now - lastBgTapTime < 280) {
-        if (bgTapTimer !== null) clearTimeout(bgTapTimer);
-        bgTapTimer = null;
-        callbacks.onBackgroundDoubleTap();
-      } else {
-        bgTapTimer = window.setTimeout(() => callbacks.onBackgroundTap(), 280);
+    } else if (!holdTriggered && !moved && !pinchOccurred) {
+      if (chainIsolationState?.phase === 'isolated') {
+        beginChainIsolationExit();
+      } else if (!chainIsolationState) {
+        const now = performance.now();
+        if (now - lastBgTapTime < 280) {
+          if (bgTapTimer !== null) clearTimeout(bgTapTimer);
+          bgTapTimer = null;
+          callbacks.onBackgroundDoubleTap();
+        } else {
+          bgTapTimer = window.setTimeout(() => callbacks.onBackgroundTap(), 280);
+        }
+        lastBgTapTime = now;
       }
-      lastBgTapTime = now;
     }
     if (pointers.size === 0) {
       mode = null;
       draggedNodeId = null;
       pinchOccurred = false;
+      chainHoldTriggered = false;
     }
     performance.mark?.('knowledge-node-tap-end');
     performance.measure?.('knowledge-node-tap', 'knowledge-node-tap-start', 'knowledge-node-tap-end');
@@ -904,6 +1111,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const wheel = (e: WheelEvent) => {
     if (overlayVisible) return;
+    if (chainIsolationState && chainIsolationState.phase !== 'isolated') return;
     e.preventDefault();
     graphZoom = clampGraphZoom(graphZoom * Math.exp(-e.deltaY * .0015));
     largeGraphDirty = true;
@@ -922,7 +1130,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const scheduleFrame = () => {
     if (!running || overlayVisible) return;
     const largeMobileGraph = mobilePerformance && getNodes().length > MOBILE_ACTIVE_NODE_TARGET;
-    const delay = largeMobileGraph && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null ? 100 : 0;
+    const isolationAnimating = Boolean(chainIsolationState && chainIsolationState.phase !== 'isolated');
+    const delay = largeMobileGraph && !isolationAnimating && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null ? 100 : 0;
     if (delay) {
       frameTimer = window.setTimeout(() => {
         frameTimer = null;
@@ -945,8 +1154,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     if (largeMobileGraph && !largeGraphDirty && !sceneWorkDirty) {
       updateCoreOrbit(time);
       if (pendingNodeIds.size > 0) applyPendingPulse(time);
+      const isolationAnimating = applyChainIsolationPresentation(time);
       labels();
       renderer.render(scene, camera);
+      largeGraphDirty = isolationAnimating;
       scheduleFrame();
       return;
     }
@@ -971,9 +1182,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     updateCoreOrbit(time);
     applyPendingPulse(time);
+    const isolationAnimating = applyChainIsolationPresentation(time);
     labels();
     renderer.render(scene, camera);
-    largeGraphDirty = returnStillActive;
+    largeGraphDirty = returnStillActive || isolationAnimating;
     scheduleFrame();
   };
 
@@ -1010,11 +1222,13 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     },
     stop: () => {
       running = false;
+      clearChainHold();
       pauseFrameLoop();
     },
     setOverlayVisible: visible => {
       if (overlayVisible === visible) return;
       overlayVisible = visible;
+      if (visible) clearChainHold();
       labelsLayer.style.display = visible ? 'none' : 'block';
       if (visible) pauseFrameLoop();
       else resumeFrameLoop();
