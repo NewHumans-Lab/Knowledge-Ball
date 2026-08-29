@@ -40,12 +40,13 @@ function addByShellAndSpacing(
   height: number,
   centerGap: number,
   outerGap: number,
+  centerCap = STABLE_LABEL_CENTER_CAP,
 ): void {
   let centerCount = selected.filter(candidate => inCenter(candidate, width, height)).length;
   for (const candidate of ordered) {
     if (selected.length >= limit || selectedIds.has(candidate.id)) continue;
     const central = inCenter(candidate, width, height);
-    if (central && centerCount >= STABLE_LABEL_CENTER_CAP) continue;
+    if (central && centerCount >= centerCap) continue;
     const gap = central ? centerGap : outerGap;
     if (!farEnough(candidate, selected, gap)) continue;
     selected.push(candidate);
@@ -71,7 +72,7 @@ function choose(
   addByShellAndSpacing(ordered, selected, selectedIds, target, width, height, centerGap, outerGap);
   if (selected.length < target) addByShellAndSpacing(ordered, selected, selectedIds, target, width, height, centerGap * 0.8, outerGap * 0.8);
   if (selected.length < target) addByShellAndSpacing(ordered, selected, selectedIds, target, width, height, centerGap * 0.6, outerGap * 0.6);
-  if (selected.length < target) addByShellAndSpacing(ordered, selected, selectedIds, target, width, height, 0, 0);
+  if (selected.length < target) addByShellAndSpacing(ordered, selected, selectedIds, target, width, height, 0, 0, target);
 
   return new Set(selected.slice(0, target).map(candidate => candidate.id));
 }
@@ -80,7 +81,7 @@ function choose(
  * Large-mobile label hysteresis:
  * - only on-screen candidates participate;
  * - shell radius is the only ranking priority (outer first);
- * - the centre may hold at most six labels with a tighter spacing;
+ * - the centre normally holds at most six labels with a tighter spacing;
  * - 12..18 is the stable band: do not reshuffle while retained labels stay inside it;
  * - below 12, add the minimum needed; above 18, trim to 18.
  */
