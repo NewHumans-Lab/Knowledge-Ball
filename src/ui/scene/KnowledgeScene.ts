@@ -49,7 +49,6 @@ import {
   selectMobileActiveNodeIds,
   type MobileSceneCandidate,
 } from './MobileSceneLod';
-import { selectShellLabels, type ShellLabelCandidate } from './ShellLabelBudget';
 
 export interface KnowledgeSceneNode {
   id: string;
@@ -71,7 +70,6 @@ export interface KnowledgeSceneNode {
   vel?: THREE.Vector3;
   homePos?: THREE.Vector3;
   layer?: KnowledgeLayer;
-  address?: Readonly<{ shellID: string; cellID: number }>;
 }
 
 export interface KnowledgeSceneCallbacks {
@@ -243,17 +241,7 @@ export function clampGraphZoom(z: number) {
 }
 
 export function ordinaryNodeCompensationScale(graphZoom: number) {
-  return 1;
-}
-
-export const MIN_CAMERA_DISTANCE = 285;
-export const MAX_CAMERA_DISTANCE = DEFAULT_CAM_Z / MIN_GRAPH_ZOOM;
-
-export function cameraDistanceForZoom(zoom: number): number {
-  const z = clampGraphZoom(zoom);
-  if (z <= 1) return DEFAULT_CAM_Z / z;
-  const progress = Math.log(z) / Math.log(MAX_GRAPH_ZOOM);
-  return THREE.MathUtils.lerp(DEFAULT_CAM_Z, MIN_CAMERA_DISTANCE, progress);
+  return 1 / clampGraphZoom(graphZoom);
 }
 
 export function nodeRadiusForType(type: KnowledgeSceneNode['type'], conclusionRadius: number) {
@@ -308,7 +296,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let draggedNodeId: string | null = null;
   let returningNodeId: string | null = null;
   let graphZoom = 1.27;
-  let selectedLabelIds = new Set<string>();
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
   const mobilePerformance = window.matchMedia('(max-width: 640px)').matches;
@@ -329,7 +316,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, host.clientWidth / Math.max(host.clientHeight, 1), .5, 8000);
-  camera.position.set(0, 0, cameraDistanceForZoom(graphZoom));
+  camera.position.set(0, 0, DEFAULT_CAM_Z);
   const renderer = new THREE.WebGLRenderer({ antialias: KNOWLEDGE_SCENE_THEME.renderer.antialias, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobilePerformance ? KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio : KNOWLEDGE_SCENE_THEME.renderer.desktopPixelRatio));
   renderer.setSize(host.clientWidth, host.clientHeight);
@@ -639,7 +626,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const pending = !core && nodeShouldPulse(n);
       const radius = core ? SUN_RADIUS_MM : nodeRadiusForType(n.type, nodeRadiusMM);
       const color = colorFor(n);
-      const compensation = 1;
+      const compensation = core ? 1 : ordinaryNodeCompensationScale(graphZoom);
       if (pending) pendingNodeIds.add(n.id);
       record.shell.visible = true;
       record.point.visible = !core;
@@ -676,7 +663,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const sync = () => {
-    camera.position.setLength(cameraDistanceForZoom(graphZoom));
+    worldGroup.scale.setScalar(graphZoom);
     const allNodes = getNodes();
     allNodes.forEach(node => { if (!hasFiniteCoordinates(node.pos)) place(node); });
     const activeNodes = activeNodesForRender(allNodes);
@@ -731,38 +718,19 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const labels = () => {
     scene.updateMatrixWorld(true);
     const allNodes = getNodes();
+    const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const activeNodes = allNodes.filter(node => Boolean(nodeMap[node.id]));
-    const candidates: ShellLabelCandidate[] = [];
-    activeNodes.forEach(n => {
-      const record = nodeMap[n.id];
-      if (!record?.group.visible || detailNodeId === n.id) return;
-      record.group.getWorldPosition(worldPos);
-      const projected = worldPos.clone().project(camera);
-      const x = (projected.x * .5 + .5) * host.clientWidth;
-      const y = (-projected.y * .5 + .5) * host.clientHeight;
-      candidates.push({
-        id: n.id,
-        shellId: n.address?.shellID ?? `radius:${Math.round(n.pos?.length() ?? 0)}`,
-        cameraDistance: worldPos.distanceTo(camera.position),
-        x, y,
-        viewportWidth: host.clientWidth,
-        viewportHeight: host.clientHeight,
-        // With the ball centered at the origin, a positive radial/camera dot
-        // product is precisely the camera-facing hemisphere.
-        frontFacing: worldPos.dot(camera.position) > 0 && projected.z > -1 && projected.z < 1,
-      });
-    });
-    selectedLabelIds = selectShellLabels(candidates, selectedLabelIds);
-    activeNodes.forEach(n => {
+    activeNodes.forEach((n, index) => {
       const label = labelMap[n.id];
       const record = nodeMap[n.id];
       if (!label || !record) return;
       record.group.getWorldPosition(worldPos);
       const projected = worldPos.clone().project(camera);
-      const frontFacing = worldPos.dot(camera.position) > 0;
-      const visible = record.group.visible && detailNodeId !== n.id && frontFacing
-        && (!mobilePerformance || selectedLabelIds.has(n.id))
-        && projected.z > -1 && projected.z < 1
+      const visible = record.group.visible
+        && detailNodeId !== n.id
+        && (!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)
+        && projected.z > -1
+        && projected.z < 1
         && (!isCoreNodeId(n.id) || coreLabelsVisible(graphZoom));
       label.style.display = visible ? '' : 'none';
       if (!visible) return;
@@ -831,6 +799,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const dist = Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1);
       graphZoom = clampGraphZoom(pinchStartZoom * dist / pinchStartDist);
       largeGraphDirty = true;
+      graphDirty = true;
     } else if (mode === 'rotate') {
       worldGroup.rotation.y += (e.clientX - lastX) * .004;
       worldGroup.rotation.x += (e.clientY - lastY) * .004;
@@ -839,8 +808,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     } else if (mode === 'node' && draggedNodeId) {
       const node = getNodes().find(value => value.id === draggedNodeId);
       if (node?.pos) {
-        const viewScale = camera.position.length() / DEFAULT_CAM_Z;
-        const delta = new THREE.Vector3((e.clientX - lastX) * .45 * viewScale, -(e.clientY - lastY) * .45 * viewScale, 0).applyQuaternion(worldGroup.quaternion.clone().invert());
+        const delta = new THREE.Vector3((e.clientX - lastX) * .45 / graphZoom, -(e.clientY - lastY) * .45 / graphZoom, 0).applyQuaternion(worldGroup.quaternion.clone().invert());
         node.pos.add(delta);
         largeGraphDirty = true;
         positionDirty = true;
