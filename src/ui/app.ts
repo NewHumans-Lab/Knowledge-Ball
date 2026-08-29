@@ -5,11 +5,10 @@ import { GraphProjection } from '../projection/GraphProjection';
 import { nodeList } from '../state/GraphState';
 import type { GraphNode } from '../graph/Node';
 import {
-  currentNodeForTopic,
   lineageRoleFor,
-  topicIdFor,
 } from '../domain/KnowledgeLineage';
 import { createKnowledgeRelationIndex } from '../domain/KnowledgeRelations';
+import { createKnowledgeGraphIndex, effectivePremiseIds } from '../domain/KnowledgeGraphIndex';
 import {
   declaredLayerForNode,
   effectiveLayerForNode,
@@ -159,24 +158,16 @@ function generateNodeId(): string {
   return `n-${crypto.randomUUID()}`;
 }
 
-function effectivePremiseIds(node: GraphNode, allNodes: readonly GraphNode[]): string[] {
-  const byId = new Map(allNodes.map(item => [item.id, item] as const));
-  return [...new Set(node.premises.map(premiseId => {
-    const premise = byId.get(premiseId);
-    if (!premise) return premiseId;
-    return currentNodeForTopic(allNodes, topicIdFor(premise))?.id ?? premiseId;
-  }))];
-}
-
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
+  const graphIndex = createKnowledgeGraphIndex(domainNodes);
   knowledgeRelationIndex = createKnowledgeRelationIndex(domainNodes);
 
   // All formal lineage balls stay in scene data. Current/Personal/All owns their
   // visibility; rejected audit-only candidates and legacy hidden records do not.
   layoutNodes = domainNodes.map(dn => {
     const rendered = renderNodeFromDomain(dn);
-    rendered.premises = effectivePremiseIds(dn, domainNodes);
+    rendered.premises = effectivePremiseIds(dn, graphIndex);
     return rendered;
   });
   applyUniformLayerLayout(layoutNodes);
