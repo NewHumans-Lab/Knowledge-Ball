@@ -106,7 +106,7 @@ assert.equal(KNOWLEDGE_SCENE_THEME.edge.normalOpacity, .5);
 assert.equal(KNOWLEDGE_SCENE_THEME.edge.activeOpacity, .5);
 assert.equal(KNOWLEDGE_SCENE_THEME.edge.inactiveFactor, 1);
 assert.equal('logic' in KNOWLEDGE_SCENE_THEME.edge, false, 'obsolete logic edge class must stay removed from the theme');
-assert.equal('twin' in KNOWLEDGE_SCENE_THEME.edge, false, 'obsolete twin edge class must stay removed from the theme');
+assert.equal('twin' in KNOWLEDGE_SCENE_THEME.edge, false, 'obsolete twin UI metadata must never become a scene line again');
 assert.equal('twinOpacity' in KNOWLEDGE_SCENE_THEME.edge, false, 'obsolete twin edge opacity must stay removed from the theme');
 
 let sawMeaningfulZ = false;
@@ -225,8 +225,17 @@ assert(labelsSource.includes('const frontFacing = isCoreNodeId(n.id) || worldPos
 assert(labelsSource.includes('&& frontFacing'), 'front-facing status must participate directly in label display');
 assert(labelsSource.includes('selectStableShellLabels'), 'large-mobile labels must use the stable shell-priority 12..18 selector');
 assert(!labelsSource.includes('index % 4'), 'large-mobile labels must not fall back to arbitrary index thinning');
+assert(labelsSource.includes('record.shell.getWorldScale(shellWorldScale)'), 'label anchor must read the sphere current rendered size');
+assert(labelsSource.includes('labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius)'), 'label anchor must sit on the camera-up edge of the rendered sphere');
+assert(labelsSource.includes('labelAnchorProjected.copy(labelAnchorWorld).project(camera)'), 'sphere-top anchor must be projected through the current camera');
+assert(labelsSource.includes("entry.label.style.transform = 'translate(-50%, -100%)';"), 'label box must extend upward from the sphere-top anchor');
+assert(!labelsSource.includes("translate(-50%, 10px)"), 'legacy below-center label offset must stay removed');
 const applyNodeStylesStart = sceneSource.indexOf('const applyNodeStyles =');
 const visibilitySource = sceneSource.slice(visibilityStart, applyNodeStylesStart);
 assert(!visibilitySource.includes('dot(camera.position)'), 'hemisphere filtering is presentation-only and must not become node/edge visibility authority');
+
+const interactionSource = readFileSync('src/ui/interaction/InteractionController.ts', 'utf8');
+assert(interactionSource.includes("document.getElementById('setLabelSize')"), 'label-size setting must be wired to the runtime interaction layer');
+assert(interactionSource.includes("document.documentElement.style.setProperty('--label-size', `${value}px`)"), 'label-size input must update the CSS variable consumed by every node label');
 
 console.log('Knowledge scene canonical-chain regression tests passed');
