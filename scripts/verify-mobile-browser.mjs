@@ -212,7 +212,7 @@ try{
     await page.evaluate(()=>window.__debug.scene.start());
     await page.waitForTimeout(100);
     const target=await page.evaluate(()=>window.__debug.renderNodes
-      .filter(node=>!['n1','n2','n16'].includes(node.id))
+      .filter(node=>!['n1','n2','n16'].includes(node.id)&&node.status==='verified'&&(node.lineage?.role??'current')==='current')
       .map(node=>{
         const label=[...document.querySelectorAll('.node-label')].find(candidate=>candidate.textContent?.trim()===node.title);
         const point=window.__debug.scene.screenPositionForNode(node.id);
@@ -220,7 +220,7 @@ try{
           ? {...point,id:node.id,title:node.title}
           : null;
       }).find(Boolean)??null);
-    assert.ok(target,'direct-detail regression must use a label selected by the authoritative RUS-18 shell budget');
+    assert.ok(target,'direct-detail regression must use an editable ordinary node whose front-facing label is actually visible');
     const pointBeforeDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
     assert.ok(pointBeforeDetail,'direct-detail target must remain renderable before tap');
     await page.touchscreen.tap(target.x,target.y);
