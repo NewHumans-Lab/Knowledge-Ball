@@ -18,6 +18,8 @@ export interface KnowledgeLineageViewNode {
   hidden?: boolean;
   lineage?: KnowledgeLineageMeta;
   reasoningConclusion?: ReasoningConclusionBinding;
+  /** Runtime-only topology guard; true only when canonical relation degree is zero. */
+  reasoningIsolated?: boolean;
   /** Runtime layout projection; authoritative semantic nodes do not persist it. */
   pos?: unknown;
 }
@@ -57,13 +59,13 @@ export function nodeVisibleBecauseDetailIsOpen(nodeId: string): boolean {
 export function nodeBelongsInLineageScene(node: KnowledgeLineageViewNode): boolean {
   const role = lineageRoleFor(node);
   if (role === 'rejected') return false;
-  // Reasoning geometry is granted only after canonical semantic topology proves
-  // that the node has at least one real relation. Zero-edge/orphan Reasoning is
-  // left without `pos` by the layout pass and must never fall back to a random
-  // standalone scene position. Tests may still recolor an already-positioned
-  // ordinary node as Reasoning after layout, so a positioned compatibility node
-  // is allowed even without a semantic binding.
-  if (node.type === 'reasoning' && !node.pos) return false;
+  // Isolation is a topology fact, not a geometry fact. Only a Reasoning node
+  // explicitly proven to have zero canonical relation edges is removed. A valid
+  // connected Reasoning may still rely on the scene's temporary position fallback
+  // if dedicated Reasoning geometry is unavailable in a particular generation.
+  if (node.type === 'reasoning' && node.reasoningIsolated === true) return false;
+  // Preserve the existing protection against truly unbound/free-floating records.
+  if (node.type === 'reasoning' && !reasoningConclusionBindingFor(node) && !node.pos) return false;
   if (node.lineage) return true;
   return !node.hidden;
 }
