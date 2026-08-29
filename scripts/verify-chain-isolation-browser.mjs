@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
-const origin = 'http://127.0.0.1:4173/Knowledge-Ball/';
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1'], { stdio: 'ignore' });
+const origin = 'http://127.0.0.1:4174/Knowledge-Ball/';
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4174', '--strictPort'], { stdio: 'ignore' });
 const CORE_IDS = new Set(['n1', 'n2', 'n16']);
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
