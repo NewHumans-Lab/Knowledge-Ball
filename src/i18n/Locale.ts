@@ -126,7 +126,7 @@ const USER_TEXT_SELECTOR = [
   '#kbProfileName', '#kbProfileUsername', '#kbProfileBio',
   '.knowledge-picker-chip', '.knowledge-picker-option > span',
   '.search-item[data-node-id] > span',
-  '#fLogicRule option:not([value=""])', '#decomposeConclusion option', '#mergeLogicRule option:not([value=""])',
+  '#fLogicRule option:not([value=""])', '#decomposeConclusion option',
   'input', 'textarea',
 ].join(',');
 const USER_ATTRIBUTE_SELECTOR = [
@@ -156,9 +156,6 @@ function translateWrappedUserValue(value: string): string | null {
         [/^编辑节点 · 优化：(.*)$/s, m => `Edit node · Optimize: ${m[1]}`],
         [/^编辑节点 · 对立观点：(.*)$/s, m => `Edit node · Opposition: ${m[1]}`],
         [/^分解：(.*)$/s, m => `Decompose: ${m[1]}`],
-        [/^合并定义：(.*)$/s, m => `Merge definition: ${m[1]}`],
-        [/^合并理论：(.*)$/s, m => `Merge theory: ${m[1]}`],
-        [/^合并推理：(.*)$/s, m => `Merge reasoning: ${m[1]}`],
       ]
     : [
         [/^Node submitted: (.*)$/s, m => `节点已提交：${m[1]}`],
@@ -167,9 +164,6 @@ function translateWrappedUserValue(value: string): string | null {
         [/^Edit node · Optimize: (.*)$/s, m => `编辑节点 · 优化：${m[1]}`],
         [/^Edit node · Opposition: (.*)$/s, m => `编辑节点 · 对立观点：${m[1]}`],
         [/^Decompose: (.*)$/s, m => `分解：${m[1]}`],
-        [/^Merge definition: (.*)$/s, m => `合并定义：${m[1]}`],
-        [/^Merge theory: (.*)$/s, m => `合并理论：${m[1]}`],
-        [/^Merge reasoning: (.*)$/s, m => `合并推理：${m[1]}`],
       ];
   for (const [pattern, render] of patterns) {
     const match = value.match(pattern);

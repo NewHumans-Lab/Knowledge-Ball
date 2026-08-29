@@ -124,7 +124,7 @@ try {
     assert.equal(target.connected, true, 'long-press acceptance target must belong to a non-trivial relation chain');
 
     await dispatchPointer(page, 'pointerdown', target.screen, 71);
-    await page.waitForTimeout(2650);
+    await page.waitForTimeout(1150);
     await dispatchPointer(page, 'pointerup', target.screen, 71);
 
     await page.waitForFunction(() => window.__debug.scene.screenPositionForNode('n1') === null, null, { timeout: 3_000 });

@@ -31,7 +31,7 @@ const edges = [
   { fromId: 'r2', toId: 'd' },
 ];
 
-assert.equal(CHAIN_ISOLATION_LONG_PRESS_MS, 2500, 'long press should stay inside the requested 2-3 second band');
+assert.equal(CHAIN_ISOLATION_LONG_PRESS_MS, 1000, 'long press must trigger after one second');
 assert(CHAIN_ISOLATION_MOVE_TOLERANCE_PX >= 8 && CHAIN_ISOLATION_MOVE_TOLERANCE_PX <= 12, 'movement tolerance must cancel accidental holds without making drag sticky');
 assert(CHAIN_ISOLATION_CORE_SCALE > 0 && CHAIN_ISOLATION_CORE_SCALE <= .1, 'sun must shrink to a visible bright point, not disappear');
 
@@ -70,7 +70,7 @@ assert.equal(chainIsolationNodeScale(false, false, 1), 1, 'outside nodes must re
 
 const sceneSource = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 assert(sceneSource.includes('chainHoldTimer = window.setTimeout'), 'scene must wire a real hold timer instead of treating ordinary taps as chain isolation');
-assert(sceneSource.includes('}, CHAIN_ISOLATION_LONG_PRESS_MS);'), 'hold timer must use the shared 2.5 second threshold');
+assert(sceneSource.includes('}, CHAIN_ISOLATION_LONG_PRESS_MS);'), 'hold timer must use the shared one-second threshold');
 assert(sceneSource.includes('Math.hypot(point.x - downX, point.y - downY) > CHAIN_ISOLATION_MOVE_TOLERANCE_PX'), 'movement must cancel a pending long press');
 assert(sceneSource.includes('beginChainIsolation(draggedNodeId)'), 'long press must enter isolation for the picked knowledge node');
 assert(sceneSource.includes('anchorCenter: middleShellChainCenter(nodes, chainIds)'), 'isolation center must come from the chain middle shell, never the long-pressed node');

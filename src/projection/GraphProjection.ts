@@ -286,8 +286,7 @@ export class GraphProjection implements Projection<GraphState> {
         break;
       }
       case 'KnowledgeNegated':
-      case 'KnowledgeDecomposed':
-      case 'KnowledgeMerged': {
+      case 'KnowledgeDecomposed': {
         this.applyKnowledgeEdit(event.payload.edit);
         break;
       }

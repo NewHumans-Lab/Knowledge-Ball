@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export const CHAIN_ISOLATION_LONG_PRESS_MS = 2500;
+export const CHAIN_ISOLATION_LONG_PRESS_MS = 1000;
 export const CHAIN_ISOLATION_MOVE_TOLERANCE_PX = 10;
 export const CHAIN_ISOLATION_ENTER_MS = 900;
 export const CHAIN_ISOLATION_EXIT_MS = 900;

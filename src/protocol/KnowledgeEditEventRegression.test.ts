@@ -126,105 +126,16 @@ async function run(): Promise<void> {
   assert.deepEqual(runtime.projection.state.nodesById.r1b.premises, ['m1']);
   assert.deepEqual(runtime.projection.state.nodesById.c1.premises, ['r1b']);
 
-  await addAtomic(runtime, 'def-a', 'Definition wording A', 'definition', 'First linguistic expression of the concept');
-  await addAtomic(runtime, 'def-b', 'Definition wording B', 'definition', 'Second linguistic expression of the concept');
-  const mergeDefinitionEvent = await executeKnowledgeEdit(runtime.store, runtime.projection, {
-    kind: 'merge',
-    mode: 'definition',
-    sourceNodeIds: ['def-a', 'def-b'],
-    semanticKey: 'definition:concept',
-    mergedDefinition: {
-      id: 'def-merged',
-      title: 'Canonical concept definition',
-      type: 'definition',
-      reasoning: 'Unified expression of the concept',
-    },
-  });
-  assert.equal(mergeDefinitionEvent.type, 'KnowledgeMerged');
-  assert.equal(runtime.projection.state.nodesById['def-a'].hidden, true);
-  assert.equal(runtime.projection.state.nodesById['def-b'].hidden, true);
-
-  const sizeBeforeHiddenDuplicate = runtime.store.size();
-  await assert.rejects(
-    addAtomic(runtime, 'def-duplicate', 'Definition wording A', 'definition', 'A new but invalid description'),
-    KnowledgeEditValidationError,
-  );
-  assert.equal(runtime.store.size(), sizeBeforeHiddenDuplicate, 'hidden history must still block duplicates');
-
-  await executeKnowledgeEdit(runtime.store, runtime.projection, {
-    kind: 'add',
-    mode: 'theory',
-    requiredPremiseIds: ['p1'],
-    reasoning: {
-      id: 'merge-r1',
-      title: 'Merge source inference one',
-      type: 'reasoning',
-      reasoning: 'First wording of the shared inference',
-      logicRuleId: 'logic',
-    },
-    conclusion: {
-      id: 'merge-c1',
-      title: 'Merge source conclusion one',
-      type: 'hypothesis',
-      reasoning: 'First wording of the shared conclusion',
-    },
-  });
-  await executeKnowledgeEdit(runtime.store, runtime.projection, {
-    kind: 'add',
-    mode: 'theory',
-    requiredPremiseIds: ['p1'],
-    reasoning: {
-      id: 'merge-r2',
-      title: 'Merge source inference two',
-      type: 'reasoning',
-      reasoning: 'Second wording of the shared inference',
-      logicRuleId: 'logic',
-    },
-    conclusion: {
-      id: 'merge-c2',
-      title: 'Merge source conclusion two',
-      type: 'hypothesis',
-      reasoning: 'Second wording of the shared conclusion',
-    },
-  });
-  const mergeTheoryEvent = await executeKnowledgeEdit(runtime.store, runtime.projection, {
-    kind: 'merge',
-    mode: 'theory',
-    chains: [
-      { premiseIds: ['p1'], reasoningId: 'merge-r1', conclusionId: 'merge-c1' },
-      { premiseIds: ['p1'], reasoningId: 'merge-r2', conclusionId: 'merge-c2' },
-    ],
-    reasoningSemanticKey: 'inference:shared',
-    semanticKey: 'conclusion:shared',
-    mergedReasoning: {
-      id: 'merge-r',
-      title: 'Canonical merged inference',
-      type: 'reasoning',
-      reasoning: 'Canonical synthesis of the shared inference',
-      logicRuleId: 'logic',
-    },
-    mergedConclusion: {
-      id: 'merge-c',
-      title: 'Canonical merged conclusion',
-      type: 'hypothesis',
-      reasoning: 'Canonical synthesis of the shared conclusion',
-    },
-  });
-  assert.equal(mergeTheoryEvent.type, 'KnowledgeMerged');
-  assert.equal(runtime.projection.state.nodesById['merge-r'].semanticKey, 'inference:shared');
-  assert.deepEqual(runtime.projection.state.nodesById['merge-c'].premises, ['merge-r']);
-  assert.equal(runtime.projection.state.nodesById['merge-r1'].hidden, true);
-  assert.equal(runtime.projection.state.nodesById['merge-c2'].hidden, true);
 
   const negateEvent = await executeKnowledgeEdit(runtime.store, runtime.projection, {
     kind: 'negate',
     target: 'conclusion',
-    targetId: 'merge-c',
+    targetId: 'c1',
     counterexampleIds: ['counter'],
   });
   assert.equal(negateEvent.type, 'KnowledgeNegated');
-  assert.equal(runtime.projection.state.nodesById['merge-c'].hidden, true);
-  assert.equal(runtime.projection.state.nodesById['merge-c'].status, 'falsified');
+  assert.equal(runtime.projection.state.nodesById['c1'].hidden, true);
+  assert.equal(runtime.projection.state.nodesById['c1'].status, 'falsified');
 
   const beforeDirectRestore = runtime.store.size();
   assert.throws(() => runtime.store.append({
@@ -232,7 +143,7 @@ async function run(): Promise<void> {
     type: 'NodeResolved',
     schemaVersion: 1,
     timestamp: Date.now(),
-    payload: { nodeId: 'merge-c' },
+    payload: { nodeId: 'c1' },
   }));
   assert.equal(runtime.store.size(), beforeDirectRestore, 'falsified claims cannot be restored by a direct status event');
 
@@ -242,8 +153,8 @@ async function run(): Promise<void> {
     targetId: 'counter',
     counterexampleIds: ['counter-counter'],
   });
-  assert.equal(runtime.projection.state.nodesById['merge-c'].hidden, false, 'claim must restore only after opposition is negated');
-  assert.equal(runtime.projection.state.nodesById['merge-c'].status, 'pending');
+  assert.equal(runtime.projection.state.nodesById['c1'].hidden, false, 'claim must restore only after opposition is negated');
+  assert.equal(runtime.projection.state.nodesById['c1'].status, 'pending');
 
   const beforeMalformed = runtime.store.size();
   assert.throws(() => runtime.store.append({
@@ -267,8 +178,7 @@ async function run(): Promise<void> {
   runtime = boot(persistence);
   assert.equal(runtime.store.size(), finalSize, 'repeated reload must not duplicate edit events');
   assert.equal(runtime.projection.state.nodesById.r1.hidden, true, 'decomposed source must survive as hidden history');
-  assert.equal(runtime.projection.state.nodesById['def-a'].hidden, true, 'merged source must survive as hidden history');
-  assert.equal(runtime.projection.state.nodesById['merge-c'].hidden, false, 'restored state must survive replay');
+  assert.equal(runtime.projection.state.nodesById['c1'].hidden, false, 'restored state must survive replay');
 
   console.log('Knowledge edit command/event regression tests passed');
 }

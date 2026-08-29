@@ -58,20 +58,6 @@ export interface DecomposeNodePayload {
   intermediateConclusions: Array<{ title: string; type: KnowledgeNodeType; description: string }>;
 }
 
-export interface MergeDefinitionPayload {
-  sourceNodeIds: string[];
-  semanticKey: string;
-  mergedDefinition: { title: string; description: string };
-}
-
-export interface MergeTheoryPayload {
-  sourceConclusionIds: string[];
-  reasoningSemanticKey: string;
-  semanticKey: string;
-  mergedReasoning: { title: string; reasoning: string; logicRuleId: string };
-  mergedConclusion: { title: string; type: KnowledgeNodeType; description: string };
-}
-
 export interface PanelControllerCallbacks {
   getNodes: () => PanelNodeSummary[];
   getNodeById: (id: string) => PanelNodeSummary | null;
@@ -80,8 +66,6 @@ export interface PanelControllerCallbacks {
   onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
-  onMergeDefinitions: (payload: MergeDefinitionPayload) => Promise<void> | void;
-  onMergeTheories: (payload: MergeTheoryPayload) => Promise<void> | void;
   onResolveNode: (id: string) => Promise<void> | void;
   onDisputeNode: (id: string) => Promise<void> | void;
   onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
@@ -137,7 +121,7 @@ export interface PanelControllerElements {
   toast?: HTMLElement;
 }
 
-export type PanelNodeAction = 'edit' | 'negate' | 'decompose' | 'merge' | 'resolve' | 'dispute';
+export type PanelNodeAction = 'edit' | 'negate' | 'decompose' | 'resolve' | 'dispute';
 
 type LineageCandidateKind = 'optimization' | 'opposition';
 type PanelView = 'detail' | 'subview';
@@ -168,8 +152,6 @@ export class PanelController {
   private readonly onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
-  private readonly onMergeDefinitions: (payload: MergeDefinitionPayload) => Promise<void> | void;
-  private readonly onMergeTheories: (payload: MergeTheoryPayload) => Promise<void> | void;
   private readonly onResolveNode: (id: string) => Promise<void> | void;
   private readonly onDisputeNode: (id: string) => Promise<void> | void;
   private readonly onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
@@ -234,8 +216,6 @@ export class PanelController {
     this.onOptimizeNode = options.onOptimizeNode;
     this.onOpposeNode = options.onOpposeNode;
     this.onDecomposeNode = options.onDecomposeNode;
-    this.onMergeDefinitions = options.onMergeDefinitions;
-    this.onMergeTheories = options.onMergeTheories;
     this.onResolveNode = options.onResolveNode;
     this.onDisputeNode = options.onDisputeNode;
     this.onSetMastery = options.onSetMastery;
@@ -449,10 +429,7 @@ export class PanelController {
         <button class="btn ghost" id="btnEditNode">Optimize · 优化</button>
         ${this.onCreateNode ? '<button class="btn ghost" id="btnDeriveNode">Add · 新增</button>' : ''}
       </div>
-      <div class="action-grid">
-        ${node.type === 'reasoning' ? '<button class="btn ghost" id="btnDecompose">Decompose · 分解</button>' : ''}
-        ${this.canMerge(node, nodes, byId) ? '<button class="btn ghost" id="btnMerge">Merge · 合并</button>' : ''}
-      </div>
+      ${node.type === 'reasoning' ? '<div class="action-grid"><button class="btn ghost" id="btnDecompose">Decompose · 分解</button></div>' : ''}
       ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Oppose · 提出对立观点</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
       ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
@@ -478,10 +455,8 @@ export class PanelController {
   }
 
   openNodeAction(id: string, action: PanelNodeAction): boolean {
-    const nodes = this.getNodes();
-    const byId = new Map(nodes.map(node => [node.id, node] as const));
-    const node = byId.get(id);
-    if (!node || !this.supportsNodeAction(node, action, nodes, byId)) return false;
+    const node = this.getNodeById(id);
+    if (!node || !this.supportsNodeAction(node, action)) return false;
 
     this.openNodePanel(id);
     this.executeNodeAction(id, action);
@@ -699,17 +674,11 @@ export class PanelController {
     this.bindSettingsControls();
   }
 
-  private supportsNodeAction(
-    node: PanelNodeSummary,
-    action: PanelNodeAction,
-    nodes = this.getNodes(),
-    byId: ReadonlyMap<string, PanelNodeSummary> = new Map(nodes.map(item => [item.id, item] as const)),
-  ): boolean {
+  private supportsNodeAction(node: PanelNodeSummary, action: PanelNodeAction): boolean {
     switch (action) {
       case 'edit': return true;
       case 'negate': return node.status !== 'falsified' && node.status !== 'suspended';
       case 'decompose': return node.type === 'reasoning';
-      case 'merge': return this.canMerge(node, nodes, byId);
       case 'resolve': return node.status === 'suspended';
       case 'dispute': return node.status === 'disputed';
     }
@@ -725,9 +694,6 @@ export class PanelController {
         return;
       case 'decompose':
         this.openDecomposeForm(id);
-        return;
-      case 'merge':
-        this.openMergeForm(id);
         return;
       case 'resolve':
         void this.resolveNodeAction(id);
@@ -752,7 +718,6 @@ export class PanelController {
     const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
     const opposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
     const decomposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDecompose');
-    const mergeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnMerge');
     const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
     const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
 
@@ -760,7 +725,6 @@ export class PanelController {
     deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
     opposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'negate'));
     decomposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'decompose'));
-    mergeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'merge'));
     resolveBtn?.addEventListener('click', () => this.executeNodeAction(id, 'resolve'));
     disputeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'dispute'));
 
@@ -871,40 +835,6 @@ export class PanelController {
     ].join('');
   }
 
-  private reasoningParent(node: PanelNodeSummary, byId?: ReadonlyMap<string, PanelNodeSummary>): PanelNodeSummary | null {
-    const parents = node.premises
-      .map(id => byId?.get(id) ?? this.getNodeById(id))
-      .filter((candidate): candidate is PanelNodeSummary => candidate?.type === 'reasoning');
-    return parents.length === 1 ? parents[0] : null;
-  }
-
-  private samePremises(left: PanelNodeSummary, right: PanelNodeSummary): boolean {
-    return [...new Set(left.premises)].sort().join('\0') === [...new Set(right.premises)].sort().join('\0');
-  }
-
-  private canMerge(
-    node: PanelNodeSummary,
-    nodes = this.getNodes(),
-    byId: ReadonlyMap<string, PanelNodeSummary> = new Map(nodes.map(item => [item.id, item] as const)),
-  ): boolean {
-    if (node.type === 'definition') {
-      return nodes.some(candidate => candidate.id !== node.id && candidate.type === 'definition');
-    }
-    if (!this.isDerivedType(node.type)) return false;
-    const reasoning = this.reasoningParent(node, byId);
-    if (!reasoning) return false;
-    return nodes.some(candidate => {
-      if (candidate.id === node.id || candidate.type !== node.type) return false;
-      const otherReasoning = this.reasoningParent(candidate);
-      return Boolean(
-        otherReasoning &&
-        otherReasoning.id !== reasoning.id &&
-        otherReasoning.logicRuleId === reasoning.logicRuleId &&
-        this.samePremises(otherReasoning, reasoning)
-      );
-    });
-  }
-
   private showOperationError(error: unknown): void {
     console.error('[Knowledge-Ball] knowledge edit failed:', error);
     this.showToast(error instanceof Error ? `操作失败：${error.message}` : '操作失败');
@@ -971,118 +901,6 @@ export class PanelController {
       try {
         await this.onDecomposeNode(id, payload);
         this.showToast('完整分解事件已提交；旧推理保留并默认隐藏');
-        this.closeNodePanel();
-      } catch (error) {
-        this.showOperationError(error);
-      }
-    });
-  }
-
-  private openMergeForm(id: string): void {
-    const node = this.getNodeById(id);
-    if (!node) return;
-    if (node.type === 'definition') {
-      this.openDefinitionMergeForm(node);
-      return;
-    }
-    this.openTheoryMergeForm(node);
-  }
-
-  private openDefinitionMergeForm(node: PanelNodeSummary): void {
-    this.enterPanelSubview(node.id);
-    const candidates = this.getNodes().filter(candidate => candidate.id !== node.id && candidate.type === 'definition');
-    this.panelTitle.textContent = `合并定义：${node.title}`;
-    this.panelBody.innerHTML = `
-      <div class="difference-card"><b>DIFFERENCE REVIEW</b><br>选择待合并定义，逐项比较原始表述、语义标识与统一定义；差异确认前不会重连关系。</div>
-      <div class="field"><label>同一定义的其他语言描述</label><div class="premise-list">
-        ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
-      </div></div>
-      <div class="field"><label>语义等价标识</label><input type="text" id="mergeSemanticKey" placeholder="例如 definition:prime-number"></div>
-      <div class="field"><label>统一定义标题</label><input type="text" id="mergeDefinitionTitle"></div>
-      <div class="field"><label>统一定义描述</label><textarea id="mergeDefinitionDescription"></textarea></div>
-      <p class="note-small" style="text-align:left;">来源定义必须文字不同但语义相同；原定义保留为别名并默认隐藏。</p>
-    `;
-    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">检查并合并定义</button><button class="btn ghost" id="cancelOperation">取消</button>`;
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(node.id));
-    this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
-      const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
-      const payload: MergeDefinitionPayload = {
-        sourceNodeIds: [node.id, ...selected],
-        semanticKey: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeSemanticKey')?.value),
-        mergedDefinition: {
-          title: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeDefinitionTitle')?.value),
-          description: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#mergeDefinitionDescription')?.value),
-        },
-      };
-      if (selected.length === 0 || !payload.semanticKey || !payload.mergedDefinition.title || !payload.mergedDefinition.description) {
-        this.showToast('请选择另一个定义，并填写语义标识与新的统一描述。');
-        return;
-      }
-      try {
-        await this.onMergeDefinitions(payload);
-        this.showToast('定义合并事件已提交；来源定义保留并默认隐藏');
-        this.closeNodePanel();
-      } catch (error) {
-        this.showOperationError(error);
-      }
-    });
-  }
-
-  private openTheoryMergeForm(node: PanelNodeSummary): void {
-    this.enterPanelSubview(node.id);
-    const reasoning = this.reasoningParent(node);
-    if (!reasoning) return;
-    const candidates = this.getNodes().filter(candidate => {
-      if (candidate.id === node.id || candidate.type !== node.type) return false;
-      const other = this.reasoningParent(candidate);
-      return Boolean(other && other.id !== reasoning.id &&
-        other.logicRuleId === reasoning.logicRuleId &&
-        this.samePremises(other, reasoning));
-    });
-    this.panelTitle.textContent = `合并理论：${node.title}`;
-    this.panelBody.innerHTML = `
-      <div class="difference-card"><b>REASONING CHAIN DIFF</b><br>仅共同前提和逻辑规则一致的链可进入比较。请核对推理文本与结论差异。</div>
-      <div class="field"><label>具有相同前提、推理过程和逻辑符号的结论</label><div class="premise-list">
-        ${candidates.map(candidate => `<label class="premise-item"><input type="checkbox" data-merge-source value="${escapeHtml(candidate.id)}"> ${escapeHtml(candidate.title)}</label>`).join('')}
-      </div></div>
-      <div class="field"><label>推理过程语义等价标识（先检查）</label><input type="text" id="mergeReasoningSemanticKey"></div>
-      <div class="field"><label>结论语义等价标识</label><input type="text" id="mergeSemanticKey"></div>
-      <div class="field"><label>统一推理标题</label><input type="text" id="mergeReasoningTitle"></div>
-      <div class="field"><label>统一推理过程</label><textarea id="mergeReasoningText"></textarea></div>
-      <div class="field"><label>统一推理逻辑符号</label><select id="mergeLogicRule">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
-      <div class="field"><label>统一结论标题</label><input type="text" id="mergeConclusionTitle"></div>
-      <div class="field"><label>统一结论描述</label><textarea id="mergeConclusionDescription"></textarea></div>
-      <p class="note-small" style="text-align:left;">系统先检查并建立统一推理过程，再建立依赖它的统一结论；内部细分类沿用来源结构，不要求用户填写。</p>
-    `;
-    this.panelActions.innerHTML = `<button class="btn primary" id="submitMerge">检查推理后合并结论</button><button class="btn ghost" id="cancelOperation">取消</button>`;
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(node.id));
-    this.panelActions.querySelector<HTMLButtonElement>('#submitMerge')?.addEventListener('click', async () => {
-      const selected = Array.from(this.panelBody.querySelectorAll<HTMLInputElement>('[data-merge-source]:checked')).map(input => input.value);
-      const payload: MergeTheoryPayload = {
-        sourceConclusionIds: [node.id, ...selected],
-        reasoningSemanticKey: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeReasoningSemanticKey')?.value),
-        semanticKey: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeSemanticKey')?.value),
-        mergedReasoning: {
-          title: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeReasoningTitle')?.value),
-          reasoning: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#mergeReasoningText')?.value),
-          logicRuleId: safeText(this.panelBody.querySelector<HTMLSelectElement>('#mergeLogicRule')?.value),
-        },
-        mergedConclusion: {
-          title: safeText(this.panelBody.querySelector<HTMLInputElement>('#mergeConclusionTitle')?.value),
-          type: node.type,
-          description: safeText(this.panelBody.querySelector<HTMLTextAreaElement>('#mergeConclusionDescription')?.value),
-        },
-      };
-      const complete = selected.length > 0 && payload.reasoningSemanticKey && payload.semanticKey &&
-        payload.mergedReasoning.title && payload.mergedReasoning.reasoning && payload.mergedReasoning.logicRuleId &&
-        payload.mergedConclusion.title && payload.mergedConclusion.description;
-      if (!complete) {
-        this.showToast('请选择另一条同推理链，并完整填写统一推理和统一结论。');
-        return;
-      }
-      try {
-        await this.onMergeTheories(payload);
-        this.showToast('理论合并事件已提交；来源链保留并默认隐藏');
         this.closeNodePanel();
       } catch (error) {
         this.showOperationError(error);

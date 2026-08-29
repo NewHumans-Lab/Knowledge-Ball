@@ -4,6 +4,9 @@ import { strict as assert } from 'node:assert';
 const html = readFileSync('index.html', 'utf8');
 const panel = readFileSync('src/ui/panels/PanelController.ts', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
+const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
+const protocol = readFileSync('src/protocol/KnowledgeEditingProtocol.ts', 'utf8');
+const events = readFileSync('src/event/Event.ts', 'utf8');
 const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const systemCore = readFileSync('src/ui/systemCore/SystemCoreContent.ts', 'utf8');
 const layerPolicy = readFileSync('src/domain/KnowledgeLayerPolicy.ts', 'utf8');
@@ -51,16 +54,19 @@ assert(panel.includes('选择推理前提后已切换到第二层'), 'adding an 
 assert(!panel.includes('已验证前提，因此按协议自动进入第二层'), 'verified-premise state must not silently rewrite semantic classification');
 assert(!panel.includes('理论必须选择一个已有逻辑符号'), 'logic symbols must not remain a mandatory submission gate');
 
-for (const action of ['openDecomposeForm', 'openDefinitionMergeForm', 'openTheoryMergeForm']) {
-  assert(panel.includes(action), `single controller is missing the ${action} flow`);
-}
+assert(panel.includes('openDecomposeForm'), 'single controller is missing the decomposition flow');
 assert(!panel.includes('openEditForm'), 'current-node edits must not retain an in-place edit subview');
 assert(!panel.includes('openNegateForm'), 'current-node opposition must not retain the legacy immediate-negation subview');
 assert(!panel.includes('反例知识节点（至少一个）'), 'current product UI must not expose the legacy immediate-negation form');
 assert(panel.includes('原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论'), 'decomposition UI must show the complete chain contract');
-assert(panel.includes('推理过程语义等价标识（先检查）'), 'theory merge must check reasoning identity before conclusion identity');
+for (const removed of ['MergeDefinitionPayload', 'MergeTheoryPayload', 'onMergeDefinitions', 'onMergeTheories', 'btnMerge', 'openMergeForm', 'openDefinitionMergeForm', 'openTheoryMergeForm', 'data-merge-source', 'submitMerge']) {
+  assert(!panel.includes(removed), `removed merge flow leaked into PanelController: ${removed}`);
+}
+assert(!app.includes('MergeEdit') && !app.includes("kind: 'merge'"), 'application must not retain merge edit construction or wiring');
+assert(!detail.includes("| 'merge'") && !detail.includes("merge: '合并'"), 'node-detail edit menu must not retain merge as an action');
+assert(!protocol.includes('MergeEdit') && !protocol.includes("kind: 'merge'"), 'active knowledge protocol must not retain merge variants');
+assert(!events.includes('KnowledgeMerged'), 'event model must not retain an unused KnowledgeMerged type');
 assert(panel.includes('type: conclusionType'), 'decomposition must derive internal fine type from the existing conclusion rather than ask the user');
-assert(panel.includes('type: node.type'), 'theory merge must preserve the source fine type internally rather than ask the user');
 
 assert(panel.includes('Optimize · 优化'), 'current-node edit action must be immutable optimization');
 assert(panel.includes('Oppose · 提出对立观点'), 'current-node negate action must be pending opposition');
@@ -70,7 +76,6 @@ assert(panel.includes("${reasoningOptimization ? '' : `<div class=\"field\"><lab
 assert(panel.includes("<label>${reasoningOptimization ? '推理过程' : '内容'}</label>"), 'reasoning optimization must label its editable body as inference process');
 assert(panel.includes('推理节点优化只允许修改名称和推理过程。前提、结论、节点类型、逻辑规则和知识层级全部继承当前推理节点。'), 'reasoning optimization UI must state the frozen structural invariant');
 assert(panel.includes('reasoningOptimization\n        ? defaultLayer'), 'reasoning optimization must inherit the current layer instead of reading a hidden input');
-assert(panel.includes("return !['axiom', 'definition', 'fact', 'logic-symbol', 'reasoning'].includes(type)"), 'reasoning nodes must not qualify for merge UI');
 assert(panel.includes('节点类型、前提关系和逻辑规则身份全部沿用当前球'), 'ordinary lineage candidate form must not expose structural mutation');
 assert(panel.includes('onOptimizeNode') && panel.includes('onOpposeNode'), 'candidate submission must use typed callbacks');
 assert(!panel.includes('encodeLineageIntent') && !panel.includes('decodeLineageIntent') && !panel.includes('KBL3:'), 'candidate submission must not encode commands in user text');

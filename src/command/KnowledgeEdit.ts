@@ -83,12 +83,11 @@ export function findExistingReasoningForLink(
 function eventTypeFor(edit: KnowledgeEdit): DomainEvent['type'] {
   if (edit.kind === 'add') return 'KnowledgeAdded';
   if (edit.kind === 'negate') return 'KnowledgeNegated';
-  if (edit.kind === 'decompose') return 'KnowledgeDecomposed';
-  return 'KnowledgeMerged';
+  return 'KnowledgeDecomposed';
 }
 
 /**
- * The only write boundary for add/negate/decompose/merge. Validation runs against
+ * The only write boundary for add/negate/decompose. Validation runs against
  * the complete projection, including default-hidden historical nodes, before a
  * single atomic event is committed. Hosted callers may inject a server-first
  * committer; tests and unconfigured local sessions retain the direct EventStore
