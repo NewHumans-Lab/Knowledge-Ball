@@ -189,6 +189,15 @@ export class InteractionController {
       this.unbinders.push(() => labelSizeInput.removeEventListener('input', onLabelSizeInput));
     }
 
+    const labelColorInput = document.getElementById('setLabelColor') as HTMLInputElement | null;
+    if (labelColorInput) {
+      const onLabelColorInput = () => {
+        document.documentElement.style.setProperty('--label-color', labelColorInput.value);
+      };
+      labelColorInput.addEventListener('input', onLabelColorInput);
+      this.unbinders.push(() => labelColorInput.removeEventListener('input', onLabelColorInput));
+    }
+
     if (this.labelBrightnessInput) {
       const onLabelBrightnessInput = () => {
         const value = Number.parseFloat(this.labelBrightnessInput!.value);
