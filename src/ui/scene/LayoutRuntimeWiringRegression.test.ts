@@ -20,8 +20,9 @@ assert(ordinaryLineageProjection.includes('ORDINARY_LINEAGE_SPACING = LAYOUT_UNI
 assert(ordinaryLineageProjection.includes('generateIcosahedralGrid'),'ordinary lineage must occupy the authoritative shell grid rather than free XYZ satellites');
 assert(ordinaryLineageProjection.includes('node.address = { shellID, cellID }'),'ordinary lineage members must receive authoritative shellID/cellID occupancy');
 assert(ordinaryLineageProjection.includes('grid.edges.has(edgeKey'),'ordinary lineage adjacency must follow an actual shell coordinate-line edge');
-assert(ordinaryLineageProjection.includes('relocateOrdinaryBlockers'),'blocked lineage lines must locally re-layout ordinary blockers instead of failing or bending the lineage invariant');
+assert(ordinaryLineageProjection.includes('cascadeRelocate'),'blocked lineage lines must cascade local ordinary re-layout instead of failing or bending the lineage invariant');
 assert(ordinaryLineageProjection.includes('protectedAnchorIds'),'other active lineage anchors remain hard occupancy during local reflow');
+assert(ordinaryLineageProjection.includes('relocationHomes'),'cascading reflow must preserve each displaced ordinary node on its existing semantic shell');
 assert(ordinaryLineageProjection.includes("node.type === 'reasoning'"),'ordinary lineage logic must explicitly exclude Reasoning nodes');
 assert(ordinaryLineageProjection.includes("role === 'history'")&&ordinaryLineageProjection.includes("role === 'opposition'"),'ordinary lineage owns history/opposition local geometry');
 assert(reasoningProjection.includes('(meanRadius(premises) + meanRadius(conclusions)) * 0.5'),'Reasoning radius must be the midpoint of premise/conclusion shell radii');
