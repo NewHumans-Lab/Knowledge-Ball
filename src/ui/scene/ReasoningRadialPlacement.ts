@@ -20,10 +20,10 @@ function clearReasoningSpatialState(reasoning: LayoutNode): void {
  * final when this projection runs, so Reasoning must never influence ISG
  * occupancy, shell/cell authority, or Knowledge placement.
  *
- * Semantic ownership is resolved before geometry: every reasoning family serves
- * exactly one ordinary Knowledge conclusion. Any ordinary Knowledge type may be
- * that conclusion. White/red/history reasoning variants therefore follow the
- * same served conclusion instead of independently searching for outputs.
+ * Semantic ownership is resolved before geometry: every Reasoning ball serves
+ * exactly one concrete ordinary Knowledge conclusion ball. Reasoning side/history
+ * variants inherit that exact conclusion through their Reasoning lineage target;
+ * they never retarget themselves to a newer Current ball of the same topic.
  *
  * Radial rule remains deliberately narrow:
  * - radius = midpoint between premise shell radius and the served conclusion radius;
