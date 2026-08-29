@@ -629,8 +629,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const byId = new Map(getNodes().map(node => [node.id, node] as const));
     for (const [id, record] of Object.entries(nodeMap)) {
       const node = byId.get(id);
+      const isolationVisible = !chainIsolationState || record.group.userData.chainIsolationVisible !== false;
       const visible = Boolean(
-        node
+        isolationVisible
+          && node
           && (!isCoreNodeId(id) || coreLabelsVisible(graphZoom))
           && nodeVisibleInKnowledgeMode(node, visibilityMode, isCoreNodeId(id), detailVisibleIds),
       );
@@ -639,8 +641,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     }
     Object.values(edgeMap).forEach(edge => {
       const endpoints = edge.userData.edgeEndpoints as [string, string] | undefined;
+      const isolationVisible = !chainIsolationState || edge.userData.chainIsolationVisible !== false;
       edge.visible = Boolean(
-        endpoints
+        isolationVisible
+          && endpoints
           && edgeVisibleInKnowledgeMode(
             byId.get(endpoints[0]),
             byId.get(endpoints[1]),
@@ -885,7 +889,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const progress = smoothStep01(rawProgress);
     const renderPositions = new Map<string, THREE.Vector3>();
     const nodes = getNodes();
-    const byId = new Map(nodes.map(node => [node.id, node] as const));
 
     if (state.phase === 'exiting' && state.exitQuaternion && state.exitGraphZoom !== undefined) {
       worldGroup.quaternion.copy(state.exitQuaternion).slerp(state.normalQuaternion, progress);
@@ -908,7 +911,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const record = nodeMap[node.id];
       if (!record || !node.pos) continue;
       if (isCoreNodeId(node.id)) {
-        record.group.visible = false;
+        record.group.userData.chainIsolationVisible = false;
         if (labelMap[node.id]) labelMap[node.id].style.display = 'none';
         continue;
       }
@@ -921,40 +924,29 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       record.group.scale.setScalar(isolationScale * pulseScale);
       const baseVisible = nodeVisibleInKnowledgeMode(node, visibilityMode, false, detailVisibleIds);
       const stageVisible = state.phase === 'isolated' ? inChain : isolationScale > .002;
-      record.group.visible = baseVisible && stageVisible;
-      if (labelMap[node.id] && !record.group.visible) labelMap[node.id].style.display = 'none';
+      record.group.userData.chainIsolationVisible = baseVisible && stageVisible;
+      if (labelMap[node.id] && !record.group.userData.chainIsolationVisible) labelMap[node.id].style.display = 'none';
     }
 
     for (const edge of Object.values(edgeMap)) {
       const endpoints = edge.userData.edgeEndpoints as [string, string] | undefined;
       if (!endpoints) {
-        edge.visible = false;
+        edge.userData.chainIsolationVisible = false;
         continue;
       }
       const [fromId, toId] = endpoints;
-      const from = byId.get(fromId);
-      const to = byId.get(toId);
       const inChainEdge = state.chainIds.has(fromId) && state.chainIds.has(toId);
       const stageVisible = state.phase === 'isolated'
         ? inChainEdge
         : entering
           ? inChainEdge || progress < CHAIN_ISOLATION_ABSORB_FRACTION
           : inChainEdge || progress > CHAIN_ISOLATION_ABSORB_FRACTION;
+      edge.userData.chainIsolationVisible = stageVisible;
       const a = renderPositions.get(fromId);
       const b = renderPositions.get(toId);
       if (a && b) updateLineGeometry(edge, a, b);
-      edge.visible = Boolean(
-        stageVisible
-          && edgeVisibleInKnowledgeMode(
-            from,
-            to,
-            visibilityMode,
-            edge.userData.geometryVisible === true,
-            isCoreNodeId,
-            detailVisibleIds,
-          ),
-      );
     }
+    applyVisibility();
 
     if (state.phase === 'entering' && rawProgress >= 1) {
       state.phase = 'isolated';
