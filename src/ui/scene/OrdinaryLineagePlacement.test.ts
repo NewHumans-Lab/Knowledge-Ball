@@ -99,6 +99,82 @@ assert(isCoordinateLineStep(pendingGrid, pendingHistory.address!.cellID, stableH
 assert(isCoordinateLineStep(pendingGrid, pendingCurrent.address!.cellID, pendingOpposition.address!.cellID));
 assert(isCoordinateLineStep(pendingGrid, pendingOpposition.address!.cellID, stableOpposition.address!.cellID));
 
+// Force every first-step direction around Current to be occupied. The lineage
+// invariant must win: the implementation must take a canonical 5R shell line and
+// locally move only the ordinary blockers instead of throwing or abandoning ISG.
+const conflictShellID = 'conflict-shell';
+const conflictGrid = generateIcosahedralGrid(220, undefined, conflictShellID);
+const conflictAnchorCell = 0;
+const conflictNeighborCells = [...conflictGrid.edges]
+  .map(edge => edge.split(':').map(Number) as [number, number])
+  .filter(([left, right]) => left === conflictAnchorCell || right === conflictAnchorCell)
+  .map(([left, right]) => left === conflictAnchorCell ? right : left)
+  .sort((left, right) => left - right);
+assert(conflictNeighborCells.length >= 5, 'test anchor must expose normal icosahedral shell neighbours');
+
+const conflictCurrent: LayoutNode = {
+  id: 'conflict-current',
+  type: 'fact',
+  premises: [],
+  declaredLayer: 'inner',
+  lineage: { topicId: 'conflict-topic', proposal: 'new', role: 'current', rank: 0 },
+  address: { shellID: conflictShellID, cellID: conflictAnchorCell },
+  pos: conflictGrid.vertices[conflictAnchorCell]!.clone(),
+  homePos: conflictGrid.vertices[conflictAnchorCell]!.clone(),
+};
+const conflictHistory: LayoutNode = {
+  id: 'conflict-history',
+  type: 'fact',
+  premises: [],
+  declaredLayer: 'inner',
+  lineage: { topicId: 'conflict-topic', proposal: 'optimization', targetId: 'conflict-current', role: 'history', rank: 1 },
+};
+const conflictOpposition: LayoutNode = {
+  id: 'conflict-opposition',
+  type: 'fact',
+  premises: [],
+  declaredLayer: 'inner',
+  lineage: { topicId: 'conflict-topic', proposal: 'opposition', targetId: 'conflict-current', role: 'opposition', rank: 1 },
+};
+const blockers: LayoutNode[] = conflictNeighborCells.map((cellID, index) => ({
+  id: `conflict-blocker-${index}`,
+  type: 'fact',
+  premises: [],
+  declaredLayer: 'inner',
+  address: { shellID: conflictShellID, cellID },
+  pos: conflictGrid.vertices[cellID]!.clone(),
+  homePos: conflictGrid.vertices[cellID]!.clone(),
+}));
+const blockerOriginalCells = new Map(blockers.map(blocker => [blocker.id, blocker.address!.cellID]));
+const conflictNodes = [conflictCurrent, conflictHistory, conflictOpposition, ...blockers];
+applyOrdinaryLineagePlacement(conflictNodes);
+
+assert(conflictHistory.address && conflictHistory.pos);
+assert(conflictOpposition.address && conflictOpposition.pos);
+assert.equal(conflictHistory.address.shellID, conflictShellID);
+assert.equal(conflictOpposition.address.shellID, conflictShellID);
+assert(isCoordinateLineStep(conflictGrid, conflictAnchorCell, conflictHistory.address.cellID));
+assert(isCoordinateLineStep(conflictGrid, conflictAnchorCell, conflictOpposition.address.cellID));
+assert.notEqual(conflictHistory.address.cellID, conflictOpposition.address.cellID);
+const movedBlockers = blockers.filter(blocker => blocker.address!.cellID !== blockerOriginalCells.get(blocker.id));
+assert(movedBlockers.length >= 2, 'lineage priority locally reflows the ordinary blockers occupying its two first-step cells');
+
+const conflictAddressKeys = conflictNodes
+  .filter(node => node.address)
+  .map(node => `${node.address!.shellID}:${node.address!.cellID}`);
+assert.equal(new Set(conflictAddressKeys).size, conflictAddressKeys.length, 'local reflow keeps authoritative shell cells unique');
+for (let left = 0; left < conflictNodes.length; left++) {
+  for (let right = left + 1; right < conflictNodes.length; right++) {
+    const leftNode = conflictNodes[left]!;
+    const rightNode = conflictNodes[right]!;
+    if (!leftNode.pos || !rightNode.pos) continue;
+    assert(
+      leftNode.pos.distanceTo(rightNode.pos) >= ORDINARY_LINEAGE_SPACING - EPSILON,
+      `local reflow preserves global 5R spacing: ${leftNode.id} / ${rightNode.id}`,
+    );
+  }
+}
+
 const reasoningHistory: LayoutNode = {
   id: 'reasoning-history',
   type: 'reasoning',
@@ -107,4 +183,4 @@ const reasoningHistory: LayoutNode = {
 assert.equal(isOrdinaryLineageSatellite(reasoningHistory), false, 'ordinary lineage placement must never absorb Reasoning red/white/history semantics');
 assert.equal(lineageRoleFor(history1), 'history');
 
-console.log('Ordinary Knowledge lineage 5R shell-coordinate-line occupancy and Reasoning isolation checks passed.');
+console.log('Ordinary Knowledge lineage 5R shell-coordinate occupancy, lineage-priority local reflow and Reasoning isolation checks passed.');
