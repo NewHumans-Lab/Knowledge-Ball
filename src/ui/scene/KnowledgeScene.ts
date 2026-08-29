@@ -49,6 +49,10 @@ import {
   selectMobileActiveNodeIds,
   type MobileSceneCandidate,
 } from './MobileSceneLod';
+import {
+  selectStableShellLabels,
+  type StableShellLabelCandidate,
+} from './StableShellLabelBudget';
 
 export interface KnowledgeSceneNode {
   id: string;
@@ -298,6 +302,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let graphZoom = 1.27;
   let lastFrameAt = 0;
   let mobileActiveNodeIds = new Set<string>();
+  let visibleLabelIds = new Set<string>();
   const mobilePerformance = window.matchMedia('(max-width: 640px)').matches;
   const publicGetNodes = getNodes;
   const systemCoreNodes: KnowledgeSceneNode[] = createSystemCoreSceneNodes();
@@ -720,29 +725,50 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const allNodes = getNodes();
     const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const activeNodes = allNodes.filter(node => Boolean(nodeMap[node.id]));
-    activeNodes.forEach((n, index) => {
+    const entries = activeNodes.map(n => {
       const label = labelMap[n.id];
       const record = nodeMap[n.id];
-      if (!label || !record) return;
+      if (!label || !record) return null;
       record.group.getWorldPosition(worldPos);
-      const projected = worldPos.clone().project(camera);
+      projectedPos.copy(worldPos).project(camera);
       const frontFacing = isCoreNodeId(n.id) || worldPos.dot(camera.position) > 0;
-      const visible = record.group.visible
-        && detailNodeId !== n.id
+      const onScreen = projectedPos.x >= -1 && projectedPos.x <= 1 && projectedPos.y >= -1 && projectedPos.y <= 1;
+      const baseVisible = record.group.visible
         && frontFacing
-        && (!largeMobileGraph || isCoreNodeId(n.id) || index % 4 === 0 || selectedId === n.id)
-        && projected.z > -1
-        && projected.z < 1
+        && onScreen
+        && projectedPos.z > -1
+        && projectedPos.z < 1
         && (!isCoreNodeId(n.id) || coreLabelsVisible(graphZoom));
-      label.style.display = visible ? '' : 'none';
+      return {
+        n,
+        label,
+        baseVisible,
+        x: (projectedPos.x * .5 + .5) * host.clientWidth,
+        y: (-projectedPos.y * .5 + .5) * host.clientHeight,
+        shellRadius: worldPos.length(),
+      };
+    }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    if (largeMobileGraph) {
+      const candidates: StableShellLabelCandidate[] = entries
+        .filter(entry => entry.baseVisible)
+        .map(entry => ({ id: entry.n.id, x: entry.x, y: entry.y, shellRadius: entry.shellRadius }));
+      visibleLabelIds = selectStableShellLabels(candidates, visibleLabelIds, host.clientWidth, host.clientHeight);
+    } else {
+      visibleLabelIds = new Set(entries.filter(entry => entry.baseVisible).map(entry => entry.n.id));
+    }
+
+    entries.forEach(entry => {
+      const visible = entry.baseVisible
+        && detailNodeId !== entry.n.id
+        && visibleLabelIds.has(entry.n.id);
+      entry.label.style.display = visible ? '' : 'none';
       if (!visible) return;
-      const x = (projected.x * .5 + .5) * host.clientWidth;
-      const y = (-projected.y * .5 + .5) * host.clientHeight;
-      label.style.left = `${x}px`;
-      label.style.top = `${y}px`;
-      label.style.transform = 'translate(-50%, 10px)';
-      label.style.opacity = String(labelBrightness);
-      label.classList.toggle('selected', selectedId === n.id);
+      entry.label.style.left = `${entry.x}px`;
+      entry.label.style.top = `${entry.y}px`;
+      entry.label.style.transform = 'translate(-50%, 10px)';
+      entry.label.style.opacity = String(labelBrightness);
+      entry.label.classList.toggle('selected', selectedId === entry.n.id);
     });
   };
 
