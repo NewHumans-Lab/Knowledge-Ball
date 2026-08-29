@@ -1118,7 +1118,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const wheel = (e: WheelEvent) => {
-    if (overlayVisible || (chainIsolationState && chainIsolationState.phase !== 'isolated')) return;
+    if (overlayVisible) return;
+    if (chainIsolationState && chainIsolationState.phase !== 'isolated') return;
     e.preventDefault();
     graphZoom = clampGraphZoom(graphZoom * Math.exp(-e.deltaY * .0015));
     largeGraphDirty = true;
