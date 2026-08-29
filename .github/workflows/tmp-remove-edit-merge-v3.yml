@@ -83,6 +83,17 @@ jobs:
           assert count == 1, f'expected one adversarial merge fixture block, got {count}'
           adversarial.write_text(text)
 
+          detail_test = Path('src/ui/panels/NodeDetailRegression.test.ts')
+          text = detail_test.read_text()
+          old = "for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解', '合并']) {"
+          new = "for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解']) {"
+          assert old in text, 'detail action expectation did not include legacy merge action'
+          text = text.replace(old, new, 1)
+          anchor = "assert(!detail.includes(\"derive: '基于此新增'\"), 'legacy combined 基于此新增 action must stay removed');\n"
+          assert anchor in text
+          text = text.replace(anchor, anchor + "assert(!detail.includes(\"merge: '合并'\") && !detail.includes(\"| 'merge'\"), 'removed merge action must not return to the detail engine');\n", 1)
+          detail_test.write_text(text)
+
           for path in ['src/protocol/KnowledgeEditEventRegression.test.ts', 'src/protocol/ProtocolAdversarialRegression.test.ts']:
               source = Path(path).read_text()
               assert "kind: 'merge'" not in source, f'obsolete merge fixture remains in {path}'
