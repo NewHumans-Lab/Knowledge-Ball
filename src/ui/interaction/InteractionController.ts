@@ -179,6 +179,16 @@ export class InteractionController {
       this.unbinders.push(() => this.nodeRadiusInput?.removeEventListener('input', onNodeRadiusInput));
     }
 
+    const labelSizeInput = document.getElementById('setLabelSize') as HTMLInputElement | null;
+    if (labelSizeInput) {
+      const onLabelSizeInput = () => {
+        const value = Number.parseFloat(labelSizeInput.value);
+        if (Number.isFinite(value)) document.documentElement.style.setProperty('--label-size', `${value}px`);
+      };
+      labelSizeInput.addEventListener('input', onLabelSizeInput);
+      this.unbinders.push(() => labelSizeInput.removeEventListener('input', onLabelSizeInput));
+    }
+
     if (this.labelBrightnessInput) {
       const onLabelBrightnessInput = () => {
         const value = Number.parseFloat(this.labelBrightnessInput!.value);
