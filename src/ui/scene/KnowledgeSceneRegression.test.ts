@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 import {
+  cameraDistanceForZoom,
   clampGraphZoom,
   colorForNode,
   coreLabelsVisible,
@@ -118,7 +119,9 @@ for (const sample of [node('inner-a','definition'), node('inner-b','fact'), node
 assert(sawMeaningfulZ, 'layout regressed toward a flat XY disk');
 assert.equal(clampGraphZoom(0), MIN_GRAPH_ZOOM);
 assert.equal(clampGraphZoom(999), MAX_GRAPH_ZOOM);
-assert(Math.abs(ordinaryNodeCompensationScale(4) - .25) < 1e-12, 'ordinary node geometry must inverse-scale');
+assert.equal(ordinaryNodeCompensationScale(4), 1, 'camera zoom must not rescale node geometry');
+assert(cameraDistanceForZoom(4) < cameraDistanceForZoom(1));
+assert(cameraDistanceForZoom(1) < cameraDistanceForZoom(.5));
 assert.equal(nodeRadiusForType('reasoning', 9), 3, 'reasoning-process radius must be exactly one third of a conclusion radius');
 assert.equal(nodeRadiusForType('theorem', 9), 9);
 assert(!coreLabelsVisible(9.99) && coreLabelsVisible(10), 'core labels reveal only at 10x graph zoom');
@@ -187,5 +190,8 @@ assert(sceneSource.includes('new THREE.MeshMatcapMaterial'), 'ordinary semantic 
 assert(/matcap:\s*nodeMatcapTex/.test(sceneSource), 'ordinary shells must share the neutral matcap');
 assert(/antialias:\s*KNOWLEDGE_SCENE_THEME\.renderer\.antialias/.test(sceneSource));
 assert(sceneSource.includes('KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio'));
+assert(!sceneSource.includes('worldGroup.scale.setScalar(graphZoom)'), 'zoom must never scale Knowledge geometry');
+assert(sceneSource.includes('camera.position.setLength(cameraDistanceForZoom(graphZoom))'), 'zoom authority must move the camera along its center axis');
+assert(sceneSource.includes('frontFacing: worldPos.dot(camera.position) > 0'), 'label candidates must come only from the camera-facing hemisphere');
 
 console.log('Knowledge scene canonical-chain regression tests passed');

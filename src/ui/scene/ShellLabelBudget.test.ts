@@ -1,0 +1,17 @@
+import { strict as assert } from 'node:assert';
+import { MOBILE_LABEL_MAX, MOBILE_LABEL_MIN, selectShellLabels, type ShellLabelCandidate } from './ShellLabelBudget';
+const c = (id: string, shellId: string, cameraDistance: number, x: number, y: number, frontFacing = true): ShellLabelCandidate => ({ id, shellId, cameraDistance, x, y, viewportWidth: 390, viewportHeight: 844, frontFacing });
+const points: ShellLabelCandidate[] = [];
+for (let i = 0; i < 10; i += 1) points.push(c(`near-${i}`, 'outer', 350, 30 + (i % 3) * 120, 120 + Math.floor(i / 3) * 120));
+for (let i = 0; i < 12; i += 1) points.push(c(`far-${i}`, 'middle', 470, 75 + (i % 3) * 120, 70 + Math.floor(i / 3) * 120));
+points.push(c('back', 'outer', 300, 195, 422, false));
+const selected = selectShellLabels(points);
+assert(selected.size >= MOBILE_LABEL_MIN && selected.size <= MOBILE_LABEL_MAX);
+assert(!selected.has('back'), 'back-side labels are categorically excluded');
+assert([...selected].filter(id => id.startsWith('near-')).length >= 8, 'near shell has priority');
+const near = Array.from({ length: 24 }, (_, i) => c(`near-dense-${i}`, 'near', 300, 30 + (i % 6) * 65, 180 + Math.floor(i / 6) * 70));
+const far = Array.from({ length: 12 }, (_, i) => c(`far-dense-${i}`, 'far', 500, 45 + (i % 4) * 90, 500 + Math.floor(i / 4) * 80));
+const capped = selectShellLabels([...near, ...far]);
+assert.equal(capped.size, MOBILE_LABEL_MAX);
+assert([...capped].filter(id => id.startsWith('near-')).length > [...capped].filter(id => id.startsWith('far-')).length);
+console.log('Shell-priority mobile label budget checks passed');
