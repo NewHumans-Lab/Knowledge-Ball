@@ -12,6 +12,8 @@ const EPSILON = 1e-12;
 const SPACING_EPSILON = 1e-7;
 const MAX_ANCHOR_SEARCH_RING = 64;
 
+type ReasoningRuntimeNode = LayoutNode & { reasoningIsolated?: boolean };
+
 function meanRadius(nodes: readonly LayoutNode[]): number {
   return nodes.reduce((sum, node) => sum + node.pos!.length(), 0) / nodes.length;
 }
@@ -281,8 +283,8 @@ function applyPosition(reasoning: LayoutNode, position: THREE.Vector3): void {
  * - losing history continues beyond the losing head at 5R steps;
  * - a pending candidate sits 5R from its target on the perpendicular tangent;
  * - every pair of positioned Reasoning balls is kept at least 5R apart;
- * - a Reasoning node with zero canonical semantic edges receives no position and
- *   therefore can never appear as a free-floating standalone ball.
+ * - a Reasoning node with zero canonical semantic edges is marked isolated and
+ *   receives no dedicated Reasoning geometry, so the scene can suppress it;
  *
  * P0 starts at the original radial midpoint between ordinary premises and the
  * served concrete conclusion. If an unrelated Reasoning family would collide,
@@ -291,12 +293,15 @@ function applyPosition(reasoning: LayoutNode, position: THREE.Vector3): void {
  */
 export function applyReasoningRadialPlacement(nodes: LayoutNode[]): void {
   const byId = new Map(nodes.map(node => [node.id, node]));
-  const reasoningNodes = nodes.filter(node => node.type === 'reasoning');
-  reasoningNodes.forEach(clearReasoningSpatialState);
+  const reasoningNodes = nodes.filter(node => node.type === 'reasoning') as ReasoningRuntimeNode[];
+  reasoningNodes.forEach(reasoning => {
+    clearReasoningSpatialState(reasoning);
+    delete reasoning.reasoningIsolated;
+  });
 
-  // Canonical topology is the authority for whether a Reasoning ball actually
-  // participates in Knowledge. LayoutNode intentionally carries no UI title, so
-  // project only the semantic fields required by the relation index.
+  // Canonical topology is the authority for isolation. LayoutNode intentionally
+  // carries no UI title, so project only the semantic fields required by the
+  // relation index. Geometry availability is deliberately NOT used as a proxy.
   const relationNodes = nodes.map(node => ({
     id: node.id,
     title: node.id,
@@ -309,11 +314,14 @@ export function applyReasoningRadialPlacement(nodes: LayoutNode[]): void {
     if (byId.get(edge.fromId)?.type === 'reasoning') connectedReasoningIds.add(edge.fromId);
     if (byId.get(edge.toId)?.type === 'reasoning') connectedReasoningIds.add(edge.toId);
   }
+  for (const reasoning of reasoningNodes) {
+    reasoning.reasoningIsolated = !connectedReasoningIds.has(reasoning.id);
+  }
 
   const families = new Map<string, LayoutNode[]>();
   for (const reasoning of reasoningNodes) {
     if (lineageRoleFor(reasoning) === 'rejected') continue;
-    if (!connectedReasoningIds.has(reasoning.id)) continue;
+    if (reasoning.reasoningIsolated) continue;
     const binding = reasoningConclusionBindingFor(reasoning);
     const conclusion = binding ? byId.get(binding.conclusionId) : undefined;
     if (!binding || !conclusion?.pos || conclusion.type === 'reasoning' || conclusion.pos.lengthSq() <= EPSILON) continue;
