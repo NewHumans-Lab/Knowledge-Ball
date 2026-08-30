@@ -20,6 +20,15 @@ async function deterministic(page) {
   await page.waitForTimeout(250);
 }
 
+async function settleTransientUi(page) {
+  // Startup sync status is intentionally surfaced as a transient Toast. The
+  // packaged app has already lived through that Toast by the time interaction
+  // acceptance finishes, while a newly opened Web reference has not. Compare
+  // stable product states rather than two different moments in the Toast lifecycle.
+  await page.waitForFunction(() => !document.querySelector('#toast')?.classList.contains('show'), null, { timeout: 5_000 });
+  await page.waitForTimeout(100);
+}
+
 async function startWebReference() {
   const viteBin = path.join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js');
   const server = spawn(process.execPath, [viteBin, 'preview', '--host', '127.0.0.1', '--port', '4174', '--strictPort'], {
@@ -149,6 +158,7 @@ try {
 
   await page.evaluate(() => { localStorage.setItem('knowledge-ball.locale.v1', 'zh-CN'); location.reload(); });
   await deterministic(page);
+  await settleTransientUi(page);
   const desktopPng = await page.screenshot({ path: path.join(artifacts, 'desktop.png') });
 
   // Compare the packaged Electron renderer with an independent browser loading
@@ -161,6 +171,7 @@ try {
     const reference = await referenceBrowser.newPage({ viewport: { width: 1440, height: 900 } });
     await reference.goto(webReferenceUrl, { waitUntil: 'domcontentloaded' });
     await deterministic(reference);
+    await settleTransientUi(reference);
     const referencePng = await reference.screenshot({ path: path.join(artifacts, 'web-reference.png') });
     const actual = PNG.sync.read(desktopPng), expected = PNG.sync.read(referencePng);
     assert.equal(actual.width, expected.width);
