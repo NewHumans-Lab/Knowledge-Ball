@@ -21,6 +21,12 @@ import {
 } from '../systemCore/SystemCoreContent';
 import { setLocale } from '../../i18n/Locale';
 import { createCoreSunLight, displayLabelForNode } from './KnowledgeScene';
+import {
+  STABLE_LABEL_MAX,
+  STABLE_LABEL_WHITELIST,
+  selectStableShellLabels,
+  type StableShellLabelCandidate,
+} from './StableShellLabelBudget';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -62,6 +68,24 @@ assert(displayLabelForNode({ id: 'n2', title: '排中律' }) === 'Law of Exclude
 assert(displayLabelForNode({ id: 'n16', title: '矛盾律' }) === 'Law of Non-Contradiction', 'English n16 label must localize back to English');
 assert(displayLabelForNode({ id: 'n3', title: '质数的定义' }) === '质数的定义', 'non-core labels must remain unchanged');
 setLocale('zh-CN');
+
+assert([...STABLE_LABEL_WHITELIST].sort().join(',') === 'n1,n16,n2', 'core label whitelist must contain exactly the three system-core ids');
+const ordinaryCandidates: StableShellLabelCandidate[] = Array.from({ length: 24 }, (_, index) => ({
+  id: `ordinary-${index}`,
+  x: 20 + (index % 4) * 90,
+  y: 40 + Math.floor(index / 4) * 110,
+  shellRadius: 1_000 - index,
+}));
+const coreCandidates: StableShellLabelCandidate[] = [
+  { id: 'n1', x: 175, y: 380, shellRadius: 3.2 },
+  { id: 'n2', x: 195, y: 405, shellRadius: 3.2 },
+  { id: 'n16', x: 215, y: 380, shellRadius: 3.2 },
+];
+const previousOrdinaryBudget = new Set(ordinaryCandidates.slice(0, STABLE_LABEL_MAX).map(candidate => candidate.id));
+const whitelistBudget = selectStableShellLabels([...ordinaryCandidates, ...coreCandidates], previousOrdinaryBudget, 390, 844);
+assert(whitelistBudget.size === STABLE_LABEL_MAX, 'core whitelist must stay inside the existing 18-label cap');
+assert(coreCandidates.every(candidate => whitelistBudget.has(candidate.id)), 'all eligible core labels must displace ordinary labels instead of being budget-eliminated');
+assert([...whitelistBudget].filter(id => id.startsWith('ordinary-')).length === STABLE_LABEL_MAX - coreCandidates.length, 'whitelisted core labels must consume normal budget slots');
 
 assert(SYSTEM_CORE_DEFINITIONS.length === 3, 'system core must contain exactly three code-only definitions');
 assert(SYSTEM_CORE_DEFINITIONS.every(core => core.author === 'Knowledge Ball'), 'every system core card must use Knowledge Ball as author');
