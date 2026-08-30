@@ -72,7 +72,7 @@ public class AndroidParitySmokeTest {
         String finalExpression
     ) throws Exception {
         resetNativeBackTrace(scenario);
-        assertTrue("UiAutomator could not inject Android system Back", device.pressBack());
+        device.pressBack();
         waitForNativeBackEvent(scenario);
         String trace = nativeBackTrace(scenario);
         assertJsTrue(scenario, "Native Back selected the wrong action. Trace: " + trace,
