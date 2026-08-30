@@ -195,12 +195,60 @@ async function assertMobileKeyboardOverlay(page) {
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() === '844px');
 }
 
+async function assertMobileCoreLabelsAndContent(page) {
+  await page.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+  const canvas = page.locator('#canvasHost canvas');
+  await canvas.waitFor({ state: 'visible' });
+  await canvas.evaluate(element => {
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: -2_000, bubbles: true, cancelable: true }));
+  });
+
+  const coreNames = ['同一律', '排中律', '矛盾律'];
+  await page.waitForFunction(names => names.every(name => [...document.querySelectorAll('.node-label')].some(label => label.textContent?.trim() === name && getComputedStyle(label).display !== 'none')), coreNames);
+  const visibleLabels = await page.evaluate(() => [...document.querySelectorAll('.node-label')]
+    .filter(label => getComputedStyle(label).display !== 'none')
+    .map(label => label.textContent?.trim() ?? ''));
+  assert.ok(coreNames.every(name => visibleLabels.includes(name)), `10x+ mobile view must whitelist all three Chinese core labels (${visibleLabels.join(' | ')})`);
+  assert.ok(visibleLabels.length <= 18, `core whitelist must consume the existing label budget instead of expanding it (visible=${visibleLabels.length})`);
+  assert.ok(!visibleLabels.some(label => label.includes('A = A') || label.includes('P ∨ ¬P') || label.includes('¬(P ∧ ¬P)')), 'logic formulas belong in core detail, never in label names');
+
+  const identityCenter = await page.evaluate(() => {
+    const labelsLayer = document.getElementById('labelsLayer');
+    const host = document.getElementById('canvasHost');
+    const coreLabels = ['同一律', '排中律', '矛盾律']
+      .map(name => [...document.querySelectorAll('.node-label')].find(candidate => candidate.textContent?.trim() === name && getComputedStyle(candidate).display !== 'none'))
+      .filter(label => label instanceof HTMLElement);
+    const identity = coreLabels.find(label => label.textContent?.trim() === '同一律');
+    if (!(identity instanceof HTMLElement) || !labelsLayer || !host || coreLabels.length !== 3) return null;
+    const identityRect = identity.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    const averageSphereTop = coreLabels.reduce((sum, label) => sum + label.getBoundingClientRect().bottom, 0) / coreLabels.length;
+    const projectedCoreRadius = hostRect.top + hostRect.height * 0.5 - averageSphereTop;
+    return {
+      x: (identityRect.left + identityRect.right) * 0.5,
+      y: identityRect.bottom + projectedCoreRadius,
+      projectedCoreRadius,
+    };
+  });
+  assert.ok(identityCenter && Number.isFinite(identityCenter.x) && Number.isFinite(identityCenter.y), 'visible Identity label must resolve to the actual core-ball center in viewport coordinates');
+  assert.ok(identityCenter.projectedCoreRadius > 0 && identityCenter.projectedCoreRadius < 30, `projected core radius must be physically plausible (${identityCenter.projectedCoreRadius})`);
+  await page.mouse.click(identityCenter.x, identityCenter.y);
+  await page.locator('#systemCoreOverlay').waitFor({ state: 'visible' });
+  const coreCardText = (await page.locator('#systemCoreOverlay').textContent()) ?? '';
+  assert.ok(coreCardText.includes('同一律'), 'Chinese core detail must show the localized title');
+  assert.ok(coreCardText.includes('A = A'), 'core detail must show the logic formula separately from the label');
+  assert.ok(coreCardText.includes('自身相同'), 'Chinese core detail must show the localized explanation');
+  assert.ok(coreCardText.includes('返回'), 'Chinese core detail controls must be localized');
+  await page.locator('#systemCoreOverlay button').click();
+}
+
 async function assertMobileLayout(browser) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
   await assertMobileKeyboardOverlay(page);
+  await assertMobileCoreLabelsAndContent(page);
   await openDownloads(page);
   const cards = page.locator('#downloadsOverlay .app-download');
   const boxes = [];
@@ -250,7 +298,7 @@ try {
   } finally {
     await browser.close();
   }
-  console.log('Downloads responsive layout, direct label anchoring, keyboard-overlay stability, and zh-CN/en browser acceptance passed');
+  console.log('Downloads responsive layout, direct label anchoring, core-label whitelist/localization, keyboard-overlay stability, and zh-CN/en browser acceptance passed');
 } finally {
   server.kill('SIGTERM');
 }
