@@ -212,13 +212,27 @@ async function assertMobileCoreLabelsAndContent(page) {
   assert.ok(visibleLabels.length <= 18, `core whitelist must consume the existing label budget instead of expanding it (visible=${visibleLabels.length})`);
   assert.ok(!visibleLabels.some(label => label.includes('A = A') || label.includes('P ∨ ¬P') || label.includes('¬(P ∧ ¬P)')), 'logic formulas belong in core detail, never in label names');
 
-  const identityAnchor = await page.evaluate(() => {
-    const label = [...document.querySelectorAll('.node-label')].find(candidate => candidate.textContent?.trim() === '同一律' && getComputedStyle(candidate).display !== 'none');
-    if (!(label instanceof HTMLElement)) return null;
-    return { x: Number.parseFloat(label.style.left), y: Number.parseFloat(label.style.top) };
+  const identityCenter = await page.evaluate(() => {
+    const labelsLayer = document.getElementById('labelsLayer');
+    const host = document.getElementById('canvasHost');
+    const coreLabels = ['同一律', '排中律', '矛盾律']
+      .map(name => [...document.querySelectorAll('.node-label')].find(candidate => candidate.textContent?.trim() === name && getComputedStyle(candidate).display !== 'none'))
+      .filter(label => label instanceof HTMLElement);
+    const identity = coreLabels.find(label => label.textContent?.trim() === '同一律');
+    if (!(identity instanceof HTMLElement) || !labelsLayer || !host || coreLabels.length !== 3) return null;
+    const identityRect = identity.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    const averageSphereTop = coreLabels.reduce((sum, label) => sum + label.getBoundingClientRect().bottom, 0) / coreLabels.length;
+    const projectedCoreRadius = hostRect.top + hostRect.height * 0.5 - averageSphereTop;
+    return {
+      x: (identityRect.left + identityRect.right) * 0.5,
+      y: identityRect.bottom + projectedCoreRadius,
+      projectedCoreRadius,
+    };
   });
-  assert.ok(identityAnchor && Number.isFinite(identityAnchor.x) && Number.isFinite(identityAnchor.y), 'visible Identity label must expose its sphere-top anchor');
-  await page.mouse.click(identityAnchor.x, identityAnchor.y + 4);
+  assert.ok(identityCenter && Number.isFinite(identityCenter.x) && Number.isFinite(identityCenter.y), 'visible Identity label must resolve to the actual core-ball center in viewport coordinates');
+  assert.ok(identityCenter.projectedCoreRadius > 0 && identityCenter.projectedCoreRadius < 30, `projected core radius must be physically plausible (${identityCenter.projectedCoreRadius})`);
+  await page.mouse.click(identityCenter.x, identityCenter.y);
   await page.locator('#systemCoreOverlay').waitFor({ state: 'visible' });
   const coreCardText = (await page.locator('#systemCoreOverlay').textContent()) ?? '';
   assert.ok(coreCardText.includes('同一律'), 'Chinese core detail must show the localized title');
