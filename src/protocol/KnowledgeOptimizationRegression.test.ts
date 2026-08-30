@@ -115,7 +115,7 @@ async function run(): Promise<void> {
       targetId: 'v1', candidateId: 'bad-name', title: 'Reserved title', reasoning: 'Would collide with another topic', declaredLayer: 'middle',
     }),
     KnowledgeOptimizationValidationError,
-    'renaming during optimization must still respect global title uniqueness',
+    'renaming during optimization must still respect cross-topic title uniqueness',
   );
 
   await executeKnowledgeOptimization(runtime.store, runtime.projection, {
@@ -147,6 +147,20 @@ async function run(): Promise<void> {
   assert.equal(runtime.projection.state.nodesById.v3.declaredLayer, 'inner');
   assert.equal(runtime.projection.state.nodesById.v2.title, 'Shared title', 'renaming V3 must not rewrite V2');
 
+  // A current version may reuse a title already present only in its own lineage.
+  // This is the exact case that needs presentation-only x1.x/x2.x disambiguation.
+  await executeKnowledgeOptimization(runtime.store, runtime.projection, {
+    targetId: 'v3',
+    candidateId: 'same-topic-name',
+    title: 'Shared title',
+    reasoning: 'Same-topic historical title reuse is legal',
+    declaredLayer: 'middle',
+  });
+  assert.equal(lineageRoleFor(runtime.projection.state.nodesById['same-topic-name']), 'candidate-history');
+  finalize(runtime, 'same-topic-name', 'INCORRECT');
+  assert.equal(runtime.projection.state.nodesById['same-topic-name'], undefined, 'failed same-topic-name candidate is still removed normally');
+  assert.equal(lineageRoleFor(runtime.projection.state.nodesById.v3), 'current');
+
   const eventCount = runtime.store.size();
   runtime = boot(persistence);
   assert.equal(runtime.store.size(), eventCount, 'replay must not duplicate optimization events');
@@ -157,6 +171,7 @@ async function run(): Promise<void> {
     'linear version ordering must survive event replay',
   );
   assert.equal(runtime.projection.state.nodesById['v2-rejected'], undefined, 'failed optimization stays absent after deterministic replay');
+  assert.equal(runtime.projection.state.nodesById['same-topic-name'], undefined, 'failed same-topic-name optimization stays absent after replay');
 
   const reasoningPersistence = new MemoryPersistence();
   const reasoningRuntime = boot(reasoningPersistence);
