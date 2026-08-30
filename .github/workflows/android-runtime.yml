@@ -54,6 +54,8 @@ jobs:
       - run: npm ci
       - name: Build and sync the authoritative Web product into Android
         run: npm run android:sync
+      - name: Verify deterministic reversible label budget
+        run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - name: Prove packaged Web assets match the native WebView payload
         run: node android/scripts/verify-packaged-assets.mjs
       - name: Run Android emulator instrumentation acceptance
