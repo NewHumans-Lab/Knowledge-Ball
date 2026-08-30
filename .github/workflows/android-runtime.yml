@@ -74,9 +74,13 @@ jobs:
             mkdir -p ../artifacts/android/test-results ../artifacts/android/test-report;
             cp -R app/build/outputs/androidTest-results/connected/. ../artifacts/android/test-results/ 2>/dev/null || true;
             cp -R app/build/reports/androidTests/connected/. ../artifacts/android/test-report/ 2>/dev/null || true;
+            adb logcat -d > ../artifacts/android/logcat.txt 2>&1 || true;
+            adb shell dumpsys activity activities > ../artifacts/android/activity-dump.txt 2>&1 || true;
+            adb shell dumpsys window windows > ../artifacts/android/window-dump.txt 2>&1 || true;
+            adb shell dumpsys package org.knowledgeball.app > ../artifacts/android/package-dump.txt 2>&1 || true;
+            adb exec-out screencap -p > ../artifacts/android/runtime-final.png 2>/dev/null || true;
             if [ "$test_status" -ne 0 ]; then cat ../artifacts/android/gradle-connected-test.log; exit "$test_status"; fi;
             cd ..;
-            adb shell dumpsys package org.knowledgeball.app > artifacts/android/package-dump.txt;
             grep -E "versionName=|versionCode=" artifacts/android/package-dump.txt > artifacts/android/package-identity.txt;
             adb pull /sdcard/Android/data/org.knowledgeball.app/files/Pictures/knowledge-ball-android.png artifacts/android/knowledge-ball-android.png;
             test -s artifacts/android/knowledge-ball-android.png'
