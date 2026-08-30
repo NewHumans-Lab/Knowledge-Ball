@@ -1,4 +1,5 @@
-import { CURRENT_APK_URL, CURRENT_APP_VERSION, IOS_INSTALL_URL, UPDATE_MANIFEST_URL, applyPlatformVisibility, chooseBackAction, isNewerVersion } from './MobileShell';
+import { CURRENT_APP_VERSION, UPDATE_MANIFEST_URL, applyPlatformVisibility, chooseBackAction, isNewerVersion } from './MobileShell';
+import { shouldOfferUpdate } from '../release/ReleaseManifest';
 import packageJson from '../../package.json';
 
 function assertEqual(actual: unknown, expected: unknown): void {
@@ -11,10 +12,13 @@ assertEqual(chooseBackAction(false, false), 'exit');
 assertEqual(isNewerVersion('0.1.1', '0.1.0'), true);
 assertEqual(isNewerVersion('0.2.0', '0.10.0'), false);
 assertEqual(isNewerVersion('1.0', '1.0.0'), false);
-assertEqual(CURRENT_APK_URL.endsWith('/knowledge-ball-android-v0.2.0.apk'), true);
 assertEqual(CURRENT_APP_VERSION, packageJson.version);
 assertEqual(UPDATE_MANIFEST_URL.endsWith('/latest.json'), true);
-assertEqual(IOS_INSTALL_URL.endsWith('/ios-install.html'), true);
+
+assertEqual(shouldOfferUpdate('1.1.0', '1.0.0', 'remote', 'current'), true);
+assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', 'remote', 'current'), true);
+assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', 'same', 'same'), false);
+assertEqual(shouldOfferUpdate('0.9.9', '1.0.0', 'remote-new-build', 'current-build'), false);
 
 const classes = new Set<string>();
 const webDownload = { hidden: false };
