@@ -21,6 +21,7 @@ const index = await readFile('index.html', 'utf8');
 const freshness = await readFile('src/ui/BuildFreshness.ts', 'utf8');
 const deploy = await readFile('.github/workflows/deploy.yml', 'utf8');
 const schemaGate = await readFile('scripts/verify-supabase-schema.mjs', 'utf8');
+const schemaReleaseConfig = await readFile('scripts/verify-supabase-release-config.mjs', 'utf8');
 
 assert(interaction.includes('export interface InteractionScenePort'), 'interaction must depend on a narrow scene port');
 assert(interaction.includes('setVisibilityMode: (mode: KnowledgeVisibilityMode) => void;'), 'three-state setVisibilityMode must be the interaction scene authority');
@@ -45,14 +46,19 @@ assert(vite.includes("src: '/src/ui/BuildFreshness.ts'"), 'every built Pages she
 assert(freshness.includes("cache: 'no-store'"), 'freshness probe must bypass the browser HTTP cache');
 assert(freshness.includes("window.addEventListener('pageshow'"), 'BFCache/long-lived tabs must recheck deployment identity on pageshow');
 assert(freshness.includes("document.addEventListener('visibilitychange'"), 'foregrounded mobile tabs must recheck deployment identity');
-assert(deploy.includes('verify-live-visibility-cycle.mjs'), 'deployment must end with the real-touch three-state production gate');
+assert(deploy.includes('verify-production-browser-zero-write.mjs'), 'deployment must end with the zero-write real-touch production gate');
+assert(!deploy.includes('verify-live-visibility-cycle.mjs'), 'deployment must not invoke the old live-auth gate that creates anonymous database records');
+assert(!deploy.includes('verify-production-browser.mjs'), 'deployment must not invoke the old hosted-data browser gate that creates anonymous database records');
 
-assert(schemaGate.includes("discoverSchemaVersion('knowledge_ball_schema_version')"), 'release gate must derive app schema truth from migrations');
-assert(schemaGate.includes("discoverSchemaVersion('knowledge_classification_schema_version')"), 'release gate must derive classification schema truth from migrations');
-assert(!schemaGate.includes("?? '202608210002'"), 'release gate must never restore the stale manually copied app schema constant');
+assert(schemaGate.includes("verify-supabase-release-config.mjs"), 'legacy schema gate entrypoint must delegate to the zero-write release configuration check');
+assert(!schemaGate.includes('/auth/v1/signup'), 'release schema gate must never create an anonymous auth user');
+assert(!schemaReleaseConfig.includes('fetch('), 'release configuration validation must not contact or mutate the hosted database');
+assert(schemaReleaseConfig.includes("discoverSchemaVersion('knowledge_ball_schema_version')"), 'release gate must derive app schema truth from migrations');
+assert(schemaReleaseConfig.includes("discoverSchemaVersion('knowledge_classification_schema_version')"), 'release gate must derive classification schema truth from migrations');
+assert(!schemaReleaseConfig.includes("?? '202608210002'"), 'release gate must never restore the stale manually copied app schema constant');
 const appSchema = await discoverSchemaVersion('knowledge_ball_schema_version');
 const classificationSchema = await discoverSchemaVersion('knowledge_classification_schema_version');
 assert(appSchema.file.startsWith(`${appSchema.version}_`), 'app schema function must declare the version of the migration that owns it');
 assert(classificationSchema.file.startsWith(`${classificationSchema.version}_`), 'classification schema function must declare the version of the migration that owns it');
 
-console.log(`Three-state visibility architecture checks passed; schema gate follows ${appSchema.file} (${appSchema.version}).`);
+console.log(`Three-state visibility architecture checks passed; zero-write schema gate follows ${appSchema.file} (${appSchema.version}).`);
