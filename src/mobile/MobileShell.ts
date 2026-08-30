@@ -6,18 +6,12 @@ import { Network } from '@capacitor/network';
 import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { subscribeLocale, t } from '../i18n/Locale';
+import { compareSemanticVersions, isCurrentArtifact, shouldOfferUpdate, type ReleaseManifest } from '../release/ReleaseManifest';
+import packageJson from '../../package.json';
 
-export const CURRENT_APP_VERSION = '0.2.0';
-export const DOWNLOAD_ROOT = 'https://rushow111.github.io/Knowledge-Ball/downloads';
-export const CURRENT_APK_URL = `${DOWNLOAD_ROOT}/knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
-export const UPDATE_MANIFEST_URL = `${DOWNLOAD_ROOT}/latest.json`;
-export const IOS_INSTALL_URL = 'https://rushow111.github.io/Knowledge-Ball/ios-install.html';
-
-interface UpdateManifest {
-  version: string;
-  android: { url: string };
-  ios: { url: string };
-}
+export const CURRENT_APP_VERSION = packageJson.version;
+export const CURRENT_APP_BUILD = typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : 'local';
+export const UPDATE_MANIFEST_URL = 'https://rushow111.github.io/Knowledge-Ball/downloads/latest.json';
 
 export type BackAction = 'close-overlay' | 'close-panel' | 'exit';
 
@@ -28,13 +22,7 @@ export function chooseBackAction(overlayOpen: boolean, panelOpen: boolean): Back
 }
 
 export function isNewerVersion(candidate: string, current: string): boolean {
-  const normalize = (version: string) => version.split('.').map(part => Number.parseInt(part, 10) || 0);
-  const next = normalize(candidate);
-  const installed = normalize(current);
-  for (let index = 0; index < Math.max(next.length, installed.length); index += 1) {
-    if ((next[index] ?? 0) !== (installed[index] ?? 0)) return (next[index] ?? 0) > (installed[index] ?? 0);
-  }
-  return false;
+  return compareSemanticVersions(candidate, current) > 0;
 }
 
 function setActionStatus(platform: 'android' | 'ios', message: string): void {
@@ -42,11 +30,18 @@ function setActionStatus(platform: 'android' | 'ios', message: string): void {
   if (status) status.textContent = message;
 }
 
-async function loadUpdateManifest(): Promise<UpdateManifest> {
+async function loadUpdateManifest(): Promise<ReleaseManifest> {
   const response = await fetch(`${UPDATE_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Update manifest request failed (${response.status})`);
-  const manifest = await response.json() as UpdateManifest;
-  if (!manifest.version || !manifest.android?.url?.startsWith('https://') || !manifest.ios?.url?.startsWith('https://')) {
+  const manifest = await response.json() as ReleaseManifest;
+  if (
+    manifest.schema !== 1
+    || !manifest.version
+    || !manifest.build
+    || !manifest.commit
+    || !manifest.platforms?.android
+    || !manifest.platforms?.ios
+  ) {
     throw new Error('Invalid update manifest');
   }
   return manifest;
@@ -57,12 +52,18 @@ async function checkForUpdate(): Promise<void> {
   setActionStatus(platform, t('mobile.checking'));
   try {
     const manifest = await loadUpdateManifest();
-    if (!isNewerVersion(manifest.version, CURRENT_APP_VERSION)) {
+    const release = manifest.platforms[platform];
+    if (!release.available || !release.version || !release.build) throw new Error(`${platform} release unavailable`);
+
+    if (!shouldOfferUpdate(release.version, CURRENT_APP_VERSION, release.build, CURRENT_APP_BUILD)) {
       setActionStatus(platform, t('mobile.latest', { version: CURRENT_APP_VERSION }));
       return;
     }
-    setActionStatus(platform, t('mobile.found', { version: manifest.version }));
-    await Browser.open({ url: platform === 'ios' ? manifest.ios.url : manifest.android.url });
+
+    const url = platform === 'ios' ? release.urls.install : release.urls.download;
+    if (!url) throw new Error(`${platform} release URL unavailable`);
+    setActionStatus(platform, t('mobile.found', { version: release.version }));
+    await Browser.open({ url });
   } catch (error) {
     console.error('Unable to check for updates', error);
     setActionStatus(platform, t('mobile.updateError'));
@@ -72,7 +73,13 @@ async function checkForUpdate(): Promise<void> {
 async function shareCurrentApk(): Promise<void> {
   setActionStatus('android', t('mobile.preparing'));
   try {
-    const response = await fetch(CURRENT_APK_URL, { cache: 'no-store' });
+    const manifest = await loadUpdateManifest();
+    const release = manifest.platforms.android;
+    const url = release.urls.download;
+    if (!isCurrentArtifact(release, CURRENT_APP_VERSION, CURRENT_APP_BUILD) || !url) {
+      throw new Error('Current Android build has no matching published installer');
+    }
+    const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) throw new Error(`APK download failed (${response.status})`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     let binary = '';
@@ -80,7 +87,7 @@ async function shareCurrentApk(): Promise<void> {
     for (let offset = 0; offset < bytes.length; offset += chunkSize) {
       binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
     }
-    const fileName = `knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
+    const fileName = new URL(url).pathname.split('/').pop() || `knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
     await Filesystem.writeFile({ path: fileName, directory: Directory.Cache, data: btoa(binary) });
     const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Cache });
     await Share.share({
@@ -98,10 +105,16 @@ async function shareCurrentApk(): Promise<void> {
 
 async function shareIosVersion(): Promise<void> {
   try {
+    const manifest = await loadUpdateManifest();
+    const release = manifest.platforms.ios;
+    const url = release.urls.install;
+    if (!isCurrentArtifact(release, CURRENT_APP_VERSION, CURRENT_APP_BUILD) || !url) {
+      throw new Error('Current native iOS build has no matching published distribution');
+    }
     await Share.share({
       title: t('mobile.iosShareTitle', { version: CURRENT_APP_VERSION }),
       text: t('mobile.iosShareText', { version: CURRENT_APP_VERSION }),
-      url: IOS_INSTALL_URL,
+      url,
       dialogTitle: t('mobile.iosShareDialog'),
     });
     setActionStatus('ios', t('mobile.iosShared'));

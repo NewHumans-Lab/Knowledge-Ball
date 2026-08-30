@@ -609,11 +609,11 @@ panel = new PanelController({
   fLogicRule: must<HTMLSelectElement>('fLogicRule'),
   fLogicRuleField: must<HTMLElement>('fLogicRuleField'),
 
-  accountOverlay: Capacitor.isNativePlatform() ? opt<HTMLElement>('accountOverlay') : undefined,
-  accountClose: Capacitor.isNativePlatform() ? opt<HTMLElement>('accountClose') : undefined,
-  statRep: Capacitor.isNativePlatform() ? opt<HTMLElement>('statRep') : undefined,
-  statLit: Capacitor.isNativePlatform() ? opt<HTMLElement>('statLit') : undefined,
-  statContrib: Capacitor.isNativePlatform() ? opt<HTMLElement>('statContrib') : undefined,
+  accountOverlay: undefined,
+  accountClose: undefined,
+  statRep: undefined,
+  statLit: undefined,
+  statContrib: undefined,
 
   settingsOverlay: opt<HTMLElement>('settingsOverlay'),
   settingsClose: opt<HTMLElement>('settingsClose'),
@@ -710,8 +710,7 @@ store.subscribe((event) => {
 
 syncNodesFromProjection();
 
-const accountUi = !Capacitor.isNativePlatform()
-  ? installAccountUi({
+const accountUi = installAccountUi({
       avatarButton: qOpt<HTMLElement>('.avatar-btn') ?? null,
       accountOverlay: opt<HTMLElement>('accountOverlay') ?? null,
       accountClose: opt<HTMLElement>('accountClose') ?? null,
@@ -719,8 +718,7 @@ const accountUi = !Capacitor.isNativePlatform()
       getLocalPersonalStates: latestLocalPersonalStates,
       applyPersonalSnapshot: applyPersonalKnowledgeSnapshot,
       onIdentityResolved: updateCurrentViewerUserId,
-    })
-  : null;
+    });
 
 panel.setSettingsValues({
   nodeRadius: 7.2,

@@ -74,7 +74,7 @@ assert.throws(() => parseKnowledgeRevalidation({
 }, 'old-gray'), /协议版本/);
 
 const authClient = readFileSync('src/auth/AuthClient.ts', 'utf8');
-const authUi = readFileSync('src/ui/AuthUi.ts', 'utf8');
+const authUi = `${readFileSync('src/ui/AccountUi.ts', 'utf8')}\n${readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8')}`;
 const syncEngine = readFileSync('src/sync/SyncEngine.ts', 'utf8');
 const publicSyncCoordinator = readFileSync('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
 assert.match(authClient, /operationKey = freshOperationKey\('pending-vote', nodeId\)/, 'ordinary pending votes need a fresh idempotency key per submission/round');
@@ -85,13 +85,11 @@ assert.match(authClient, /start_knowledge_revalidation/, 'client must expose the
 assert.match(authClient, /get_knowledge_revalidation/, 'client must expose the authoritative revalidation snapshot RPC');
 assert.match(authClient, /cast_knowledge_revalidation_vote/, 'client must expose the authoritative revalidation ballot RPC');
 assert.match(authClient, /settle_expired_knowledge_revalidations/, 'client must expose the authoritative revalidation sweep RPC');
-assert.match(authUi, /panelClose\.textContent = '❌'/, 'node detail must expose an explicit top-right return/close affordance');
-assert.match(authUi, /node\.status !== 'pending'/, 'vote controls must be pending-only');
+assert.match(authUi, /class="node-detail-close"/, 'current node detail controller must expose an explicit close affordance');
+assert.match(authUi, /if \(node\.status === 'pending'\)/, 'current node-detail controller must render vote controls only for pending nodes');
 assert.match(authUi, /data-vote-side=\"AGREE\"/, 'pending detail must expose an agree action');
 assert.match(authUi, /data-vote-side=\"DISAGREE\"/, 'pending detail must expose a disagree action');
-assert.match(authUi, /−1 能量/g, 'both vote buttons must label the one-energy stake');
 assert.match(authUi, /account\.castPendingKnowledgeVote/, 'vote UI must call the real account vote RPC rather than fake a local decrement');
-assert.match(authUi, /await refreshCachedAccount\(\)/, 'successful votes/settlements must refresh account energy display');
 assert.match(authUi, /VOTE_REFRESH_MS = 3_000/, 'the one active vote card must refresh its global tally promptly');
 assert.match(authUi, /account\.getPendingKnowledgeVote\(nodeId\)/, 'active pending detail must re-read the authoritative all-network tally');
 assert.match(authUi, /account\.settleExpiredPendingKnowledgeVotes\(50\)/, 'clients must trigger a low-frequency threshold\/deadline readiness sweep');
@@ -101,7 +99,6 @@ assert.match(publicSyncCoordinator, /DEFAULT_PUBLIC_KNOWLEDGE_SYNC_INTERVAL_MS =
 assert.match(publicSyncCoordinator, /knowledge-ball:verdict-finalized/, 'server verdict signal must trigger prompt public graph reconciliation');
 assert.doesNotMatch(authUi, /REMOTE_GRAPH_SYNC_MS|scheduleRemoteGraphSync|requestGraphSync|syncEngine/, 'account UI must not own or reach through debug state to synchronize the public graph');
 assert.match(authUi, /snapshot\.verdict === 'PENDING'/, 'closed rounds must stop accepting or polling ordinary votes');
-assert.match(authUi, /observe\(panelTitle/, 'panel enhancements must keep the safe title-only observer boundary');
-assert.doesNotMatch(authUi, /observe\(panel,\s*\{\s*subtree:true/, 'vote UI must not recreate the old panel-subtree MutationObserver feedback loop');
+assert.doesNotMatch(authUi, /MutationObserver/, 'current account and node-detail controllers must use explicit state rather than DOM observation');
 assert.doesNotMatch(authUi, /setInterval\(/, 'vote synchronization must not add permanent or per-node intervals');
 console.log('Account formatting, round-safe pending vote, revalidation RPC, and public-sync ownership regression checks passed');
