@@ -23,6 +23,8 @@ jobs:
       - run: node scripts/verify-seo.mjs
       - run: npm run test:pages
       - run: npm test
+      - name: Verify deterministic reversible label budget
+        run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - run: npm run test:i18n
       - run: npm run test:download
       - name: Require the hosted release schema expected by migrations
@@ -48,6 +50,8 @@ jobs:
       - name: Verify cloud-only public state with two already-open real pages
         run: npm run test:browser-cloud
       - run: npm run test:browser-mobile
+      - name: Verify label zoom-in/zoom-out reversibility on a real mobile page
+        run: node scripts/verify-label-zoom-reversibility-browser.mjs
       - name: Upload mobile scene visual evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,6 +92,8 @@ jobs:
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
       - run: npm ci
       - run: npm test
+      - name: Verify deterministic reversible label budget
+        run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - run: npm run test:i18n
       - run: npm run android:sync
       - name: Run Android tests and build debug APK
@@ -104,6 +110,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Verify deterministic reversible label budget
+        run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - run: npm run test:i18n
       - run: npm run ios:sync
       - name: Build iOS simulator app without signing

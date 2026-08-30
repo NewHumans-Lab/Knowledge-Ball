@@ -10,6 +10,20 @@ export type StableShellLabelCandidate = Readonly<{
   shellRadius: number;
 }>;
 
+/**
+ * Budgets produced by this module are feedback values, not authoritative state.
+ * When a produced budget is fed into the next frame, the next result is rebuilt
+ * from that frame's candidates so zoom/rotation is reversible. Externally seeded
+ * non-empty sets still get one legacy hysteresis pass for API compatibility.
+ */
+const generatedBudgets = new WeakSet<object>();
+
+function finalizeBudget(ids: Iterable<string>): Set<string> {
+  const budget = new Set(ids);
+  generatedBudgets.add(budget);
+  return budget;
+}
+
 function onScreen(candidate: StableShellLabelCandidate, width: number, height: number): boolean {
   return candidate.x >= 0 && candidate.x <= width && candidate.y >= 0 && candidate.y <= height;
 }
@@ -75,17 +89,36 @@ function choose(
   if (selected.length < target) addByShellAndSpacing(ordered, selected, selectedIds, target, width, height, centerGap * 0.6, outerGap * 0.6);
   if (selected.length < target) addByShellAndSpacing(ordered, selected, selectedIds, target, width, height, 0, 0, target);
 
-  return new Set(selected.slice(0, target).map(candidate => candidate.id));
+  return finalizeBudget(selected.slice(0, target).map(candidate => candidate.id));
+}
+
+function currentFrameBudget(
+  eligible: readonly StableShellLabelCandidate[],
+  width: number,
+  height: number,
+): Set<string> {
+  if (eligible.length <= STABLE_LABEL_MAX) return finalizeBudget(eligible.map(candidate => candidate.id));
+
+  const whitelisted = eligible.filter(candidate => STABLE_LABEL_WHITELIST.has(candidate.id));
+  return choose(eligible, whitelisted, STABLE_LABEL_MAX, width, height);
 }
 
 /**
- * Large-mobile label hysteresis:
+ * Large-mobile label selection:
  * - only on-screen candidates participate;
+ * - runtime feedback is current-frame authoritative: the previous result never
+ *   locks a later zoom/rotation state, so returning to the same view restores
+ *   exactly the same label set;
  * - the core triad whitelist always survives once those labels become eligible;
  * - ordinary labels keep shell radius as the ranking priority (outer first);
- * - the centre normally holds at most six ordinary labels with a tighter spacing;
- * - 12..18 is the stable band: do not reshuffle ordinary retained labels while possible;
- * - the whitelist consumes part of the same 18-label cap; it never increases the cap.
+ * - the centre normally holds at most six labels with a tighter spacing;
+ * - no more than 18 labels are visible; when more are eligible, lower-priority
+ *   inner-shell labels leave as higher-priority outer-shell labels enter;
+ * - the whitelist consumes part of the same 18-label cap; it never increases it.
+ *
+ * `previous` remains in the public signature only for compatibility with callers
+ * that may seed a one-off non-empty legacy set. Normal scene feedback always uses
+ * a set produced here and is therefore recomputed from the current frame.
  */
 export function selectStableShellLabels(
   candidates: readonly StableShellLabelCandidate[],
@@ -94,6 +127,14 @@ export function selectStableShellLabels(
   height: number,
 ): Set<string> {
   const eligible = candidates.filter(candidate => onScreen(candidate, width, height));
+
+  if (previous.size === 0 || generatedBudgets.has(previous as object)) {
+    return currentFrameBudget(eligible, width, height);
+  }
+
+  // Legacy one-pass compatibility for externally seeded retained sets. The
+  // returned value is marked as feedback, so the following frame becomes fully
+  // current-frame authoritative.
   const byId = new Map(eligible.map(candidate => [candidate.id, candidate] as const));
   const whitelisted = eligible.filter(candidate => STABLE_LABEL_WHITELIST.has(candidate.id));
   const whitelistedIds = new Set(whitelisted.map(candidate => candidate.id));
@@ -103,14 +144,12 @@ export function selectStableShellLabels(
     .filter((candidate): candidate is StableShellLabelCandidate => Boolean(candidate));
   const retained = [...whitelisted, ...retainedOrdinary].slice(0, STABLE_LABEL_MAX);
 
-  if (eligible.length <= STABLE_LABEL_MAX) return new Set(eligible.map(candidate => candidate.id));
+  if (eligible.length <= STABLE_LABEL_MAX) return finalizeBudget(eligible.map(candidate => candidate.id));
 
   if (retained.length >= STABLE_LABEL_MIN && retained.length <= STABLE_LABEL_MAX) {
-    return new Set(retained.map(candidate => candidate.id));
+    return finalizeBudget(retained.map(candidate => candidate.id));
   }
 
-  const target = previous.size === 0
-    ? STABLE_LABEL_MAX
-    : Math.min(STABLE_LABEL_MIN, eligible.length);
+  const target = Math.min(STABLE_LABEL_MIN, eligible.length);
   return choose(eligible, retained, target, width, height);
 }
