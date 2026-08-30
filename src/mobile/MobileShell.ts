@@ -166,17 +166,33 @@ export async function setupMobileShell(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   const platform = Capacitor.getPlatform();
   if (platform !== 'android' && platform !== 'ios') return;
+
   applyPlatformVisibility(platform);
   setupVersionActions();
-  await StatusBar.setStyle({ style: Style.Dark });
-  await StatusBar.setBackgroundColor({ color: '#080c16' });
-  showNetworkState((await Network.getStatus()).connected);
+
+  // Back navigation is a core interaction contract. Register it before optional
+  // native decoration/network setup so a rejected or slow plugin call cannot
+  // leave Android with an unclosable overlay or panel.
+  await App.addListener('backButton', async () => {
+    if (closeTopLayer() === 'exit') await App.exitApp();
+  });
+
+  try {
+    await StatusBar.setStyle({ style: Style.Dark });
+    await StatusBar.setBackgroundColor({ color: '#080c16' });
+  } catch (error) {
+    console.warn('[Knowledge-Ball] Native status-bar setup failed:', error);
+  }
+
   subscribeLocale(() => {
     const banner = document.getElementById('networkBanner');
     if (banner) banner.textContent = t('mobile.offline');
   });
-  await Network.addListener('networkStatusChange', status => showNetworkState(status.connected));
-  await App.addListener('backButton', async () => {
-    if (closeTopLayer() === 'exit') await App.exitApp();
-  });
+
+  try {
+    showNetworkState((await Network.getStatus()).connected);
+    await Network.addListener('networkStatusChange', status => showNetworkState(status.connected));
+  } catch (error) {
+    console.warn('[Knowledge-Ball] Native network-state setup failed:', error);
+  }
 }
