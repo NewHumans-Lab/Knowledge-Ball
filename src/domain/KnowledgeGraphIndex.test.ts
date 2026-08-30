@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { GraphNode } from '../graph/Node';
 import { createKnowledgeGraphIndex, effectivePremiseIds } from './KnowledgeGraphIndex';
+import { createKnowledgeRelationIndex } from './KnowledgeRelations';
 
 const node = (id: string, premises: string[] = [], topicId = id, rank = 0): GraphNode => ({
   id,
@@ -64,8 +65,10 @@ const redReasoning: GraphNode = {
     reasoningDominant: true,
   },
 };
+const premiseA = node('premise-a');
 const reasoningConsumer = node('reasoning-consumer', ['reasoning-white']);
-const reasoningIndex = createKnowledgeGraphIndex([whiteReasoning, redReasoning, reasoningConsumer]);
+const reasoningNodes = [premiseA, whiteReasoning, redReasoning, reasoningConsumer];
+const reasoningIndex = createKnowledgeGraphIndex(reasoningNodes);
 
 assert.equal(
   reasoningIndex.currentByTopic.get('reasoning-topic'),
@@ -77,10 +80,17 @@ assert.equal(
   redReasoning,
   'logical authority follows the winning reasoning-side head independently from colour/current identity',
 );
+const effectiveReasoningPremises = effectivePremiseIds(reasoningConsumer, reasoningIndex);
 assert.deepEqual(
-  effectivePremiseIds(reasoningConsumer, reasoningIndex),
+  effectiveReasoningPremises,
   ['reasoning-red'],
-  'rendered premise topology must follow the dominant reasoning head used by canonical detail relations',
+  'rendered premise topology must follow the dominant reasoning head',
+);
+const detailRelations = createKnowledgeRelationIndex(reasoningNodes, reasoningIndex).relationsFor(reasoningConsumer.id);
+assert.deepEqual(
+  detailRelations.previous.map(item => item.id),
+  effectiveReasoningPremises,
+  'scene premise topology and detail previous relations must resolve to the same dominant reasoning head',
 );
 
 console.log('Knowledge graph generation index regression tests passed');
