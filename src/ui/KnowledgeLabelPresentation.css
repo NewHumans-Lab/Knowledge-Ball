@@ -1,11 +1,13 @@
 /* KnowledgeScene writes the exact rendered sphere-top screen coordinate.
-   This stylesheet owns only the label box presentation: it extends upward from
-   that coordinate with no additional vertical gap or compensation. */
+   This stylesheet owns only the label box presentation. Keep the box anchored
+   directly to the sphere top and remove default font leading so visible glyphs
+   sit as close to the sphere as the anchor permits. */
 .node-label {
   position: absolute;
   transform: translate(-50%, -100%);
   margin: 0;
   font-size: var(--label-size);
+  line-height: 1;
   color: var(--label-color);
   font-family: var(--label-font);
   background: rgba(2, 9, 13, .52);
@@ -24,5 +26,5 @@
 .node-label.selected {
   border-color: rgba(117, 224, 211, .58);
   border-bottom-color: transparent;
-  box-shadow: 0 0 0 2px rgba(117, 224, 211, .09);
+  box-shadow: 0 0 0 2px rgba(117, 224, 211,.09);
 }
