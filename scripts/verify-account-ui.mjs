@@ -11,7 +11,7 @@ const [auth, ui, app, vite, sync, migration, profileGate, publicWriteGate, accur
   readFile('supabase/migrations/202608200003_profile_edit_requires_account.sql','utf8'),
   readFile('supabase/migrations/202608200004_registered_public_writes.sql','utf8'),
   readFile('supabase/migrations/202608210002_account_accuracy.sql','utf8'),
-  readFile('scripts/verify-production-browser.mjs','utf8'),
+  readFile('scripts/verify-production-browser-zero-write.mjs','utf8'),
   readFile('.github/workflows/deploy.yml','utf8'),
 ]);
 
@@ -114,20 +114,24 @@ assert.match(publicWriteGate, /请先注册或登录账户后再提交公共知�
 assert.match(publicWriteGate, /knowledge_ball_schema_version\(\)[\s\S]*202608200004/,
   'public-write migration must preserve its own historical schema milestone');
 
-assert.doesNotMatch(productionBrowser, /Public synchronization probe|crypto\.randomUUID\(\)|#modalSubmit[^\n]*click/,
-  'production browser smoke tests must never manufacture or submit knowledge nodes');
-assert.match(productionBrowser, /publicAppendRequests/,
-  'production browser smoke test must explicitly detect public append RPC calls');
-assert.match(productionBrowser, /authoritative public writes: 0/,
+assert.doesNotMatch(productionBrowser, /route\.continue\(|route\.fallback\(|fetch\(/,
+  'production browser gate must never let a Supabase request reach the hosted service');
+assert.match(productionBrowser, /page\.route\('\*\*\/\*\.supabase\.co\/\*\*'/,
+  'production browser gate must intercept every Supabase request');
+assert.match(productionBrowser, /CI zero-write gate blocked an unexpected Supabase request/,
+  'unexpected Supabase calls must fail closed instead of reaching production');
+assert.match(productionBrowser, /external Supabase requests: 0/,
   'production smoke output must make the zero-write invariant visible');
 assert.doesNotMatch(deploy, /\?e2e=/,
   'production deploy must not parameterize a test knowledge marker');
-assert.match(deploy, /Read-only click-test deployed Pages and Supabase wiring/,
-  'deployment must describe the production browser check as read-only');
+assert.match(deploy, /Zero-write deployed Pages browser gate/,
+  'deployment must describe the production browser check as zero-write');
+assert.doesNotMatch(deploy, /verify-production-browser\.mjs|verify-live-visibility-cycle\.mjs/,
+  'deployment must not restore the old database-touching browser gates');
 
 assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Registered public-write gate, explicit account ownership, authoritative accuracy, and account UI checks passed');
+console.log('Registered public-write gate, explicit account ownership, authoritative accuracy, zero-write production smoke, and account UI checks passed');
 // This regression intentionally guards the web account ownership boundary.
