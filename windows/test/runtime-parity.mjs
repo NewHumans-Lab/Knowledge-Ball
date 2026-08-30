@@ -1,20 +1,40 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { _electron as electron } from 'playwright-core';
+import { _electron as electron, chromium } from 'playwright-core';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
 
 const windowsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(windowsRoot, '..');
 const executable = process.argv[2] ?? path.join(windowsRoot, 'release', 'win-unpacked', 'Knowledge Ball.exe');
 const artifacts = path.join(windowsRoot, 'artifacts');
+const webReferenceUrl = 'http://127.0.0.1:4174/Knowledge-Ball/';
 await mkdir(artifacts, { recursive: true });
 
 async function deterministic(page) {
   await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.renderNodes?.length), null, { timeout: 30_000 });
   await page.evaluate(() => { localStorage.setItem('knowledge-ball.locale.v1', 'zh-CN'); window.__debug.scene.stop(); });
   await page.waitForTimeout(250);
+}
+
+async function startWebReference() {
+  const viteBin = path.join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js');
+  const server = spawn(process.execPath, [viteBin, 'preview', '--host', '127.0.0.1', '--port', '4174', '--strictPort'], {
+    cwd: repoRoot,
+    stdio: 'ignore',
+  });
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (server.exitCode !== null) throw new Error(`Web reference server exited with code ${server.exitCode}`);
+    try {
+      if ((await fetch(webReferenceUrl)).ok) return server;
+    } catch { /* preview not ready */ }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  server.kill();
+  throw new Error('Web reference server did not become ready');
 }
 
 const desktop = await electron.launch({ executablePath: executable, args: ['--disable-gpu-sandbox', '--use-angle=swiftshader'] });
@@ -131,20 +151,30 @@ try {
   await deterministic(page);
   const desktopPng = await page.screenshot({ path: path.join(artifacts, 'desktop.png') });
 
-  const reference = await desktop.context().newPage();
-  await reference.setViewportSize({ width: 1440, height: 900 });
-  await reference.goto('app://knowledge-ball/Knowledge-Ball/index.html');
-  await deterministic(reference);
-  const referencePng = await reference.screenshot({ path: path.join(artifacts, 'chromium-reference.png') });
-  const actual = PNG.sync.read(desktopPng), expected = PNG.sync.read(referencePng);
-  assert.equal(actual.width, expected.width);
-  assert.equal(actual.height, expected.height);
-  const diff = new PNG({ width: actual.width, height: actual.height });
-  const changed = pixelmatch(actual.data, expected.data, diff.data, actual.width, actual.height, { threshold: 0.1 });
-  const ratio = changed / (actual.width * actual.height);
-  await import('node:fs').then(({ writeFileSync }) => writeFileSync(path.join(artifacts, 'visual-diff.png'), PNG.sync.write(diff)));
-  assert.ok(ratio <= 0.005, `desktop/reference visual mismatch ${(ratio * 100).toFixed(3)}% exceeds 0.5%`);
-  console.log(`Windows desktop runtime and visual parity passed (pixel mismatch ${(ratio * 100).toFixed(3)}%)`);
+  // Compare the packaged Electron renderer with an independent browser loading
+  // the authoritative root dist. ElectronApplication's BrowserContext cannot
+  // create arbitrary new pages, so the previous same-context reference was not executable.
+  const referenceServer = await startWebReference();
+  let referenceBrowser;
+  try {
+    referenceBrowser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--use-angle=swiftshader'] });
+    const reference = await referenceBrowser.newPage({ viewport: { width: 1440, height: 900 } });
+    await reference.goto(webReferenceUrl, { waitUntil: 'domcontentloaded' });
+    await deterministic(reference);
+    const referencePng = await reference.screenshot({ path: path.join(artifacts, 'web-reference.png') });
+    const actual = PNG.sync.read(desktopPng), expected = PNG.sync.read(referencePng);
+    assert.equal(actual.width, expected.width);
+    assert.equal(actual.height, expected.height);
+    const diff = new PNG({ width: actual.width, height: actual.height });
+    const changed = pixelmatch(actual.data, expected.data, diff.data, actual.width, actual.height, { threshold: 0.1 });
+    const ratio = changed / (actual.width * actual.height);
+    await import('node:fs').then(({ writeFileSync }) => writeFileSync(path.join(artifacts, 'visual-diff.png'), PNG.sync.write(diff)));
+    assert.ok(ratio <= 0.005, `desktop/Web visual mismatch ${(ratio * 100).toFixed(3)}% exceeds 0.5%`);
+    console.log(`Windows desktop runtime and Web visual parity passed (pixel mismatch ${(ratio * 100).toFixed(3)}%)`);
+  } finally {
+    await referenceBrowser?.close();
+    referenceServer.kill();
+  }
 } finally {
   await desktop.close();
 }
