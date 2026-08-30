@@ -27,7 +27,7 @@ jobs:
         run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - run: npm run test:i18n
       - run: npm run test:download
-      - name: Require the hosted release schema expected by migrations
+      - name: Validate Supabase release configuration without database writes
         if: github.event_name == 'pull_request'
         run: node scripts/verify-supabase-schema.mjs
         env:
