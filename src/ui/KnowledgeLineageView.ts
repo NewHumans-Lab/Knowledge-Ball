@@ -1,5 +1,10 @@
-import type { KnowledgeLineageMeta } from '../domain/KnowledgeLineage';
-import { isReasoningSideHead, lineageRoleFor } from '../domain/KnowledgeLineage';
+import {
+  dominantNodeForTopic,
+  isReasoningSideHead,
+  lineageRoleFor,
+  topicIdFor,
+  type KnowledgeLineageMeta,
+} from '../domain/KnowledgeLineage';
 import {
   reasoningConclusionBindingFor,
   type ReasoningConclusionBinding,
@@ -24,7 +29,14 @@ export interface KnowledgeLineageViewNode {
   pos?: unknown;
 }
 
+export interface KnowledgeDisplayLabelNode {
+  id: string;
+  title: string;
+  lineage?: KnowledgeLineageMeta;
+}
+
 type PersonalRestrictionNode = Pick<KnowledgeLineageViewNode, 'id' | 'status' | 'lineage'>;
+type DisplayBranch = 1 | 2;
 
 export const KNOWLEDGE_HISTORY_COLOR = 0x8A949E;
 export const KNOWLEDGE_OPPOSITION_COLOR = 0xEE5B63;
@@ -39,6 +51,92 @@ export function visibilityModeLabel(mode: KnowledgeVisibilityMode): string {
   if (mode === 'current') return '当前';
   if (mode === 'personal') return '个人';
   return '全部';
+}
+
+function canonicalDisplayTitle(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+}
+
+function displayBranchFor(node: KnowledgeDisplayLabelNode): DisplayBranch | null {
+  if (node.lineage?.reasoningSide === 'normal') return 1;
+  if (node.lineage?.reasoningSide === 'opposition') return 2;
+
+  const role = lineageRoleFor(node);
+  if (role === 'history' || role === 'candidate-history') return 1;
+  if (role === 'opposition' || role === 'candidate-opposition') return 2;
+  if (role === 'current') return node.lineage?.proposal === 'opposition' ? 2 : 1;
+  return null;
+}
+
+function displayDepthFor(node: KnowledgeDisplayLabelNode): number {
+  const sideRank = node.lineage?.reasoningSideRank;
+  if (Number.isSafeInteger(sideRank) && (sideRank ?? -1) >= 0) return sideRank!;
+  const rank = node.lineage?.rank;
+  if (Number.isSafeInteger(rank) && (rank ?? -1) >= 0) return rank!;
+  return Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Build presentation-only labels for ambiguous names inside one lineage topic.
+ * The immutable knowledge title is never rewritten. A title is numbered only
+ * when the same canonical title occurs at least twice in the same topic.
+ *
+ * Branch 1 = normal/history side; branch 2 = opposition side. The dominant ball
+ * always keeps the bare title. Non-dominant side heads/pending candidates use
+ * `.0`; historical same-name members are numbered contiguously from `.1`, so
+ * unrelated differently named versions never create gaps in the visible suffix.
+ */
+export function buildKnowledgeDisplayLabelMap<T extends KnowledgeDisplayLabelNode>(
+  nodes: readonly T[],
+): ReadonlyMap<string, string> {
+  const labels = new Map<string, string>(nodes.map(node => [node.id, node.title]));
+  const groups = new Map<string, { topicId: string; members: T[] }>();
+
+  for (const node of nodes) {
+    if (lineageRoleFor(node) === 'rejected') continue;
+    const titleKey = canonicalDisplayTitle(node.title);
+    if (!titleKey) continue;
+    const topicId = topicIdFor(node);
+    const key = `${topicId}\0${titleKey}`;
+    const group = groups.get(key);
+    if (group) group.members.push(node);
+    else groups.set(key, { topicId, members: [node] });
+  }
+
+  for (const { topicId, members } of groups.values()) {
+    if (members.length < 2) continue;
+    const dominant = dominantNodeForTopic(nodes, topicId);
+    const branchMembers = new Map<DisplayBranch, T[]>([[1, []], [2, []]]);
+
+    for (const node of members) {
+      if (node.id === dominant?.id) continue;
+      const branch = displayBranchFor(node);
+      if (branch) branchMembers.get(branch)!.push(node);
+    }
+
+    for (const branch of [1, 2] as const) {
+      const ordered = branchMembers.get(branch)!;
+      ordered.sort((left, right) =>
+        displayDepthFor(left) - displayDepthFor(right) || left.id.localeCompare(right.id),
+      );
+      if (!ordered.length) continue;
+
+      let ordinal = ordered.some(node => displayDepthFor(node) === 0) ? 0 : 1;
+      for (const node of ordered) {
+        labels.set(node.id, `${node.title}${branch}.${ordinal}`);
+        ordinal += 1;
+      }
+    }
+  }
+
+  return labels;
+}
+
+export function displayKnowledgeLabelForNode<T extends KnowledgeDisplayLabelNode>(
+  node: T,
+  nodes: readonly T[],
+): string {
+  return buildKnowledgeDisplayLabelMap(nodes).get(node.id) ?? node.title;
 }
 
 export function isPendingLineageCandidate(node: KnowledgeLineageViewNode): boolean {
