@@ -1,4 +1,4 @@
-import { CURRENT_APP_VERSION, UPDATE_MANIFEST_URL, applyPlatformVisibility, chooseBackAction, isNewerVersion, overlayCloseSelector } from './MobileShell';
+import { CURRENT_APP_VERSION, UPDATE_MANIFEST_URL, applyPlatformVisibility, chooseBackAction, isNewerVersion, overlayCloseSelector, setupMobileShell } from './MobileShell';
 import { shouldOfferUpdate } from '../release/ReleaseManifest';
 import packageJson from '../../package.json';
 
@@ -20,6 +20,7 @@ assertEqual(isNewerVersion('0.2.0', '0.10.0'), false);
 assertEqual(isNewerVersion('1.0', '1.0.0'), false);
 assertEqual(CURRENT_APP_VERSION, packageJson.version);
 assertEqual(UPDATE_MANIFEST_URL.endsWith('/latest.json'), true);
+assertEqual(setupMobileShell(), setupMobileShell());
 
 assertEqual(shouldOfferUpdate('1.1.0', '1.0.0', 'remote', 'current'), true);
 assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', 'remote', 'current'), true);
