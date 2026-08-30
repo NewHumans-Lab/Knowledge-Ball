@@ -35,7 +35,7 @@ jobs:
       - run: npm run test:pages
       - run: npm test
       - run: npm run test:download
-      - name: Require the matching hosted Supabase schema before promotion
+      - name: Validate Supabase release configuration without database writes
         run: node scripts/verify-supabase-schema.mjs
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
@@ -63,7 +63,5 @@ jobs:
         run: |
           npm install --no-save playwright
           npx playwright install --with-deps chromium
-      - name: Read-only click-test deployed Pages and Supabase wiring
-        run: node scripts/verify-production-browser.mjs "${{ steps.deployment.outputs.page_url }}" "${GITHUB_SHA}"
-      - name: Real-touch Current Personal All production gate
-        run: node scripts/verify-live-visibility-cycle.mjs "${{ steps.deployment.outputs.page_url }}" "${GITHUB_SHA}"
+      - name: Zero-write deployed Pages browser gate
+        run: node scripts/verify-production-browser-zero-write.mjs "${{ steps.deployment.outputs.page_url }}" "${GITHUB_SHA}" "${{ vars.VITE_SUPABASE_URL }}"
