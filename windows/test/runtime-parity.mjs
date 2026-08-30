@@ -94,8 +94,9 @@ try {
   if (await page.locator('#panel.open').count()) await page.locator('#panelClose').click();
   await page.waitForFunction(() => !document.querySelector('#panel')?.classList.contains('open'));
 
-  // Current split create flow and Toast layering.
-  await page.keyboard.press('Control+N');
+  // Current split create flow and Toast layering. Use the same lowercase key
+  // contract as the authoritative Web acceptance and InteractionController.
+  await page.keyboard.press('Control+n');
   await page.locator('#knowledgeCreateOverlay.show').waitFor();
   await page.locator('[data-create-submit]').click();
   assert.ok(await page.locator('#toast.show').isVisible(), 'create validation must remain visible above its modal');
