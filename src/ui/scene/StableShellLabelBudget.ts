@@ -1,6 +1,7 @@
 export const STABLE_LABEL_MIN = 12;
 export const STABLE_LABEL_MAX = 18;
 export const STABLE_LABEL_CENTER_CAP = 6;
+export const STABLE_LABEL_WHITELIST = new Set(['n1', 'n2', 'n16']);
 
 export type StableShellLabelCandidate = Readonly<{
   id: string;
@@ -80,10 +81,11 @@ function choose(
 /**
  * Large-mobile label hysteresis:
  * - only on-screen candidates participate;
- * - shell radius is the only ranking priority (outer first);
- * - the centre normally holds at most six labels with a tighter spacing;
- * - 12..18 is the stable band: do not reshuffle while retained labels stay inside it;
- * - below 12, add the minimum needed; above 18, trim to 18.
+ * - the core triad whitelist always survives once those labels become eligible;
+ * - ordinary labels keep shell radius as the ranking priority (outer first);
+ * - the centre normally holds at most six ordinary labels with a tighter spacing;
+ * - 12..18 is the stable band: do not reshuffle ordinary retained labels while possible;
+ * - the whitelist consumes part of the same 18-label cap; it never increases the cap.
  */
 export function selectStableShellLabels(
   candidates: readonly StableShellLabelCandidate[],
@@ -93,19 +95,22 @@ export function selectStableShellLabels(
 ): Set<string> {
   const eligible = candidates.filter(candidate => onScreen(candidate, width, height));
   const byId = new Map(eligible.map(candidate => [candidate.id, candidate] as const));
-  const retained = [...previous].map(id => byId.get(id)).filter((candidate): candidate is StableShellLabelCandidate => Boolean(candidate));
+  const whitelisted = eligible.filter(candidate => STABLE_LABEL_WHITELIST.has(candidate.id));
+  const whitelistedIds = new Set(whitelisted.map(candidate => candidate.id));
+  const retainedOrdinary = [...previous]
+    .filter(id => !whitelistedIds.has(id))
+    .map(id => byId.get(id))
+    .filter((candidate): candidate is StableShellLabelCandidate => Boolean(candidate));
+  const retained = [...whitelisted, ...retainedOrdinary].slice(0, STABLE_LABEL_MAX);
 
-  if (previous.size === 0) {
-    if (eligible.length <= STABLE_LABEL_MAX) return new Set(eligible.map(candidate => candidate.id));
-    return choose(eligible, [], STABLE_LABEL_MAX, width, height);
-  }
+  if (eligible.length <= STABLE_LABEL_MAX) return new Set(eligible.map(candidate => candidate.id));
+
   if (retained.length >= STABLE_LABEL_MIN && retained.length <= STABLE_LABEL_MAX) {
     return new Set(retained.map(candidate => candidate.id));
   }
-  if (retained.length > STABLE_LABEL_MAX) {
-    return choose(retained, [], STABLE_LABEL_MAX, width, height);
-  }
 
-  const target = Math.min(STABLE_LABEL_MIN, eligible.length);
+  const target = previous.size === 0
+    ? STABLE_LABEL_MAX
+    : Math.min(STABLE_LABEL_MIN, eligible.length);
   return choose(eligible, retained, target, width, height);
 }
