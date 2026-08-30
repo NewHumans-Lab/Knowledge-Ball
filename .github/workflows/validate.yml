@@ -37,6 +37,8 @@ jobs:
         run: node scripts/verify-i18n-downloads-browser.mjs
       - name: Verify split standalone/reasoning creation on a real mobile page
         run: node scripts/verify-split-create-browser.mjs
+      - name: Verify create errors remain visible above the new modal
+        run: node scripts/verify-create-feedback-browser.mjs
       - name: Verify real-touch Current Personal All cycle on the built page
         run: node scripts/verify-visibility-mode-browser.mjs
       - name: Verify second-tap related-node navigation
