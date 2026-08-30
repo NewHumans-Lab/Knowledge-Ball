@@ -1,3 +1,4 @@
+import '../KnowledgeLabelPresentation.css';
 import { STATUS_LABEL, TYPE_LABEL, type KnowledgeMastery, type KnowledgeNodeStatus, type KnowledgeNodeType } from '../config/KnowledgeUiConfig';
 import {
   nextKnowledgeVisibilityMode,
