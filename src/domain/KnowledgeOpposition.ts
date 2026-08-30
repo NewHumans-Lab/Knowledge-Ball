@@ -101,7 +101,7 @@ export function validateOppositionProposal(
 
   if (!title) errors.push('否定候选必须有名字');
   if (!reasoning) errors.push('否定候选必须有内容');
-  if (title && nodes.some(node => canonicalText(node.title) === title)) {
+  if (title && nodes.some(node => canonicalText(node.title) === title && topicIdFor(node) !== topicId)) {
     errors.push(`否定候选名字已被知识图使用: ${input.title.trim()}`);
   }
 

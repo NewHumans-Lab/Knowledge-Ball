@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   KNOWLEDGE_HISTORY_COLOR,
   KNOWLEDGE_OPPOSITION_COLOR,
+  buildKnowledgeDisplayLabelMap,
   edgeVisibleInKnowledgeMode,
   lineageColorForNode,
   nextKnowledgeVisibilityMode,
@@ -80,6 +81,65 @@ assert.equal(nextKnowledgeVisibilityMode('all'), 'current');
 assert.equal(visibilityModeLabel('current'), '当前');
 assert.equal(visibilityModeLabel('personal'), '个人');
 assert.equal(visibilityModeLabel('all'), '全部');
+
+// Display numbering is presentation-only and only activates for the same title
+// inside the same topic. Differently named versions never receive a suffix, and
+// hidden ranks do not create gaps inside the same-name subset.
+const ordinarySameName = [
+  { id:'x-current', title:'x', lineage:{ topicId:'x-topic', proposal:'new' as const, role:'current' as const, rank:0 } },
+  { id:'x-candidate', title:'x', lineage:{ topicId:'x-topic', proposal:'optimization' as const, targetId:'x-current', role:'candidate-history' as const, rank:0 } },
+  { id:'x-history', title:'x', lineage:{ topicId:'x-topic', proposal:'optimization' as const, targetId:'x-current', role:'history' as const, rank:7 } },
+  { id:'x-opposition-1', title:'x', lineage:{ topicId:'x-topic', proposal:'opposition' as const, targetId:'x-current', role:'opposition' as const, rank:4 } },
+  { id:'x-opposition-2', title:'x', lineage:{ topicId:'x-topic', proposal:'opposition' as const, targetId:'x-current', role:'opposition' as const, rank:9 } },
+  { id:'different-history', title:'different', lineage:{ topicId:'x-topic', proposal:'optimization' as const, targetId:'x-current', role:'history' as const, rank:2 } },
+  { id:'other-topic-x', title:'x', lineage:{ topicId:'other-topic', proposal:'new' as const, role:'current' as const, rank:0 } },
+];
+const ordinaryLabels = buildKnowledgeDisplayLabelMap(ordinarySameName);
+assert.equal(ordinaryLabels.get('x-current'), 'x', 'dominant current always keeps the bare name');
+assert.equal(ordinaryLabels.get('x-candidate'), 'x1.0', 'same-name history candidate uses branch head .0');
+assert.equal(ordinaryLabels.get('x-history'), 'x1.1', 'same-name history is compacted independently of unrelated ranks');
+assert.equal(ordinaryLabels.get('x-opposition-1'), 'x2.1');
+assert.equal(ordinaryLabels.get('x-opposition-2'), 'x2.2');
+assert.equal(ordinaryLabels.get('different-history'), 'different', 'different names are never numbered');
+assert.equal(ordinaryLabels.get('other-topic-x'), 'x', 'same text in another topic does not participate in this topic numbering');
+
+const promotedSameName = [
+  { id:'x-current', title:'x', lineage:{ topicId:'x-topic', proposal:'new' as const, role:'history' as const, rank:1 } },
+  { id:'x-candidate', title:'x', lineage:{ topicId:'x-topic', proposal:'optimization' as const, targetId:'x-current', role:'current' as const, rank:0 } },
+  { id:'x-history', title:'x', lineage:{ topicId:'x-topic', proposal:'optimization' as const, targetId:'x-current', role:'history' as const, rank:2 } },
+];
+const promotedLabels = buildKnowledgeDisplayLabelMap(promotedSameName);
+assert.equal(promotedLabels.get('x-candidate'), 'x', 'a former numbered candidate loses its suffix immediately after promotion');
+assert.equal(promotedLabels.get('x-current'), 'x1.1', 'the previous dominant is renumbered from its new lineage position');
+assert.equal(promotedLabels.get('x-history'), 'x1.2');
+
+const reasoningSameName = [
+  {
+    id:'reason-white', title:'x',
+    lineage:{
+      topicId:'reason-label-topic', proposal:'new' as const, role:'current' as const, rank:0,
+      reasoningSide:'normal' as const, reasoningSideRank:0, reasoningDominant:false,
+    },
+  },
+  {
+    id:'reason-red', title:'x',
+    lineage:{
+      topicId:'reason-label-topic', proposal:'opposition' as const, targetId:'reason-white', role:'current' as const, rank:0,
+      reasoningSide:'opposition' as const, reasoningSideRank:0, reasoningDominant:true,
+    },
+  },
+  {
+    id:'reason-red-old', title:'x',
+    lineage:{
+      topicId:'reason-label-topic', proposal:'optimization' as const, targetId:'reason-red', role:'opposition' as const, rank:5,
+      reasoningSide:'opposition' as const, reasoningSideRank:5, reasoningDominant:false,
+    },
+  },
+];
+const reasoningLabels = buildKnowledgeDisplayLabelMap(reasoningSameName);
+assert.equal(reasoningLabels.get('reason-red'), 'x', 'reasoning dominant also keeps the bare name');
+assert.equal(reasoningLabels.get('reason-white'), 'x1.0', 'non-dominant normal side head is branch 1 head');
+assert.equal(reasoningLabels.get('reason-red-old'), 'x2.1', 'same-name opposition history starts at .1 even when stored side rank is sparse');
 
 const current = node('current', 'current');
 const history = node('history', 'history');
@@ -253,4 +313,4 @@ assert.equal(nodeShouldPulse({ status:'pending' }), true);
 assert.equal(nodeShouldPulse({ status:'disputed' }), true);
 assert.equal(nodeShouldPulse({ status:'verified' }), false);
 
-console.log('Knowledge Lineage pending-first Current, Personal, All and red-winner-hidden Reasoning visibility tests passed');
+console.log('Knowledge Lineage pending-first Current, Personal, All, red-winner-hidden Reasoning, and same-name display label tests passed');

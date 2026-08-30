@@ -36,7 +36,7 @@ import {
 } from '../auth/AuthClient';
 
 import { type KnowledgeNodeType } from './config/KnowledgeUiConfig';
-import { nodeBelongsInLineageScene } from './KnowledgeLineageView';
+import { buildKnowledgeDisplayLabelMap, nodeBelongsInLineageScene } from './KnowledgeLineageView';
 import { installAccountUi } from './AccountUi';
 import './ExitControls.css';
 import { ProjectionRenderScheduler } from './ProjectionRenderScheduler';
@@ -158,12 +158,14 @@ function generateNodeId(): string {
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
   const graphIndex = createKnowledgeGraphIndex(domainNodes);
+  const displayLabels = buildKnowledgeDisplayLabelMap(domainNodes);
   knowledgeRelationIndex = createKnowledgeRelationIndex(domainNodes, graphIndex);
 
   // All formal lineage balls stay in scene data. Current/Personal/All owns their
   // visibility; rejected audit-only candidates and legacy hidden records do not.
   layoutNodes = domainNodes.map(dn => {
     const rendered = renderNodeFromDomain(dn);
+    rendered.title = displayLabels.get(dn.id) ?? rendered.title;
     rendered.premises = effectivePremiseIds(dn, graphIndex);
     return rendered;
   });
@@ -255,9 +257,11 @@ function getPanelNodes(): PanelNodeSummary[] {
 }
 
 function getKnowledgeCreateNodes(): KnowledgeCreateNode[] {
-  return nodeList(projection.state).map(node => ({
+  const nodes = nodeList(projection.state);
+  const displayLabels = buildKnowledgeDisplayLabelMap(nodes);
+  return nodes.map(node => ({
     id: node.id,
-    title: node.title,
+    title: displayLabels.get(node.id) ?? node.title,
     type: node.type as KnowledgeNodeType,
     status: node.status,
     lineage: node.lineage,

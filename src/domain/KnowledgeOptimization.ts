@@ -103,13 +103,15 @@ export function validateOptimizationProposal(
     errors.push('推理节点优化只能修改名字和推理过程，知识层级必须保持不变');
   }
 
+  const topicId = topicIdFor(target);
   const targetTitle = canonicalText(target.title);
   if (title && title !== targetTitle) {
-    const duplicate = nodes.find(node => canonicalText(node.title) === title);
-    if (duplicate) errors.push(`优化后的新名字已被其他知识节点使用: ${input.title.trim()}`);
+    const duplicateOutsideTopic = nodes.find(node =>
+      canonicalText(node.title) === title && topicIdFor(node) !== topicId,
+    );
+    if (duplicateOutsideTopic) errors.push(`优化后的新名字已被其他知识节点使用: ${input.title.trim()}`);
   }
 
-  const topicId = topicIdFor(target);
   if (nodes.some(node => topicIdFor(node) === topicId && isPendingHeadCandidate(node))) {
     errors.push('同一知识主题已有一个会改变当前版本的候选正在验证；当前节点必须串行推进');
   }
