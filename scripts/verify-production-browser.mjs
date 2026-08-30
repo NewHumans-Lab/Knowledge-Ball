@@ -123,24 +123,86 @@ try {
   await assertVisibilityState('当前', 'current');
 
   // Hosted-data acceptance: prove that an actual Supabase-loaded conclusion and
-  // its reasoning-process ball share one canonical scene/detail chain. One real
-  // tap opens detail directly and must preserve the current graph orientation.
-  const chainFixture = await page.evaluate(() => {
+  // its reasoning-process ball share one canonical scene/detail chain. The
+  // authoritative data must contain a currently visible relation-backed
+  // conclusion. Initial camera orientation is presentation state, so the test
+  // may rotate the graph with real background drags to make that real node
+  // tappable; the node tap itself must still preserve the chosen orientation.
+  const relationInventory = await page.evaluate(() => {
+    const nodes = window.__debug?.renderNodes ?? [];
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const core = new Set(['n1', 'n2', 'n16']);
+    return nodes.flatMap(node => {
+      if (core.has(node.id) || node.hidden || node.type === 'reasoning' || node.type === 'logic-symbol') return [];
+      const reasoning = node.premises?.map(id => byId.get(id)).find(previous => previous?.type === 'reasoning');
+      return reasoning ? [{ id: node.id, title: node.title, reasoningId: reasoning.id, reasoningTitle: reasoning.title }] : [];
+    });
+  });
+  assert.ok(relationInventory.length > 0, 'hosted Current projection must contain a visible conclusion with a real reasoning-process predecessor');
+
+  const locateTappableChain = () => page.evaluate(() => {
     const debug = window.__debug;
     const nodes = debug?.renderNodes ?? [];
     const byId = new Map(nodes.map(node => [node.id, node]));
     const core = new Set(['n1', 'n2', 'n16']);
+    const canvas = document.querySelector('canvas');
+    if (!canvas) return null;
     for (const node of nodes) {
       if (core.has(node.id) || node.hidden || node.type === 'reasoning' || node.type === 'logic-symbol') continue;
       const reasoning = node.premises?.map(id => byId.get(id)).find(previous => previous?.type === 'reasoning');
       if (!reasoning) continue;
       const point = debug.scene?.screenPositionForNode?.(node.id);
-      if (!point || point.x <= 24 || point.x >= 366 || point.y <= 88 || point.y >= 808) continue;
+      if (!point || point.x <= 1 || point.x >= innerWidth - 1 || point.y <= 1 || point.y >= innerHeight - 1) continue;
+      if (document.elementFromPoint(point.x, point.y) !== canvas) continue;
       return { id: node.id, title: node.title, reasoningId: reasoning.id, reasoningTitle: reasoning.title, ...point };
     }
     return null;
   });
-  assert.ok(chainFixture, 'hosted projection must expose an on-screen conclusion with a real reasoning-process predecessor');
+
+  const rotateSceneByBackgroundDrag = async (axis = 'horizontal') => {
+    const origin = await page.evaluate(axisName => {
+      const debug = window.__debug;
+      const canvas = document.querySelector('canvas');
+      const rect = canvas?.getBoundingClientRect();
+      if (!canvas || !rect) return null;
+      const points = (debug?.renderNodes ?? [])
+        .map(node => debug.scene?.screenPositionForNode?.(node.id))
+        .filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+      const horizontal = axisName === 'horizontal';
+      const candidates = horizontal
+        ? [[0.16,0.30],[0.16,0.46],[0.16,0.62],[0.84,0.30],[0.84,0.46],[0.84,0.62]]
+        : [[0.28,0.24],[0.50,0.24],[0.72,0.24],[0.28,0.72],[0.50,0.72],[0.72,0.72]];
+      for (const [fx, fy] of candidates) {
+        const x = rect.left + rect.width * fx;
+        const y = rect.top + rect.height * fy;
+        if (document.elementFromPoint(x, y) !== canvas) continue;
+        if (points.some(point => Math.hypot(point.x - x, point.y - y) < 34)) continue;
+        return { x, y, width: innerWidth, height: innerHeight };
+      }
+      return null;
+    }, axis);
+    assert.ok(origin, `could not find a blank canvas point for a real ${axis} scene drag`);
+    const dx = axis === 'horizontal' ? (origin.x < origin.width / 2 ? 120 : -120) : 0;
+    const dy = axis === 'vertical' ? (origin.y < origin.height / 2 ? 110 : -110) : 0;
+    await page.mouse.move(origin.x, origin.y);
+    await page.mouse.down();
+    await page.mouse.move(origin.x + dx, origin.y + dy, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(120);
+  };
+
+  let chainFixture = await locateTappableChain();
+  for (let step = 0; !chainFixture && step < 24; step += 1) {
+    await rotateSceneByBackgroundDrag(step === 8 || step === 16 ? 'vertical' : 'horizontal');
+    chainFixture = await locateTappableChain();
+  }
+  if (!chainFixture) {
+    const projected = await page.evaluate(ids => ids.slice(0, 8).map(item => ({
+      ...item,
+      point: window.__debug.scene?.screenPositionForNode?.(item.id) ?? null,
+    })), relationInventory);
+    assert.fail(`hosted Current projection contains ${relationInventory.length} relation-backed conclusions, but none became tappable after real scene rotation: ${JSON.stringify(projected)}`);
+  }
 
   await page.touchscreen.tap(chainFixture.x, chainFixture.y);
   const detail = page.locator('#nodeDetailOverlay.open');
