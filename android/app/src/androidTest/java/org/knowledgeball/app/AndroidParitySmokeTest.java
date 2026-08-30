@@ -49,7 +49,7 @@ public class AndroidParitySmokeTest {
     public void packagedWebAppSupportsCoreAndroidInteractions() throws Exception {
         UiDevice device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
-            waitFor(scenario, "document.querySelector('#canvasHost canvas')?.width > 0 && window.__debug?.projection && window.__debug?.scene");
+            waitFor(scenario, "document.documentElement.dataset.nativeBackReady==='true' && document.querySelector('#canvasHost canvas')?.width > 0 && window.__debug?.projection && window.__debug?.scene");
             assertJsTrue(scenario, "Packaged Android WebGL surface is not live or Settings is hidden",
                 "(() => { const c=document.querySelector('#canvasHost canvas'); const gl=c?.getContext('webgl2')||c?.getContext('webgl'); return !!gl&&!gl.isContextLost()&&getComputedStyle(document.querySelector('#btnSettings')).display!=='none'; })()");
 
