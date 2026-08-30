@@ -64,20 +64,17 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -eux
-            mkdir -p artifacts/android
-            cd android
-            if ! ./gradlew connectedDebugAndroidTest --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1; then
-              cat ../artifacts/android/gradle-connected-test.log
-              exit 1
-            fi
-            cd ..
-            adb shell dumpsys package org.knowledgeball.app > artifacts/android/package-dump.txt
-            grep -E 'versionName=|versionCode=' artifacts/android/package-dump.txt > artifacts/android/package-identity.txt
-            adb pull /sdcard/Android/data/org.knowledgeball.app/files/Pictures/knowledge-ball-android.png artifacts/android/knowledge-ball-android.png
-            test -s artifacts/android/knowledge-ball-android.png
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-metrics
+          script: >-
+            bash -lc 'set -euxo pipefail;
+            mkdir -p artifacts/android;
+            cd android;
+            ./gradlew connectedDebugAndroidTest --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1 || { cat ../artifacts/android/gradle-connected-test.log; exit 1; };
+            cd ..;
+            adb shell dumpsys package org.knowledgeball.app > artifacts/android/package-dump.txt;
+            grep -E "versionName=|versionCode=" artifacts/android/package-dump.txt > artifacts/android/package-identity.txt;
+            adb pull /sdcard/Android/data/org.knowledgeball.app/files/Pictures/knowledge-ball-android.png artifacts/android/knowledge-ball-android.png;
+            test -s artifacts/android/knowledge-ball-android.png'
       - name: Upload Android runtime evidence
         if: always()
         uses: actions/upload-artifact@v4
