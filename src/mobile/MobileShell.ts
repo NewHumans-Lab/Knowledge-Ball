@@ -21,6 +21,17 @@ export function chooseBackAction(overlayOpen: boolean, panelOpen: boolean): Back
   return 'exit';
 }
 
+export function overlayCloseSelector(overlayId: string): string | null {
+  switch (overlayId) {
+    case 'settingsOverlay': return '#settingsClose';
+    case 'accountOverlay': return '#accountClose';
+    case 'downloadsOverlay': return '#downloadsClose';
+    case 'modalOverlay': return '#modalClose';
+    case 'knowledgeCreateOverlay': return '[data-create-close]';
+    default: return null;
+  }
+}
+
 export function isNewerVersion(candidate: string, current: string): boolean {
   return compareSemanticVersions(candidate, current) > 0;
 }
@@ -143,7 +154,13 @@ function closeTopLayer(): BackAction {
   const overlay = document.querySelector<HTMLElement>('.modal-overlay.show');
   const panel = document.getElementById('panel');
   const action = chooseBackAction(Boolean(overlay), Boolean(panel?.classList.contains('open')));
-  if (action === 'close-overlay') overlay?.querySelector<HTMLButtonElement>('.panel-close')?.click();
+  if (action === 'close-overlay' && overlay) {
+    const selector = overlayCloseSelector(overlay.id);
+    const closeControl = selector
+      ? document.querySelector<HTMLElement>(selector)
+      : overlay.querySelector<HTMLElement>('.panel-close');
+    closeControl?.click();
+  }
   if (action === 'close-panel') document.getElementById('panelClose')?.click();
   return action;
 }
