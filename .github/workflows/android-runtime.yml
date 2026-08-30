@@ -44,6 +44,11 @@ jobs:
           java-version: 21
           cache: gradle
       - uses: android-actions/setup-android@v3
+      - name: Enable KVM acceleration
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+          fi
       - name: Install Android SDK and emulator image
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
       - run: npm ci
@@ -61,12 +66,16 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euxo pipefail
-            cd android
-            ./gradlew connectedDebugAndroidTest
-            cd ..
+            set -eux
             mkdir -p artifacts/android
-            adb shell dumpsys package org.knowledgeball.app | grep -E 'versionName=|versionCode=' > artifacts/android/package-identity.txt
+            cd android
+            if ! ./gradlew connectedDebugAndroidTest --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1; then
+              cat ../artifacts/android/gradle-connected-test.log
+              exit 1
+            fi
+            cd ..
+            adb shell dumpsys package org.knowledgeball.app > artifacts/android/package-dump.txt
+            grep -E 'versionName=|versionCode=' artifacts/android/package-dump.txt > artifacts/android/package-identity.txt
             adb pull /sdcard/Android/data/org.knowledgeball.app/files/Pictures/knowledge-ball-android.png artifacts/android/knowledge-ball-android.png
             test -s artifacts/android/knowledge-ball-android.png
       - name: Upload Android runtime evidence
