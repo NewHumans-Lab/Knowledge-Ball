@@ -1,13 +1,12 @@
 /* KnowledgeScene writes the exact rendered sphere-top screen coordinate.
-   This stylesheet owns only the label box presentation. Keep the box anchored
-   directly to the sphere top while tightening default font leading slightly so
-   visible glyphs sit closer to the sphere without overlapping it. */
+   Keep typography unchanged and apply one small, fixed visual overlap so labels
+   sit against the sphere edge at every font size instead of scaling the offset. */
 .node-label {
   position: absolute;
   transform: translate(-50%, -100%);
+  translate: 0 2px;
   margin: 0;
   font-size: var(--label-size);
-  line-height: 1.2;
   color: var(--label-color);
   font-family: var(--label-font);
   background: rgba(2, 9, 13, .52);
