@@ -6,6 +6,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: native-release-publication
+  cancel-in-progress: false
+
 jobs:
   release-windows:
     if: github.ref == 'refs/heads/main'
@@ -64,6 +68,8 @@ jobs:
           $repo = $env:GITHUB_REPOSITORY
           $commit = $env:GITHUB_SHA
           $build = $env:GITHUB_RUN_NUMBER
+          $setupUrl = "https://github.com/$repo/releases/download/v$version/$setupName"
+          $portableUrl = "https://github.com/$repo/releases/download/v$version/$portableName"
           $manifest = [ordered]@{
             platform = 'windows'
             available = $true
@@ -72,9 +78,10 @@ jobs:
             build = $build
             commit = $commit
             urls = [ordered]@{
-              installer = "https://github.com/$repo/releases/download/v$version/$setupName"
-              portable = "https://github.com/$repo/releases/download/v$version/$portableName"
+              installer = $setupUrl
+              portable = $portableUrl
             }
+            checksum = "sha256:$setupHash"
             checksums = [ordered]@{
               installer = "sha256:$setupHash"
               portable = "sha256:$portableHash"
@@ -88,6 +95,8 @@ jobs:
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "setup=$setupName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "portable=$portableName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "setup_sha=$setupHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "portable_sha=$portableHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - name: Publish Windows artifacts to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -101,6 +110,44 @@ jobs:
             gh release create "v$env:VERSION" --title "Knowledge Ball v$env:VERSION" --notes "Platform release artifacts for Knowledge Ball v$env:VERSION."
           }
           gh release upload "v$env:VERSION" "$env:SETUP" "$env:PORTABLE" windows-release.json --clobber
+      - name: Verify the published EXEs are byte-identical
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          SETUP: ${{ steps.metadata.outputs.setup }}
+          PORTABLE: ${{ steps.metadata.outputs.portable }}
+          SETUP_SHA: ${{ steps.metadata.outputs.setup_sha }}
+          PORTABLE_SHA: ${{ steps.metadata.outputs.portable_sha }}
+        shell: pwsh
+        run: |
+          $verifyDir = Join-Path $env:RUNNER_TEMP 'release-verify'
+          New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+          gh release download "v$env:VERSION" --pattern "$env:SETUP" --pattern "$env:PORTABLE" --dir $verifyDir
+          $setupActual = (Get-FileHash (Join-Path $verifyDir $env:SETUP) -Algorithm SHA256).Hash.ToLower()
+          $portableActual = (Get-FileHash (Join-Path $verifyDir $env:PORTABLE) -Algorithm SHA256).Hash.ToLower()
+          if ($setupActual -ne $env:SETUP_SHA) { throw 'Published Windows installer checksum does not match the tested artifact.' }
+          if ($portableActual -ne $env:PORTABLE_SHA) { throw 'Published Windows portable checksum does not match the tested artifact.' }
+      - name: Publish Windows availability to the Pages manifest
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        shell: pwsh
+        run: |
+          $fragment = Join-Path $env:RUNNER_TEMP 'windows-release.json'
+          Copy-Item windows-release.json $fragment -Force
+          git reset --hard $env:GITHUB_SHA
+          git fetch origin main
+          git checkout -B main origin/main
+          node scripts/update-release-manifest.mjs windows $fragment
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/downloads/latest.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'Windows release manifest is already current.'
+          } else {
+            git commit -m "Publish Windows release v$env:VERSION"
+            git push origin HEAD:main
+          }
       - name: Upload Windows release evidence
         if: always()
         uses: actions/upload-artifact@v4
