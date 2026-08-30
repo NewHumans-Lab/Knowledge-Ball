@@ -1,0 +1,29 @@
+{
+  "name": "knowledge-ball-windows",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "main.cjs",
+  "scripts": {
+    "package": "electron-builder --win nsis portable --x64 --publish never",
+    "test:assets": "node test/verify-packaged-assets.mjs",
+    "test:runtime": "node test/runtime-parity.mjs"
+  },
+  "devDependencies": {
+    "electron": "35.7.5",
+    "electron-builder": "26.0.12",
+    "pixelmatch": "7.1.0",
+    "playwright-core": "1.52.0",
+    "pngjs": "7.0.0"
+  },
+  "build": {
+    "appId": "com.knowledgeball.desktop",
+    "productName": "Knowledge Ball",
+    "asar": true,
+    "files": ["main.cjs", "preload.cjs"],
+    "extraResources": [{ "from": "../dist", "to": "web" }],
+    "directories": { "output": "release" },
+    "win": { "target": ["nsis", "portable"], "artifactName": "Knowledge-Ball-${version}-${arch}-${target}.${ext}" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}
