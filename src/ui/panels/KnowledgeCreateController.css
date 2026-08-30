@@ -8,6 +8,9 @@
   padding:18px;
   background:rgba(1,4,14,.78);
 }
+/* Toast is global feedback rendered outside the modal subtree. It must remain
+   above the highest create overlay so validation/auth errors are actually visible. */
+#toast.toast{z-index:2000;}
 .knowledge-create-overlay.show{display:flex;}
 .knowledge-create-modal{
   width:min(620px,calc(100vw - 36px));
