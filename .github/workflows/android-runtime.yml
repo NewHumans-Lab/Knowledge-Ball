@@ -70,7 +70,7 @@ jobs:
             mkdir -p artifacts/android;
             cd android;
             test_status=0;
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1 || test_status=$?;
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1 || test_status=$?;
             mkdir -p ../artifacts/android/test-results ../artifacts/android/test-report;
             cp -R app/build/outputs/androidTest-results/connected/. ../artifacts/android/test-results/ 2>/dev/null || true;
             cp -R app/build/reports/androidTests/connected/. ../artifacts/android/test-report/ 2>/dev/null || true;
