@@ -158,7 +158,8 @@ assert(css.includes('flex-direction:column'), 'contributor and time must remain 
 assert(css.includes('touch-action:pan-y'), 'mobile users must be able to vertically scroll long detail content');
 assert(!css.includes('#C85450') && !css.includes('#ff0000'), 'detail close/action styling must not use the old red danger colour');
 
-assert(app.includes('if (!Capacitor.isNativePlatform())'), 'new near-node detail behavior must remain web-only for now');
+assert(!app.includes('if (!Capacitor.isNativePlatform())'), 'shared near-node detail must not exclude native platforms');
+assert(app.includes('nodeDetail = new NodeDetailController({'), 'shared near-node detail must be instantiated from the common product entry');
 assert(app.includes('nodeDetail.open(id)'), 'ordinary-node path must open the near-node detail surface');
 assert(detail.includes('this.onViewed?.(id);'), 'detail owner must emit viewed only after the detail surface has been rendered and opened');
 assert(app.includes('onViewed: id => { void markNodeViewed(id); }'), 'app mastery write must be wired to the rendered-detail viewed signal');
