@@ -40,25 +40,58 @@ async function assertDesktopLayout(page) {
   await page.locator('#downloadsClose').click();
 }
 
-async function assertLabelSizeControl(page) {
+async function assertLabelAppearanceControls(page) {
   await page.locator('#settingsOverlay.show').waitFor({ state: 'visible' });
-  const slider = page.locator('#setLabelSize');
-  const original = await slider.inputValue();
-  await slider.evaluate(input => {
-    input.value = '18';
+  const sizeSlider = page.locator('#setLabelSize');
+  const colorInput = page.locator('#setLabelColor');
+  const originalSize = await sizeSlider.inputValue();
+  const originalColor = await colorInput.inputValue();
+
+  assert.equal(await sizeSlider.getAttribute('max'), '30', 'label font-size control must allow up to 30px');
+  await sizeSlider.evaluate(input => {
+    input.value = '30';
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--label-size').trim() === '18px');
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--label-size').trim() === '30px');
   await page.waitForFunction(() => [...document.querySelectorAll('.node-label')].some(label => getComputedStyle(label).display !== 'none'));
   const renderedSize = await page.evaluate(() => {
     const label = [...document.querySelectorAll('.node-label')].find(candidate => getComputedStyle(candidate).display !== 'none');
     return label ? getComputedStyle(label).fontSize : null;
   });
-  assert.equal(renderedSize, '18px', 'Settings font-size slider must change the computed size of a real visible node label');
-  await slider.evaluate((input, value) => {
+  assert.equal(renderedSize, '30px', 'Settings font-size slider must change the computed size of a real visible node label');
+
+  await colorInput.evaluate(input => {
+    input.value = '#21d4fd';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--label-color').trim().toLowerCase() === '#21d4fd');
+  const renderedColor = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('.node-label')].find(candidate => getComputedStyle(candidate).display !== 'none');
+    return label ? getComputedStyle(label).color : null;
+  });
+  assert.equal(renderedColor, 'rgb(33, 212, 253)', 'Settings color picker must change the computed color of a real visible node label');
+
+  const visibleGap = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('.node-label')].find(candidate => getComputedStyle(candidate).display !== 'none');
+    const layer = document.getElementById('labelsLayer');
+    if (!(label instanceof HTMLElement) || !layer) return null;
+    const top = Number.parseFloat(label.style.top);
+    if (!Number.isFinite(top)) return null;
+    const labelRect = label.getBoundingClientRect();
+    const layerRect = layer.getBoundingClientRect();
+    const renderedSphereTop = layerRect.top + top + 4;
+    return renderedSphereTop - labelRect.bottom;
+  });
+  assert.ok(visibleGap !== null && visibleGap >= .5 && visibleGap <= 1.5, `visible sphere-to-label gap must stay about 1px (actual=${visibleGap})`);
+
+  await sizeSlider.evaluate((input, value) => {
     input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
-  }, original);
+  }, originalSize);
+  await colorInput.evaluate((input, value) => {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, originalColor);
 }
 
 async function assertLocaleAndRuntime(page) {
@@ -149,7 +182,7 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin, { waitUntil: 'domcontentloaded' });
     await assertDesktopLayout(page);
-    await assertLabelSizeControl(page);
+    await assertLabelAppearanceControls(page);
     await assertLocaleAndRuntime(page);
     assert.deepEqual(errors, [], `locale/download browser acceptance must not emit page errors: ${errors.join(' | ')}`);
     await context.close();
@@ -158,7 +191,7 @@ try {
   } finally {
     await browser.close();
   }
-  console.log('Downloads responsive layout, label-size setting, and zh-CN/en browser acceptance passed');
+  console.log('Downloads responsive layout, label appearance settings, and zh-CN/en browser acceptance passed');
 } finally {
   server.kill('SIGTERM');
 }
