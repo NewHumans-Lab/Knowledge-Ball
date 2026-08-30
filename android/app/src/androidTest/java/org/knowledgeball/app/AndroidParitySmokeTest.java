@@ -45,6 +45,49 @@ public class AndroidParitySmokeTest {
         throw new AssertionError("Packaged WebView condition timed out: " + expression);
     }
 
+    private void resetNativeBackTrace(ActivityScenario<MainActivity> scenario) throws Exception {
+        evaluate(scenario,
+            "(() => { const d=document.documentElement.dataset; d.nativeBackCount='0'; d.nativeBackAction=''; d.nativeBackOverlay=''; d.nativeBackCloseSelector=''; d.nativeBackCloseFound='false'; d.nativeBackCloseClicked='false'; return true; })()");
+    }
+
+    private String nativeBackTrace(ActivityScenario<MainActivity> scenario) throws Exception {
+        return evaluate(scenario,
+            "JSON.stringify((() => { const d=document.documentElement.dataset; return {ready:d.nativeBackReady,count:d.nativeBackCount,action:d.nativeBackAction,overlay:d.nativeBackOverlay,selector:d.nativeBackCloseSelector,closeFound:d.nativeBackCloseFound,closeClicked:d.nativeBackCloseClicked}; })())");
+    }
+
+    private void waitForNativeBackEvent(ActivityScenario<MainActivity> scenario) throws Exception {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if ("true".equals(evaluate(scenario, "Number(document.documentElement.dataset.nativeBackCount||'0')>0"))) return;
+            Thread.sleep(100);
+        }
+        throw new AssertionError("Android system Back did not reach the Capacitor JavaScript listener. Trace: " + nativeBackTrace(scenario));
+    }
+
+    private void pressBackAndExpect(
+        ActivityScenario<MainActivity> scenario,
+        UiDevice device,
+        String expectedAction,
+        String expectedOverlay,
+        String finalExpression
+    ) throws Exception {
+        resetNativeBackTrace(scenario);
+        assertTrue("UiAutomator could not inject Android system Back", device.pressBack());
+        waitForNativeBackEvent(scenario);
+        String trace = nativeBackTrace(scenario);
+        assertJsTrue(scenario, "Native Back selected the wrong action. Trace: " + trace,
+            "document.documentElement.dataset.nativeBackAction==='" + expectedAction + "'");
+        assertJsTrue(scenario, "Native Back targeted the wrong overlay. Trace: " + trace,
+            "document.documentElement.dataset.nativeBackOverlay==='" + expectedOverlay + "'");
+        if ("close-overlay".equals(expectedAction) || "close-panel".equals(expectedAction)) {
+            assertJsTrue(scenario, "Native Back could not resolve the owning close control. Trace: " + trace,
+                "document.documentElement.dataset.nativeBackCloseFound==='true'");
+            assertJsTrue(scenario, "Native Back resolved but did not invoke the owning close control. Trace: " + trace,
+                "document.documentElement.dataset.nativeBackCloseClicked==='true'");
+        }
+        waitFor(scenario, finalExpression);
+    }
+
     @Test
     public void packagedWebAppSupportsCoreAndroidInteractions() throws Exception {
         UiDevice device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
@@ -58,8 +101,8 @@ public class AndroidParitySmokeTest {
                 "document.querySelector('#btnSettings').click();document.querySelector('#settingsOverlay').classList.contains('show')");
             assertJsTrue(scenario, "English locale did not apply inside Android Settings",
                 "(() => {const s=document.querySelector('#setLocale');s.value='en';s.dispatchEvent(new Event('change',{bubbles:true}));return document.documentElement.lang==='en'&&document.querySelector('#settingsOverlay').textContent.includes('Language');})()");
-            device.pressBack();
-            waitFor(scenario, "!document.querySelector('#settingsOverlay').classList.contains('show')");
+            pressBackAndExpect(scenario, device, "close-overlay", "settingsOverlay",
+                "!document.querySelector('#settingsOverlay').classList.contains('show')");
 
             // Native Android must use the same AccountUiController surface as Web, not a legacy native auth panel.
             evaluate(scenario, "document.querySelector('#avatarBtn').click()");
@@ -67,8 +110,8 @@ public class AndroidParitySmokeTest {
             waitFor(scenario, "document.querySelector('#accountOverlay .modal-body')?.textContent?.includes('My energy')");
             assertJsTrue(scenario, "Android account surface is not the shared Web account implementation",
                 "document.querySelector('#accountOverlay .modal-body')?.textContent?.includes('Register / Sign in')");
-            device.pressBack();
-            waitFor(scenario, "!document.querySelector('#accountOverlay')?.classList.contains('show')");
+            pressBackAndExpect(scenario, device, "close-overlay", "accountOverlay",
+                "!document.querySelector('#accountOverlay')?.classList.contains('show')");
 
             // Current -> Personal -> All -> Current must be the same product state machine as Web.
             assertJsTrue(scenario, "Android visibility state did not start in Current mode",
@@ -93,12 +136,12 @@ public class AndroidParitySmokeTest {
                 "(() => {const e=document.querySelector('#nodeDetailOverlay [data-node-detail-action=\"edit\"]');const s=getComputedStyle(e);const r=e.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)>0&&s.pointerEvents!=='none'&&r.width>0&&r.height>0&&r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;})()");
             evaluate(scenario, "document.querySelector('#nodeDetailOverlay [data-node-detail-action=\"edit\"]').click()");
             waitFor(scenario, "document.querySelector('#panel')?.classList.contains('open') && !document.querySelector('#nodeDetailOverlay')?.classList.contains('open')");
-            device.pressBack();
-            waitFor(scenario, "!document.querySelector('#panel')?.classList.contains('open') || document.querySelector('#panelTitle')");
+            pressBackAndExpect(scenario, device, "close-panel", "",
+                "!document.querySelector('#panel')?.classList.contains('open') || document.querySelector('#panelTitle')");
             // If the first Back returns from the edit subview to detail host, a second Back must leave the host.
             if ("true".equals(evaluate(scenario, "document.querySelector('#panel')?.classList.contains('open')"))) {
-                device.pressBack();
-                waitFor(scenario, "!document.querySelector('#panel')?.classList.contains('open')");
+                pressBackAndExpect(scenario, device, "close-panel", "",
+                    "!document.querySelector('#panel')?.classList.contains('open')");
             }
 
             // Current split create flow must surface validation feedback above its modal, and native Back must close it through its owning controller instead of exiting the app.
@@ -106,8 +149,8 @@ public class AndroidParitySmokeTest {
                 "document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true}));document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show')");
             evaluate(scenario, "document.querySelector('#knowledgeCreateOverlay [data-create-submit]').click()");
             waitFor(scenario, "!!document.querySelector('#knowledgeCreateOverlay [role=alert],#knowledgeCreateOverlay .form-error,#toast.show')");
-            device.pressBack();
-            waitFor(scenario, "!document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show')");
+            pressBackAndExpect(scenario, device, "close-overlay", "knowledgeCreateOverlay",
+                "!document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show')");
 
             // Android lifecycle resume must preserve a live WebGL/product surface.
             scenario.moveToState(Lifecycle.State.CREATED);
