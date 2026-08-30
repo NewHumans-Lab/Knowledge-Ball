@@ -208,7 +208,20 @@ export class NodeDetailController {
       this.close();
       return;
     }
+    // Personal mastery/viewed-state writes can resolve while the user is choosing
+    // an edit action. Refreshing authoritative node data must not erase that local
+    // interaction state, otherwise the menu closes between two taps.
+    const editMenuWasOpen = this.root.querySelector<HTMLButtonElement>('.node-detail-edit')
+      ?.getAttribute('aria-expanded') === 'true';
     this.render(node);
+    if (editMenuWasOpen) {
+      const editButton = this.root.querySelector<HTMLButtonElement>('.node-detail-edit');
+      const menu = this.root.querySelector<HTMLElement>('.node-detail-edit-menu');
+      if (editButton && menu) {
+        menu.hidden = false;
+        editButton.setAttribute('aria-expanded', 'true');
+      }
+    }
     this.positionCurrent();
   }
 
