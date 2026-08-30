@@ -150,19 +150,45 @@ export function applyPlatformVisibility(platform: 'android' | 'ios'): void {
   if (actions) actions.hidden = false;
 }
 
+function resetNativeBackTrace(): void {
+  const dataset = document.documentElement.dataset;
+  dataset.nativeBackAction = '';
+  dataset.nativeBackOverlay = '';
+  dataset.nativeBackCloseSelector = '';
+  dataset.nativeBackCloseFound = 'false';
+  dataset.nativeBackCloseClicked = 'false';
+}
+
 function closeTopLayer(): BackAction {
   const overlay = document.querySelector<HTMLElement>('.knowledge-create-overlay.show')
     ?? document.querySelector<HTMLElement>('.modal-overlay.show');
   const panel = document.getElementById('panel');
   const action = chooseBackAction(Boolean(overlay), Boolean(panel?.classList.contains('open')));
+  const dataset = document.documentElement.dataset;
+  dataset.nativeBackAction = action;
+  dataset.nativeBackOverlay = overlay?.id ?? '';
+
   if (action === 'close-overlay' && overlay) {
     const selector = overlayCloseSelector(overlay.id);
+    dataset.nativeBackCloseSelector = selector ?? '';
     const closeControl = selector
       ? document.querySelector<HTMLElement>(selector)
       : overlay.querySelector<HTMLElement>('.panel-close');
-    closeControl?.click();
+    dataset.nativeBackCloseFound = String(Boolean(closeControl));
+    if (closeControl) {
+      dataset.nativeBackCloseClicked = 'true';
+      closeControl.click();
+    }
   }
-  if (action === 'close-panel') document.getElementById('panelClose')?.click();
+  if (action === 'close-panel') {
+    const closeControl = document.getElementById('panelClose');
+    dataset.nativeBackCloseSelector = '#panelClose';
+    dataset.nativeBackCloseFound = String(Boolean(closeControl));
+    if (closeControl) {
+      dataset.nativeBackCloseClicked = 'true';
+      closeControl.click();
+    }
+  }
   return action;
 }
 
@@ -191,8 +217,15 @@ async function initializeMobileShell(): Promise<void> {
   // Back navigation is a core interaction contract. Register it before optional
   // native decoration/network setup so a rejected or slow plugin call cannot
   // leave Android with an unclosable overlay or panel.
+  resetNativeBackTrace();
+  document.documentElement.dataset.nativeBackCount = '0';
   await App.addListener('backButton', async () => {
-    if (closeTopLayer() === 'exit') await App.exitApp();
+    const dataset = document.documentElement.dataset;
+    const currentCount = Number(dataset.nativeBackCount ?? '0');
+    dataset.nativeBackCount = String(Number.isFinite(currentCount) ? currentCount + 1 : 1);
+    resetNativeBackTrace();
+    const action = closeTopLayer();
+    if (action === 'exit') await App.exitApp();
   });
   document.documentElement.dataset.nativeBackReady = 'true';
 
