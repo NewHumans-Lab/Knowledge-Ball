@@ -49,7 +49,7 @@ public class AndroidParitySmokeTest {
     public void packagedWebAppSupportsCoreAndroidInteractions() throws Exception {
         UiDevice device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
-            waitFor(scenario, "document.querySelector('#canvasHost canvas')?.width > 0 && window.__debug?.projection && window.__debug?.scene");
+            waitFor(scenario, "document.documentElement.dataset.nativeBackReady==='true' && document.querySelector('#canvasHost canvas')?.width > 0 && window.__debug?.projection && window.__debug?.scene");
             assertJsTrue(scenario, "Packaged Android WebGL surface is not live or Settings is hidden",
                 "(() => { const c=document.querySelector('#canvasHost canvas'); const gl=c?.getContext('webgl2')||c?.getContext('webgl'); return !!gl&&!gl.isContextLost()&&getComputedStyle(document.querySelector('#btnSettings')).display!=='none'; })()");
 
@@ -101,12 +101,12 @@ public class AndroidParitySmokeTest {
                 waitFor(scenario, "!document.querySelector('#panel')?.classList.contains('open')");
             }
 
-            // Current split create flow must surface validation feedback above its modal.
+            // Current split create flow must surface validation feedback above its modal, and native Back must close it through its owning controller instead of exiting the app.
             assertJsTrue(scenario, "Android Ctrl+N create flow did not open the authoritative create modal",
                 "document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true}));document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show')");
             evaluate(scenario, "document.querySelector('#knowledgeCreateOverlay [data-create-submit]').click()");
             waitFor(scenario, "!!document.querySelector('#knowledgeCreateOverlay [role=alert],#knowledgeCreateOverlay .form-error,#toast.show')");
-            evaluate(scenario, "document.querySelector('#knowledgeCreateOverlay [data-create-close]').click()");
+            device.pressBack();
             waitFor(scenario, "!document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show')");
 
             // Android lifecycle resume must preserve a live WebGL/product surface.

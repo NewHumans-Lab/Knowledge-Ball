@@ -21,6 +21,17 @@ export function chooseBackAction(overlayOpen: boolean, panelOpen: boolean): Back
   return 'exit';
 }
 
+export function overlayCloseSelector(overlayId: string): string | null {
+  switch (overlayId) {
+    case 'settingsOverlay': return '#settingsClose';
+    case 'accountOverlay': return '#accountClose';
+    case 'downloadsOverlay': return '#downloadsClose';
+    case 'modalOverlay': return '#modalClose';
+    case 'knowledgeCreateOverlay': return '[data-create-close]';
+    default: return null;
+  }
+}
+
 export function isNewerVersion(candidate: string, current: string): boolean {
   return compareSemanticVersions(candidate, current) > 0;
 }
@@ -140,10 +151,17 @@ export function applyPlatformVisibility(platform: 'android' | 'ios'): void {
 }
 
 function closeTopLayer(): BackAction {
-  const overlay = document.querySelector<HTMLElement>('.modal-overlay.show');
+  const overlay = document.querySelector<HTMLElement>('.knowledge-create-overlay.show')
+    ?? document.querySelector<HTMLElement>('.modal-overlay.show');
   const panel = document.getElementById('panel');
   const action = chooseBackAction(Boolean(overlay), Boolean(panel?.classList.contains('open')));
-  if (action === 'close-overlay') overlay?.querySelector<HTMLButtonElement>('.panel-close')?.click();
+  if (action === 'close-overlay' && overlay) {
+    const selector = overlayCloseSelector(overlay.id);
+    const closeControl = selector
+      ? document.querySelector<HTMLElement>(selector)
+      : overlay.querySelector<HTMLElement>('.panel-close');
+    closeControl?.click();
+  }
   if (action === 'close-panel') document.getElementById('panelClose')?.click();
   return action;
 }
@@ -162,7 +180,7 @@ function showNetworkState(connected: boolean): void {
   banner.hidden = connected;
 }
 
-export async function setupMobileShell(): Promise<void> {
+async function initializeMobileShell(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   const platform = Capacitor.getPlatform();
   if (platform !== 'android' && platform !== 'ios') return;
@@ -176,6 +194,7 @@ export async function setupMobileShell(): Promise<void> {
   await App.addListener('backButton', async () => {
     if (closeTopLayer() === 'exit') await App.exitApp();
   });
+  document.documentElement.dataset.nativeBackReady = 'true';
 
   try {
     await StatusBar.setStyle({ style: Style.Dark });
@@ -196,3 +215,16 @@ export async function setupMobileShell(): Promise<void> {
     console.warn('[Knowledge-Ball] Native network-state setup failed:', error);
   }
 }
+
+let mobileShellSetupPromise: Promise<void> | null = null;
+
+export function setupMobileShell(): Promise<void> {
+  mobileShellSetupPromise ??= initializeMobileShell();
+  return mobileShellSetupPromise;
+}
+
+// This module is imported before the main app body executes. Start the critical
+// native shell immediately so hardware Back is registered before product UI can
+// become interactable. app.ts may call setupMobileShell() again safely; setup is
+// idempotent and returns this same promise.
+void setupMobileShell();
