@@ -148,7 +148,13 @@ const CORE_NODE_ENGLISH_LABELS: Readonly<Record<string, string>> = Object.freeze
   n2: 'Law of Excluded Middle',
   n16: 'Law of Non-Contradiction',
 });
-const LABEL_SPHERE_GAP_PX = 4;
+const TEXT_ENTRY_INPUT_TYPES = new Set(['text', 'search', 'email', 'tel', 'url', 'password', 'number']);
+
+function isTextEntryElement(element: Element | null): boolean {
+  if (element instanceof HTMLTextAreaElement) return true;
+  if (element instanceof HTMLInputElement) return TEXT_ENTRY_INPUT_TYPES.has(element.type);
+  return element instanceof HTMLElement && element.isContentEditable;
+}
 
 export function isCoreNodeId(id: string): boolean {
   return isSystemCoreNodeId(id);
@@ -506,7 +512,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const label = document.createElement('div');
     label.className = 'node-label';
     label.textContent = displayLabelForNode(n);
-    label.style.transform = 'translate(-50%, -100%)';
     labelsLayer.appendChild(label);
     labelMap[n.id] = label;
     return nodeMap[n.id] = {
@@ -791,7 +796,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
         label,
         baseVisible,
         x: (projectedPos.x * .5 + .5) * host.clientWidth,
-        y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight - LABEL_SPHERE_GAP_PX,
+        y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,
         shellRadius: worldPos.length(),
       };
     }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -813,7 +818,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       if (!visible) return;
       entry.label.style.left = `${entry.x}px`;
       entry.label.style.top = `${entry.y}px`;
-      entry.label.style.transform = 'translate(-50%, -100%)';
       entry.label.style.opacity = String(labelBrightness);
       entry.label.classList.toggle('selected', selectedId === entry.n.id);
     });
@@ -1130,6 +1134,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const resize = () => {
+    if (mobilePerformance && isTextEntryElement(document.activeElement)) return;
     camera.aspect = host.clientWidth / Math.max(host.clientHeight, 1);
     camera.updateProjectionMatrix();
     renderer.setSize(host.clientWidth, host.clientHeight);

@@ -71,7 +71,7 @@ async function assertLabelAppearanceControls(page) {
   });
   assert.equal(renderedColor, 'rgb(33, 212, 253)', 'Settings color picker must change the computed color of a real visible node label');
 
-  const textGap = await page.evaluate(() => {
+  const labelPresentation = await page.evaluate(() => {
     const label = [...document.querySelectorAll('.node-label')].find(candidate => getComputedStyle(candidate).display !== 'none');
     const layer = document.getElementById('labelsLayer');
     if (!(label instanceof HTMLElement) || !layer || !label.firstChild) return null;
@@ -81,10 +81,24 @@ async function assertLabelAppearanceControls(page) {
     range.selectNodeContents(label);
     const textRect = range.getBoundingClientRect();
     const layerRect = layer.getBoundingClientRect();
-    const renderedSphereTop = layerRect.top + top + 4;
-    return renderedSphereTop - textRect.bottom;
+    const style = getComputedStyle(label);
+    const renderedSphereTop = layerRect.top + top;
+    return {
+      textGap: renderedSphereTop - textRect.bottom,
+      marginTop: style.marginTop,
+      paddingTop: style.paddingTop,
+      paddingBottom: style.paddingBottom,
+      paddingLeft: style.paddingLeft,
+      paddingRight: style.paddingRight,
+    };
   });
-  assert.ok(textGap !== null && textGap >= -0.1 && textGap <= 0.75, `label text must visually touch sphere top without overlap (actual=${textGap})`);
+  assert.ok(labelPresentation, 'a real visible label must expose computed presentation metrics');
+  assert.ok(labelPresentation.textGap >= -0.1 && labelPresentation.textGap <= 0.75, `label text must visually touch the direct sphere-top anchor without overlap (actual=${labelPresentation.textGap})`);
+  assert.equal(labelPresentation.marginTop, '0px', 'label presentation must not add a second vertical gap');
+  assert.equal(labelPresentation.paddingTop, '0px', 'label frame must not add top padding');
+  assert.equal(labelPresentation.paddingBottom, '0px', 'label frame must not add bottom padding');
+  assert.equal(labelPresentation.paddingLeft, '3px', 'label frame must keep only the intended compact horizontal inset');
+  assert.equal(labelPresentation.paddingRight, '3px', 'label frame must keep only the intended compact horizontal inset');
 
   await sizeSlider.evaluate((input, value) => {
     input.value = value;
@@ -139,11 +153,54 @@ async function assertLocaleAndRuntime(page) {
   assert.equal((await page.locator('#btnSettings').textContent())?.trim(), '⚙ 设置', 'system UI must switch back to Chinese without reload');
 }
 
+async function assertMobileKeyboardOverlay(page) {
+  await page.waitForFunction(() => Boolean(document.querySelector('#canvasHost canvas')));
+  const before = await page.evaluate(() => {
+    const canvas = document.querySelector('#canvasHost canvas');
+    const host = document.getElementById('canvasHost');
+    const labels = document.getElementById('labelsLayer');
+    if (!(canvas instanceof HTMLCanvasElement) || !host || !labels) return null;
+    return {
+      appHeight: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim(),
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      hostHeight: host.getBoundingClientRect().height,
+      labelsHeight: labels.getBoundingClientRect().height,
+    };
+  });
+  assert.ok(before, 'mobile scene must expose stable canvas and label-layer dimensions before text entry');
+
+  await page.locator('#aiInput').focus();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'aiInput', 'search input must own focus before keyboard-style resize');
+  await page.setViewportSize({ width: 390, height: 560 });
+  await page.waitForTimeout(120);
+
+  const during = await page.evaluate(() => {
+    const canvas = document.querySelector('#canvasHost canvas');
+    const host = document.getElementById('canvasHost');
+    const labels = document.getElementById('labelsLayer');
+    if (!(canvas instanceof HTMLCanvasElement) || !host || !labels) return null;
+    return {
+      appHeight: getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim(),
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      hostHeight: host.getBoundingClientRect().height,
+      labelsHeight: labels.getBoundingClientRect().height,
+    };
+  });
+  assert.deepEqual(during, before, 'text-input keyboard resize must leave the 3D canvas and label projection viewport unchanged');
+
+  await page.locator('#aiInput').evaluate(input => input.blur());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() === '844px');
+}
+
 async function assertMobileLayout(browser) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
   await page.goto(origin, { waitUntil: 'domcontentloaded' });
+  await assertMobileKeyboardOverlay(page);
   await openDownloads(page);
   const cards = page.locator('#downloadsOverlay .app-download');
   const boxes = [];
@@ -193,7 +250,7 @@ try {
   } finally {
     await browser.close();
   }
-  console.log('Downloads responsive layout, label appearance settings, and zh-CN/en browser acceptance passed');
+  console.log('Downloads responsive layout, direct label anchoring, keyboard-overlay stability, and zh-CN/en browser acceptance passed');
 } finally {
   server.kill('SIGTERM');
 }

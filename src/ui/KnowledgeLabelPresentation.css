@@ -1,9 +1,28 @@
-/* Knowledge labels visually touch the rendered sphere top without overlapping it.
-   KnowledgeScene already anchors labels 4px above the rendered sphere top. Move
-   the label down by those same 4px. Keep native font metrics, remove vertical chip
-   inset, and tighten horizontal inset so the background frame hugs the text. */
+/* KnowledgeScene writes the exact rendered sphere-top screen coordinate.
+   This stylesheet owns only the label box presentation: it extends upward from
+   that coordinate with no additional vertical gap or compensation. */
 .node-label {
-  margin-top: 4px;
+  position: absolute;
+  transform: translate(-50%, -100%);
+  margin: 0;
+  font-size: var(--label-size);
+  color: var(--label-color);
+  font-family: var(--label-font);
+  background: rgba(2, 9, 13, .52);
   padding: 0 3px;
+  border: 1px solid rgba(117, 224, 211, .1);
   border-bottom-width: 0;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px #000;
+}
+
+.node-label.selected {
+  border-color: rgba(117, 224, 211, .58);
+  border-bottom-color: transparent;
+  box-shadow: 0 0 0 2px rgba(117, 224, 211, .09);
 }

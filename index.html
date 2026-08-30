@@ -54,10 +54,6 @@
   #canvasHost.dragging{cursor:grabbing;}
   #canvasHost canvas{display:block; width:100%; height:100%;}
   #labelsLayer{position:absolute; inset:0; z-index:5; pointer-events:none; overflow:hidden;}
-  /* KnowledgeScene anchors labels 4px above the rendered sphere top; the 3px margin leaves a 1px visible line gap. */
-  .node-label{position:absolute;transform:translate(-50%,-100%);margin-top:3px;font-size:var(--label-size);color:var(--label-color);
-    font-family:var(--label-font); background:rgba(6,9,17,0.55); padding:1px 6px; border-radius:8px;
-    white-space:nowrap; pointer-events:none; max-width:150px; overflow:hidden;text-overflow:ellipsis;}
   .twin-label{position:absolute;transform:translate(-50%,-50%);font-size:calc(var(--label-size) + 2px);
     color:var(--accent-secondary); font-family:var(--label-font); font-weight:700; white-space:nowrap;
     background:rgba(6,9,17,0.6); padding:2px 8px; border-radius:8px; pointer-events:none;}
@@ -193,8 +189,6 @@
   .modal{background:#080D20}
   .panel.open{opacity:1;pointer-events:auto}
   .ai-bar{max-width:552px;margin:auto;background:rgba(8,13,32,.96);border-color:var(--panel-border);box-shadow:0 16px 46px rgba(0,0,0,.38)}
-  .node-label{background:rgba(2,9,13,.52);border:1px solid rgba(117,224,211,.1);color:var(--label-color);padding:2px 6px;border-radius:5px;text-shadow:0 1px 3px #000}
-  .node-label.selected{border-color:rgba(117,224,211,.58);box-shadow:0 0 0 2px rgba(117,224,211,.09)}
   .legend{max-width:156px;padding:8px 10px;background:rgba(8,13,32,.96);border-color:var(--panel-border);border-radius:11px}
   .legend-row{gap:5px;margin-bottom:2px;font-size:9px}.legend-dot{width:6px;height:6px}.layer-note{font-size:8.5px;line-height:1.4}
   .field-reasoning-band{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:8px;align-items:center;margin:14px 0;padding:11px;border:1px solid rgba(147,132,181,.25);border-radius:10px;background:rgba(147,132,181,.06)}
