@@ -43,6 +43,7 @@ import {
 import {
   createSystemCoreSceneNodes,
   openSystemCoreCard,
+  systemCoreLabel,
 } from '../systemCore/SystemCoreContent';
 import {
   CHAIN_ISOLATION_ABSORB_FRACTION,
@@ -143,11 +144,6 @@ type ChainIsolationRuntimeState = {
   exitGraphZoom?: number;
 };
 
-const CORE_NODE_ENGLISH_LABELS: Readonly<Record<string, string>> = Object.freeze({
-  n1: 'Law of Identity',
-  n2: 'Law of Excluded Middle',
-  n16: 'Law of Non-Contradiction',
-});
 const TEXT_ENTRY_INPUT_TYPES = new Set(['text', 'search', 'email', 'tel', 'url', 'password', 'number']);
 
 function isTextEntryElement(element: Element | null): boolean {
@@ -161,7 +157,7 @@ export function isCoreNodeId(id: string): boolean {
 }
 
 export function displayLabelForNode(node: Pick<KnowledgeSceneNode, 'id' | 'title'>): string {
-  return CORE_NODE_ENGLISH_LABELS[node.id] ?? node.title;
+  return systemCoreLabel(node.id) ?? node.title;
 }
 
 export function layerForNode(node: Pick<KnowledgeSceneNode, 'id' | 'status' | 'type' | 'effectiveLayer'>): Layer {
@@ -777,6 +773,10 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const label = labelMap[n.id];
       const record = nodeMap[n.id];
       if (!label || !record) return null;
+      if (isCoreNodeId(n.id)) {
+        const localizedLabel = displayLabelForNode(n);
+        if (label.textContent !== localizedLabel) label.textContent = localizedLabel;
+      }
       record.group.getWorldPosition(worldPos);
       projectedPos.copy(worldPos).project(camera);
       record.shell.getWorldScale(shellWorldScale);
@@ -863,7 +863,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const chainIds = new Set(connectedChainIds(seedId, nodes, relationIndexFor(nodes).edges, eligibleIds));
     if (!chainIds.size) return false;
     if (returningNodeId) {
-      const returning = nodes.find(node => node.id === returningNodeId);
+      const returning = nodes.find(value => value.id === returningNodeId);
       if (returning?.pos && returning.homePos) returning.pos.copy(returning.homePos);
       returningNodeId = null;
     }
