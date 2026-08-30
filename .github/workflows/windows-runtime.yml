@@ -43,6 +43,8 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Verify deterministic reversible label budget
+        run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - name: Install Windows shell dependencies
         working-directory: windows
         run: npm ci
