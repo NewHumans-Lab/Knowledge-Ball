@@ -101,12 +101,12 @@ public class AndroidParitySmokeTest {
                 waitFor(scenario, "!document.querySelector('#panel')?.classList.contains('open')");
             }
 
-            // Current split create flow must surface validation feedback above its modal.
+            // Current split create flow must surface validation feedback above its modal, and native Back must close it through its owning controller instead of exiting the app.
             assertJsTrue(scenario, "Android Ctrl+N create flow did not open the authoritative create modal",
                 "document.dispatchEvent(new KeyboardEvent('keydown',{key:'n',ctrlKey:true,bubbles:true}));document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show')");
             evaluate(scenario, "document.querySelector('#knowledgeCreateOverlay [data-create-submit]').click()");
             waitFor(scenario, "!!document.querySelector('#knowledgeCreateOverlay [role=alert],#knowledgeCreateOverlay .form-error,#toast.show')");
-            evaluate(scenario, "document.querySelector('#knowledgeCreateOverlay [data-create-close]').click()");
+            device.pressBack();
             waitFor(scenario, "!document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show')");
 
             // Android lifecycle resume must preserve a live WebGL/product surface.
