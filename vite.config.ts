@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { defineConfig, type HtmlTagDescriptor } from 'vite';
@@ -10,6 +11,17 @@ const nativeBuild = process.env.CAPACITOR_BUILD === 'true';
 const publicSiteUrl = 'https://rushow111.github.io/Knowledge-Ball/';
 const siteDescription =
   'Knowledge Ball is a living knowledge network that organizes knowledge, reasoning, evidence, and relationships in an interactive 3D knowledge graph.';
+const sourceReleaseManifest = JSON.parse(readFileSync('public/downloads/latest.json', 'utf8')) as {
+  platforms?: Record<string, {
+    available?: boolean;
+    distribution?: string;
+    version?: string | null;
+    build?: string | null;
+    commit?: string | null;
+    urls?: Record<string, string>;
+    checksum?: string | null;
+  }>;
+};
 
 function neutralizeDownloadHtml(html: string): string {
   return html
@@ -60,6 +72,52 @@ function unavailableArtifact(distribution: string) {
     commit: null,
     urls: {},
     checksum: null,
+  };
+}
+
+function isGitHubReleaseUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && url.hostname === 'github.com'
+      && url.pathname.includes('/releases/download/');
+  } catch {
+    return false;
+  }
+}
+
+function publishedNativeArtifact(platform: 'android' | 'windows', distribution: string, requiredUrl: string) {
+  const candidate = sourceReleaseManifest.platforms?.[platform];
+  if (!candidate
+    || candidate.available !== true
+    || candidate.distribution !== distribution
+    || candidate.version !== appVersion
+    || typeof candidate.build !== 'string'
+    || !candidate.build
+    || typeof candidate.commit !== 'string'
+    || !candidate.commit
+    || !candidate.urls
+    || typeof candidate.urls[requiredUrl] !== 'string'
+    || !candidate.urls[requiredUrl]
+    || typeof candidate.checksum !== 'string'
+    || !/^sha256:[0-9a-f]{64}$/i.test(candidate.checksum)) {
+    return unavailableArtifact(distribution);
+  }
+
+  const urls: Record<string, string> = {};
+  for (const [key, value] of Object.entries(candidate.urls)) {
+    if (typeof value !== 'string' || !isGitHubReleaseUrl(value)) return unavailableArtifact(distribution);
+    urls[key] = value;
+  }
+
+  return {
+    available: true,
+    distribution,
+    version: candidate.version,
+    build: candidate.build,
+    commit: candidate.commit,
+    urls,
+    checksum: candidate.checksum.toLowerCase(),
   };
 }
 
@@ -145,10 +203,10 @@ export default defineConfig({
           commit: buildCommit,
           platforms: {
             web: currentArtifact('web', { launch: publicSiteUrl }),
-            android: unavailableArtifact('apk'),
+            android: publishedNativeArtifact('android', 'apk', 'download'),
             iosWeb: currentArtifact('web-app', { install: `${publicSiteUrl}ios-install.html` }),
             ios: unavailableArtifact('testflight'),
-            windows: unavailableArtifact('installer'),
+            windows: publishedNativeArtifact('windows', 'installer', 'installer'),
           },
         };
         await writeFile('dist/downloads/latest.json', `${JSON.stringify(manifest, null, 2)}\n`);

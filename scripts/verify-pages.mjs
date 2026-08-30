@@ -30,11 +30,35 @@ function validateHtml(html) {
   assert.match(html, /id="iosDownloadMeta"/, 'iOS release state must be rendered from release metadata');
   assert.match(html, /id="androidDownloadMeta"/, 'Android release state must be rendered from release metadata');
   assert.match(html, /id="windowsDownloadMeta"/, 'Windows release state must be rendered from release metadata');
-  assert.match(html, /id="windowsDownload"[^>]*disabled/, 'Windows must boot unavailable until authoritative metadata enables it');
+  assert.match(html, /id="windowsDownload"[^>]*disabled/, 'Windows must boot unavailable until authoritative metadata enables it at runtime');
   assert.doesNotMatch(html, /href="\.\/downloads\/knowledge-ball-android-v[^\"]+\.apk"/, 'Pages HTML must not advertise a stale static APK');
   const assets = pageAssets(html);
   assert.ok(assets.some(asset => /\/assets\/index-[^/]+\.js$/.test(asset)), 'Pages HTML must reference its hashed application bundle');
   return assets;
+}
+
+function validateUnavailableArtifact(artifact, distribution) {
+  assert.equal(artifact.available, false);
+  assert.equal(artifact.distribution, distribution);
+  assert.equal(artifact.version, null);
+  assert.equal(artifact.build, null);
+  assert.equal(artifact.commit, null);
+  assert.deepEqual(artifact.urls, {});
+  assert.equal(artifact.checksum, null);
+}
+
+function validatePublishedArtifact(artifact, distribution, requiredUrl) {
+  assert.equal(artifact.available, true);
+  assert.equal(artifact.distribution, distribution);
+  assert.equal(artifact.version, packageJson.version, 'native release version must match current package version');
+  assert.ok(artifact.build && artifact.commit, 'native release must expose build identity');
+  assert.match(artifact.urls[requiredUrl], /^https:\/\/github\.com\/Rushow111\/Knowledge-Ball\/releases\/download\//);
+  assert.match(artifact.checksum, /^sha256:[0-9a-f]{64}$/i);
+}
+
+function validateNativeArtifact(artifact, distribution, requiredUrl) {
+  if (artifact.available) validatePublishedArtifact(artifact, distribution, requiredUrl);
+  else validateUnavailableArtifact(artifact, distribution);
 }
 
 function validateReleaseManifest(manifest) {
@@ -43,13 +67,11 @@ function validateReleaseManifest(manifest) {
   assert.ok(manifest.build && manifest.commit, 'release manifest must expose build identity');
   assert.equal(manifest.platforms.web.available, true);
   assert.equal(manifest.platforms.web.version, packageJson.version);
-  assert.equal(manifest.platforms.android.available, false, 'stale Android artifact must not impersonate this build');
-  assert.equal(manifest.platforms.android.version, null);
-  assert.deepEqual(manifest.platforms.android.urls, {});
+  validateNativeArtifact(manifest.platforms.android, 'apk', 'download');
   assert.equal(manifest.platforms.iosWeb.available, true, 'iOS Web App remains a real current distribution');
   assert.equal(manifest.platforms.iosWeb.version, packageJson.version);
   assert.equal(manifest.platforms.ios.available, false, 'native iOS requires real Apple distribution');
-  assert.equal(manifest.platforms.windows.available, false);
+  validateNativeArtifact(manifest.platforms.windows, 'installer', 'installer');
 }
 
 async function verifyLocalBuild() {
@@ -79,6 +101,13 @@ async function fetchWithRetry(url, attempts = 6) {
   throw lastError;
 }
 
+async function verifyBinaryRelease(url, label) {
+  const response = await fetchWithRetry(url);
+  const contentType = response.headers.get('content-type') ?? '';
+  assert.match(contentType, /application\/(?:vnd\.android\.package-archive|octet-stream|x-msdownload)/i, `${label} must resolve to a binary download`);
+  await response.body?.cancel();
+}
+
 async function verifyLiveSite(root) {
   const normalizedRoot = root.endsWith('/') ? root : `${root}/`;
   const pageUrl = new URL(expectedBase.replace(/^\//, ''), new URL('/', normalizedRoot));
@@ -101,11 +130,15 @@ async function verifyLiveSite(root) {
   await iosWebResponse.body?.cancel();
 
   if (manifest.platforms.android.available) {
-    const apkResponse = await fetchWithRetry(manifest.platforms.android.urls.download);
-    assert.match(apkResponse.headers.get('content-type') ?? '', /application\/(?:vnd\.android\.package-archive|octet-stream)/i);
-    await apkResponse.body?.cancel();
+    await verifyBinaryRelease(manifest.platforms.android.urls.download, 'Android APK');
   } else {
     assert.deepEqual(manifest.platforms.android.urls, {});
+  }
+
+  if (manifest.platforms.windows.available) {
+    await verifyBinaryRelease(manifest.platforms.windows.urls.installer, 'Windows installer');
+  } else {
+    assert.deepEqual(manifest.platforms.windows.urls, {});
   }
 
   console.log(`Live GitHub Pages smoke test passed: ${pageUrl}`);
