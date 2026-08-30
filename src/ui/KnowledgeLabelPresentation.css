@@ -1,9 +1,9 @@
 /* Knowledge labels visually touch the rendered sphere top without overlapping it.
    KnowledgeScene already anchors labels 4px above the rendered sphere top. Move
-   the label down by those same 4px and remove only the bottom chip inset. Keep the
-   font's native line metrics so glyphs never overflow a compressed line box. */
+   the label down by those same 4px. Keep native font metrics, remove vertical chip
+   inset, and tighten horizontal inset so the background frame hugs the text. */
 .node-label {
   margin-top: 4px;
-  padding-bottom: 0;
+  padding: 0 3px;
   border-bottom-width: 0;
 }
