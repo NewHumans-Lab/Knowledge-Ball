@@ -86,8 +86,18 @@ async function run(): Promise<void> {
       targetId: 'a2', candidateId: 'bad-name', title: 'Reserved title', reasoning: 'Duplicate opposing title', declaredLayer: 'outer',
     }),
     KnowledgeOppositionValidationError,
-    'opposition has no optimization-style same-name or duplicate-name exception',
+    'opposition must still reject a duplicate title owned by another topic',
   );
+
+  // Same-topic same-name opposition is legal. The UI lineage projection, not the
+  // immutable title, is responsible for x2.x disambiguation.
+  await executeKnowledgeOpposition(runtime.store, runtime.projection, {
+    targetId: 'a2', candidateId: 'same-name-opposition', title: 'A improved', reasoning: 'Same-topic duplicate title', declaredLayer: 'outer',
+  });
+  assert.equal(lineageRoleFor(runtime.projection.state.nodesById['same-name-opposition']), 'candidate-opposition');
+  finalize(runtime, 'same-name-opposition', 'INCORRECT');
+  assert.equal(runtime.projection.state.nodesById['same-name-opposition'], undefined, 'failed same-name opposition is still removed normally');
+  assert.equal(lineageRoleFor(runtime.projection.state.nodesById.a2), 'current');
 
   await executeKnowledgeOpposition(runtime.store, runtime.projection, {
     targetId: 'a2', candidateId: 'b-rejected', title: 'B rejected', reasoning: 'A rejected opposing viewpoint', declaredLayer: 'outer',
@@ -177,6 +187,7 @@ async function run(): Promise<void> {
     'red side must survive deterministic event replay',
   );
   assert.equal(runtime.projection.state.nodesById['b-rejected'], undefined, 'failed opposition stays absent after deterministic replay');
+  assert.equal(runtime.projection.state.nodesById['same-name-opposition'], undefined, 'failed same-name opposition stays absent after deterministic replay');
 
   console.log('Knowledge opposition regression tests passed');
 }
