@@ -179,7 +179,7 @@ function showNetworkState(connected: boolean): void {
   banner.hidden = connected;
 }
 
-export async function setupMobileShell(): Promise<void> {
+async function initializeMobileShell(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   const platform = Capacitor.getPlatform();
   if (platform !== 'android' && platform !== 'ios') return;
@@ -193,6 +193,7 @@ export async function setupMobileShell(): Promise<void> {
   await App.addListener('backButton', async () => {
     if (closeTopLayer() === 'exit') await App.exitApp();
   });
+  document.documentElement.dataset.nativeBackReady = 'true';
 
   try {
     await StatusBar.setStyle({ style: Style.Dark });
@@ -213,3 +214,16 @@ export async function setupMobileShell(): Promise<void> {
     console.warn('[Knowledge-Ball] Native network-state setup failed:', error);
   }
 }
+
+let mobileShellSetupPromise: Promise<void> | null = null;
+
+export function setupMobileShell(): Promise<void> {
+  mobileShellSetupPromise ??= initializeMobileShell();
+  return mobileShellSetupPromise;
+}
+
+// This module is imported before the main app body executes. Start the critical
+// native shell immediately so hardware Back is registered before product UI can
+// become interactable. app.ts may call setupMobileShell() again safely; setup is
+// idempotent and returns this same promise.
+void setupMobileShell();
