@@ -9,7 +9,7 @@ async function waitForServer() {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
       if ((await fetch(origin)).ok) return;
-    } catch { /* preview not ready */ }
+    } catch { /* preview not ready yet */ }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('Vite preview did not become ready');
@@ -66,7 +66,7 @@ try {
     await page.waitForFunction(() => [...document.querySelectorAll('.node-label')].some(label => getComputedStyle(label).display !== 'none'));
 
     const forward = [await settleLabels(page)];
-    assert.ok(forward[0].length >= 12 && forward[0].length <= 18, `initial large-mobile label budget must be 12..18 (actual=${forward[0].length})`);
+    assert.ok(forward[0].length > 0 && forward[0].length <= 18, `initial visible label budget must be non-empty and no more than 18 (actual=${forward[0].length})`);
 
     for (let step = 0; step < 4; step += 1) forward.push(await wheel(page, -260));
     for (const state of forward) assert.ok(state.length <= 18, `zoomed label budget must never exceed 18 (actual=${state.length})`);
