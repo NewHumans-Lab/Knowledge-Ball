@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-const siteUrl = 'https://rushow111.github.io/Knowledge-Ball/';
+const siteUrl = 'https://newhumans-lab.github.io/Knowledge-Ball/';
 const sitemapUrl = `${siteUrl}sitemap.xml`;
 const siteDescription =
   'Knowledge Ball is a living knowledge network that organizes knowledge, reasoning, evidence, and relationships in an interactive 3D knowledge graph.';

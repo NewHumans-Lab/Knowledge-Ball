@@ -8,7 +8,7 @@ const buildCommit = process.env.GITHUB_SHA ?? execFileSync('git', ['rev-parse', 
 const buildNumber = process.env.GITHUB_RUN_NUMBER ?? buildCommit.slice(0, 12);
 const appVersion = packageJson.version;
 const nativeBuild = process.env.CAPACITOR_BUILD === 'true';
-const publicSiteUrl = 'https://rushow111.github.io/Knowledge-Ball/';
+const publicSiteUrl = 'https://newhumans-lab.github.io/Knowledge-Ball/';
 const siteDescription =
   'Knowledge Ball is a living knowledge network that organizes knowledge, reasoning, evidence, and relationships in an interactive 3D knowledge graph.';
 const sourceReleaseManifest = JSON.parse(readFileSync('public/downloads/latest.json', 'utf8')) as {

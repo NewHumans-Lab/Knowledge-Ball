@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://rushow111.github.io/Knowledge-Ball/sitemap.xml
+Sitemap: https://newhumans-lab.github.io/Knowledge-Ball/sitemap.xml

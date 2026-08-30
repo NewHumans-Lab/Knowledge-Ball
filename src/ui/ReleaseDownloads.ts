@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { getLocale, subscribeLocale } from '../i18n/Locale';
 import type { ReleaseArtifact, ReleaseManifest } from '../release/ReleaseManifest';
 
-const REMOTE_MANIFEST_URL = 'https://rushow111.github.io/Knowledge-Ball/downloads/latest.json';
+const REMOTE_MANIFEST_URL = 'https://newhumans-lab.github.io/Knowledge-Ball/downloads/latest.json';
 
 let manifest: ReleaseManifest | null = null;
 

@@ -11,7 +11,7 @@ import packageJson from '../../package.json';
 
 export const CURRENT_APP_VERSION = packageJson.version;
 export const CURRENT_APP_BUILD = typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : 'local';
-export const UPDATE_MANIFEST_URL = 'https://rushow111.github.io/Knowledge-Ball/downloads/latest.json';
+export const UPDATE_MANIFEST_URL = 'https://newhumans-lab.github.io/Knowledge-Ball/downloads/latest.json';
 
 export type BackAction = 'close-overlay' | 'close-panel' | 'exit';
 
