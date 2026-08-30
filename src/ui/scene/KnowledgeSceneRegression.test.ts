@@ -228,8 +228,15 @@ assert(!labelsSource.includes('index % 4'), 'large-mobile labels must not fall b
 assert(labelsSource.includes('record.shell.getWorldScale(shellWorldScale)'), 'label anchor must read the sphere current rendered size');
 assert(labelsSource.includes('labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius)'), 'label anchor must sit on the camera-up edge of the rendered sphere');
 assert(labelsSource.includes('labelAnchorProjected.copy(labelAnchorWorld).project(camera)'), 'sphere-top anchor must be projected through the current camera');
-assert(labelsSource.includes("entry.label.style.transform = 'translate(-50%, -100%)';"), 'label box must extend upward from the sphere-top anchor');
+assert(labelsSource.includes('y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,'), 'label top must be the direct projected sphere-top coordinate');
+assert(!sceneSource.includes('LABEL_SPHERE_GAP_PX'), 'scene must not keep a second pixel-gap authority');
+assert(!labelsSource.includes('margin-top'), 'scene projection must not compensate label spacing through CSS assumptions');
 assert(!labelsSource.includes("translate(-50%, 10px)"), 'legacy below-center label offset must stay removed');
+assert(sceneSource.includes('if (mobilePerformance && isTextEntryElement(document.activeElement)) return;'), 'mobile text entry must suppress keyboard-driven scene resize');
+const labelPresentationSource = readFileSync('src/ui/KnowledgeLabelPresentation.css', 'utf8');
+assert(labelPresentationSource.includes('transform: translate(-50%, -100%);'), 'dedicated label presentation must extend the label upward from the sphere-top coordinate');
+assert(labelPresentationSource.includes('margin: 0;'), 'dedicated label presentation must not add a second vertical offset');
+assert(!labelPresentationSource.includes('margin-top: 4px'), 'legacy +4px compensation must stay removed');
 const applyNodeStylesStart = sceneSource.indexOf('const applyNodeStyles =');
 const visibilitySource = sceneSource.slice(visibilityStart, applyNodeStylesStart);
 assert(!visibilitySource.includes('dot(camera.position)'), 'hemisphere filtering is presentation-only and must not become node/edge visibility authority');
