@@ -156,6 +156,7 @@ export class NodeDetailController {
   private readonly onClose?: NodeDetailControllerOptions['onClose'];
   private readonly root: HTMLElement;
   private currentId: string | null = null;
+  private editMenuOpen = false;
   private positionFrame: number | null = null;
   private voteRefreshTimer: number | null = null;
   private voteRenderToken = 0;
@@ -190,6 +191,7 @@ export class NodeDetailController {
     const node = this.getNodeById(id);
     if (!node) return;
     this.currentId = id;
+    this.editMenuOpen = false;
     this.setKnowledgeLabelsVisible(false);
     this.onDetailNodeChange(id);
     this.render(node);
@@ -208,20 +210,10 @@ export class NodeDetailController {
       this.close();
       return;
     }
-    // Personal mastery/viewed-state writes can resolve while the user is choosing
-    // an edit action. Refreshing authoritative node data must not erase that local
-    // interaction state, otherwise the menu closes between two taps.
-    const editMenuWasOpen = this.root.querySelector<HTMLButtonElement>('.node-detail-edit')
-      ?.getAttribute('aria-expanded') === 'true';
+    // Local interaction state belongs to the controller, not to the DOM that
+    // render() replaces. Async mastery/public refreshes can land during a real
+    // pointer click, so rebuilding must project the already-selected menu state.
     this.render(node);
-    if (editMenuWasOpen) {
-      const editButton = this.root.querySelector<HTMLButtonElement>('.node-detail-edit');
-      const menu = this.root.querySelector<HTMLElement>('.node-detail-edit-menu');
-      if (editButton && menu) {
-        menu.hidden = false;
-        editButton.setAttribute('aria-expanded', 'true');
-      }
-    }
     this.positionCurrent();
   }
 
@@ -230,6 +222,7 @@ export class NodeDetailController {
     this.setKnowledgeLabelsVisible(true);
     this.clearVoteRefresh();
     this.voteRenderToken++;
+    this.editMenuOpen = false;
     if (!wasOpen) return;
     this.currentId = null;
     this.root.classList.remove('open');
@@ -260,6 +253,7 @@ export class NodeDetailController {
 
     let interaction: string;
     if (node.status === 'pending') {
+      this.editMenuOpen = false;
       interaction = `
         <div class="node-detail-vote node-detail-interaction">
           <div class="node-detail-vote-title">投票</div>
@@ -271,6 +265,7 @@ export class NodeDetailController {
         </div>
       `;
     } else if (oldLineage && node.status === 'verified') {
+      this.editMenuOpen = false;
       interaction = `
         <div class="node-detail-reactivation node-detail-interaction">
           <div class="node-detail-vote-title">设为当前最优</div>
@@ -289,8 +284,10 @@ export class NodeDetailController {
         </div>
       `;
     } else if (oldLineage && node.status === 'disputed') {
+      this.editMenuOpen = false;
       interaction = this.revalidationMarkup(null, account !== null);
     } else if (role === 'current' && node.status === 'disputed') {
+      this.editMenuOpen = false;
       interaction = `
         <div class="node-detail-cascade-status node-detail-interaction" role="status">
           前提的当前版本已经变化，此知识正在等待重新验证。
@@ -298,8 +295,8 @@ export class NodeDetailController {
       `;
     } else {
       interaction = `
-        <button type="button" class="node-detail-edit" aria-expanded="false">编辑</button>
-        <div class="node-detail-edit-menu" hidden></div>
+        <button type="button" class="node-detail-edit" aria-expanded="${this.editMenuOpen}">编辑</button>
+        <div class="node-detail-edit-menu"${this.editMenuOpen ? '' : ' hidden'}></div>
       `;
     }
 
@@ -351,8 +348,9 @@ export class NodeDetailController {
     const menu = this.root.querySelector<HTMLElement>('.node-detail-edit-menu');
     editButton?.addEventListener('click', () => {
       if (!menu) return;
-      menu.hidden = !menu.hidden;
-      editButton.setAttribute('aria-expanded', String(!menu.hidden));
+      this.editMenuOpen = !this.editMenuOpen;
+      menu.hidden = !this.editMenuOpen;
+      editButton.setAttribute('aria-expanded', String(this.editMenuOpen));
     });
     for (const action of actions) {
       const button = document.createElement('button');
