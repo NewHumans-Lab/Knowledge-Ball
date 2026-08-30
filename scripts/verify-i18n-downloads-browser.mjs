@@ -71,18 +71,20 @@ async function assertLabelAppearanceControls(page) {
   });
   assert.equal(renderedColor, 'rgb(33, 212, 253)', 'Settings color picker must change the computed color of a real visible node label');
 
-  const visibleGap = await page.evaluate(() => {
+  const textGap = await page.evaluate(() => {
     const label = [...document.querySelectorAll('.node-label')].find(candidate => getComputedStyle(candidate).display !== 'none');
     const layer = document.getElementById('labelsLayer');
-    if (!(label instanceof HTMLElement) || !layer) return null;
+    if (!(label instanceof HTMLElement) || !layer || !label.firstChild) return null;
     const top = Number.parseFloat(label.style.top);
     if (!Number.isFinite(top)) return null;
-    const labelRect = label.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    const textRect = range.getBoundingClientRect();
     const layerRect = layer.getBoundingClientRect();
     const renderedSphereTop = layerRect.top + top + 4;
-    return renderedSphereTop - labelRect.bottom;
+    return renderedSphereTop - textRect.bottom;
   });
-  assert.ok(visibleGap !== null && visibleGap >= .5 && visibleGap <= 1.5, `visible sphere-to-label gap must stay about 1px (actual=${visibleGap})`);
+  assert.ok(textGap !== null && textGap >= -0.1 && textGap <= 0.75, `label text must visually touch sphere top without overlap (actual=${textGap})`);
 
   await sizeSlider.evaluate((input, value) => {
     input.value = value;
