@@ -69,7 +69,12 @@ jobs:
             bash -lc 'set -euxo pipefail;
             mkdir -p artifacts/android;
             cd android;
-            ./gradlew connectedDebugAndroidTest --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1 || { cat ../artifacts/android/gradle-connected-test.log; exit 1; };
+            test_status=0;
+            ./gradlew connectedDebugAndroidTest --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1 || test_status=$?;
+            mkdir -p ../artifacts/android/test-results ../artifacts/android/test-report;
+            cp -R app/build/outputs/androidTest-results/connected/. ../artifacts/android/test-results/ 2>/dev/null || true;
+            cp -R app/build/reports/androidTests/connected/. ../artifacts/android/test-report/ 2>/dev/null || true;
+            if [ "$test_status" -ne 0 ]; then cat ../artifacts/android/gradle-connected-test.log; exit "$test_status"; fi;
             cd ..;
             adb shell dumpsys package org.knowledgeball.app > artifacts/android/package-dump.txt;
             grep -E "versionName=|versionCode=" artifacts/android/package-dump.txt > artifacts/android/package-identity.txt;
