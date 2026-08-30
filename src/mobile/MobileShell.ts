@@ -151,7 +151,8 @@ export function applyPlatformVisibility(platform: 'android' | 'ios'): void {
 }
 
 function closeTopLayer(): BackAction {
-  const overlay = document.querySelector<HTMLElement>('.modal-overlay.show');
+  const overlay = document.querySelector<HTMLElement>('.knowledge-create-overlay.show')
+    ?? document.querySelector<HTMLElement>('.modal-overlay.show');
   const panel = document.getElementById('panel');
   const action = chooseBackAction(Boolean(overlay), Boolean(panel?.classList.contains('open')));
   if (action === 'close-overlay' && overlay) {
