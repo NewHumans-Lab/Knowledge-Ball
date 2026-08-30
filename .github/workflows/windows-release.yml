@@ -1,0 +1,112 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Build authoritative Web product
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+      - name: Install Windows shell dependencies
+        working-directory: windows
+        run: npm ci
+      - name: Sync package version from root identity
+        working-directory: windows
+        shell: pwsh
+        run: |
+          $version = node -p "require('../package.json').version"
+          npm pkg set "version=$version"
+      - name: Package Windows installer and portable app
+        working-directory: windows
+        run: npm run package
+      - name: Verify packaged assets and exact EXE runtime
+        working-directory: windows
+        shell: pwsh
+        run: |
+          npm run test:assets
+          npm run test:runtime
+      - name: Prepare release artifacts and metadata
+        id: metadata
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $setupSource = Get-ChildItem windows/release -Filter '*nsis*.exe' | Select-Object -First 1
+          $portableSource = Get-ChildItem windows/release -Filter '*portable*.exe' | Select-Object -First 1
+          if (-not $setupSource -or -not $portableSource) { throw 'Expected NSIS and portable EXEs were not produced.' }
+          $setupName = "Knowledge-Ball-Windows-Setup-v$version.exe"
+          $portableName = "Knowledge-Ball-Windows-Portable-v$version.exe"
+          Copy-Item $setupSource.FullName $setupName
+          Copy-Item $portableSource.FullName $portableName
+          $setupHash = (Get-FileHash $setupName -Algorithm SHA256).Hash.ToLower()
+          $portableHash = (Get-FileHash $portableName -Algorithm SHA256).Hash.ToLower()
+          $setupSignature = (Get-AuthenticodeSignature $setupName).Status.ToString()
+          $portableSignature = (Get-AuthenticodeSignature $portableName).Status.ToString()
+          $repo = $env:GITHUB_REPOSITORY
+          $commit = $env:GITHUB_SHA
+          $build = $env:GITHUB_RUN_NUMBER
+          $manifest = [ordered]@{
+            platform = 'windows'
+            available = $true
+            distribution = 'installer'
+            version = $version
+            build = $build
+            commit = $commit
+            urls = [ordered]@{
+              installer = "https://github.com/$repo/releases/download/v$version/$setupName"
+              portable = "https://github.com/$repo/releases/download/v$version/$portableName"
+            }
+            checksums = [ordered]@{
+              installer = "sha256:$setupHash"
+              portable = "sha256:$portableHash"
+            }
+            authenticode = [ordered]@{
+              installer = $setupSignature
+              portable = $portableSignature
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 windows-release.json
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "setup=$setupName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "portable=$portableName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Publish Windows artifacts to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          SETUP: ${{ steps.metadata.outputs.setup }}
+          PORTABLE: ${{ steps.metadata.outputs.portable }}
+        shell: pwsh
+        run: |
+          gh release view "v$env:VERSION" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "v$env:VERSION" --title "Knowledge Ball v$env:VERSION" --notes "Platform release artifacts for Knowledge Ball v$env:VERSION."
+          }
+          gh release upload "v$env:VERSION" "$env:SETUP" "$env:PORTABLE" windows-release.json --clobber
+      - name: Upload Windows release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-evidence
+          path: |
+            windows/artifacts
+            windows-release.json
+          if-no-files-found: warn

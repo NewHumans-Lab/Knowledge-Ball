@@ -23,7 +23,14 @@
     "files": ["main.cjs", "preload.cjs"],
     "extraResources": [{ "from": "../dist", "to": "web" }],
     "directories": { "output": "release" },
-    "win": { "target": ["nsis", "portable"], "artifactName": "Knowledge-Ball-${version}-${arch}-${target}.${ext}" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "win": { "target": ["nsis", "portable"] },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Knowledge-Ball-${version}-${arch}-nsis.${ext}"
+    },
+    "portable": {
+      "artifactName": "Knowledge-Ball-${version}-${arch}-portable.${ext}"
+    }
   }
 }

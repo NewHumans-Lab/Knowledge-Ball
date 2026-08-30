@@ -1,0 +1,81 @@
+name: Windows Runtime Gate
+
+on:
+  pull_request:
+    paths:
+      - 'windows/**'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - '.github/workflows/windows-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - '.github/workflows/windows-runtime.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-runtime:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install and build authoritative Web product
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+      - name: Install Windows shell dependencies
+        working-directory: windows
+        run: npm ci
+      - name: Sync Windows package version from root package.json
+        working-directory: windows
+        shell: pwsh
+        run: |
+          $version = node -p "require('../package.json').version"
+          npm pkg set "version=$version"
+          "version=$version" | Out-File -Encoding utf8 artifacts-version.txt
+      - name: Package NSIS, portable and unpacked Windows app
+        working-directory: windows
+        run: npm run package
+      - name: Prove packaged Web assets match root dist byte-for-byte
+        working-directory: windows
+        run: npm run test:assets
+      - name: Launch packaged EXE and run runtime/visual parity
+        working-directory: windows
+        run: npm run test:runtime
+      - name: Record executable hashes
+        working-directory: windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Get-ChildItem release -Filter *.exe | Get-FileHash -Algorithm SHA256 | Format-Table -AutoSize | Out-String | Set-Content artifacts/exe-sha256.txt
+          Get-ChildItem release -Filter *.exe | ForEach-Object { if ($_.Length -le 0) { throw "Empty Windows artifact: $($_.FullName)" } }
+      - name: Upload Windows installers and runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-runtime-and-installers
+          path: |
+            windows/release/*.exe
+            windows/artifacts
+            windows/artifacts-version.txt
+          if-no-files-found: error
