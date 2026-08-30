@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { defineConfig, type HtmlTagDescriptor } from 'vite';
 import packageJson from './package.json';
@@ -12,6 +11,58 @@ const publicSiteUrl = 'https://rushow111.github.io/Knowledge-Ball/';
 const siteDescription =
   'Knowledge Ball is a living knowledge network that organizes knowledge, reasoning, evidence, and relationships in an interactive 3D knowledge graph.';
 
+function neutralizeDownloadHtml(html: string): string {
+  return html
+    .replace(
+      /<div class="app-download-meta" data-i18n="downloads\.ios\.meta">[^<]*<\/div>/,
+      '<div class="app-download-meta" id="iosDownloadMeta">正在读取发布状态…</div>',
+    )
+    .replace(
+      /<a class="btn primary web-download-action" id="iosDownload"[^>]*>[^<]*<\/a>/,
+      '<a class="btn web-download-action" id="iosDownload" aria-disabled="true">正在读取发布状态…</a>',
+    )
+    .replace(
+      /<div class="app-download-meta" data-i18n="downloads\.android\.meta">[^<]*<\/div>/,
+      '<div class="app-download-meta" id="androidDownloadMeta">正在读取发布状态…</div>',
+    )
+    .replace(
+      /<a class="btn primary web-download-action" id="androidDownload"[^>]*>[^<]*<\/a>/,
+      '<a class="btn web-download-action" id="androidDownload" aria-disabled="true" type="application/vnd.android.package-archive">正在读取发布状态…</a>',
+    )
+    .replace(
+      /<div class="app-download-meta" data-i18n="downloads\.windows\.meta">[^<]*<\/div>/,
+      '<div class="app-download-meta" id="windowsDownloadMeta">正在读取发布状态…</div>',
+    )
+    .replace(
+      /<button class="btn" id="windowsDownload" type="button" disabled data-i18n="downloads\.unavailable">[^<]*<\/button>/,
+      '<button class="btn" id="windowsDownload" type="button" disabled>正在读取发布状态…</button>',
+    );
+}
+
+function currentArtifact(distribution: string, urls: Record<string, string>) {
+  return {
+    available: true,
+    distribution,
+    version: appVersion,
+    build: buildNumber,
+    commit: buildCommit,
+    urls,
+    checksum: null,
+  };
+}
+
+function unavailableArtifact(distribution: string) {
+  return {
+    available: false,
+    distribution,
+    version: null,
+    build: null,
+    commit: null,
+    urls: {},
+    checksum: null,
+  };
+}
+
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
@@ -19,7 +70,6 @@ export default defineConfig({
     __APP_COMMIT__: JSON.stringify(buildCommit),
   },
   root: '.',
-  // GitHub Pages uses a sub-path; the frozen native WebView still consumes dist/index.html.
   base: nativeBuild ? './' : '/Knowledge-Ball/',
   publicDir: nativeBuild ? false : 'public',
   plugins: [
@@ -27,10 +77,11 @@ export default defineConfig({
       name: 'knowledge-ball-runtime-shell',
       transformIndexHtml: {
         order: 'pre',
-        handler() {
+        handler(html) {
           const scripts: HtmlTagDescriptor[] = [
             { tag: 'meta', attrs: { name: 'knowledge-ball-build', content: buildCommit }, injectTo: 'head-prepend' },
             { tag: 'script', attrs: { type: 'module', src: '/src/ui/BuildFreshness.ts' }, injectTo: 'body-prepend' },
+            { tag: 'script', attrs: { type: 'module', src: '/src/ui/ReleaseDownloads.ts' }, injectTo: 'body-prepend' },
           ];
 
           if (!nativeBuild) {
@@ -79,7 +130,7 @@ export default defineConfig({
             );
           }
 
-          return scripts;
+          return { html: neutralizeDownloadHtml(html), tags: scripts };
         },
       },
     },
@@ -87,15 +138,17 @@ export default defineConfig({
       name: 'knowledge-ball-release-manifest',
       async closeBundle() {
         if (nativeBuild) return;
-        const apkName = `knowledge-ball-android-v${appVersion}.apk`;
-        const apk = await readFile(`dist/downloads/${apkName}`);
         const manifest = {
-          version: appVersion, build: buildNumber, commit: buildCommit,
+          schema: 1 as const,
+          version: appVersion,
+          build: buildNumber,
+          commit: buildCommit,
           platforms: {
-            web: { available: true, distribution: 'web', urls: { launch: publicSiteUrl }, checksum: null },
-            android: { available: true, distribution: 'apk', urls: { download: `${publicSiteUrl}downloads/${apkName}` }, checksum: `sha256:${createHash('sha256').update(apk).digest('hex')}` },
-            ios: { available: true, distribution: 'web-app', urls: { install: `${publicSiteUrl}ios-install.html` }, checksum: null },
-            windows: { available: false, distribution: 'installer', urls: {}, checksum: null },
+            web: currentArtifact('web', { launch: publicSiteUrl }),
+            android: unavailableArtifact('apk'),
+            iosWeb: currentArtifact('web-app', { install: `${publicSiteUrl}ios-install.html` }),
+            ios: unavailableArtifact('testflight'),
+            windows: unavailableArtifact('installer'),
           },
         };
         await writeFile('dist/downloads/latest.json', `${JSON.stringify(manifest, null, 2)}\n`);
