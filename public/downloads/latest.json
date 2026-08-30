@@ -45,12 +45,12 @@
       "distribution": "installer",
       "version": "0.2.0",
       "build": "1",
-      "commit": "cb5de8ec274040bc1d69f0a9aba7d39a70e74fd1",
+      "commit": "e9591691665d5177467f8c16f4409f9d00e8c6f0",
       "urls": {
-        "installer": "https://github.com/Rushow111/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Setup-v0.2.0.exe",
-        "portable": "https://github.com/Rushow111/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Portable-v0.2.0.exe"
+        "installer": "https://github.com/NewHumans-Lab/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Setup-v0.2.0.exe",
+        "portable": "https://github.com/NewHumans-Lab/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Portable-v0.2.0.exe"
       },
-      "checksum": "sha256:7a61c26b85a91ff7a2ee46f8a7640f0c6fbd480cc3e259615390be52c35d1be3"
+      "checksum": "sha256:aefce003ca924d978dcfede051d727c07ed94603da7aac78a9eabd67f9a2c027"
     }
   }
 }
