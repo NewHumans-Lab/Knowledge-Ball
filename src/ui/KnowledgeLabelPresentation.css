@@ -1,9 +1,10 @@
 /* KnowledgeScene writes the exact rendered sphere-top screen coordinate.
-   This stylesheet owns only the label box presentation: it extends upward from
-   that coordinate with no additional vertical gap or compensation. */
+   Keep typography unchanged and apply one small, fixed visual overlap so labels
+   sit against the sphere edge at every font size instead of scaling the offset. */
 .node-label {
   position: absolute;
   transform: translate(-50%, -100%);
+  translate: 0 2px;
   margin: 0;
   font-size: var(--label-size);
   color: var(--label-color);

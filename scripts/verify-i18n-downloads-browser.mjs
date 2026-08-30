@@ -85,6 +85,7 @@ async function assertLabelAppearanceControls(page) {
     const renderedSphereTop = layerRect.top + top;
     return {
       textGap: renderedSphereTop - textRect.bottom,
+      translate: style.translate,
       marginTop: style.marginTop,
       paddingTop: style.paddingTop,
       paddingBottom: style.paddingBottom,
@@ -93,7 +94,8 @@ async function assertLabelAppearanceControls(page) {
     };
   });
   assert.ok(labelPresentation, 'a real visible label must expose computed presentation metrics');
-  assert.ok(labelPresentation.textGap >= -0.1 && labelPresentation.textGap <= 0.75, `label text must visually touch the direct sphere-top anchor without overlap (actual=${labelPresentation.textGap})`);
+  assert.ok(labelPresentation.textGap >= -2.5 && labelPresentation.textGap <= -1, `label text must overlap the direct sphere-top anchor by about 2px so it visually touches the sphere edge (actual=${labelPresentation.textGap})`);
+  assert.equal(labelPresentation.translate, '0px 2px', 'label presentation must move toward the sphere by one fixed 2px visual inset');
   assert.equal(labelPresentation.marginTop, '0px', 'label presentation must not add a second vertical gap');
   assert.equal(labelPresentation.paddingTop, '0px', 'label frame must not add top padding');
   assert.equal(labelPresentation.paddingBottom, '0px', 'label frame must not add bottom padding');
