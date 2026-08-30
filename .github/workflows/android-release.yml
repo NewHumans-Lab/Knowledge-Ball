@@ -53,16 +53,26 @@ jobs:
         run: npm run android:sync
       - name: Prove packaged asset parity
         run: node android/scripts/verify-packaged-assets.mjs
-      - name: Inspect the currently published APK signer
+      - name: Inspect the authoritative published APK signer when one exists
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 \
-            https://rushow111.github.io/Knowledge-Ball/downloads/knowledge-ball-android-v0.2.0.apk \
-            --output "$RUNNER_TEMP/published.apk"
+          AVAILABLE=$(node -p "Boolean(require('./public/downloads/latest.json').platforms.android.available)")
+          if [ "$AVAILABLE" != "true" ]; then
+            echo "HAS_PUBLISHED_ANDROID=false" >> "$GITHUB_ENV"
+            echo 'No authoritative Android APK is published yet; this run will establish the initial release signer.'
+            exit 0
+          fi
+          URL=$(node -p "require('./public/downloads/latest.json').platforms.android.urls.download || ''")
+          if [ -z "$URL" ]; then
+            echo 'Android is marked available but has no authoritative download URL.' >&2
+            exit 1
+          fi
+          curl --fail --location --retry 3 "$URL" --output "$RUNNER_TEMP/published.apk"
           apksigner verify --print-certs "$RUNNER_TEMP/published.apk" | tee "$RUNNER_TEMP/published-signing.txt"
           grep 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/published-signing.txt" | sed 's/.*: //' > "$RUNNER_TEMP/published-cert.sha256"
           test -s "$RUNNER_TEMP/published-cert.sha256"
+          echo "HAS_PUBLISHED_ANDROID=true" >> "$GITHUB_ENV"
       - name: Build signed release APK
         working-directory: android
         run: ./gradlew assembleRelease
@@ -74,10 +84,15 @@ jobs:
           test -s "$APK"
           apksigner verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/new-signing.txt"
           grep 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/new-signing.txt" | sed 's/.*: //' > "$RUNNER_TEMP/new-cert.sha256"
-          diff -u "$RUNNER_TEMP/published-cert.sha256" "$RUNNER_TEMP/new-cert.sha256" || {
-            echo 'Refusing to publish: the new APK signer does not match the currently published APK, so in-place upgrades would fail.' >&2
-            exit 1
-          }
+          test -s "$RUNNER_TEMP/new-cert.sha256"
+          if [ "${HAS_PUBLISHED_ANDROID:-false}" = "true" ]; then
+            diff -u "$RUNNER_TEMP/published-cert.sha256" "$RUNNER_TEMP/new-cert.sha256" || {
+              echo 'Refusing to publish: the new APK signer does not match the currently published APK, so in-place upgrades would fail.' >&2
+              exit 1
+            }
+          else
+            echo 'Initial authoritative Android release: accepting the configured signer as the upgrade identity for future releases.'
+          fi
       - name: Install and launch the exact signed APK on API 35
         uses: reactivecircus/android-emulator-runner@v2
         with:
