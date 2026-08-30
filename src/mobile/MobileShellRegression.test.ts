@@ -1,4 +1,5 @@
-import { CURRENT_APK_URL, IOS_INSTALL_URL, UPDATE_MANIFEST_URL, applyPlatformVisibility, chooseBackAction, isNewerVersion } from './MobileShell';
+import { CURRENT_APK_URL, CURRENT_APP_VERSION, IOS_INSTALL_URL, UPDATE_MANIFEST_URL, applyPlatformVisibility, chooseBackAction, isNewerVersion } from './MobileShell';
+import packageJson from '../../package.json';
 
 function assertEqual(actual: unknown, expected: unknown): void {
   if (actual !== expected) throw new Error(`Expected ${String(expected)}, received ${String(actual)}`);
@@ -11,6 +12,7 @@ assertEqual(isNewerVersion('0.1.1', '0.1.0'), true);
 assertEqual(isNewerVersion('0.2.0', '0.10.0'), false);
 assertEqual(isNewerVersion('1.0', '1.0.0'), false);
 assertEqual(CURRENT_APK_URL.endsWith('/knowledge-ball-android-v0.2.0.apk'), true);
+assertEqual(CURRENT_APP_VERSION, packageJson.version);
 assertEqual(UPDATE_MANIFEST_URL.endsWith('/latest.json'), true);
 assertEqual(IOS_INSTALL_URL.endsWith('/ios-install.html'), true);
 

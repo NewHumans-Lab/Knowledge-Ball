@@ -57,7 +57,7 @@ try {
       cursor: typeof engine?.currentCursor === 'function' ? engine.currentCursor() : null,
       pendingCount: typeof engine?.pendingCount === 'function' ? engine.pendingCount() : null,
       nodeCount: Object.keys(debug?.projection?.state?.nodesById ?? {}).length,
-      modalClass: document.querySelector('#modalOverlay')?.className ?? null,
+      createClass: document.querySelector('#knowledgeCreateOverlay')?.className ?? null,
       buildCommit: document.querySelector('meta[name="knowledge-ball-build"]')?.getAttribute('content') ?? null,
       visibilityText: visibilityButton?.textContent?.trim() ?? null,
       visibilityMode: visibilityButton?.dataset?.visibilityMode ?? null,
@@ -98,9 +98,10 @@ try {
   // authoritative public knowledge stream. Opening and cancelling the existing
   // keyboard create flow verifies the UI path without submitting anything.
   await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true })));
-  await page.locator('#modalOverlay.show').waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('#modalCancel').click();
-  await page.waitForFunction(() => !document.querySelector('#modalOverlay')?.classList.contains('show'));
+  const createOverlay = page.locator('#knowledgeCreateOverlay.show');
+  await createOverlay.waitFor({ state: 'visible', timeout: 5_000 });
+  await createOverlay.locator('[data-create-close]').click();
+  await page.waitForFunction(() => !document.querySelector('#knowledgeCreateOverlay')?.classList.contains('show'));
 
   const personal = page.locator('#btnPersonal');
   const assertVisibilityState = async (text, mode) => {

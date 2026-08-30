@@ -6,8 +6,10 @@ import { Network } from '@capacitor/network';
 import { Share } from '@capacitor/share';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { subscribeLocale, t } from '../i18n/Locale';
+import packageJson from '../../package.json';
 
-export const CURRENT_APP_VERSION = '0.2.0';
+export const CURRENT_APP_VERSION = packageJson.version;
+export const CURRENT_APP_BUILD = typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : 'local';
 export const DOWNLOAD_ROOT = 'https://rushow111.github.io/Knowledge-Ball/downloads';
 export const CURRENT_APK_URL = `${DOWNLOAD_ROOT}/knowledge-ball-android-v${CURRENT_APP_VERSION}.apk`;
 export const UPDATE_MANIFEST_URL = `${DOWNLOAD_ROOT}/latest.json`;
@@ -15,8 +17,12 @@ export const IOS_INSTALL_URL = 'https://rushow111.github.io/Knowledge-Ball/ios-i
 
 interface UpdateManifest {
   version: string;
-  android: { url: string };
-  ios: { url: string };
+  build: string;
+  commit: string;
+  platforms: {
+    android: { available: boolean; urls: { download?: string } };
+    ios: { available: boolean; urls: { install?: string } };
+  };
 }
 
 export type BackAction = 'close-overlay' | 'close-panel' | 'exit';
@@ -46,7 +52,7 @@ async function loadUpdateManifest(): Promise<UpdateManifest> {
   const response = await fetch(`${UPDATE_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Update manifest request failed (${response.status})`);
   const manifest = await response.json() as UpdateManifest;
-  if (!manifest.version || !manifest.android?.url?.startsWith('https://') || !manifest.ios?.url?.startsWith('https://')) {
+  if (!manifest.version || !manifest.build || !manifest.commit || !manifest.platforms?.android || !manifest.platforms?.ios) {
     throw new Error('Invalid update manifest');
   }
   return manifest;
@@ -57,12 +63,17 @@ async function checkForUpdate(): Promise<void> {
   setActionStatus(platform, t('mobile.checking'));
   try {
     const manifest = await loadUpdateManifest();
-    if (!isNewerVersion(manifest.version, CURRENT_APP_VERSION)) {
+    if (!isNewerVersion(manifest.version, CURRENT_APP_VERSION) && manifest.build === CURRENT_APP_BUILD) {
       setActionStatus(platform, t('mobile.latest', { version: CURRENT_APP_VERSION }));
       return;
     }
     setActionStatus(platform, t('mobile.found', { version: manifest.version }));
-    await Browser.open({ url: platform === 'ios' ? manifest.ios.url : manifest.android.url });
+    const release = manifest.platforms[platform];
+    const url = platform === 'ios'
+      ? manifest.platforms.ios.urls.install
+      : manifest.platforms.android.urls.download;
+    if (!release.available || !url) throw new Error(`${platform} release unavailable`);
+    await Browser.open({ url });
   } catch (error) {
     console.error('Unable to check for updates', error);
     setActionStatus(platform, t('mobile.updateError'));

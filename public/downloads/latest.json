@@ -1,9 +1,11 @@
 {
   "version": "0.2.0",
-  "android": {
-    "url": "https://rushow111.github.io/Knowledge-Ball/downloads/knowledge-ball-android-v0.2.0.apk"
-  },
-  "ios": {
-    "url": "https://rushow111.github.io/Knowledge-Ball/ios-install.html"
+  "build": "235e85abf4c",
+  "commit": "235e85abf4c676f640dcfaa965f809f8560b6ec7",
+  "platforms": {
+    "web": { "available": true, "distribution": "web", "urls": { "launch": "https://rushow111.github.io/Knowledge-Ball/" }, "checksum": null },
+    "android": { "available": true, "distribution": "apk", "urls": { "download": "https://rushow111.github.io/Knowledge-Ball/downloads/knowledge-ball-android-v0.2.0.apk" }, "checksum": "sha256:8bd58f15b128ffb008ca33f31c8e06124e41d2ae2a51803058f5a89be7baab2a" },
+    "ios": { "available": true, "distribution": "web-app", "urls": { "install": "https://rushow111.github.io/Knowledge-Ball/ios-install.html" }, "checksum": null },
+    "windows": { "available": false, "distribution": "installer", "urls": {}, "checksum": null }
   }
 }

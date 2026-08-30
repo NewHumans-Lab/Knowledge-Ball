@@ -12,7 +12,7 @@ async function assertExit(locator,name){
   const box=await locator.boundingBox();
   assert.ok(box,`${name} must have a mobile bounding box`);
   assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
-  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
+  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=777,`${name} must stay inside the mobile viewport`);
 }
 
 async function assertCreateExit(locator,name){
@@ -21,7 +21,7 @@ async function assertCreateExit(locator,name){
   const box=await locator.boundingBox();
   assert.ok(box,`${name} must have a mobile bounding box`);
   assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
-  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
+  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=777,`${name} must stay inside the mobile viewport`);
 }
 
 async function assertNodeDetailExit(locator,name){
@@ -30,7 +30,7 @@ async function assertNodeDetailExit(locator,name){
   const box=await locator.boundingBox();
   assert.ok(box,`${name} must have a mobile bounding box`);
   assert.ok(box.width>=44&&box.height>=44,`${name} must expose at least a 44px touch target`);
-  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=844,`${name} must stay inside the mobile viewport`);
+  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=390&&box.y+box.height<=777,`${name} must stay inside the mobile viewport`);
 }
 
 async function analyzeScreenshot(page,screenshot,regions=[]){
@@ -66,7 +66,7 @@ try{
   const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader']});
   console.log('mobile browser launched');
   try{
-    const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+    const context=await browser.newContext({viewport:{width:390,height:777},hasTouch:true,isMobile:true});
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(10_000);
     page.on('pageerror',error=>errors.push(error.message));
     page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
@@ -251,7 +251,15 @@ try{
     await page.touchscreen.tap(pointAfterDetail.x,pointAfterDetail.y);
     await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
     await page.locator('#nodeDetailOverlay .node-detail-edit').click();
-    await page.locator('#nodeDetailOverlay [data-node-detail-action="edit"]').click();
+    const optimizationAction=page.locator('#nodeDetailOverlay [data-node-detail-action="edit"]');
+    await optimizationAction.waitFor({state:'visible'});
+    const optimizationStyle=await optimizationAction.evaluate(element=>({opacity:getComputedStyle(element).opacity,pointerEvents:getComputedStyle(element).pointerEvents}));
+    assert.ok(Number(optimizationStyle.opacity)>0,'optimization action must have visible opacity');
+    assert.notEqual(optimizationStyle.pointerEvents,'none','optimization action must accept pointer events');
+    const optimizationBox=await optimizationAction.boundingBox();
+    assert.ok(optimizationBox&&optimizationBox.x>=0&&optimizationBox.y>=0&&optimizationBox.x+optimizationBox.width<=390&&optimizationBox.y+optimizationBox.height<=777,'optimization action must remain inside the real 390x777 viewport');
+    await page.screenshot({path:'artifacts/rus23-mobile-optimization-action.png',type:'png'});
+    await optimizationAction.tap();
     await page.locator('#panelTitle').filter({hasText:'编辑节点'}).waitFor({state:'visible'});
     assert.equal(await page.locator('#nodeDetailOverlay.open').count(),0,'choosing an edit operation must close the near-node viewer before opening the editor');
     assert.equal(await page.locator('#panelClose').getAttribute('aria-label'),'返回节点详情','legacy editor subview keeps its existing safe back semantics');

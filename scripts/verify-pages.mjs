@@ -41,6 +41,8 @@ async function verifyLocalBuild() {
   }
   const manifest = JSON.parse(await readFile('dist/downloads/latest.json', 'utf8'));
   assert.equal(manifest.version, '0.2.0');
+  assert.ok(manifest.build && manifest.commit, 'release manifest must distinguish builds of one semantic version');
+  assert.equal(manifest.platforms.windows.available, false);
   await access('dist/downloads/knowledge-ball-android-v0.2.0.apk');
   console.log(`GitHub Pages build regression tests passed (${assets.length} local assets checked)`);
 }
@@ -76,6 +78,7 @@ async function verifyLiveSite(root) {
   const manifestResponse = await fetchWithRetry(new URL('downloads/latest.json', pageUrl));
   const manifest = await manifestResponse.json();
   assert.equal(manifest.version, '0.2.0');
+  assert.ok(manifest.build && manifest.commit, 'deployed release manifest must expose build identity');
   const apkResponse = await fetchWithRetry(new URL('downloads/knowledge-ball-android-v0.2.0.apk', pageUrl));
   assert.match(apkResponse.headers.get('content-type') ?? '', /application\/(?:vnd\.android\.package-archive|octet-stream)/i);
   await apkResponse.body?.cancel();

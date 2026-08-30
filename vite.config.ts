@@ -1,12 +1,23 @@
+import { createHash } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { defineConfig, type HtmlTagDescriptor } from 'vite';
+import packageJson from './package.json';
 
-const buildCommit = process.env.GITHUB_SHA ?? 'local';
+const buildCommit = process.env.GITHUB_SHA ?? execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+const buildNumber = process.env.GITHUB_RUN_NUMBER ?? buildCommit.slice(0, 12);
+const appVersion = packageJson.version;
 const nativeBuild = process.env.CAPACITOR_BUILD === 'true';
 const publicSiteUrl = 'https://rushow111.github.io/Knowledge-Ball/';
 const siteDescription =
   'Knowledge Ball is a living knowledge network that organizes knowledge, reasoning, evidence, and relationships in an interactive 3D knowledge graph.';
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_BUILD__: JSON.stringify(buildNumber),
+    __APP_COMMIT__: JSON.stringify(buildCommit),
+  },
   root: '.',
   // GitHub Pages uses a sub-path; the frozen native WebView still consumes dist/index.html.
   base: nativeBuild ? './' : '/Knowledge-Ball/',
@@ -68,11 +79,26 @@ export default defineConfig({
             );
           }
 
-          // Native shells are intentionally frozen on the legacy controller for this web-only cleanup.
-          // Browser account state is now installed explicitly by app.ts instead of an injected DOM patch.
-          if (nativeBuild) scripts.push({ tag: 'script', attrs: { type: 'module', src: '/src/ui/AuthUi.ts' }, injectTo: 'body-prepend' });
           return scripts;
         },
+      },
+    },
+    {
+      name: 'knowledge-ball-release-manifest',
+      async closeBundle() {
+        if (nativeBuild) return;
+        const apkName = `knowledge-ball-android-v${appVersion}.apk`;
+        const apk = await readFile(`dist/downloads/${apkName}`);
+        const manifest = {
+          version: appVersion, build: buildNumber, commit: buildCommit,
+          platforms: {
+            web: { available: true, distribution: 'web', urls: { launch: publicSiteUrl }, checksum: null },
+            android: { available: true, distribution: 'apk', urls: { download: `${publicSiteUrl}downloads/${apkName}` }, checksum: `sha256:${createHash('sha256').update(apk).digest('hex')}` },
+            ios: { available: true, distribution: 'web-app', urls: { install: `${publicSiteUrl}ios-install.html` }, checksum: null },
+            windows: { available: false, distribution: 'installer', urls: {}, checksum: null },
+          },
+        };
+        await writeFile('dist/downloads/latest.json', `${JSON.stringify(manifest, null, 2)}\n`);
       },
     },
   ],

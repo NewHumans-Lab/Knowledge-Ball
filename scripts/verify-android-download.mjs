@@ -18,11 +18,14 @@ if (apk[0] !== 0x50 || apk[1] !== 0x4b) {
 if (apkStat.size < 1_000_000) {
   throw new Error(`The Android APK is unexpectedly small (${apkStat.size} bytes).`);
 }
-if (manifest.version !== '0.2.0' || !manifest.android.url.endsWith('/knowledge-ball-android-v0.2.0.apk')) {
+if (manifest.version !== '0.2.0' || !manifest.build || !manifest.commit || !manifest.platforms.android.urls.download.endsWith('/knowledge-ball-android-v0.2.0.apk')) {
   throw new Error('The update manifest does not point to the current Android APK.');
 }
-if (!manifest.ios.url.endsWith('/ios-install.html') || !html.includes('id="iosDownload"')) {
+if (!manifest.platforms.ios.urls.install.endsWith('/ios-install.html') || !html.includes('id="iosDownload"')) {
   throw new Error('The iOS install entry is missing or does not match the update manifest.');
+}
+if (!manifest.platforms.android.checksum?.startsWith('sha256:') || manifest.platforms.windows.available !== false) {
+  throw new Error('The release manifest must expose artifact integrity and truthful platform availability.');
 }
 const iosInstall = await readFile('public/ios-install.html', 'utf8');
 const webManifest = JSON.parse(await readFile('public/manifest.webmanifest', 'utf8'));

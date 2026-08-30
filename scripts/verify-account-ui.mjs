@@ -64,16 +64,18 @@ assert.match(ui, />保存资料</,
 assert.doesNotMatch(ui, /\bprompt\s*\(/,
   'account UI must not use sequential browser prompt dialogs');
 
-assert.match(app, /installAccountUi\(/,
-  'web app must install account presentation through an explicit application integration point');
+assert.match(app, /const accountUi = installAccountUi\(/,
+  'every shell must install account presentation through one explicit application integration point');
 assert.match(app, /getLocalPersonalStates: latestLocalPersonalStates/,
   'account UI must receive local personal state through an explicit read port');
 assert.match(app, /applyPersonalSnapshot: applyPersonalKnowledgeSnapshot/,
   'account UI must apply cloud personal state through an explicit application write port');
 assert.doesNotMatch(ui, /window\.__debug|MutationObserver|currentPanelNode|stopImmediatePropagation/,
   'account UI must not infer business identity from DOM mutations or debug internals');
-assert.match(vite, /if \(nativeBuild\)[^\n]*AuthUi\.ts/,
-  'legacy AuthUi injection may remain only on the frozen native build path');
+assert.doesNotMatch(vite, /AuthUi\.ts/,
+  'native builds must not inject a parallel legacy account product UI');
+assert.doesNotMatch(app, /!Capacitor\.isNativePlatform\(\)[\s\S]{0,80}installAccountUi/,
+  'the current Account UI must not be restricted to Web');
 
 assert.match(profileGate, /'password_login_enabled', p\.password_login_enabled/,
   'get_my_account must expose the authoritative permanent-login state');
