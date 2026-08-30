@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
 const expectedBase = '/Knowledge-Ball/';
 const remoteRoot = process.argv[2];
 
@@ -26,10 +27,29 @@ function validateHtml(html) {
   assert.match(html, /class="app-download ios-download-card"/, 'Downloads must include Apple/iOS');
   assert.match(html, /class="app-download android-download-card"/, 'Downloads must include Android');
   assert.match(html, /class="app-download windows-download-card"/, 'Downloads must include Windows');
-  assert.match(html, /id="windowsDownload"[^>]*disabled/, 'Windows must remain unavailable until an authoritative installer exists');
+  assert.match(html, /id="iosDownloadMeta"/, 'iOS release state must be rendered from release metadata');
+  assert.match(html, /id="androidDownloadMeta"/, 'Android release state must be rendered from release metadata');
+  assert.match(html, /id="windowsDownloadMeta"/, 'Windows release state must be rendered from release metadata');
+  assert.match(html, /id="windowsDownload"[^>]*disabled/, 'Windows must boot unavailable until authoritative metadata enables it');
+  assert.doesNotMatch(html, /href="\.\/downloads\/knowledge-ball-android-v[^\"]+\.apk"/, 'Pages HTML must not advertise a stale static APK');
   const assets = pageAssets(html);
   assert.ok(assets.some(asset => /\/assets\/index-[^/]+\.js$/.test(asset)), 'Pages HTML must reference its hashed application bundle');
   return assets;
+}
+
+function validateReleaseManifest(manifest) {
+  assert.equal(manifest.schema, 1);
+  assert.equal(manifest.version, packageJson.version, 'release version must derive from package.json');
+  assert.ok(manifest.build && manifest.commit, 'release manifest must expose build identity');
+  assert.equal(manifest.platforms.web.available, true);
+  assert.equal(manifest.platforms.web.version, packageJson.version);
+  assert.equal(manifest.platforms.android.available, false, 'stale Android artifact must not impersonate this build');
+  assert.equal(manifest.platforms.android.version, null);
+  assert.deepEqual(manifest.platforms.android.urls, {});
+  assert.equal(manifest.platforms.iosWeb.available, true, 'iOS Web App remains a real current distribution');
+  assert.equal(manifest.platforms.iosWeb.version, packageJson.version);
+  assert.equal(manifest.platforms.ios.available, false, 'native iOS requires real Apple distribution');
+  assert.equal(manifest.platforms.windows.available, false);
 }
 
 async function verifyLocalBuild() {
@@ -40,10 +60,7 @@ async function verifyLocalBuild() {
     await access(resolve('dist', relative));
   }
   const manifest = JSON.parse(await readFile('dist/downloads/latest.json', 'utf8'));
-  assert.equal(manifest.version, '0.2.0');
-  assert.ok(manifest.build && manifest.commit, 'release manifest must distinguish builds of one semantic version');
-  assert.equal(manifest.platforms.windows.available, false);
-  await access('dist/downloads/knowledge-ball-android-v0.2.0.apk');
+  validateReleaseManifest(manifest);
   console.log(`GitHub Pages build regression tests passed (${assets.length} local assets checked)`);
 }
 
@@ -77,11 +94,20 @@ async function verifyLiveSite(root) {
 
   const manifestResponse = await fetchWithRetry(new URL('downloads/latest.json', pageUrl));
   const manifest = await manifestResponse.json();
-  assert.equal(manifest.version, '0.2.0');
-  assert.ok(manifest.build && manifest.commit, 'deployed release manifest must expose build identity');
-  const apkResponse = await fetchWithRetry(new URL('downloads/knowledge-ball-android-v0.2.0.apk', pageUrl));
-  assert.match(apkResponse.headers.get('content-type') ?? '', /application\/(?:vnd\.android\.package-archive|octet-stream)/i);
-  await apkResponse.body?.cancel();
+  validateReleaseManifest(manifest);
+
+  const iosWebResponse = await fetchWithRetry(manifest.platforms.iosWeb.urls.install);
+  assert.match(iosWebResponse.headers.get('content-type') ?? '', /text\/html/i);
+  await iosWebResponse.body?.cancel();
+
+  if (manifest.platforms.android.available) {
+    const apkResponse = await fetchWithRetry(manifest.platforms.android.urls.download);
+    assert.match(apkResponse.headers.get('content-type') ?? '', /application\/(?:vnd\.android\.package-archive|octet-stream)/i);
+    await apkResponse.body?.cancel();
+  } else {
+    assert.deepEqual(manifest.platforms.android.urls, {});
+  }
+
   console.log(`Live GitHub Pages smoke test passed: ${pageUrl}`);
 }
 
