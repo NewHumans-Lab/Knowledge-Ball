@@ -1,0 +1,78 @@
+name: Android Runtime Gate
+
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - '.github/workflows/android-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - '.github/workflows/android-runtime.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK and emulator image
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
+      - run: npm ci
+      - name: Build and sync the authoritative Web product into Android
+        run: npm run android:sync
+      - name: Prove packaged Web assets match the native WebView payload
+        run: node android/scripts/verify-packaged-assets.mjs
+      - name: Run Android emulator instrumentation acceptance
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euxo pipefail
+            cd android
+            ./gradlew connectedDebugAndroidTest
+            cd ..
+            mkdir -p artifacts/android
+            adb shell dumpsys package org.knowledgeball.app | grep -E 'versionName=|versionCode=' > artifacts/android/package-identity.txt
+            adb pull /sdcard/Android/data/org.knowledgeball.app/files/Pictures/knowledge-ball-android.png artifacts/android/knowledge-ball-android.png
+            test -s artifacts/android/knowledge-ball-android.png
+      - name: Upload Android runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-runtime-evidence
+          path: artifacts/android
+          if-no-files-found: error
