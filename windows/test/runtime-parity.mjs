@@ -41,11 +41,15 @@ try {
   assert.equal((await page.locator('#btnSettings').textContent())?.trim(), '⚙ Settings', 'language switch must update product chrome');
   await page.locator('#settingsClose').click();
 
-  // Windows must use the same AccountUiController as Web/mobile.
+  // Windows must use the same AccountUiController as Web/mobile. Assert stable
+  // controller-owned structure instead of inventing English copies of dynamic
+  // AccountUi strings that are not part of the current shared-Web contract.
   await page.locator('#avatarBtn').click();
   await page.locator('#accountOverlay.show').waitFor();
-  await page.waitForFunction(() => document.querySelector('#accountOverlay .modal-body')?.textContent?.includes('My energy'));
-  assert.ok((await page.locator('#accountOverlay .modal-body').textContent())?.includes('Register / Sign in'), 'shared authentication UI must render');
+  await page.locator('#kbMyBalance').waitFor({ state: 'visible' });
+  assert.ok(await page.locator('#kbTotalEnergy').isVisible(), 'shared account total-energy field must render');
+  assert.ok(await page.locator('#kbAuthEntry').isVisible(), 'shared account authentication entry must render');
+  assert.ok((await page.locator('#kbAuthEntry').textContent())?.trim(), 'shared account authentication entry must have visible text');
   await page.locator('#accountClose').click();
 
   // Current -> Personal -> All -> Current must not collapse into a desktop-only state machine.
