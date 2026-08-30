@@ -35,8 +35,18 @@ async function assertDesktopLayout(page) {
   assert.ok(boxes[0].x < boxes[1].x && boxes[1].x < boxes[2].x, 'desktop platform cards must be evenly ordered left-to-right');
   const gaps = [boxes[1].x - (boxes[0].x + boxes[0].width), boxes[2].x - (boxes[1].x + boxes[1].width)];
   assert.ok(Math.abs(gaps[0] - gaps[1]) <= 2, `desktop platform gaps must be even (${gaps.join(', ')})`);
-  assert.equal(await page.locator('#windowsDownload').isDisabled(), true, 'Windows action must be disabled without an authoritative artifact');
-  assert.equal(await page.locator('.windows-download-card a[href]').count(), 0, 'Windows must not expose an invented download URL');
+  const windowsManifestResponse = await fetch(new URL('downloads/latest.json', origin));
+  assert.equal(windowsManifestResponse.ok, true, 'Windows release manifest must be readable by the browser acceptance');
+  const releaseManifest = await windowsManifestResponse.json();
+  const windowsArtifact = releaseManifest.platforms?.windows;
+  const windowsUrl = windowsArtifact?.urls?.installer ?? windowsArtifact?.urls?.portable;
+  const windowsEnabled = Boolean(windowsArtifact?.available && windowsUrl);
+  assert.equal(await page.locator('#windowsDownload').isDisabled(), !windowsEnabled, 'Windows action must match authoritative release manifest availability');
+  if (windowsEnabled) {
+    assert.ok(String(windowsUrl).startsWith('https://github.com/Rushow111/Knowledge-Ball/releases/download/'), 'Published Windows action must use the authoritative GitHub Release URL');
+  } else {
+    assert.equal(await page.locator('.windows-download-card a[href]').count(), 0, 'Windows must not expose an invented download URL');
+  }
   await page.locator('#downloadsClose').click();
 }
 
