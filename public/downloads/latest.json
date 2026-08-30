@@ -4,10 +4,53 @@
   "build": "source",
   "commit": "source",
   "platforms": {
-    "web": { "available": false, "distribution": "web", "version": null, "build": null, "commit": null, "urls": {}, "checksum": null },
-    "android": { "available": false, "distribution": "apk", "version": null, "build": null, "commit": null, "urls": {}, "checksum": null },
-    "iosWeb": { "available": false, "distribution": "web-app", "version": null, "build": null, "commit": null, "urls": {}, "checksum": null },
-    "ios": { "available": false, "distribution": "testflight", "version": null, "build": null, "commit": null, "urls": {}, "checksum": null },
-    "windows": { "available": false, "distribution": "installer", "version": null, "build": null, "commit": null, "urls": {}, "checksum": null }
+    "web": {
+      "available": false,
+      "distribution": "web",
+      "version": null,
+      "build": null,
+      "commit": null,
+      "urls": {},
+      "checksum": null
+    },
+    "android": {
+      "available": false,
+      "distribution": "apk",
+      "version": null,
+      "build": null,
+      "commit": null,
+      "urls": {},
+      "checksum": null
+    },
+    "iosWeb": {
+      "available": false,
+      "distribution": "web-app",
+      "version": null,
+      "build": null,
+      "commit": null,
+      "urls": {},
+      "checksum": null
+    },
+    "ios": {
+      "available": false,
+      "distribution": "testflight",
+      "version": null,
+      "build": null,
+      "commit": null,
+      "urls": {},
+      "checksum": null
+    },
+    "windows": {
+      "available": true,
+      "distribution": "installer",
+      "version": "0.2.0",
+      "build": "1",
+      "commit": "cb5de8ec274040bc1d69f0a9aba7d39a70e74fd1",
+      "urls": {
+        "installer": "https://github.com/Rushow111/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Setup-v0.2.0.exe",
+        "portable": "https://github.com/Rushow111/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Portable-v0.2.0.exe"
+      },
+      "checksum": "sha256:7a61c26b85a91ff7a2ee46f8a7640f0c6fbd480cc3e259615390be52c35d1be3"
+    }
   }
 }
