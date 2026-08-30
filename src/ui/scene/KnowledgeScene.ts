@@ -508,6 +508,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const label = document.createElement('div');
     label.className = 'node-label';
     label.textContent = displayLabelForNode(n);
+    if (core) label.style.color = '#000000';
     labelsLayer.appendChild(label);
     labelMap[n.id] = label;
     return nodeMap[n.id] = {
