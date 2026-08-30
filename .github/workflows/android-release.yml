@@ -1,0 +1,139 @@
+name: Android Signed Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-android:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK and emulator image
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
+      - name: Require the authoritative signing identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required Android release secret: $name" >&2
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/knowledge-ball-release.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/knowledge-ball-release.keystore" >> "$GITHUB_ENV"
+      - run: npm ci
+      - name: Build and sync current main Web assets
+        run: npm run android:sync
+      - name: Prove packaged asset parity
+        run: node android/scripts/verify-packaged-assets.mjs
+      - name: Inspect the currently published APK signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            https://rushow111.github.io/Knowledge-Ball/downloads/knowledge-ball-android-v0.2.0.apk \
+            --output "$RUNNER_TEMP/published.apk"
+          apksigner verify --print-certs "$RUNNER_TEMP/published.apk" | tee "$RUNNER_TEMP/published-signing.txt"
+          grep 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/published-signing.txt" | sed 's/.*: //' > "$RUNNER_TEMP/published-cert.sha256"
+          test -s "$RUNNER_TEMP/published-cert.sha256"
+      - name: Build signed release APK
+        working-directory: android
+        run: ./gradlew assembleRelease
+      - name: Verify signature and upgrade compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          apksigner verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/new-signing.txt"
+          grep 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/new-signing.txt" | sed 's/.*: //' > "$RUNNER_TEMP/new-cert.sha256"
+          diff -u "$RUNNER_TEMP/published-cert.sha256" "$RUNNER_TEMP/new-cert.sha256" || {
+            echo 'Refusing to publish: the new APK signer does not match the currently published APK, so in-place upgrades would fail.' >&2
+            exit 1
+          }
+      - name: Install and launch the exact signed APK on API 35
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            set -euxo pipefail
+            adb install -r android/app/build/outputs/apk/release/app-release.apk
+            adb shell am start -W -n org.knowledgeball.app/.MainActivity | tee "$RUNNER_TEMP/release-launch.txt"
+            sleep 8
+            adb shell pidof org.knowledgeball.app
+            mkdir -p artifacts/android-release
+            adb exec-out screencap -p > artifacts/android-release/release-launch.png
+            test -s artifacts/android-release/release-launch.png
+      - name: Prepare immutable release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD="$GITHUB_RUN_NUMBER"
+          COMMIT="$GITHUB_SHA"
+          NAME="Knowledge-Ball-Android-v${VERSION}-build${BUILD}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$NAME"
+          SHA=$(sha256sum "$NAME" | awk '{print $1}')
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${NAME}"
+          cat > android-release.json <<JSON
+          {
+            "platform": "android",
+            "available": true,
+            "distribution": "apk",
+            "version": "${VERSION}",
+            "build": "${BUILD}",
+            "commit": "${COMMIT}",
+            "url": "${URL}",
+            "checksum": "sha256:${SHA}"
+          }
+          JSON
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "asset=$NAME" >> "$GITHUB_OUTPUT"
+      - name: Publish signed APK to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          ASSET: ${{ steps.metadata.outputs.asset }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "v${VERSION}" >/dev/null 2>&1 || gh release create "v${VERSION}" --title "Knowledge Ball v${VERSION}" --notes "Platform release artifacts for Knowledge Ball v${VERSION}."
+          gh release upload "v${VERSION}" "$ASSET" android-release.json --clobber
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-signed-release-evidence
+          path: |
+            artifacts/android-release
+            android-release.json
+          if-no-files-found: warn
