@@ -149,7 +149,7 @@ jobs:
 
       - name: Restore Android emulator snapshot cache
         id: avd-cache
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.android/avd/*
@@ -171,6 +171,15 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: echo 'Created clean AVD snapshot for subsequent Android release runs.'
 
+      - name: Save Android emulator snapshot cache
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: ${{ steps.avd-cache.outputs.cache-primary-key }}
+
       - name: Install and launch the exact signed APK on API 35
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -183,17 +192,7 @@ jobs:
           disable-linux-hw-accel: false
           emulator-boot-timeout: 300
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            set -eu
-            APK=android/app/build/outputs/apk/release/app-release.apk
-            adb install -r "$APK"
-            adb shell am start -W -n org.knowledgeball.app/.MainActivity > "$RUNNER_TEMP/release-launch.txt"
-            cat "$RUNNER_TEMP/release-launch.txt"
-            sleep 5
-            adb shell pidof org.knowledgeball.app
-            mkdir -p artifacts/android-release
-            adb exec-out screencap -p > artifacts/android-release/release-launch.png
-            test -s artifacts/android-release/release-launch.png
+          script: bash .github/scripts/verify-android-release.sh
 
       - name: Prepare immutable release metadata
         id: metadata
