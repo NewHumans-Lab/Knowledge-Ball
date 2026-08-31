@@ -8,6 +8,7 @@ const buildCommit = process.env.GITHUB_SHA ?? execFileSync('git', ['rev-parse', 
 const buildNumber = process.env.GITHUB_RUN_NUMBER ?? buildCommit.slice(0, 12);
 const appVersion = packageJson.version;
 const nativeBuild = process.env.CAPACITOR_BUILD === 'true';
+const productName = 'Knowledge Ball';
 const publicSiteUrl = 'https://newhumans-lab.github.io/Knowledge-Ball/';
 const socialImageUrl = new URL('brand/knowledge-ball-social-card.png', publicSiteUrl).href;
 const siteDescription =
@@ -23,6 +24,15 @@ const sourceReleaseManifest = JSON.parse(readFileSync('public/downloads/latest.j
     checksum?: string | null;
   }>;
 };
+
+function applyProductBrand(html: string): string {
+  return html
+    .replace(
+      /<meta name="apple-mobile-web-app-title" content="[^"]*">/,
+      `<meta name="apple-mobile-web-app-title" content="${productName}">`,
+    )
+    .replace(/<title>[^<]*<\/title>/, `<title>${productName}</title>`);
+}
 
 function neutralizeDownloadHtml(html: string): string {
   return html
@@ -137,6 +147,7 @@ export default defineConfig({
       transformIndexHtml: {
         order: 'pre',
         handler(html) {
+          const brandedHtml = applyProductBrand(html);
           const scripts: HtmlTagDescriptor[] = [
             { tag: 'meta', attrs: { name: 'knowledge-ball-build', content: buildCommit }, injectTo: 'head-prepend' },
             { tag: 'script', attrs: { type: 'module', src: '/src/ui/BuildFreshness.ts' }, injectTo: 'body-prepend' },
@@ -153,10 +164,10 @@ export default defineConfig({
               },
               { tag: 'link', attrs: { rel: 'canonical', href: publicSiteUrl }, injectTo: 'head' },
               { tag: 'meta', attrs: { property: 'og:type', content: 'website' }, injectTo: 'head' },
-              { tag: 'meta', attrs: { property: 'og:site_name', content: 'Knowledge Ball' }, injectTo: 'head' },
+              { tag: 'meta', attrs: { property: 'og:site_name', content: productName }, injectTo: 'head' },
               {
                 tag: 'meta',
-                attrs: { property: 'og:title', content: 'Knowledge Ball · Living Knowledge Field' },
+                attrs: { property: 'og:title', content: productName },
                 injectTo: 'head',
               },
               { tag: 'meta', attrs: { property: 'og:description', content: siteDescription }, injectTo: 'head' },
@@ -168,7 +179,7 @@ export default defineConfig({
               { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' }, injectTo: 'head' },
               {
                 tag: 'meta',
-                attrs: { name: 'twitter:title', content: 'Knowledge Ball · Living Knowledge Field' },
+                attrs: { name: 'twitter:title', content: productName },
                 injectTo: 'head',
               },
               { tag: 'meta', attrs: { name: 'twitter:description', content: siteDescription }, injectTo: 'head' },
@@ -180,7 +191,7 @@ export default defineConfig({
                 children: JSON.stringify({
                   '@context': 'https://schema.org',
                   '@type': 'WebSite',
-                  name: 'Knowledge Ball',
+                  name: productName,
                   url: publicSiteUrl,
                   description: siteDescription,
                 }),
@@ -195,7 +206,7 @@ export default defineConfig({
             );
           }
 
-          return { html: neutralizeDownloadHtml(html), tags: scripts };
+          return { html: neutralizeDownloadHtml(brandedHtml), tags: scripts };
         },
       },
     },
