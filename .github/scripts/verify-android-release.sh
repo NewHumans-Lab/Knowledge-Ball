@@ -16,7 +16,7 @@ adb install -r "$APK"
 adb shell am start -W -n "$ACTIVITY" | tee "$LAUNCH_LOG"
 sleep 5
 
-PID="$(adb shell pidof "$PACKAGE" | tr -d '\r')"
+PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' || true)"
 if [[ -z "$PID" ]]; then
   echo "Android app process is not running after launch: $PACKAGE" >&2
   cat "$LAUNCH_LOG" >&2
