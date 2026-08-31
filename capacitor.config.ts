@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'org.knowledgeball.app',
-  appName: '知识球',
+  appName: 'Knowledge Ball',
   webDir: 'dist',
   android: { backgroundColor: '#080c16' },
 };
