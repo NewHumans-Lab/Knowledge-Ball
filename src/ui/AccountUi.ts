@@ -175,7 +175,12 @@ export class AccountUiController {
   }
 
   private async submitAuthForm(body: HTMLElement, mode: AuthMode, form: HTMLFormElement): Promise<void> {
-    if (!this.account) return;
+    if (!this.account) {
+      const submit = form.querySelector<HTMLButtonElement>('.kb-auth-submit');
+      if (submit) submit.disabled = false;
+      this.accountStatus(body, '账户服务配置错误，请更新应用后重试');
+      return;
+    }
     const username = formValue(form, 'username').trim().toLowerCase();
     const password = formValue(form, 'password');
     if (!/^[a-z0-9_]{3,24}$/.test(username)) {

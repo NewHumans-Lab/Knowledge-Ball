@@ -84,8 +84,17 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm ci
 
+      - name: Validate Supabase release configuration
+        run: node scripts/verify-supabase-release-config.mjs
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+
       - name: Build and sync current main Web assets
         run: npm run android:sync
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Prove packaged asset parity
         run: node android/scripts/verify-packaged-assets.mjs

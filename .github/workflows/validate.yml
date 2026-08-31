@@ -95,7 +95,16 @@ jobs:
       - name: Verify deterministic reversible label budget
         run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - run: npm run test:i18n
-      - run: npm run android:sync
+      - name: Validate Android Supabase release configuration
+        run: node scripts/verify-supabase-release-config.mjs
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      - name: Build and sync Android assets with production auth configuration
+        run: npm run android:sync
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Run Android tests and build debug APK
         working-directory: android
         run: ./gradlew test assembleDebug
