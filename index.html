@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="知识球">
 <link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
 <title>Knowledge Ball · Living Knowledge Field</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -37,7 +41,7 @@
   .brand{display:flex;align-items:center;gap:10px;}
   .avatar-btn{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#3A4570,#1E2440);
     border:1.5px solid var(--accent-primary); display:flex;align-items:center;justify-content:center;cursor:pointer;
-    font-family:'Noto Serif SC',serif;font-weight:700;font-size:13px;color:var(--accent-primary);flex-shrink:0;}
+    font-family:'Noto Serif SC',serif;font-weight:700;font-size:13px;color:var(--accent-primary);flex-shrink:0;padding:0;overflow:hidden;}
   .avatar-btn:hover{border-color:var(--accent-primary);}
   .brand span{font-size:10px;color:var(--ink-faint);font-family:'Inter',sans-serif;letter-spacing:1px;}
   .header-mid{display:flex;align-items:center;gap:8px;}
@@ -182,6 +186,7 @@
   header{background:rgba(3,5,18,.94);border-color:var(--panel-border);padding:11px 16px}
   .brand-copy{display:flex;flex-direction:column;gap:2px}.brand-title{font:600 13px/1 'Inter',sans-serif;color:var(--ink);letter-spacing:.08em}.brand-subtitle{font-size:9px!important;color:var(--ink-faint)!important;letter-spacing:.14em!important}
   .avatar-btn{border-radius:10px;background:#0D1530;border-color:var(--panel-border);color:var(--accent-primary)}
+  .avatar-btn[data-brand-logo] img{display:block;width:82%;height:82%;object-fit:contain}
   .ai-results{background:#080D20}
   /* Do not backdrop-filter over the live WebGL canvas. On mobile GPUs this
      forces an expensive canvas readback/composite and can freeze the page. */
@@ -203,7 +208,7 @@
 <div class="app" id="app">
   <header>
     <div class="brand">
-      <div class="avatar-btn" id="avatarBtn" data-i18n-aria="app.account">RS</div>
+      <button class="avatar-btn" id="avatarBtn" type="button" data-brand-logo data-i18n-aria="app.account"><img src="/src/assets/knowledge-ball-logo.png" alt="" aria-hidden="true"></button>
       <div class="brand-copy"><div class="brand-title">KNOWLEDGE BALL</div><span class="brand-subtitle">LIVING RELATIONAL FIELD</span></div>
     </div>
     <div class="header-mid">

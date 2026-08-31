@@ -9,6 +9,7 @@ const buildNumber = process.env.GITHUB_RUN_NUMBER ?? buildCommit.slice(0, 12);
 const appVersion = packageJson.version;
 const nativeBuild = process.env.CAPACITOR_BUILD === 'true';
 const publicSiteUrl = 'https://newhumans-lab.github.io/Knowledge-Ball/';
+const socialImageUrl = new URL('brand/knowledge-ball-social-card.png', publicSiteUrl).href;
 const siteDescription =
   'Knowledge Ball is a living knowledge network that organizes knowledge, reasoning, evidence, and relationships in an interactive 3D knowledge graph.';
 const sourceReleaseManifest = JSON.parse(readFileSync('public/downloads/latest.json', 'utf8')) as {
@@ -160,13 +161,19 @@ export default defineConfig({
               },
               { tag: 'meta', attrs: { property: 'og:description', content: siteDescription }, injectTo: 'head' },
               { tag: 'meta', attrs: { property: 'og:url', content: publicSiteUrl }, injectTo: 'head' },
-              { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary' }, injectTo: 'head' },
+              { tag: 'meta', attrs: { property: 'og:image', content: socialImageUrl }, injectTo: 'head' },
+              { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' }, injectTo: 'head' },
+              { tag: 'meta', attrs: { property: 'og:image:height', content: '630' }, injectTo: 'head' },
+              { tag: 'meta', attrs: { property: 'og:image:alt', content: 'Knowledge Ball logo' }, injectTo: 'head' },
+              { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' }, injectTo: 'head' },
               {
                 tag: 'meta',
                 attrs: { name: 'twitter:title', content: 'Knowledge Ball · Living Knowledge Field' },
                 injectTo: 'head',
               },
               { tag: 'meta', attrs: { name: 'twitter:description', content: siteDescription }, injectTo: 'head' },
+              { tag: 'meta', attrs: { name: 'twitter:image', content: socialImageUrl }, injectTo: 'head' },
+              { tag: 'meta', attrs: { name: 'twitter:image:alt', content: 'Knowledge Ball logo' }, injectTo: 'head' },
               {
                 tag: 'script',
                 attrs: { type: 'application/ld+json' },

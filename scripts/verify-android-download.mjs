@@ -25,7 +25,7 @@ function assertPublished(artifact, distribution, requiredUrl) {
   assert.equal(artifact.distribution, distribution);
   assert.equal(artifact.version, packageJson.version, 'published native version must match the current semantic version');
   assert.ok(artifact.build && artifact.commit, 'published native artifact must expose build identity');
-  assert.match(artifact.urls[requiredUrl], /^https:\/\/github\.com\/Rushow111\/Knowledge-Ball\/releases\/download\//);
+  assert.match(artifact.urls[requiredUrl], /^https:\/\/github\.com\/NewHumans-Lab\/Knowledge-Ball\/releases\/download\//);
   assert.match(artifact.checksum, /^sha256:[0-9a-f]{64}$/i);
 }
 
@@ -35,7 +35,7 @@ function expectedPublished(sourceArtifact, requiredUrl) {
     && Boolean(sourceArtifact.build)
     && Boolean(sourceArtifact.commit)
     && typeof sourceArtifact.urls?.[requiredUrl] === 'string'
-    && /^https:\/\/github\.com\/Rushow111\/Knowledge-Ball\/releases\/download\//.test(sourceArtifact.urls[requiredUrl])
+    && /^https:\/\/github\.com\/NewHumans-Lab\/Knowledge-Ball\/releases\/download\//.test(sourceArtifact.urls[requiredUrl])
     && /^sha256:[0-9a-f]{64}$/i.test(sourceArtifact.checksum ?? '');
 }
 
