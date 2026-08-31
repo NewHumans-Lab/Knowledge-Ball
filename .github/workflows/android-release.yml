@@ -10,36 +10,65 @@ concurrency:
   group: native-release-publication
   cancel-in-progress: false
 
+env:
+  ANDROID_API_LEVEL: '35'
+  ANDROID_BUILD_TOOLS_VERSION: '35.0.0'
+  ANDROID_EMULATOR_TARGET: google_apis
+  ANDROID_EMULATOR_ARCH: x86_64
+  ANDROID_EMULATOR_PROFILE: pixel_6
+
 jobs:
   release-android:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 50
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
-      - uses: actions/setup-java@v4
+
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
+
+      - uses: gradle/actions/setup-gradle@v5
+
       - uses: android-actions/setup-android@v3
-      - name: Install Android SDK and emulator image
+
+      - name: Install Android build prerequisites
+        shell: bash
         run: |
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
-          echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
+          set -euo pipefail
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-${ANDROID_API_LEVEL}" \
+            "build-tools;${ANDROID_BUILD_TOOLS_VERSION}"
+          echo "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS_VERSION}" >> "$GITHUB_PATH"
+
+      - name: Enable and verify KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo chmod 666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          ls -l /dev/kvm
+
       - name: Require the authoritative signing identity
         shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
@@ -49,12 +78,18 @@ jobs:
             fi
           done
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/knowledge-ball-release.keystore"
+          test -s "$RUNNER_TEMP/knowledge-ball-release.keystore"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/knowledge-ball-release.keystore" >> "$GITHUB_ENV"
-      - run: npm ci
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
       - name: Build and sync current main Web assets
         run: npm run android:sync
+
       - name: Prove packaged asset parity
         run: node android/scripts/verify-packaged-assets.mjs
+
       - name: Inspect the authoritative published APK signer when one exists
         shell: bash
         run: |
@@ -75,9 +110,15 @@ jobs:
           grep 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/published-signing.txt" | sed 's/.*: //' > "$RUNNER_TEMP/published-cert.sha256"
           test -s "$RUNNER_TEMP/published-cert.sha256"
           echo "HAS_PUBLISHED_ANDROID=true" >> "$GITHUB_ENV"
+
       - name: Build signed release APK
         working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
+
       - name: Verify signature and upgrade compatibility
         shell: bash
         run: |
@@ -95,24 +136,65 @@ jobs:
           else
             echo 'Initial authoritative Android release: accepting the configured signer as the upgrade identity for future releases.'
           fi
+
+      - name: Remove release keystore from runner
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${ANDROID_KEYSTORE_PATH:-}" ]; then
+            rm -f "$ANDROID_KEYSTORE_PATH"
+          fi
+          echo 'ANDROID_KEYSTORE_PATH=' >> "$GITHUB_ENV"
+
+      - name: Restore Android emulator snapshot cache
+        id: avd-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ runner.os }}-api${{ env.ANDROID_API_LEVEL }}-${{ env.ANDROID_EMULATOR_TARGET }}-${{ env.ANDROID_EMULATOR_ARCH }}-${{ env.ANDROID_EMULATOR_PROFILE }}-v1
+
+      - name: Create clean Android emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          target: ${{ env.ANDROID_EMULATOR_TARGET }}
+          arch: ${{ env.ANDROID_EMULATOR_ARCH }}
+          profile: ${{ env.ANDROID_EMULATOR_PROFILE }}
+          force-avd-creation: false
+          disable-animations: false
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 300
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: echo 'Created clean AVD snapshot for subsequent Android release runs.'
+
       - name: Install and launch the exact signed APK on API 35
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
+          api-level: ${{ env.ANDROID_API_LEVEL }}
+          target: ${{ env.ANDROID_EMULATOR_TARGET }}
+          arch: ${{ env.ANDROID_EMULATOR_ARCH }}
+          profile: ${{ env.ANDROID_EMULATOR_PROFILE }}
+          force-avd-creation: false
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 300
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euxo pipefail
-            adb install -r android/app/build/outputs/apk/release/app-release.apk
-            adb shell am start -W -n org.knowledgeball.app/.MainActivity | tee "$RUNNER_TEMP/release-launch.txt"
-            sleep 8
+            set -eu
+            APK=android/app/build/outputs/apk/release/app-release.apk
+            adb install -r "$APK"
+            adb shell am start -W -n org.knowledgeball.app/.MainActivity > "$RUNNER_TEMP/release-launch.txt"
+            cat "$RUNNER_TEMP/release-launch.txt"
+            sleep 5
             adb shell pidof org.knowledgeball.app
             mkdir -p artifacts/android-release
             adb exec-out screencap -p > artifacts/android-release/release-launch.png
             test -s artifacts/android-release/release-launch.png
+
       - name: Prepare immutable release metadata
         id: metadata
         shell: bash
@@ -121,7 +203,7 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           BUILD="$GITHUB_RUN_NUMBER"
           COMMIT="$GITHUB_SHA"
-          NAME="Knowledge-Ball-Android-v${VERSION}-build${BUILD}.apk"
+          NAME="Knowledge-Ball-Android-v${VERSION}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "$NAME"
           SHA=$(sha256sum "$NAME" | awk '{print $1}')
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${NAME}"
@@ -141,6 +223,7 @@ jobs:
           echo "asset=$NAME" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
+
       - name: Publish signed APK to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -151,6 +234,7 @@ jobs:
           set -euo pipefail
           gh release view "v${VERSION}" >/dev/null 2>&1 || gh release create "v${VERSION}" --title "Knowledge Ball v${VERSION}" --notes "Platform release artifacts for Knowledge Ball v${VERSION}."
           gh release upload "v${VERSION}" "$ASSET" android-release.json --clobber
+
       - name: Verify the published APK is byte-identical
         env:
           GH_TOKEN: ${{ github.token }}
@@ -164,6 +248,7 @@ jobs:
           gh release download "v${VERSION}" --pattern "$ASSET" --dir "$RUNNER_TEMP/release-verify"
           ACTUAL_SHA=$(sha256sum "$RUNNER_TEMP/release-verify/$ASSET" | awk '{print $1}')
           test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+
       - name: Publish Android availability to the Pages manifest
         env:
           VERSION: ${{ steps.metadata.outputs.version }}
@@ -184,12 +269,15 @@ jobs:
             git commit -m "Publish Android release v${VERSION}"
             git push origin HEAD:main
           fi
+
       - name: Upload release evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-signed-release-evidence
           path: |
             artifacts/android-release
             android-release.json
           if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
