@@ -231,6 +231,9 @@ try{
     await detail.waitFor({state:'visible'});
     assert.equal(await page.locator('#panel.open').count(),0,'first node tap must open the near-node detail without the legacy panel');
     assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'first ordinary-node tap must open that node detail');
+    // Opening a previously untouched node intentionally starts an async mastery write.
+    // Wait for that controller-triggered refresh to settle before testing the next gesture.
+    await page.waitForFunction(id=>window.__debug.projection.state.nodesById[id]?.mastery!=='none',target.id);
     const pointAfterDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
     assert.ok(pointAfterDetail,'direct-detail target must remain renderable after detail opens');
     assert.ok(Math.hypot(pointAfterDetail.x-pointBeforeDetail.x,pointAfterDetail.y-pointBeforeDetail.y)<=2,'opening detail must not rotate the whole graph');
@@ -259,7 +262,9 @@ try{
     const reopenedDetail=page.locator('#nodeDetailOverlay.open');
     await reopenedDetail.waitFor({state:'visible'});
     assert.equal((await reopenedDetail.locator('.node-detail-title').textContent())?.trim(),target.title,'re-open tap must target the same ordinary node');
-    await reopenedDetail.locator('.node-detail-edit').click();
+    const editTrigger=reopenedDetail.locator('.node-detail-edit');
+    await editTrigger.tap();
+    assert.equal(await editTrigger.getAttribute('aria-expanded'),'true','real mobile tap must open the edit action menu');
     const optimizationAction=page.locator('#nodeDetailOverlay [data-node-detail-action="edit"]');
     await optimizationAction.waitFor({state:'visible'});
     const optimizationStyle=await optimizationAction.evaluate(element=>({opacity:getComputedStyle(element).opacity,pointerEvents:getComputedStyle(element).pointerEvents}));
