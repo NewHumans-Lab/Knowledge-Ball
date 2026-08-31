@@ -360,12 +360,11 @@ export class NodeDetailController {
       this.lastEditPointerActivationAt = performance.now();
       toggleEditMenu();
     });
-    editButton?.addEventListener('click', event => {
-      const followsPointerActivation = event.detail > 0
-        && performance.now() - this.lastEditPointerActivationAt < 750;
+    editButton?.addEventListener('click', () => {
+      const followsPointerActivation = performance.now() - this.lastEditPointerActivationAt < 750;
       if (followsPointerActivation) return;
       // Keyboard activation and programmatic .click() do not have a preceding
-      // primary pointerup, so keep the standard click path for accessibility.
+      // recent primary pointerup, so keep the standard click path for accessibility.
       toggleEditMenu();
     });
     for (const action of actions) {
