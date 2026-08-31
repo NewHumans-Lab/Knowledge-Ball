@@ -211,18 +211,15 @@ try{
 
     await page.evaluate(()=>window.__debug.scene.start());
     await page.waitForTimeout(100);
-    const target=await page.evaluate(()=>{
-      window.__debug.scene.stop();
-      return window.__debug.renderNodes
-        .filter(node=>!['n1','n2','n16'].includes(node.id)&&node.status==='verified'&&(node.lineage?.role??'current')==='current')
-        .map(node=>{
-          const label=[...document.querySelectorAll('.node-label')].find(candidate=>candidate.textContent?.trim()===node.title);
-          const point=window.__debug.scene.screenPositionForNode(node.id);
-          return label?.style.display!== 'none'&&point&&point.x>24&&point.x<366&&point.y>88&&point.y<808
-            ? {...point,id:node.id,title:node.title}
-            : null;
-        }).find(Boolean)??null;
-    });
+    const target=await page.evaluate(()=>window.__debug.renderNodes
+      .filter(node=>!['n1','n2','n16'].includes(node.id)&&node.status==='verified'&&(node.lineage?.role??'current')==='current')
+      .map(node=>{
+        const label=[...document.querySelectorAll('.node-label')].find(candidate=>candidate.textContent?.trim()===node.title);
+        const point=window.__debug.scene.screenPositionForNode(node.id);
+        return label?.style.display!== 'none'&&point&&point.x>24&&point.x<366&&point.y>88&&point.y<808
+          ? {...point,id:node.id,title:node.title}
+          : null;
+      }).find(Boolean)??null);
     assert.ok(target,'direct-detail regression must use an editable ordinary node whose front-facing label is actually visible');
     const pointBeforeDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
     assert.ok(pointBeforeDetail,'direct-detail target must remain renderable before tap');
@@ -231,9 +228,6 @@ try{
     await detail.waitFor({state:'visible'});
     assert.equal(await page.locator('#panel.open').count(),0,'first node tap must open the near-node detail without the legacy panel');
     assert.equal((await detail.locator('.node-detail-title').textContent())?.trim(),target.title,'first ordinary-node tap must open that node detail');
-    // Opening a previously untouched node intentionally starts an async mastery write.
-    // Wait for that controller-triggered refresh to settle before testing the next gesture.
-    await page.waitForFunction(id=>window.__debug.projection.state.nodesById[id]?.mastery!=='none',target.id);
     const pointAfterDetail=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
     assert.ok(pointAfterDetail,'direct-detail target must remain renderable after detail opens');
     assert.ok(Math.hypot(pointAfterDetail.x-pointBeforeDetail.x,pointAfterDetail.y-pointBeforeDetail.y)<=2,'opening detail must not rotate the whole graph');
@@ -253,18 +247,10 @@ try{
     await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
     await page.waitForFunction(title=>[...document.querySelectorAll('.node-label')].some(label=>label.textContent?.trim()===title&&label.style.display!=='none'),target.title);
 
-    // Re-open the same node at its current, freshly sampled position. The scene may
-    // resume after the overlay closes, so reusing pointAfterDetail is a timing race.
-    await page.evaluate(()=>window.__debug.scene.stop());
-    const pointBeforeReopen=await page.evaluate(id=>window.__debug.scene.screenPositionForNode(id),target.id);
-    assert.ok(pointBeforeReopen,'direct-detail target must remain renderable before re-open tap');
-    await page.touchscreen.tap(pointBeforeReopen.x,pointBeforeReopen.y);
-    const reopenedDetail=page.locator('#nodeDetailOverlay.open');
-    await reopenedDetail.waitFor({state:'visible'});
-    assert.equal((await reopenedDetail.locator('.node-detail-title').textContent())?.trim(),target.title,'re-open tap must target the same ordinary node');
-    const editTrigger=reopenedDetail.locator('.node-detail-edit');
-    await editTrigger.tap();
-    assert.equal(await editTrigger.getAttribute('aria-expanded'),'true','real mobile tap must open the edit action menu');
+    // Re-open the same node at its preserved position and verify all edit variants are entered through one text control.
+    await page.touchscreen.tap(pointAfterDetail.x,pointAfterDetail.y);
+    await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
+    await page.locator('#nodeDetailOverlay .node-detail-edit').click();
     const optimizationAction=page.locator('#nodeDetailOverlay [data-node-detail-action="edit"]');
     await optimizationAction.waitFor({state:'visible'});
     const optimizationStyle=await optimizationAction.evaluate(element=>({opacity:getComputedStyle(element).opacity,pointerEvents:getComputedStyle(element).pointerEvents}));

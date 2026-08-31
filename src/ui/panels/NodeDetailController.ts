@@ -157,7 +157,6 @@ export class NodeDetailController {
   private readonly root: HTMLElement;
   private currentId: string | null = null;
   private editMenuOpen = false;
-  private lastEditPointerActivationAt = Number.NEGATIVE_INFINITY;
   private positionFrame: number | null = null;
   private voteRefreshTimer: number | null = null;
   private voteRenderToken = 0;
@@ -193,7 +192,6 @@ export class NodeDetailController {
     if (!node) return;
     this.currentId = id;
     this.editMenuOpen = false;
-    this.lastEditPointerActivationAt = Number.NEGATIVE_INFINITY;
     this.setKnowledgeLabelsVisible(false);
     this.onDetailNodeChange(id);
     this.render(node);
@@ -214,7 +212,7 @@ export class NodeDetailController {
     }
     // Local interaction state belongs to the controller, not to the DOM that
     // render() replaces. Async mastery/public refreshes can land during a real
-    // pointer activation, so rebuilding must project the already-selected menu state.
+    // pointer click, so rebuilding must project the already-selected menu state.
     this.render(node);
     this.positionCurrent();
   }
@@ -225,7 +223,6 @@ export class NodeDetailController {
     this.clearVoteRefresh();
     this.voteRenderToken++;
     this.editMenuOpen = false;
-    this.lastEditPointerActivationAt = Number.NEGATIVE_INFINITY;
     if (!wasOpen) return;
     this.currentId = null;
     this.root.classList.remove('open');
@@ -349,23 +346,11 @@ export class NodeDetailController {
 
     const editButton = this.root.querySelector<HTMLButtonElement>('.node-detail-edit');
     const menu = this.root.querySelector<HTMLElement>('.node-detail-edit-menu');
-    const toggleEditMenu = () => {
-      if (!menu || !editButton) return;
+    editButton?.addEventListener('click', () => {
+      if (!menu) return;
       this.editMenuOpen = !this.editMenuOpen;
       menu.hidden = !this.editMenuOpen;
       editButton.setAttribute('aria-expanded', String(this.editMenuOpen));
-    };
-    editButton?.addEventListener('pointerup', event => {
-      if (!event.isPrimary || event.button !== 0) return;
-      this.lastEditPointerActivationAt = performance.now();
-      toggleEditMenu();
-    });
-    editButton?.addEventListener('click', () => {
-      const followsPointerActivation = performance.now() - this.lastEditPointerActivationAt < 750;
-      if (followsPointerActivation) return;
-      // Keyboard activation and programmatic .click() do not have a preceding
-      // recent primary pointerup, so keep the standard click path for accessibility.
-      toggleEditMenu();
     });
     for (const action of actions) {
       const button = document.createElement('button');
