@@ -2,6 +2,22 @@ name: Android Signed Release
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'public/**'
+      - '!public/downloads/latest.json'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'capacitor.config.ts'
+      - 'tsconfig*.json'
+      - '.github/workflows/android-release.yml'
+      - '.github/scripts/verify-android-release.sh'
+      - 'scripts/verify-supabase-release-config.mjs'
 
 permissions:
   contents: write
