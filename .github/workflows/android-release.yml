@@ -35,7 +35,9 @@ jobs:
           cache: gradle
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK and emulator image
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
       - name: Require the authoritative signing identity
         shell: bash
         run: |
