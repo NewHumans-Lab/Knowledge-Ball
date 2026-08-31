@@ -20,10 +20,10 @@
     "appId": "com.knowledgeball.desktop",
     "productName": "Knowledge Ball",
     "asar": true,
-    "files": ["main.cjs", "preload.cjs"],
+    "files": ["main.cjs", "preload.cjs", "assets/icon.png"],
     "extraResources": [{ "from": "../dist", "to": "web" }],
-    "directories": { "output": "release" },
-    "win": { "target": ["nsis", "portable"] },
+    "directories": { "output": "release", "buildResources": "assets" },
+    "win": { "target": ["nsis", "portable"], "icon": "assets/icon.ico" },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

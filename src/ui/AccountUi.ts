@@ -338,20 +338,22 @@ export class AccountUiController {
   private updateAvatar(): void {
     const avatar = this.options.avatarButton;
     if (!avatar) return;
-    avatar.replaceChildren();
-    const src = safeAvatarUrl(this.cached?.avatarUrl);
-    if (src) {
-      const image = document.createElement('img');
-      image.src = src;
-      image.alt = '';
-      image.referrerPolicy = 'no-referrer';
-      image.addEventListener('error', () => {
-        image.remove();
+    if (!avatar.hasAttribute('data-brand-logo')) {
+      avatar.replaceChildren();
+      const src = safeAvatarUrl(this.cached?.avatarUrl);
+      if (src) {
+        const image = document.createElement('img');
+        image.src = src;
+        image.alt = '';
+        image.referrerPolicy = 'no-referrer';
+        image.addEventListener('error', () => {
+          image.remove();
+          avatar.textContent = initial(this.cached);
+        }, { once: true });
+        avatar.append(image);
+      } else {
         avatar.textContent = initial(this.cached);
-      }, { once: true });
-      avatar.append(image);
-    } else {
-      avatar.textContent = initial(this.cached);
+      }
     }
     avatar.title = '个人空间 · 账户与知识记录';
     avatar.dataset.authState = this.cached?.passwordLoginEnabled ? 'registered' : 'guest';

@@ -1,5 +1,9 @@
 # Knowledge-Ball
 
+<p align="center">
+  <img src="public/brand/knowledge-ball-logo.png" alt="Knowledge Ball" width="160">
+</p>
+
 Knowledge-Ball is a local-first shared knowledge graph. The web production flow is:
 
 `UI command → immutable local event → EventStore → projection/UI → SyncEngine → Supabase Postgres/Auth/RLS → other web clients`

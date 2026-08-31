@@ -52,7 +52,7 @@ function validatePublishedArtifact(artifact, distribution, requiredUrl) {
   assert.equal(artifact.distribution, distribution);
   assert.equal(artifact.version, packageJson.version, 'native release version must match current package version');
   assert.ok(artifact.build && artifact.commit, 'native release must expose build identity');
-  assert.match(artifact.urls[requiredUrl], /^https:\/\/github\.com\/Rushow111\/Knowledge-Ball\/releases\/download\//);
+  assert.match(artifact.urls[requiredUrl], /^https:\/\/github\.com\/NewHumans-Lab\/Knowledge-Ball\/releases\/download\//);
   assert.match(artifact.checksum, /^sha256:[0-9a-f]{64}$/i);
 }
 

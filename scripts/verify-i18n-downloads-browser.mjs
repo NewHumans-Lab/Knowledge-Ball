@@ -43,7 +43,7 @@ async function assertDesktopLayout(page) {
   const windowsEnabled = Boolean(windowsArtifact?.available && windowsUrl);
   assert.equal(await page.locator('#windowsDownload').isDisabled(), !windowsEnabled, 'Windows action must match authoritative release manifest availability');
   if (windowsEnabled) {
-    assert.ok(String(windowsUrl).startsWith('https://github.com/Rushow111/Knowledge-Ball/releases/download/'), 'Published Windows action must use the authoritative GitHub Release URL');
+    assert.ok(String(windowsUrl).startsWith('https://github.com/NewHumans-Lab/Knowledge-Ball/releases/download/'), 'Published Windows action must use the authoritative GitHub Release URL');
   } else {
     assert.equal(await page.locator('.windows-download-card a[href]').count(), 0, 'Windows must not expose an invented download URL');
   }

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 const siteUrl = 'https://newhumans-lab.github.io/Knowledge-Ball/';
 const sitemapUrl = `${siteUrl}sitemap.xml`;
+const socialImageUrl = `${siteUrl}brand/knowledge-ball-social-card.png`;
 const siteDescription =
   'Knowledge Ball is a living knowledge network that organizes knowledge, reasoning, evidence, and relationships in an interactive 3D knowledge graph.';
 
@@ -24,6 +25,11 @@ assert(html.includes('application/ld+json'), 'missing JSON-LD structured data');
 assert(html.includes('"@type":"WebSite"'), 'JSON-LD must describe a WebSite');
 assert(html.includes('<noscript>'), 'missing static no-JavaScript homepage description');
 assert(html.includes('About Knowledge Ball'), 'static homepage introduction is missing');
+assert(html.includes(`property="og:image" content="${socialImageUrl}"`), 'missing canonical Open Graph image');
+assert(html.includes('property="og:image:width" content="1200"'), 'Open Graph image width must be 1200');
+assert(html.includes('property="og:image:height" content="630"'), 'Open Graph image height must be 630');
+assert(html.includes('name="twitter:card" content="summary_large_image"'), 'Twitter card must use the large image layout');
+assert(html.includes(`name="twitter:image" content="${socialImageUrl}"`), 'missing Twitter image');
 
 assert(/^User-agent:\s*\*$/m.test(robots), 'robots.txt must target all crawlers');
 assert(/^Allow:\s*\/$/m.test(robots), 'robots.txt must explicitly allow the site');

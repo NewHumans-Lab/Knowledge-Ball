@@ -26,7 +26,7 @@ const androidFragment = {
   version: '0.2.0',
   build: '301',
   commit: 'android-commit',
-  urls: { download: 'https://github.com/Rushow111/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Android.apk' },
+  urls: { download: 'https://github.com/NewHumans-Lab/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Android.apk' },
   checksum: `sha256:${sha}`,
 };
 
@@ -38,8 +38,8 @@ const windowsFragment = {
   build: '302',
   commit: 'windows-commit',
   urls: {
-    installer: 'https://github.com/Rushow111/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Setup.exe',
-    portable: 'https://github.com/Rushow111/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Portable.exe',
+    installer: 'https://github.com/NewHumans-Lab/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Setup.exe',
+    portable: 'https://github.com/NewHumans-Lab/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Windows-Portable.exe',
   },
   checksums: {
     installer: `sha256:${sha}`,
