@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
 const expectedBase = '/Knowledge-Ball/';
+const productName = 'Knowledge Ball';
 const remoteRoot = process.argv[2];
 
 function pageAssets(html) {
@@ -14,6 +15,13 @@ function pageAssets(html) {
 
 function validateHtml(html) {
   assert.match(html, /<div class="app" id="app">/, 'Pages HTML must contain the application root');
+  assert.match(html, new RegExp(`<title>${productName}<\\/title>`), 'Browser title must use the canonical product name');
+  assert.match(
+    html,
+    new RegExp(`<meta name="apple-mobile-web-app-title" content="${productName}">`),
+    'Apple home-screen title must use the canonical product name',
+  );
+  assert.doesNotMatch(html, /Knowledge Ball · Living Knowledge Field/, 'promotional tagline must not leak into the product title');
   assert.doesNotMatch(html, /src="\/src\//, 'Pages HTML must not reference unbuilt source files');
   assert.match(html, /<meta\s+name="knowledge-ball-build"\s+content="[^"]+"/, 'Pages HTML must expose its build identity');
   assert.match(
@@ -35,6 +43,11 @@ function validateHtml(html) {
   const assets = pageAssets(html);
   assert.ok(assets.some(asset => /\/assets\/index-[^/]+\.js$/.test(asset)), 'Pages HTML must reference its hashed application bundle');
   return assets;
+}
+
+function validatePwaManifest(manifest) {
+  assert.equal(manifest.name, productName, 'PWA name must use the canonical product name');
+  assert.equal(manifest.short_name, productName, 'PWA short name must use the canonical product name');
 }
 
 function validateUnavailableArtifact(artifact, distribution) {
@@ -81,6 +94,7 @@ async function verifyLocalBuild() {
     const relative = asset.slice(expectedBase.length);
     await access(resolve('dist', relative));
   }
+  validatePwaManifest(JSON.parse(await readFile('dist/manifest.webmanifest', 'utf8')));
   const manifest = JSON.parse(await readFile('dist/downloads/latest.json', 'utf8'));
   validateReleaseManifest(manifest);
   console.log(`GitHub Pages build regression tests passed (${assets.length} local assets checked)`);
@@ -120,6 +134,9 @@ async function verifyLiveSite(root) {
     if (asset.endsWith('.js')) assert.match(response.headers.get('content-type') ?? '', /javascript/i);
     await response.body?.cancel();
   }
+
+  const pwaResponse = await fetchWithRetry(new URL('manifest.webmanifest', pageUrl));
+  validatePwaManifest(await pwaResponse.json());
 
   const manifestResponse = await fetchWithRetry(new URL('downloads/latest.json', pageUrl));
   const manifest = await manifestResponse.json();
