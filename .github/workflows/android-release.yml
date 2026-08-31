@@ -49,13 +49,18 @@ jobs:
             "build-tools;${ANDROID_BUILD_TOOLS_VERSION}"
           echo "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS_VERSION}" >> "$GITHUB_PATH"
 
-      - name: Enable KVM acceleration
+      - name: Enable and verify KVM acceleration
         shell: bash
         run: |
           set -euo pipefail
+          test -c /dev/kvm
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+          sudo chmod 666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          ls -l /dev/kvm
 
       - name: Require the authoritative signing identity
         shell: bash
@@ -132,6 +137,16 @@ jobs:
             echo 'Initial authoritative Android release: accepting the configured signer as the upgrade identity for future releases.'
           fi
 
+      - name: Remove release keystore from runner
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${ANDROID_KEYSTORE_PATH:-}" ]; then
+            rm -f "$ANDROID_KEYSTORE_PATH"
+          fi
+          echo 'ANDROID_KEYSTORE_PATH=' >> "$GITHUB_ENV"
+
       - name: Restore Android emulator snapshot cache
         id: avd-cache
         uses: actions/cache@v5
@@ -151,6 +166,7 @@ jobs:
           profile: ${{ env.ANDROID_EMULATOR_PROFILE }}
           force-avd-creation: false
           disable-animations: false
+          disable-linux-hw-accel: false
           emulator-boot-timeout: 300
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: echo 'Created clean AVD snapshot for subsequent Android release runs.'
@@ -164,13 +180,15 @@ jobs:
           profile: ${{ env.ANDROID_EMULATOR_PROFILE }}
           force-avd-creation: false
           disable-animations: true
+          disable-linux-hw-accel: false
           emulator-boot-timeout: 300
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: |
-            set -euxo pipefail
+            set -eu
             APK=android/app/build/outputs/apk/release/app-release.apk
             adb install -r "$APK"
-            adb shell am start -W -n org.knowledgeball.app/.MainActivity | tee "$RUNNER_TEMP/release-launch.txt"
+            adb shell am start -W -n org.knowledgeball.app/.MainActivity > "$RUNNER_TEMP/release-launch.txt"
+            cat "$RUNNER_TEMP/release-launch.txt"
             sleep 5
             adb shell pidof org.knowledgeball.app
             mkdir -p artifacts/android-release
