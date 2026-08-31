@@ -82,6 +82,7 @@ function configureWindows(artifact: ReleaseArtifact, label: string, unavailableL
   const url = artifact.urls.installer ?? artifact.urls.portable;
   const enabled = artifact.available && Boolean(url);
   button.disabled = !enabled;
+  button.classList.toggle('primary', enabled);
   button.textContent = enabled ? label : unavailableLabel;
   button.onclick = enabled && url ? () => { window.location.href = url; } : null;
 }
