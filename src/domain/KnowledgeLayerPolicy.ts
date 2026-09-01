@@ -1,10 +1,33 @@
 import type { NodeType } from './KnowledgeModel';
+import {
+  knowledgeLayerHelp,
+  knowledgeLayerLabel,
+  systemUiText,
+} from '../i18n/SystemUiText';
 
 export const USER_KNOWLEDGE_LAYERS = ['inner', 'middle', 'outer'] as const;
 export type UserKnowledgeLayer = typeof USER_KNOWLEDGE_LAYERS[number];
 export type KnowledgeLayer = UserKnowledgeLayer | 'core';
 
 export const SYSTEM_CORE_NODE_IDS = ['n1', 'n2', 'n16'] as const;
+
+/**
+ * Legacy presentation compatibility only. Localized copy is owned by i18n;
+ * these getters keep older imperative consumers compiling while they migrate.
+ */
+export const KNOWLEDGE_LAYER_LABEL: Record<KnowledgeLayer, string> = Object.defineProperties({}, {
+  core: { enumerable: true, get: () => systemUiText('layer.label.core') },
+  inner: { enumerable: true, get: () => knowledgeLayerLabel('inner') },
+  middle: { enumerable: true, get: () => knowledgeLayerLabel('middle') },
+  outer: { enumerable: true, get: () => knowledgeLayerLabel('outer') },
+}) as Record<KnowledgeLayer, string>;
+
+/** @deprecated Presentation copy belongs to i18n; migrate UI consumers to knowledgeLayerHelp(). */
+export const KNOWLEDGE_LAYER_HELP: Record<UserKnowledgeLayer, string> = Object.defineProperties({}, {
+  inner: { enumerable: true, get: () => knowledgeLayerHelp('inner') },
+  middle: { enumerable: true, get: () => knowledgeLayerHelp('middle') },
+  outer: { enumerable: true, get: () => knowledgeLayerHelp('outer') },
+}) as Record<UserKnowledgeLayer, string>;
 
 /**
  * Canonical semantic layer contract.
