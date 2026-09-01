@@ -1,6 +1,5 @@
 import './KnowledgeCreateController.css';
 import {
-  KNOWLEDGE_LAYER_HELP,
   isUserKnowledgeLayer,
   type UserKnowledgeLayer,
 } from '../../domain/KnowledgeLayerPolicy';
@@ -8,6 +7,12 @@ import {
   lineageRoleFor,
   type KnowledgeLineageMeta,
 } from '../../domain/KnowledgeLineage';
+import { getLocale, subscribeLocale } from '../../i18n/Locale';
+import {
+  knowledgeLayerHelp,
+  knowledgeLayerLabel,
+  systemUiText,
+} from '../../i18n/SystemUiText';
 import type {
   KnowledgeNodeStatus,
   KnowledgeNodeType,
@@ -56,7 +61,7 @@ function escapeHtml(input: string): string {
 }
 
 function canonicalSearch(value: string): string {
-  return value.normalize('NFKC').trim().toLocaleLowerCase('zh-CN');
+  return value.normalize('NFKC').trim().toLocaleLowerCase(getLocale());
 }
 
 /**
@@ -85,6 +90,7 @@ export class KnowledgeCreateController {
   private readonly onOverlayVisibilityChange?: KnowledgeCreateControllerOptions['onOverlayVisibilityChange'];
   private readonly onToast?: KnowledgeCreateControllerOptions['onToast'];
   private readonly root: HTMLElement;
+  private readonly unsubscribeLocale: () => void;
   private mode: CreateMode = 'standalone';
   private readonly selectedPremises = new Set<string>();
   private readonly selectedConclusions = new Set<string>();
@@ -102,6 +108,7 @@ export class KnowledgeCreateController {
       if (event.target === this.root) this.close();
     });
     document.body.appendChild(this.root);
+    this.unsubscribeLocale = subscribeLocale(() => this.refreshLocale());
   }
 
   isOpen(): boolean {
@@ -138,6 +145,7 @@ export class KnowledgeCreateController {
   }
 
   destroy(): void {
+    this.unsubscribeLocale();
     this.close();
     this.root.remove();
   }
@@ -148,6 +156,45 @@ export class KnowledgeCreateController {
     window.setTimeout(() => {
       this.root.querySelector<HTMLInputElement>('[data-create-title]')?.focus();
     }, 0);
+  }
+
+  /**
+   * Re-render system-owned copy when the locale changes without mutating or
+   * translating user-authored draft values or picker selections.
+   */
+  private refreshLocale(): void {
+    if (!this.isOpen()) return;
+    const title = this.root.querySelector<HTMLInputElement>('[data-create-title]')?.value ?? '';
+    const description = this.root.querySelector<HTMLTextAreaElement>('[data-create-description]')?.value ?? '';
+    const reasoning = this.root.querySelector<HTMLTextAreaElement>('[data-create-reasoning]')?.value ?? '';
+    const layer = this.root.querySelector<HTMLSelectElement>('[data-create-layer]')?.value ?? '';
+    const premiseQuery = this.root.querySelector<HTMLInputElement>('[data-picker="premise"] [data-picker-search]')?.value ?? '';
+    const conclusionQuery = this.root.querySelector<HTMLInputElement>('[data-picker="conclusion"] [data-picker-search]')?.value ?? '';
+    const submitDisabled = this.root.querySelector<HTMLButtonElement>('[data-create-submit]')?.disabled ?? false;
+
+    this.render();
+
+    const titleInput = this.root.querySelector<HTMLInputElement>('[data-create-title]');
+    if (titleInput) titleInput.value = title;
+    const submit = this.root.querySelector<HTMLButtonElement>('[data-create-submit]');
+    if (submit) submit.disabled = submitDisabled;
+
+    if (this.mode === 'standalone') {
+      const layerInput = this.root.querySelector<HTMLSelectElement>('[data-create-layer]');
+      if (layerInput && isUserKnowledgeLayer(layer)) layerInput.value = layer;
+      const descriptionInput = this.root.querySelector<HTMLTextAreaElement>('[data-create-description]');
+      if (descriptionInput) descriptionInput.value = description;
+      return;
+    }
+
+    const reasoningInput = this.root.querySelector<HTMLTextAreaElement>('[data-create-reasoning]');
+    if (reasoningInput) reasoningInput.value = reasoning;
+    const premiseSearch = this.root.querySelector<HTMLInputElement>('[data-picker="premise"] [data-picker-search]');
+    if (premiseSearch) premiseSearch.value = premiseQuery;
+    const conclusionSearch = this.root.querySelector<HTMLInputElement>('[data-picker="conclusion"] [data-picker-search]');
+    if (conclusionSearch) conclusionSearch.value = conclusionQuery;
+    this.renderPicker('premise', premiseQuery);
+    this.renderPicker('conclusion', conclusionQuery);
   }
 
   private render(): void {
@@ -162,30 +209,30 @@ export class KnowledgeCreateController {
     return `
       <section class="knowledge-create-modal" role="dialog" aria-modal="true" aria-labelledby="knowledgeCreateTitle">
         <header class="knowledge-create-header">
-          <h3 id="knowledgeCreateTitle">新增知识</h3>
-          <button type="button" class="knowledge-create-close" data-create-close aria-label="关闭">✕</button>
+          <h3 id="knowledgeCreateTitle">${escapeHtml(systemUiText('create.addKnowledge'))}</h3>
+          <button type="button" class="knowledge-create-close" data-create-close aria-label="${escapeHtml(systemUiText('common.close'))}">✕</button>
         </header>
         <div class="knowledge-create-body">
           <div class="knowledge-create-field">
-            <label for="standaloneTitle">名称</label>
-            <input id="standaloneTitle" data-create-title type="text" autocomplete="off" placeholder="填写知识名称">
+            <label for="standaloneTitle">${escapeHtml(systemUiText('create.nameShort'))}</label>
+            <input id="standaloneTitle" data-create-title type="text" autocomplete="off" placeholder="${escapeHtml(systemUiText('create.nameShortPlaceholder'))}">
           </div>
           <div class="knowledge-create-field">
-            <label for="standaloneLayer">层级</label>
+            <label for="standaloneLayer">${escapeHtml(systemUiText('create.layerShort'))}</label>
             <select id="standaloneLayer" data-create-layer>
-              <option value="inner">第一层 · 语义与基础事实</option>
-              <option value="middle">第二层 · 严谨推理</option>
-              <option value="outer">第三层 · 概率与争议</option>
+              <option value="inner">${escapeHtml(knowledgeLayerLabel('inner'))}</option>
+              <option value="middle">${escapeHtml(knowledgeLayerLabel('middle'))}</option>
+              <option value="outer">${escapeHtml(knowledgeLayerLabel('outer'))}</option>
             </select>
-            <div class="knowledge-create-help">第一层：${escapeHtml(KNOWLEDGE_LAYER_HELP.inner)}<br><br>第二层：${escapeHtml(KNOWLEDGE_LAYER_HELP.middle)}<br><br>第三层：${escapeHtml(KNOWLEDGE_LAYER_HELP.outer)}</div>
+            <div class="knowledge-create-help">${escapeHtml(knowledgeLayerLabel('inner'))}: ${escapeHtml(knowledgeLayerHelp('inner'))}<br><br>${escapeHtml(knowledgeLayerLabel('middle'))}: ${escapeHtml(knowledgeLayerHelp('middle'))}<br><br>${escapeHtml(knowledgeLayerLabel('outer'))}: ${escapeHtml(knowledgeLayerHelp('outer'))}</div>
           </div>
           <div class="knowledge-create-field">
-            <label for="standaloneDescription">内容</label>
-            <textarea id="standaloneDescription" data-create-description placeholder="填写知识本身的完整内容…"></textarea>
+            <label for="standaloneDescription">${escapeHtml(systemUiText('create.content'))}</label>
+            <textarea id="standaloneDescription" data-create-description placeholder="${escapeHtml(systemUiText('create.contentPlaceholder'))}"></textarea>
           </div>
-          <div class="knowledge-create-note">新增只创建一个独立知识球，不自动建立任何前提、推理或结论连线。</div>
+          <div class="knowledge-create-note">${escapeHtml(systemUiText('create.standaloneNote'))}</div>
         </div>
-        ${this.footerMarkup('提交知识')}
+        ${this.footerMarkup(systemUiText('create.submitKnowledge'))}
       </section>
     `;
   }
@@ -194,23 +241,23 @@ export class KnowledgeCreateController {
     return `
       <section class="knowledge-create-modal reasoning" role="dialog" aria-modal="true" aria-labelledby="knowledgeCreateTitle">
         <header class="knowledge-create-header">
-          <h3 id="knowledgeCreateTitle">新增推理</h3>
-          <button type="button" class="knowledge-create-close" data-create-close aria-label="关闭">✕</button>
+          <h3 id="knowledgeCreateTitle">${escapeHtml(systemUiText('create.addReasoning'))}</h3>
+          <button type="button" class="knowledge-create-close" data-create-close aria-label="${escapeHtml(systemUiText('common.close'))}">✕</button>
         </header>
         <div class="knowledge-create-body">
           <div class="knowledge-create-field">
-            <label for="reasoningTitle">名字</label>
-            <input id="reasoningTitle" data-create-title type="text" autocomplete="off" placeholder="填写这个推理过程的名称">
+            <label for="reasoningTitle">${escapeHtml(systemUiText('create.reasoningName'))}</label>
+            <input id="reasoningTitle" data-create-title type="text" autocomplete="off" placeholder="${escapeHtml(systemUiText('create.reasoningNamePlaceholder'))}">
           </div>
-          ${this.pickerMarkup('premise', '前提', '搜索已有前提节点…')}
+          ${this.pickerMarkup('premise', systemUiText('create.premise'), systemUiText('create.searchPremise'))}
           <div class="knowledge-create-field">
-            <label for="reasoningBody">推理过程</label>
-            <textarea id="reasoningBody" data-create-reasoning placeholder="逐步写清楚从前提到结论的推理过程…"></textarea>
+            <label for="reasoningBody">${escapeHtml(systemUiText('type.reasoning'))}</label>
+            <textarea id="reasoningBody" data-create-reasoning placeholder="${escapeHtml(systemUiText('create.reasoningBodyPlaceholder'))}"></textarea>
           </div>
-          ${this.pickerMarkup('conclusion', '结论（只能选择一个）', '搜索已有结论节点…')}
-          <div class="knowledge-create-note">一个推理球固定服务一个具体结论球。前提可以选择多个，结论只能选择一个；重新选择结论会替换之前的选择。</div>
+          ${this.pickerMarkup('conclusion', systemUiText('create.conclusionSingle'), systemUiText('create.searchConclusion'))}
+          <div class="knowledge-create-note">${escapeHtml(systemUiText('create.reasoningSingleConclusionNote'))}</div>
         </div>
-        ${this.footerMarkup('提交推理')}
+        ${this.footerMarkup(systemUiText('create.submitReasoning'))}
       </section>
     `;
   }
@@ -218,8 +265,8 @@ export class KnowledgeCreateController {
   private footerMarkup(label: string): string {
     return `
       <footer class="knowledge-create-footer">
-        <button type="button" class="btn" data-create-cancel>取消</button>
-        <button type="button" class="btn primary" data-create-submit>${label}</button>
+        <button type="button" class="btn" data-create-cancel>${escapeHtml(systemUiText('common.cancel'))}</button>
+        <button type="button" class="btn primary" data-create-submit>${escapeHtml(label)}</button>
       </footer>
     `;
   }
@@ -227,9 +274,9 @@ export class KnowledgeCreateController {
   private pickerMarkup(kind: PickerKind, label: string, placeholder: string): string {
     return `
       <div class="knowledge-create-field knowledge-picker" data-picker="${kind}">
-        <label>${label}</label>
+        <label>${escapeHtml(label)}</label>
         <div class="knowledge-picker-selected" data-picker-selected aria-live="polite"></div>
-        <input type="search" data-picker-search autocomplete="off" placeholder="${placeholder}">
+        <input type="search" data-picker-search autocomplete="off" placeholder="${escapeHtml(placeholder)}">
         <div class="knowledge-picker-options" data-picker-options></div>
       </div>
     `;
@@ -289,9 +336,9 @@ export class KnowledgeCreateController {
     selectedContainer.innerHTML = selected.size
       ? [...selected].map(id => {
           const node = byId.get(id)!;
-          return `<button type="button" class="knowledge-picker-chip" data-picker-node-id="${escapeHtml(node.id)}" title="点击移除">${escapeHtml(node.title)} <span>×</span></button>`;
+          return `<button type="button" class="knowledge-picker-chip" data-picker-node-id="${escapeHtml(node.id)}" title="${escapeHtml(systemUiText('create.remove'))}">${escapeHtml(node.title)} <span>×</span></button>`;
         }).join('')
-      : '<span class="knowledge-picker-empty">尚未选择</span>';
+      : `<span class="knowledge-picker-empty">${escapeHtml(systemUiText('create.noneSelected'))}</span>`;
 
     const needle = canonicalSearch(query);
     const matching = eligible.filter(node => {
@@ -300,7 +347,7 @@ export class KnowledgeCreateController {
     });
     matching.sort((left, right) => {
       const selectedOrder = Number(selected.has(right.id)) - Number(selected.has(left.id));
-      return selectedOrder || left.title.localeCompare(right.title, 'zh-CN');
+      return selectedOrder || left.title.localeCompare(right.title, getLocale());
     });
 
     optionsContainer.innerHTML = matching.length
@@ -309,11 +356,11 @@ export class KnowledgeCreateController {
           return `
             <button type="button" class="knowledge-picker-option${active ? ' selected' : ''}" data-picker-node-id="${escapeHtml(node.id)}" aria-pressed="${active}">
               <span>${escapeHtml(node.title)}</span>
-              <small>${active ? '已选择 · 点击取消' : '点击选择'}</small>
+              <small>${escapeHtml(systemUiText(active ? 'create.selectedCancel' : 'create.select'))}</small>
             </button>
           `;
         }).join('')
-      : '<div class="knowledge-picker-no-results">没有匹配的已有节点</div>';
+      : `<div class="knowledge-picker-no-results">${escapeHtml(systemUiText('create.noExisting'))}</div>`;
   }
 
   private eligibleNodes(kind: PickerKind): KnowledgeCreateNode[] {
@@ -327,7 +374,7 @@ export class KnowledgeCreateController {
     const submit = this.root.querySelector<HTMLButtonElement>('[data-create-submit]');
     const title = this.root.querySelector<HTMLInputElement>('[data-create-title]')?.value.trim() ?? '';
     if (!title) {
-      this.notify('请填写名称。');
+      this.notify(systemUiText('create.nameRequired'));
       return;
     }
 
@@ -336,11 +383,11 @@ export class KnowledgeCreateController {
       if (this.mode === 'standalone') {
         const layerValue = this.root.querySelector<HTMLSelectElement>('[data-create-layer]')?.value ?? '';
         const description = this.root.querySelector<HTMLTextAreaElement>('[data-create-description]')?.value.trim() ?? '';
-        if (!isUserKnowledgeLayer(layerValue)) throw new Error('请选择知识层级。');
-        if (!description) throw new Error('请填写内容。');
+        if (!isUserKnowledgeLayer(layerValue)) throw new Error(systemUiText('create.layerRequired'));
+        if (!description) throw new Error(systemUiText('create.contentRequired'));
         await this.onCreateStandalone({ title, layer: layerValue, description });
         this.close();
-        this.notify(`节点已提交：${title}`);
+        this.notify(systemUiText('create.nodeSubmitted', { title }));
         return;
       }
 
@@ -349,18 +396,18 @@ export class KnowledgeCreateController {
       const currentConclusionIds = new Set(this.eligibleNodes('conclusion').map(node => node.id));
       const premiseIds = [...this.selectedPremises].filter(id => currentPremiseIds.has(id));
       const conclusionIds = [...this.selectedConclusions].filter(id => currentConclusionIds.has(id));
-      if (premiseIds.length === 0) throw new Error('请从已有节点中选择至少一个前提。');
-      if (!reasoning) throw new Error('请填写推理过程。');
-      if (conclusionIds.length !== 1) throw new Error('请从已有节点中选择且只能选择一个结论。');
+      if (premiseIds.length === 0) throw new Error(systemUiText('create.premiseRequired'));
+      if (!reasoning) throw new Error(systemUiText('create.reasoningRequired'));
+      if (conclusionIds.length !== 1) throw new Error(systemUiText('create.conclusionSingleRequired'));
       if (premiseIds.includes(conclusionIds[0]!)) {
-        throw new Error('同一个节点不能同时作为这条推理的前提和结论。');
+        throw new Error(systemUiText('create.sameNodeError'));
       }
       await this.onCreateReasoning({ title, premiseIds, reasoning, conclusionIds });
       this.close();
-      this.notify(`推理已提交：${title}`);
+      this.notify(systemUiText('create.reasoningSubmitted', { title }));
     } catch (error) {
       console.error('[Knowledge-Ball] knowledge creation failed:', error);
-      this.notify(error instanceof Error ? error.message : '提交失败');
+      this.notify(error instanceof Error ? error.message : systemUiText('create.submitFailed'));
       if (submit) submit.disabled = false;
     }
   }
