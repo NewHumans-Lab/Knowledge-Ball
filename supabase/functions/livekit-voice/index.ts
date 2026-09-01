@@ -159,8 +159,8 @@ async function fetchDeclaredNodeIds(accessToken: string): Promise<Set<string>> {
   return ids;
 }
 
-async function declaredNodeIds(accessToken: string, force = false): Promise<Set<string>> {
-  if (!force && Date.now() - nodeCacheAt < NODE_CACHE_TTL_MS) return cachedNodeIds;
+async function declaredNodeIds(accessToken: string): Promise<Set<string>> {
+  if (Date.now() - nodeCacheAt < NODE_CACHE_TTL_MS) return cachedNodeIds;
   if (!nodeCacheRefresh) {
     nodeCacheRefresh = fetchDeclaredNodeIds(accessToken).finally(() => {
       nodeCacheRefresh = null;
@@ -170,8 +170,7 @@ async function declaredNodeIds(accessToken: string, force = false): Promise<Set<
 }
 
 async function requireDeclaredNode(nodeId: string, accessToken: string): Promise<void> {
-  let ids = await declaredNodeIds(accessToken);
-  if (!ids.has(nodeId)) ids = await declaredNodeIds(accessToken, true);
+  const ids = await declaredNodeIds(accessToken);
   if (!ids.has(nodeId)) throw Object.assign(new Error('unknown knowledge node'), { status: 404 });
 }
 
