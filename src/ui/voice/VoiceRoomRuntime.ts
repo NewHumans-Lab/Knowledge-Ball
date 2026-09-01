@@ -111,9 +111,10 @@ function installStyles(): void {
       34%{opacity:.44}
       100%{transform:translate(-50%,-50%) scale(3.45);opacity:0}
     }
-    .voice-detail-mic{position:absolute;left:50%;top:-30px;z-index:4;transform:translateX(-50%);width:56px;height:56px;padding:0;
+    .voice-detail-mic{position:absolute;left:50%;top:4px;z-index:4;transform:translateX(-50%);width:52px;height:52px;padding:0;
       display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(85,236,255,.42);background:rgba(8,13,32,.88);
-      color:#DFF7FF;font:500 25px/1 'Inter','Noto Sans SC',sans-serif;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.26);backdrop-filter:blur(6px)}
+      color:#DFF7FF;font:500 24px/1 'Inter','Noto Sans SC',sans-serif;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.26);backdrop-filter:blur(6px)}
+    .voice-detail-mic ~ .node-detail-title{margin-top:28px}
     .voice-detail-mic:hover,.voice-detail-mic:focus-visible{border-color:rgba(85,236,255,.78);background:rgba(85,236,255,.10);outline:none}
     .voice-detail-mic.active{border-color:var(--accent-primary,#55ECFF);color:var(--accent-primary,#55ECFF);box-shadow:0 0 0 2px rgba(85,236,255,.10),0 8px 24px rgba(0,0,0,.26)}
     .voice-room-panel{position:absolute;left:50%;bottom:72px;z-index:48;transform:translateX(-50%);display:none;align-items:center;gap:8px;
@@ -131,7 +132,8 @@ function installStyles(): void {
     .voice-room-audio{display:none}
     @media(max-width:640px){
       .voice-node-count{left:22px;font-size:9px}
-      .voice-detail-mic{top:-28px;width:56px;height:56px;font-size:25px}
+      .voice-detail-mic{top:2px;width:52px;height:52px;font-size:24px}
+      .voice-detail-mic ~ .node-detail-title{margin-top:28px}
       .voice-room-panel{bottom:70px;max-width:94vw}.voice-room-title{max-width:120px}
     }
   `;
@@ -526,7 +528,7 @@ export function installVoiceRoomRuntime(): void {
         const nodeId = button?.dataset.voiceNodeId;
         if (nodeId) void joinRoom(nodeId);
       });
-      detail.appendChild(button);
+      detail.prepend(button);
     }
     const nodeId = detail.dataset.nodeId;
     button.dataset.voiceNodeId = nodeId;
