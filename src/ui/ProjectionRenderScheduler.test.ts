@@ -59,7 +59,9 @@ assert.match(runtime, /min-width:44px;height:44px/, 'touch hit target must remai
 
 const edgeFunction = readFileSync('supabase/functions/livekit-voice/index.ts', 'utf8');
 assert.match(edgeFunction, /livekit-server-sdk@2\.18\.0/, 'server SDK must be version-pinned');
-assert.match(edgeFunction, /canPublishSources:\s*\['microphone'\]/, 'join token must be microphone-only');
+assert.match(edgeFunction, /TrackSource\s*}\s*from\s*'npm:livekit-server-sdk@2\.18\.0'/, 'server SDK must expose the protocol TrackSource enum used by grants');
+assert.match(edgeFunction, /canPublishSources:\s*\[TrackSource\.MICROPHONE\]/, 'join token must authorize only the protocol microphone source');
+assert.doesNotMatch(edgeFunction, /canPublishSources:\s*\['microphone'\]/, 'join token must never pass string track-source values that crash JWT serialization');
 assert.match(edgeFunction, /canPublishData:\s*false/, 'voice participants must not gain a data-publish side channel');
 assert.match(edgeFunction, /roomService\.listRooms\(\)/, 'participant counts must come from active LiveKit rooms');
 assert.match(edgeFunction, /roomService\.getParticipant\(targetRoom, participantIdentity\)/, 'speaking heartbeat must verify the caller is currently in the room');
