@@ -93,30 +93,18 @@ function installStyles(): void {
   style.id = 'voice-room-runtime-style';
   style.textContent = `
     .voice-room-layer{position:absolute;inset:0;z-index:12;pointer-events:none;overflow:hidden}
-    .voice-node-marker{position:absolute;display:block;transform:translate(-50%,-50%);pointer-events:none;
-      min-width:44px;height:44px;padding:0;border:0;background:transparent;color:var(--accent-primary,#55ECFF)}
+    .voice-node-marker{position:absolute;display:flex;align-items:center;justify-content:center;transform:translate(8px,-50%);pointer-events:auto;
+      min-width:44px;height:44px;padding:0;border:0;background:transparent;color:var(--ink-dim,#B6C7DE);cursor:pointer}
+    .voice-node-visual{display:flex;align-items:center;gap:4px;min-width:26px;height:20px;padding:0 6px;border:1px solid rgba(85,236,255,.28);
+      border-radius:10px;background:rgba(8,13,32,.78);font:600 10px/1 Inter,'Noto Sans SC',sans-serif;backdrop-filter:blur(5px);white-space:nowrap}
+    .voice-node-marker:hover .voice-node-visual,.voice-node-marker.active .voice-node-visual{border-color:var(--accent-primary,#55ECFF);color:var(--accent-primary,#55ECFF)}
     .voice-node-marker[hidden]{display:none}
-    .voice-node-visual{position:relative;display:block;width:44px;height:44px;pointer-events:none}
-    .voice-node-count{position:absolute;left:24px;top:50%;transform:translateY(-50%);min-width:14px;padding:2px 4px;border-radius:8px;
-      background:rgba(8,13,32,.72);color:var(--ink-dim,#B6C7DE);font:600 10px/1 Inter,'Noto Sans SC',sans-serif;text-align:center;white-space:nowrap;
-      box-shadow:0 0 0 1px rgba(85,236,255,.18);backdrop-filter:blur(4px)}
-    .voice-ripple{position:absolute;left:50%;top:50%;width:1px;height:1px;display:none;pointer-events:none}
-    .voice-node-marker.speaking .voice-ripple{display:block}
-    .voice-ripple i{position:absolute;left:0;top:0;width:18px;height:18px;border:1px solid rgba(85,236,255,.62);border-radius:50%;
-      transform:translate(-50%,-50%) scale(.22);opacity:0;box-shadow:0 0 8px rgba(85,236,255,.12);
-      animation:voice-water-ripple 1.65s cubic-bezier(.16,.72,.26,1) infinite;will-change:transform,opacity}
-    .voice-ripple i:nth-child(2){animation-delay:.48s}.voice-ripple i:nth-child(3){animation-delay:.96s}
-    @keyframes voice-water-ripple{
-      0%{transform:translate(-50%,-50%) scale(.22);opacity:.72}
-      34%{opacity:.44}
-      100%{transform:translate(-50%,-50%) scale(3.45);opacity:0}
-    }
-    .voice-detail-mic{position:absolute;left:50%;top:4px;z-index:4;transform:translateX(-50%);width:52px;height:52px;padding:0;
-      display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(85,236,255,.42);background:rgba(8,13,32,.88);
-      color:#DFF7FF;font:500 24px/1 'Inter','Noto Sans SC',sans-serif;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.26);backdrop-filter:blur(6px)}
-    .voice-detail-mic ~ .node-detail-title{margin-top:28px}
-    .voice-detail-mic:hover,.voice-detail-mic:focus-visible{border-color:rgba(85,236,255,.78);background:rgba(85,236,255,.10);outline:none}
-    .voice-detail-mic.active{border-color:var(--accent-primary,#55ECFF);color:var(--accent-primary,#55ECFF);box-shadow:0 0 0 2px rgba(85,236,255,.10),0 8px 24px rgba(0,0,0,.26)}
+    .voice-node-mic{font-size:10px;line-height:1}
+    .voice-wave{display:none;width:13px;height:14px;align-items:center;justify-content:flex-start;gap:1px}
+    .voice-node-marker.speaking .voice-wave{display:flex}
+    .voice-wave i{display:block;width:2px;border-radius:2px;background:currentColor;animation:voice-wave-pulse .72s ease-in-out infinite alternate}
+    .voice-wave i:nth-child(1){height:4px}.voice-wave i:nth-child(2){height:9px;animation-delay:.12s}.voice-wave i:nth-child(3){height:6px;animation-delay:.24s}
+    @keyframes voice-wave-pulse{from{transform:scaleY(.45);opacity:.45}to{transform:scaleY(1);opacity:1}}
     .voice-room-panel{position:absolute;left:50%;bottom:72px;z-index:48;transform:translateX(-50%);display:none;align-items:center;gap:8px;
       max-width:min(92vw,560px);padding:8px 10px;border:1px solid var(--panel-border,rgba(120,190,255,.2));border-radius:14px;background:rgba(8,13,32,.94);
       box-shadow:0 12px 36px rgba(0,0,0,.38);color:var(--ink,#F3F8FF);font:500 11px/1.25 Inter,'Noto Sans SC',sans-serif}
@@ -131,21 +119,25 @@ function installStyles(): void {
     .voice-room-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
     .voice-room-audio{display:none}
     @media(max-width:640px){
-      .voice-node-count{left:22px;font-size:9px}
-      .voice-detail-mic{top:2px;width:52px;height:52px;font-size:24px}
-      .voice-detail-mic ~ .node-detail-title{margin-top:28px}
+      .voice-node-marker{transform:translate(4px,-50%);min-width:44px;height:44px}
+      .voice-node-visual{height:18px;padding:0 5px;font-size:9px}
       .voice-room-panel{bottom:70px;max-width:94vw}.voice-room-title{max-width:120px}
     }
   `;
   document.head.appendChild(style);
 }
 
-function createMarker(nodeId: string): HTMLDivElement {
-  const marker = document.createElement('div');
+function createMarker(nodeId: string, onJoin: (id: string) => void): HTMLButtonElement {
+  const marker = document.createElement('button');
+  marker.type = 'button';
   marker.className = 'voice-node-marker';
   marker.dataset.voiceNodeId = nodeId;
-  marker.setAttribute('aria-hidden', 'true');
-  marker.innerHTML = '<span class="voice-node-visual"><span class="voice-node-count">0</span><span class="voice-ripple"><i></i><i></i><i></i></span></span>';
+  marker.innerHTML = '<span class="voice-node-visual"><span class="voice-node-mic" aria-hidden="true">🎙</span><span class="voice-node-count">0</span><span class="voice-wave" aria-hidden="true"><i></i><i></i><i></i></span></span>';
+  marker.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    onJoin(nodeId);
+  });
   return marker;
 }
 
@@ -235,7 +227,7 @@ export function installVoiceRoomRuntime(): void {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/$/, '') ?? '';
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '';
   const statuses = new Map<string, VoiceRoomStatus>();
-  const markers = new Map<string, HTMLDivElement>();
+  const markers = new Map<string, HTMLButtonElement>();
 
   let room: LiveKitRoom | null = null;
   let pendingRoom: LiveKitRoom | null = null;
@@ -513,30 +505,6 @@ export function installVoiceRoomRuntime(): void {
     }
   };
 
-  const syncDetailVoiceButton = () => {
-    const detail = document.querySelector<HTMLElement>('#nodeDetailOverlay.open[data-node-id]');
-    if (!detail?.dataset.nodeId) return;
-    let button = detail.querySelector<HTMLButtonElement>(':scope > .voice-detail-mic');
-    if (!button) {
-      button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'voice-detail-mic';
-      button.textContent = '🎙';
-      button.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        const nodeId = button?.dataset.voiceNodeId;
-        if (nodeId) void joinRoom(nodeId);
-      });
-      detail.prepend(button);
-    }
-    const nodeId = detail.dataset.nodeId;
-    button.dataset.voiceNodeId = nodeId;
-    button.classList.toggle('active', currentNodeId === nodeId && room !== null);
-    button.title = text('进入这个知识节点的语音房', 'Join this knowledge node voice room');
-    button.setAttribute('aria-label', button.title);
-  };
-
   audioButton.addEventListener('click', () => {
     const targetRoom = room;
     if (!targetRoom || typeof targetRoom.startAudio !== 'function') return;
@@ -574,21 +542,21 @@ export function installVoiceRoomRuntime(): void {
     if (stopped) return;
     const debug = getDebug();
     const wanted = wantedMarkerIds();
-    syncDetailVoiceButton();
 
     for (const id of wanted) {
       let marker = markers.get(id);
       if (!marker) {
-        marker = createMarker(id);
+        marker = createMarker(id, joinRoom);
         markers.set(id, marker);
         layer.appendChild(marker);
       }
       const status = statuses.get(id);
-      const participants = status?.participants ?? (currentNodeId === id ? 1 : 0);
-      marker.querySelector<HTMLElement>('.voice-node-count')!.textContent = String(participants);
-      marker.classList.toggle('speaking', status?.speaking === true || (currentNodeId === id && localSpeaking));
+      marker.querySelector<HTMLElement>('.voice-node-count')!.textContent = String(status?.participants ?? (currentNodeId === id ? 1 : 0));
+      marker.classList.toggle('speaking', status?.speaking === true);
+      marker.classList.toggle('active', currentNodeId === id);
+      marker.title = text('进入这个知识节点的语音房', 'Join this knowledge node voice room');
       const point = debug?.scene?.screenPositionForNode(id) ?? null;
-      marker.hidden = !point || participants < 1;
+      marker.hidden = !point;
       if (point) {
         marker.style.left = `${point.x}px`;
         marker.style.top = `${point.y}px`;
