@@ -90,6 +90,24 @@ try {
       await route.fulfill(jsonResponse(0));
       return;
     }
+    if (url.pathname === '/functions/v1/livekit-voice' && request.method() === 'POST') {
+      let payload = null;
+      try {
+        payload = JSON.parse(request.postData() ?? 'null');
+      } catch {
+        payload = null;
+      }
+      if (
+        payload
+        && typeof payload === 'object'
+        && !Array.isArray(payload)
+        && payload.action === 'status'
+        && Object.keys(payload).length === 1
+      ) {
+        await route.fulfill(jsonResponse({ rooms: [] }));
+        return;
+      }
+    }
 
     unexpectedSupabaseRequests.push(signature);
     await route.fulfill(jsonResponse({ error: 'CI zero-write gate blocked an unexpected Supabase request' }, 599));
@@ -140,11 +158,13 @@ try {
 
   assert.ok(interceptedSupabaseRequests.some(item => item.startsWith('POST /auth/v1/signup')), 'deployed app did not exercise its configured Supabase auth bootstrap');
   assert.ok(interceptedSupabaseRequests.some(item => item.startsWith('GET /rest/v1/public_knowledge_events')), 'deployed app did not exercise its configured public-event pull');
+  assert.ok(interceptedSupabaseRequests.some(item => item === 'POST /functions/v1/livekit-voice'), 'deployed app did not exercise the read-only voice-room status endpoint');
   assert.deepEqual(unexpectedSupabaseRequests, [], `unexpected Supabase requests were blocked:\n${unexpectedSupabaseRequests.join('\n')}`);
   assert.deepEqual(pageErrors, [], `deployed zero-write flow produced page errors:\n${pageErrors.join('\n')}`);
 
   console.log(`Zero-write deployed Pages browser gate passed for ${expectedBuild}`);
   console.log(`Supabase project wiring: ${expectedSupabaseOrigin}; intercepted requests: ${interceptedSupabaseRequests.length}; external Supabase requests: 0`);
+  console.log('Voice gate: read-only status allowed; join/speaking and unknown function actions remain blocked');
   console.log('Visibility touch cycle: Current -> Personal -> All -> Current');
 } finally {
   await browser.close();
