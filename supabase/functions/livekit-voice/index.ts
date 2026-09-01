@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { AccessToken, RoomServiceClient } from 'npm:livekit-server-sdk@2.18.0';
+import { AccessToken, RoomServiceClient, TrackSource } from 'npm:livekit-server-sdk@2.18.0';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -220,7 +220,7 @@ Deno.serve(async (req: Request) => {
         canSubscribe: true,
         canPublish: true,
         canPublishData: false,
-        canPublishSources: ['microphone'],
+        canPublishSources: [TrackSource.MICROPHONE],
         canUpdateOwnMetadata: false,
       });
       return json(200, {
