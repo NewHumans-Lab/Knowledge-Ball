@@ -1,3 +1,5 @@
+import './voice/VoiceRoomRuntime';
+
 export type ProjectionRenderFlush = () => void;
 export type ProjectionRenderSchedule = (flush: () => void) => void;
 
