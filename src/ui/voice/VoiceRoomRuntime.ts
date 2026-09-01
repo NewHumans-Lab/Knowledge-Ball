@@ -1,9 +1,12 @@
+import { Capacitor } from '@capacitor/core';
 import { createProductionAuthClient } from '../../auth/AuthClient';
 
 export const LIVEKIT_CLIENT_CDN = 'https://cdn.jsdelivr.net/npm/livekit-client@2.22.1/dist/livekit-client.umd.min.js';
 export const VOICE_ROOM_PREFIX = 'knowledge:';
 const STATUS_INTERVAL_MS = 2500;
+const STATUS_BACKOFF_MAX_MS = 60_000;
 const SPEAKING_HEARTBEAT_MS = 900;
+const SPEAKING_REPEAT_MS = 1500;
 
 export interface VoiceRoomStatus {
   nodeId: string;
@@ -66,6 +69,12 @@ type JoinResponse = {
   nodeId: string;
 };
 
+class VoiceServiceError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 function getDebug(): VoiceDebug | undefined {
   return (window as unknown as { __debug?: VoiceDebug }).__debug;
 }
@@ -84,10 +93,11 @@ function installStyles(): void {
   style.id = 'voice-room-runtime-style';
   style.textContent = `
     .voice-room-layer{position:absolute;inset:0;z-index:12;pointer-events:none;overflow:hidden}
-    .voice-node-marker{position:absolute;display:flex;align-items:center;gap:4px;transform:translate(16px,-50%);pointer-events:auto;
-      min-width:26px;height:20px;padding:0 6px;border:1px solid rgba(85,236,255,.28);border-radius:10px;background:rgba(8,13,32,.78);
-      color:var(--ink-dim,#B6C7DE);font:600 10px/1 Inter,'Noto Sans SC',sans-serif;cursor:pointer;backdrop-filter:blur(5px);white-space:nowrap}
-    .voice-node-marker:hover,.voice-node-marker.active{border-color:var(--accent-primary,#55ECFF);color:var(--accent-primary,#55ECFF)}
+    .voice-node-marker{position:absolute;display:flex;align-items:center;justify-content:center;transform:translate(8px,-50%);pointer-events:auto;
+      min-width:44px;height:44px;padding:0;border:0;background:transparent;color:var(--ink-dim,#B6C7DE);cursor:pointer}
+    .voice-node-visual{display:flex;align-items:center;gap:4px;min-width:26px;height:20px;padding:0 6px;border:1px solid rgba(85,236,255,.28);
+      border-radius:10px;background:rgba(8,13,32,.78);font:600 10px/1 Inter,'Noto Sans SC',sans-serif;backdrop-filter:blur(5px);white-space:nowrap}
+    .voice-node-marker:hover .voice-node-visual,.voice-node-marker.active .voice-node-visual{border-color:var(--accent-primary,#55ECFF);color:var(--accent-primary,#55ECFF)}
     .voice-node-marker[hidden]{display:none}
     .voice-node-mic{font-size:10px;line-height:1}
     .voice-wave{display:none;width:13px;height:14px;align-items:center;justify-content:flex-start;gap:1px}
@@ -96,18 +106,23 @@ function installStyles(): void {
     .voice-wave i:nth-child(1){height:4px}.voice-wave i:nth-child(2){height:9px;animation-delay:.12s}.voice-wave i:nth-child(3){height:6px;animation-delay:.24s}
     @keyframes voice-wave-pulse{from{transform:scaleY(.45);opacity:.45}to{transform:scaleY(1);opacity:1}}
     .voice-room-panel{position:absolute;left:50%;bottom:72px;z-index:48;transform:translateX(-50%);display:none;align-items:center;gap:8px;
-      max-width:min(92vw,520px);padding:8px 10px;border:1px solid var(--panel-border,rgba(120,190,255,.2));border-radius:14px;background:rgba(8,13,32,.94);
+      max-width:min(92vw,560px);padding:8px 10px;border:1px solid var(--panel-border,rgba(120,190,255,.2));border-radius:14px;background:rgba(8,13,32,.94);
       box-shadow:0 12px 36px rgba(0,0,0,.38);color:var(--ink,#F3F8FF);font:500 11px/1.25 Inter,'Noto Sans SC',sans-serif}
     .voice-room-panel.open{display:flex}.voice-room-title{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-    .voice-room-count{color:var(--ink-faint,#71829D);white-space:nowrap}.voice-room-action{border:1px solid var(--panel-border,rgba(120,190,255,.2));background:transparent;
+    .voice-room-count{color:var(--ink-faint,#71829D);white-space:nowrap}.voice-room-action{min-height:34px;border:1px solid var(--panel-border,rgba(120,190,255,.2));background:transparent;
       color:var(--ink,#F3F8FF);border-radius:10px;padding:6px 9px;font:600 11px/1 Inter,'Noto Sans SC',sans-serif;cursor:pointer}
     .voice-room-action:hover{border-color:var(--accent-primary,#55ECFF)}.voice-room-action.muted{color:var(--ink-faint,#71829D)}
+    .voice-room-action[hidden]{display:none}
     .voice-room-toast{position:absolute;left:50%;bottom:118px;z-index:80;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;
       max-width:min(88vw,440px);padding:8px 12px;border:1px solid rgba(85,236,255,.35);border-radius:9px;background:rgba(8,13,32,.95);color:var(--ink,#F3F8FF);
       font:500 11px/1.4 Inter,'Noto Sans SC',sans-serif;transition:opacity .18s,transform .18s;text-align:center}
     .voice-room-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
     .voice-room-audio{display:none}
-    @media(max-width:640px){.voice-node-marker{transform:translate(13px,-50%);height:18px;padding:0 5px;font-size:9px}.voice-room-panel{bottom:70px;max-width:94vw}.voice-room-title{max-width:130px}}
+    @media(max-width:640px){
+      .voice-node-marker{transform:translate(4px,-50%);min-width:44px;height:44px}
+      .voice-node-visual{height:18px;padding:0 5px;font-size:9px}
+      .voice-room-panel{bottom:70px;max-width:94vw}.voice-room-title{max-width:120px}
+    }
   `;
   document.head.appendChild(style);
 }
@@ -117,7 +132,7 @@ function createMarker(nodeId: string, onJoin: (id: string) => void): HTMLButtonE
   marker.type = 'button';
   marker.className = 'voice-node-marker';
   marker.dataset.voiceNodeId = nodeId;
-  marker.innerHTML = '<span class="voice-node-mic" aria-hidden="true">🎙</span><span class="voice-node-count">0</span><span class="voice-wave" aria-hidden="true"><i></i><i></i><i></i></span>';
+  marker.innerHTML = '<span class="voice-node-visual"><span class="voice-node-mic" aria-hidden="true">🎙</span><span class="voice-node-count">0</span><span class="voice-wave" aria-hidden="true"><i></i><i></i><i></i></span></span>';
   marker.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
@@ -126,31 +141,51 @@ function createMarker(nodeId: string, onJoin: (id: string) => void): HTMLButtonE
   return marker;
 }
 
+let liveKitLoadPromise: Promise<LiveKitGlobal> | null = null;
+
 function loadLiveKit(): Promise<LiveKitGlobal> {
   const current = (window as unknown as { LivekitClient?: LiveKitGlobal }).LivekitClient;
   if (current) return Promise.resolve(current);
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>('script[data-knowledge-ball-livekit]');
+  if (liveKitLoadPromise) return liveKitLoadPromise;
+
+  liveKitLoadPromise = new Promise((resolve, reject) => {
+    let existing = document.querySelector<HTMLScriptElement>('script[data-knowledge-ball-livekit]');
+    if (existing?.dataset.livekitFailed === '1' || existing?.dataset.livekitLoaded === '1') {
+      existing.remove();
+      existing = null;
+    }
     const script = existing ?? document.createElement('script');
+    const cleanupFailure = () => {
+      script.dataset.livekitFailed = '1';
+      script.remove();
+      liveKitLoadPromise = null;
+      reject(new Error('LiveKit SDK failed to load'));
+    };
     const finish = () => {
       const sdk = (window as unknown as { LivekitClient?: LiveKitGlobal }).LivekitClient;
-      if (sdk) resolve(sdk); else reject(new Error('LiveKit SDK failed to load'));
+      if (!sdk) {
+        cleanupFailure();
+        return;
+      }
+      script.dataset.livekitLoaded = '1';
+      resolve(sdk);
     };
     script.addEventListener('load', finish, { once: true });
-    script.addEventListener('error', () => reject(new Error('LiveKit SDK failed to load')), { once: true });
+    script.addEventListener('error', cleanupFailure, { once: true });
     if (!existing) {
       script.src = LIVEKIT_CLIENT_CDN;
       script.async = true;
       script.crossOrigin = 'anonymous';
       script.dataset.knowledgeBallLivekit = '1';
       document.head.appendChild(script);
-    } else if ((window as unknown as { LivekitClient?: LiveKitGlobal }).LivekitClient) {
-      finish();
     }
   });
+
+  return liveKitLoadPromise;
 }
 
 export function installVoiceRoomRuntime(): void {
+  if (Capacitor.isNativePlatform()) return;
   if (document.documentElement.dataset.voiceRoomRuntime === '1') return;
   const main = document.querySelector<HTMLElement>('.main');
   if (!main) return;
@@ -164,10 +199,11 @@ export function installVoiceRoomRuntime(): void {
 
   const panel = document.createElement('div');
   panel.className = 'voice-room-panel';
-  panel.innerHTML = '<span class="voice-room-title"></span><span class="voice-room-count"></span><button type="button" class="voice-room-action voice-room-mic"></button><button type="button" class="voice-room-action voice-room-leave"></button>';
+  panel.innerHTML = '<span class="voice-room-title"></span><span class="voice-room-count"></span><button type="button" class="voice-room-action voice-room-audio-start" hidden></button><button type="button" class="voice-room-action voice-room-mic"></button><button type="button" class="voice-room-action voice-room-leave"></button>';
   main.appendChild(panel);
   const panelTitle = panel.querySelector<HTMLElement>('.voice-room-title')!;
   const panelCount = panel.querySelector<HTMLElement>('.voice-room-count')!;
+  const audioButton = panel.querySelector<HTMLButtonElement>('.voice-room-audio-start')!;
   const micButton = panel.querySelector<HTMLButtonElement>('.voice-room-mic')!;
   const leaveButton = panel.querySelector<HTMLButtonElement>('.voice-room-leave')!;
 
@@ -192,18 +228,28 @@ export function installVoiceRoomRuntime(): void {
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '';
   const statuses = new Map<string, VoiceRoomStatus>();
   const markers = new Map<string, HTMLButtonElement>();
+
   let room: LiveKitRoom | null = null;
+  let pendingRoom: LiveKitRoom | null = null;
   let livekit: LiveKitGlobal | null = null;
   let currentNodeId: string | null = null;
   let participantIdentity = '';
   let micEnabled = false;
+  let audioBlocked = false;
+  let localSpeaking = false;
   let lastSpeakingHeartbeat = 0;
+  let speakingTimer: number | null = null;
   let statusTimer: number | null = null;
+  let statusFailures = 0;
   let renderRaf = 0;
   let stopped = false;
+  let joinSerial = 0;
+  let micActionSerial = 0;
 
   const voiceRequest = async (payload: Record<string, unknown>): Promise<unknown> => {
-    if (!authClient || !supabaseUrl || !publishableKey) throw new Error(text('语音服务尚未配置', 'Voice service is not configured'));
+    if (!authClient || !supabaseUrl || !publishableKey) {
+      throw new VoiceServiceError(text('语音服务尚未配置', 'Voice service is not configured'), 503);
+    }
     const session = await authClient.session();
     const response = await fetch(`${supabaseUrl}/functions/v1/livekit-voice`, {
       method: 'POST',
@@ -217,19 +263,49 @@ export function installVoiceRoomRuntime(): void {
     const body = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) {
       const message = typeof body.error === 'string' ? body.error : text('语音服务请求失败', 'Voice service request failed');
-      throw new Error(message);
+      throw new VoiceServiceError(message, response.status);
     }
     return body;
   };
 
+  const wantedMarkerIds = () => {
+    const detailId = document.querySelector<HTMLElement>('#nodeDetailOverlay.open[data-node-id]')?.dataset.nodeId ?? null;
+    const wanted = new Set(statuses.keys());
+    if (detailId) wanted.add(detailId);
+    if (currentNodeId) wanted.add(currentNodeId);
+    return wanted;
+  };
+
+  const ensureRenderLoop = () => {
+    if (stopped || renderRaf !== 0) return;
+    renderRaf = window.requestAnimationFrame(renderMarkers);
+  };
+
+  const scheduleStatus = (delay: number) => {
+    if (stopped) return;
+    if (statusTimer !== null) window.clearTimeout(statusTimer);
+    statusTimer = window.setTimeout(() => {
+      statusTimer = null;
+      void refreshStatus();
+    }, delay);
+  };
+
   const refreshStatus = async () => {
+    if (stopped) return;
     try {
       const next = parseVoiceRoomStatusPayload(await voiceRequest({ action: 'status' }));
       statuses.clear();
       for (const item of next) statuses.set(item.nodeId, item);
+      statusFailures = 0;
+      ensureRenderLoop();
+      scheduleStatus(document.hidden ? 15_000 : STATUS_INTERVAL_MS);
     } catch (error) {
-      // A missing/un-deployed voice backend must not disturb the existing knowledge scene.
+      statusFailures += 1;
       if (import.meta.env.DEV) console.debug('[Knowledge-Ball voice] status unavailable', error);
+      const permanentConfigurationError = error instanceof VoiceServiceError && error.status === 503;
+      const exponential = Math.min(STATUS_BACKOFF_MAX_MS, STATUS_INTERVAL_MS * (2 ** Math.min(statusFailures, 5)));
+      const delay = document.hidden ? STATUS_BACKOFF_MAX_MS : permanentConfigurationError ? STATUS_BACKOFF_MAX_MS : exponential;
+      scheduleStatus(delay);
     }
   };
 
@@ -240,10 +316,40 @@ export function installVoiceRoomRuntime(): void {
     element.setAttribute('data-voice-room-audio', '1');
     audioMount.appendChild(element);
   };
+
   const remoteTrackUnsubscribed = (trackValue: unknown) => {
     const track = trackValue as RemoteTrack;
     if (typeof track.detach !== 'function') return;
     for (const element of track.detach()) element.remove();
+  };
+
+  const clearSpeakingLoop = () => {
+    localSpeaking = false;
+    if (speakingTimer !== null) {
+      window.clearInterval(speakingTimer);
+      speakingTimer = null;
+    }
+  };
+
+  const sendSpeakingHeartbeat = () => {
+    if (!currentNodeId || !participantIdentity || !micEnabled || !localSpeaking) return;
+    const now = Date.now();
+    if (now - lastSpeakingHeartbeat < SPEAKING_HEARTBEAT_MS) return;
+    lastSpeakingHeartbeat = now;
+    void voiceRequest({ action: 'speaking', nodeId: currentNodeId, participantIdentity }).catch(() => undefined);
+  };
+
+  const setLocalSpeaking = (speaking: boolean) => {
+    localSpeaking = speaking && micEnabled;
+    if (!localSpeaking) {
+      if (speakingTimer !== null) {
+        window.clearInterval(speakingTimer);
+        speakingTimer = null;
+      }
+      return;
+    }
+    sendSpeakingHeartbeat();
+    if (speakingTimer === null) speakingTimer = window.setInterval(sendSpeakingHeartbeat, SPEAKING_REPEAT_MS);
   };
 
   const updatePanel = () => {
@@ -254,100 +360,188 @@ export function installVoiceRoomRuntime(): void {
     const node = getDebug()?.renderNodes?.find(item => item.id === currentNodeId);
     panelTitle.textContent = node?.title || currentNodeId;
     panelCount.textContent = text(`${statuses.get(currentNodeId)?.participants ?? 1} 人`, `${statuses.get(currentNodeId)?.participants ?? 1} people`);
+    audioButton.textContent = text('播放声音', 'Enable audio');
+    audioButton.hidden = !audioBlocked;
     micButton.textContent = micEnabled ? text('静音', 'Mute') : text('开麦', 'Unmute');
     micButton.classList.toggle('muted', !micEnabled);
     leaveButton.textContent = text('离开', 'Leave');
     panel.classList.add('open');
   };
 
-  const leaveRoom = async () => {
-    const leaving = room;
-    room = null;
+  const resetSessionUi = () => {
     currentNodeId = null;
     participantIdentity = '';
     micEnabled = false;
+    audioBlocked = false;
+    micActionSerial += 1;
+    clearSpeakingLoop();
     for (const element of audioMount.querySelectorAll('[data-voice-room-audio]')) element.remove();
     panel.classList.remove('open');
-    if (leaving) await Promise.resolve(leaving.disconnect()).catch(() => undefined);
+  };
+
+  const disconnectTrackedRooms = async () => {
+    const active = room;
+    const pending = pendingRoom;
+    room = null;
+    pendingRoom = null;
+    resetSessionUi();
+    const targets = new Set<LiveKitRoom>();
+    if (active) targets.add(active);
+    if (pending) targets.add(pending);
+    await Promise.all([...targets].map(target => Promise.resolve(target.disconnect()).catch(() => undefined)));
+  };
+
+  const leaveRoom = async () => {
+    joinSerial += 1;
+    await disconnectTrackedRooms();
+    ensureRenderLoop();
     void refreshStatus();
   };
 
-  const sendSpeakingHeartbeat = () => {
-    if (!currentNodeId || !participantIdentity || !micEnabled) return;
-    const now = Date.now();
-    if (now - lastSpeakingHeartbeat < SPEAKING_HEARTBEAT_MS) return;
-    lastSpeakingHeartbeat = now;
-    void voiceRequest({ action: 'speaking', nodeId: currentNodeId, participantIdentity }).catch(() => undefined);
-  };
-
   const joinRoom = async (nodeId: string) => {
+    roomNameForNode(nodeId);
+    if (currentNodeId === nodeId && room) return;
+
+    const attempt = ++joinSerial;
+    const stale = () => stopped || attempt !== joinSerial;
+
     try {
-      roomNameForNode(nodeId);
-      if (currentNodeId === nodeId && room) return;
-      if (room) await leaveRoom();
+      await disconnectTrackedRooms();
+      if (stale()) return;
+
       livekit = livekit ?? await loadLiveKit();
-      if (livekit.isBrowserSupported && !livekit.isBrowserSupported()) throw new Error(text('当前浏览器不支持实时语音', 'This browser does not support realtime voice'));
+      if (stale()) return;
+      if (livekit.isBrowserSupported && !livekit.isBrowserSupported()) {
+        throw new Error(text('当前浏览器不支持实时语音', 'This browser does not support realtime voice'));
+      }
+
       const response = await voiceRequest({ action: 'join', nodeId }) as Partial<JoinResponse>;
-      if (typeof response.url !== 'string' || typeof response.token !== 'string' || typeof response.participantIdentity !== 'string') {
+      if (stale()) return;
+      if (
+        response.nodeId !== nodeId
+        || typeof response.url !== 'string'
+        || typeof response.token !== 'string'
+        || typeof response.participantIdentity !== 'string'
+      ) {
         throw new Error(text('语音房凭证无效', 'Invalid voice-room credentials'));
       }
-      participantIdentity = response.participantIdentity;
+
+      const nextParticipantIdentity = response.participantIdentity;
       const nextRoom = new livekit.Room({ adaptiveStream: false, dynacast: false });
+      pendingRoom = nextRoom;
       const events = livekit.RoomEvent;
+
       nextRoom.on(events.TrackSubscribed, remoteTrackSubscribed);
       nextRoom.on(events.TrackUnsubscribed, remoteTrackUnsubscribed);
-      nextRoom.on(events.ParticipantConnected, () => { void refreshStatus(); });
-      nextRoom.on(events.ParticipantDisconnected, () => { void refreshStatus(); });
+      nextRoom.on(events.ParticipantConnected, () => { if (room === nextRoom) void refreshStatus(); });
+      nextRoom.on(events.ParticipantDisconnected, () => { if (room === nextRoom) void refreshStatus(); });
       nextRoom.on(events.ActiveSpeakersChanged, (speakersValue: unknown) => {
-        if (!Array.isArray(speakersValue)) return;
-        const speakingLocally = speakersValue.some(value => (value as LiveKitParticipant)?.identity === participantIdentity);
-        if (speakingLocally) sendSpeakingHeartbeat();
+        if (room !== nextRoom || !Array.isArray(speakersValue)) return;
+        const speakingLocally = speakersValue.some(value => (value as LiveKitParticipant)?.identity === nextParticipantIdentity);
+        setLocalSpeaking(speakingLocally);
       });
+      if (events.AudioPlaybackStatusChanged) {
+        nextRoom.on(events.AudioPlaybackStatusChanged, (canPlayValue: unknown) => {
+          if (room !== nextRoom) return;
+          const canPlay = canPlayValue === true;
+          audioBlocked = !canPlay;
+          updatePanel();
+        });
+      }
       nextRoom.on(events.Disconnected, () => {
-        if (room !== nextRoom) return;
-        room = null;
-        currentNodeId = null;
-        participantIdentity = '';
-        micEnabled = false;
-        panel.classList.remove('open');
+        if (room !== nextRoom && pendingRoom !== nextRoom) return;
+        if (pendingRoom === nextRoom) pendingRoom = null;
+        if (room === nextRoom) room = null;
+        if (currentNodeId === nodeId) resetSessionUi();
+        ensureRenderLoop();
         void refreshStatus();
       });
+
       await nextRoom.connect(response.url, response.token, { autoSubscribe: true });
+      if (stale()) {
+        if (pendingRoom === nextRoom) pendingRoom = null;
+        await Promise.resolve(nextRoom.disconnect()).catch(() => undefined);
+        return;
+      }
+
+      pendingRoom = null;
       room = nextRoom;
       currentNodeId = nodeId;
-      if (typeof nextRoom.startAudio === 'function') await nextRoom.startAudio().catch(() => undefined);
+      participantIdentity = nextParticipantIdentity;
+
+      if (typeof nextRoom.startAudio === 'function') {
+        try {
+          await nextRoom.startAudio();
+          if (!stale() && room === nextRoom) audioBlocked = false;
+        } catch {
+          if (!stale() && room === nextRoom) {
+            audioBlocked = true;
+            showToast(text('浏览器阻止了自动播放，请点“播放声音”', 'Audio playback is blocked; tap “Enable audio”'));
+          }
+        }
+      }
+
       try {
         await nextRoom.localParticipant.setMicrophoneEnabled(true);
-        micEnabled = true;
+        if (!stale() && room === nextRoom) micEnabled = true;
       } catch {
-        micEnabled = false;
-        showToast(text('已进入语音房；麦克风未授权，可作为听众', 'Joined as listener; microphone permission was not granted'));
+        if (!stale() && room === nextRoom) {
+          micEnabled = false;
+          showToast(text('已进入语音房；麦克风未授权，可作为听众', 'Joined as listener; microphone permission was not granted'));
+        }
+      }
+
+      if (stale() || room !== nextRoom) {
+        await Promise.resolve(nextRoom.disconnect()).catch(() => undefined);
+        return;
       }
       updatePanel();
+      ensureRenderLoop();
       await refreshStatus();
     } catch (error) {
-      await leaveRoom();
+      if (stale()) return;
+      await disconnectTrackedRooms();
       showToast(error instanceof Error ? error.message : text('无法进入语音房', 'Unable to join voice room'));
     }
   };
 
-  micButton.addEventListener('click', () => {
-    if (!room) return;
-    const next = !micEnabled;
-    void room.localParticipant.setMicrophoneEnabled(next).then(() => {
-      micEnabled = next;
+  audioButton.addEventListener('click', () => {
+    const targetRoom = room;
+    if (!targetRoom || typeof targetRoom.startAudio !== 'function') return;
+    void targetRoom.startAudio().then(() => {
+      if (room !== targetRoom) return;
+      audioBlocked = false;
       updatePanel();
-    }).catch(error => showToast(error instanceof Error ? error.message : text('麦克风操作失败', 'Microphone operation failed')));
+    }).catch(error => {
+      if (room !== targetRoom) return;
+      showToast(error instanceof Error ? error.message : text('声音播放仍被浏览器阻止', 'Audio playback is still blocked'));
+    });
   });
+
+  micButton.addEventListener('click', () => {
+    const targetRoom = room;
+    const targetNodeId = currentNodeId;
+    if (!targetRoom || !targetNodeId) return;
+    const next = !micEnabled;
+    const operation = ++micActionSerial;
+    void targetRoom.localParticipant.setMicrophoneEnabled(next).then(() => {
+      if (room !== targetRoom || currentNodeId !== targetNodeId || operation !== micActionSerial) return;
+      micEnabled = next;
+      if (!next) setLocalSpeaking(false);
+      updatePanel();
+    }).catch(error => {
+      if (room !== targetRoom || currentNodeId !== targetNodeId || operation !== micActionSerial) return;
+      showToast(error instanceof Error ? error.message : text('麦克风操作失败', 'Microphone operation failed'));
+    });
+  });
+
   leaveButton.addEventListener('click', () => { void leaveRoom(); });
 
-  const renderMarkers = () => {
+  function renderMarkers() {
+    renderRaf = 0;
     if (stopped) return;
     const debug = getDebug();
-    const detailId = document.querySelector<HTMLElement>('#nodeDetailOverlay.open[data-node-id]')?.dataset.nodeId ?? null;
-    const wanted = new Set(statuses.keys());
-    if (detailId) wanted.add(detailId);
-    if (currentNodeId) wanted.add(currentNodeId);
+    const wanted = wantedMarkerIds();
 
     for (const id of wanted) {
       let marker = markers.get(id);
@@ -368,25 +562,62 @@ export function installVoiceRoomRuntime(): void {
         marker.style.top = `${point.y}px`;
       }
     }
+
     for (const [id, marker] of markers) {
       if (wanted.has(id)) continue;
       marker.remove();
       markers.delete(id);
     }
+
     updatePanel();
-    renderRaf = window.requestAnimationFrame(renderMarkers);
+    if (wanted.size > 0) renderRaf = window.requestAnimationFrame(renderMarkers);
+  }
+
+  const detailRoot = document.getElementById('nodeDetailOverlay');
+  const detailObserver = detailRoot ? new MutationObserver(() => ensureRenderLoop()) : null;
+  if (detailObserver && detailRoot) detailObserver.observe(detailRoot, { attributes: true, attributeFilter: ['class', 'data-node-id'] });
+
+  const wakeForInteraction = () => queueMicrotask(ensureRenderLoop);
+  document.addEventListener('click', wakeForInteraction, true);
+
+  const suspendRuntime = () => {
+    if (stopped) return;
+    stopped = true;
+    joinSerial += 1;
+    if (statusTimer !== null) {
+      window.clearTimeout(statusTimer);
+      statusTimer = null;
+    }
+    if (renderRaf !== 0) {
+      window.cancelAnimationFrame(renderRaf);
+      renderRaf = 0;
+    }
+    void disconnectTrackedRooms();
   };
 
-  void refreshStatus();
-  statusTimer = window.setInterval(() => { void refreshStatus(); }, STATUS_INTERVAL_MS);
-  renderRaf = window.requestAnimationFrame(renderMarkers);
+  const resumeRuntime = () => {
+    if (!stopped) return;
+    stopped = false;
+    statusFailures = 0;
+    scheduleStatus(0);
+    ensureRenderLoop();
+  };
 
-  window.addEventListener('pagehide', () => {
-    stopped = true;
-    if (statusTimer !== null) window.clearInterval(statusTimer);
-    window.cancelAnimationFrame(renderRaf);
-    void leaveRoom();
-  }, { once: true });
+  window.addEventListener('pagehide', suspendRuntime);
+  window.addEventListener('pageshow', resumeRuntime);
+  document.addEventListener('visibilitychange', () => {
+    if (stopped) return;
+    if (document.hidden) {
+      scheduleStatus(STATUS_BACKOFF_MAX_MS);
+    } else {
+      statusFailures = 0;
+      scheduleStatus(0);
+      ensureRenderLoop();
+    }
+  });
+
+  scheduleStatus(0);
+  ensureRenderLoop();
 }
 
 if (typeof window !== 'undefined') {
