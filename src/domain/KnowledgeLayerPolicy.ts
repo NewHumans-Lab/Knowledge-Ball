@@ -6,33 +6,23 @@ export type KnowledgeLayer = UserKnowledgeLayer | 'core';
 
 export const SYSTEM_CORE_NODE_IDS = ['n1', 'n2', 'n16'] as const;
 
-export const KNOWLEDGE_LAYER_LABEL: Record<KnowledgeLayer, string> = {
-  core: '核心 · 系统基础',
-  inner: '第一层 · 语义与基础事实',
-  middle: '第二层 · 严谨推理',
-  outer: '第三层 · 概率与争议',
-};
-
 /**
- * Canonical user-facing layer contract.
+ * Canonical semantic layer contract.
  *
  * Layer 1 is descriptive rather than inferential: definitions, directly stated
  * facts/observations, and static semantic relations between knowledge items.
  * Layer 2 contains rigorous reasoning or content that explicitly claims to be
  * rigorous: formal inference, proof, theorem and deduction-rule structures.
  * Layer 3 contains disputed knowledge and statements that are explicitly framed
- * as probabilistic/uncertain at authoring time ("可能", "也许", probabilities,
- * forecasts, hypotheses, opinions and value claims).
+ * as probabilistic/uncertain at authoring time, including forecasts, hypotheses,
+ * opinions, and value claims.
+ *
+ * Localized user-facing labels and explanations belong to the i18n presentation
+ * layer, not this domain-policy module.
  *
  * `NodeType` remains a separate protocol/structural field. It must never be used
  * as the authoritative owner of these three semantic layers for new clean data.
  */
-export const KNOWLEDGE_LAYER_HELP: Record<UserKnowledgeLayer, string> = {
-  inner: '定义、直接事实或观察，以及知识点之间不依赖推导的静态语义关系。第一层描述“是什么 / 有什么关系”，不是推理链。',
-  middle: '所有严谨推理，或明确声称严谨的推理结构，包括公理体系、证明、定理、演绎规则和形式化推导。',
-  outer: '有争议的知识，或作者在提交时明确声明为概率性 / 不确定性的描述，例如“可能”“也许”“概率为 80%”以及假说、预测、观点和价值判断。',
-};
-
 export type LayerNodeStatus = 'pending' | 'verified' | 'suspended' | 'disputed' | 'falsified';
 
 export interface LayerPolicyNode {
