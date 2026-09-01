@@ -67,6 +67,7 @@ assert.match(edgeFunction, /roomService\.updateRoomMetadata/, 'speaking state mu
 assert.match(edgeFunction, /requireDeclaredNode\(nodeId, accessToken\)/, 'join tokens must only be minted for node IDs present in the authoritative public event stream');
 assert.match(edgeFunction, /public_knowledge_events/, 'node existence validation must use the authoritative public knowledge stream');
 assert.match(edgeFunction, /NODE_CACHE_TTL_MS/, 'node declaration lookup must be cached rather than rescanning on every join');
+assert.doesNotMatch(edgeFunction, /declaredNodeIds\(accessToken,\s*true\)/, 'negative node lookups must honor the cache TTL instead of forcing a full event-stream rescan');
 assert.doesNotMatch(edgeFunction, /createRoom\(/, 'rooms must remain lazy and auto-create only when somebody joins');
 assert.doesNotMatch(edgeFunction, /camera|screen_share/, 'voice join grants must not authorize camera or screen sharing');
 
