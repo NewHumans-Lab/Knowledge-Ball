@@ -11,6 +11,7 @@ type UiCopyPair = Readonly<Record<AppLocale, string>>;
  * ad-hoc locale ternaries or translate user/community values.
  */
 export const SUPPLEMENTAL_SYSTEM_UI_TEXT = {
+  'layer.label.core': { 'zh-CN': '核心 · 系统基础', en: 'Core · System foundations' },
   'layer.help.inner': {
     'zh-CN': '定义、直接事实或观察，以及知识点之间不依赖推导的静态语义关系。第一层描述“是什么 / 有什么关系”，不是推理链。',
     en: 'Definitions, direct facts or observations, and static semantic relations that do not depend on inference. Layer 1 describes what something is or how things relate; it is not a reasoning chain.',
