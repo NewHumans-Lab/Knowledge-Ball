@@ -17,12 +17,12 @@
       "available": true,
       "distribution": "apk",
       "version": "0.2.0",
-      "build": "11",
-      "commit": "97eaeb04e6506cf06f33c6f6becabfc6b480f90f",
+      "build": "12",
+      "commit": "b9bb2b234fc26762b37f0cad723d35b443fde472",
       "urls": {
         "download": "https://github.com/NewHumans-Lab/Knowledge-Ball/releases/download/v0.2.0/Knowledge-Ball-Android-v0.2.0.apk"
       },
-      "checksum": "sha256:bea6f5dc497546dc5ed9a269ebd2c21b81221e950cee8ed43159c8131de1e711"
+      "checksum": "sha256:0dc99566ca7de7bae81fec52182f62731981da25631c631585339f4f0d5542df"
     },
     "iosWeb": {
       "available": false,
