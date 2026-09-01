@@ -8,6 +8,13 @@ const CORS = {
 };
 const ROOM_PREFIX = 'knowledge:';
 const SPEAKING_TTL_MS = 4500;
+const NODE_CACHE_TTL_MS = 10_000;
+const EVENT_PAGE_SIZE = 500;
+
+type PublicEventRow = {
+  sequence?: number;
+  envelope?: Record<string, unknown>;
+};
 
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -58,7 +65,9 @@ async function currentUser(accessToken: string): Promise<{ id: string }> {
     headers: { apikey: PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` },
   });
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok || typeof body.id !== 'string' || !body.id) throw Object.assign(new Error('unauthorized'), { status: 401 });
+  if (!response.ok || typeof body.id !== 'string' || !body.id) {
+    throw Object.assign(new Error('unauthorized'), { status: 401 });
+  }
   return { id: body.id };
 }
 
@@ -68,14 +77,111 @@ function speakingUntil(metadata: string | undefined): number {
     const value = JSON.parse(metadata) as Record<string, unknown>;
     const until = Number(value.speakingUntil);
     return Number.isFinite(until) ? until : 0;
-  } catch { return 0; }
+  } catch {
+    return 0;
+  }
+}
+
+function createdNodeIds(envelope: Record<string, unknown> | undefined): string[] {
+  if (!envelope) return [];
+  const type = envelope.type;
+  const payload = envelope.payload;
+  if (!payload || typeof payload !== 'object') return [];
+  const record = payload as Record<string, unknown>;
+
+  if (type === 'NodeCreated') {
+    const nodeId = nodeIdValue(record.nodeId);
+    return nodeId ? [nodeId] : [];
+  }
+
+  if (type !== 'KnowledgeAdded') return [];
+  const edit = record.edit;
+  if (!edit || typeof edit !== 'object') return [];
+  const e = edit as Record<string, unknown>;
+  if (e.kind !== 'add') return [];
+
+  const ids: string[] = [];
+  const pushId = (value: unknown) => {
+    if (!value || typeof value !== 'object') return;
+    const id = nodeIdValue((value as Record<string, unknown>).id);
+    if (id) ids.push(id);
+  };
+
+  if (e.mode === 'atomic') {
+    pushId(e.node);
+  } else if (e.mode === 'theory') {
+    pushId(e.reasoning);
+    pushId(e.conclusion);
+  } else if (e.mode === 'reasoning-link') {
+    pushId(e.reasoning);
+  }
+  return ids;
+}
+
+let cachedNodeIds = new Set<string>();
+let nodeCacheAt = 0;
+let nodeCacheRefresh: Promise<Set<string>> | null = null;
+
+async function fetchDeclaredNodeIds(accessToken: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  let offset = 0;
+
+  while (true) {
+    const params = new URLSearchParams({
+      select: 'sequence,envelope',
+      event_type: 'in.(NodeCreated,KnowledgeAdded)',
+      order: 'sequence.asc',
+      limit: String(EVENT_PAGE_SIZE),
+      offset: String(offset),
+    });
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/public_knowledge_events?${params}`, {
+      headers: {
+        apikey: PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      throw Object.assign(new Error('knowledge node validation failed'), { status: 503 });
+    }
+    const rows = await response.json().catch(() => []) as PublicEventRow[];
+    if (!Array.isArray(rows)) {
+      throw Object.assign(new Error('knowledge node validation failed'), { status: 503 });
+    }
+    for (const row of rows) {
+      for (const id of createdNodeIds(row.envelope)) ids.add(id);
+    }
+    if (rows.length < EVENT_PAGE_SIZE) break;
+    offset += rows.length;
+  }
+
+  cachedNodeIds = ids;
+  nodeCacheAt = Date.now();
+  return ids;
+}
+
+async function declaredNodeIds(accessToken: string, force = false): Promise<Set<string>> {
+  if (!force && Date.now() - nodeCacheAt < NODE_CACHE_TTL_MS) return cachedNodeIds;
+  if (!nodeCacheRefresh) {
+    nodeCacheRefresh = fetchDeclaredNodeIds(accessToken).finally(() => {
+      nodeCacheRefresh = null;
+    });
+  }
+  return nodeCacheRefresh;
+}
+
+async function requireDeclaredNode(nodeId: string, accessToken: string): Promise<void> {
+  let ids = await declaredNodeIds(accessToken);
+  if (!ids.has(nodeId)) ids = await declaredNodeIds(accessToken, true);
+  if (!ids.has(nodeId)) throw Object.assign(new Error('unknown knowledge node'), { status: 404 });
 }
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json(405, { error: 'method not allowed' });
   if (!SUPABASE_URL || !PUBLISHABLE_KEY) return json(503, { error: 'Supabase auth is not configured' });
-  if (!roomService || !LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) return json(503, { error: 'LiveKit voice is not configured' });
+  if (!roomService || !LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+    return json(503, { error: 'LiveKit voice is not configured' });
+  }
 
   const authorization = req.headers.get('Authorization') ?? '';
   const accessToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
@@ -103,6 +209,7 @@ Deno.serve(async (req: Request) => {
     const targetRoom = roomName(nodeId);
 
     if (action === 'join') {
+      await requireDeclaredNode(nodeId, accessToken);
       const participantIdentity = `${user.id}:${crypto.randomUUID()}`;
       const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
         identity: participantIdentity,
@@ -127,7 +234,9 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'speaking') {
       const participantIdentity = typeof body.participantIdentity === 'string' ? body.participantIdentity : '';
-      if (!participantIdentity.startsWith(`${user.id}:`)) return json(403, { error: 'participant identity mismatch' });
+      if (!participantIdentity.startsWith(`${user.id}:`)) {
+        return json(403, { error: 'participant identity mismatch' });
+      }
       await roomService.getParticipant(targetRoom, participantIdentity);
       await roomService.updateRoomMetadata(targetRoom, JSON.stringify({
         kind: 'knowledge-node-voice',
@@ -143,6 +252,8 @@ Deno.serve(async (req: Request) => {
       ? (error as { status: number }).status
       : 500;
     if (status === 401) return json(401, { error: 'authentication failed' });
+    if (status === 404) return json(404, { error: 'knowledge node does not exist' });
+    if (status === 503) return json(503, { error: 'knowledge node validation unavailable' });
     console.error('[livekit-voice]', error);
     return json(500, { error: 'voice service request failed' });
   }
