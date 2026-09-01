@@ -10,6 +10,7 @@ const events = readFileSync('src/event/Event.ts', 'utf8');
 const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const systemCore = readFileSync('src/ui/systemCore/SystemCoreContent.ts', 'utf8');
 const layerPolicy = readFileSync('src/domain/KnowledgeLayerPolicy.ts', 'utf8');
+const systemUiText = readFileSync('src/i18n/SystemUiText.ts', 'utf8');
 const classificationMigration = readFileSync('supabase/migrations/202608200002_three_layer_classification_contract.sql', 'utf8');
 
 assert.equal(existsSync('src/ui/LineageIntentBridge.ts'), false, 'lineage business intent must not travel through encoded strings');
@@ -38,12 +39,13 @@ assert(!panel.includes('id="editType"'), 'optimization form must not expose an i
 assert(!panel.includes('id="middleType"'), 'decomposition form must not ask users to classify intermediate conclusions');
 assert(!panel.includes('id="mergeConclusionType"'), 'merge form must not display a fine-grained conclusion type selector');
 
-assert(panel.includes('<option value="inner">第一层 · 语义与基础事实</option>'), 'submission UI must offer the canonical first layer');
-assert(panel.includes('<option value="middle">第二层 · 严谨推理</option>'), 'submission UI must offer the canonical second layer');
-assert(panel.includes('<option value="outer">第三层 · 概率与争议</option>'), 'submission UI must offer the canonical third layer');
-assert(layerPolicy.includes('静态语义关系'), 'first layer must explicitly include static semantic relations');
-assert(layerPolicy.includes('所有严谨推理'), 'second layer must explicitly include rigorous or claimed-rigorous reasoning');
-assert(layerPolicy.includes('概率性 / 不确定性'), 'third layer must explicitly include probabilistic/uncertain author declarations');
+assert(panel.includes('<option value="inner">第一层 · 语义与基础事实</option>'), 'legacy submission UI must offer the canonical first layer');
+assert(panel.includes('<option value="middle">第二层 · 严谨推理</option>'), 'legacy submission UI must offer the canonical second layer');
+assert(panel.includes('<option value="outer">第三层 · 概率与争议</option>'), 'legacy submission UI must offer the canonical third layer');
+assert(systemUiText.includes('静态语义关系'), 'localized first-layer help must explicitly include static semantic relations');
+assert(systemUiText.includes('所有严谨推理'), 'localized second-layer help must explicitly include rigorous or claimed-rigorous reasoning');
+assert(systemUiText.includes('概率性 / 不确定性'), 'localized third-layer help must explicitly include probabilistic/uncertain author declarations');
+assert(!layerPolicy.includes('定义、直接事实或观察，以及知识点之间不依赖推导的静态语义关系'), 'domain policy must not own localized presentation prose');
 assert(
   panel.includes("layer === 'inner'") &&
   panel.includes('premises.length > 0') &&
