@@ -21,9 +21,15 @@ assert.match(panel, /this\.onCreateNode \? '<button class="btn ghost" id="btnDer
   'legacy Add control must only render where the native compatibility callback exists');
 assert.match(split, /type CreateMode = 'standalone' \| 'reasoning'/,
   'canonical split create modes must remain explicit');
-assert.match(split, /新增只创建一个独立知识球/,
-  'standalone semantics must not be folded back into the legacy generic form');
-assert.match(split, /结论[\s\S]*搜索已有结论节点/,
-  'reasoning flow must retain explicit existing-conclusion selection');
+assert.match(split, /systemUiText\('create\.standaloneNote'\)/,
+  'standalone semantics must remain explicit through localized system copy');
+assert.doesNotMatch(split, /新增只创建一个独立知识球/,
+  'canonical split create UI must not hard-code the Chinese standalone note');
+assert.match(split, /systemUiText\('create\.conclusionSingle'\)/,
+  'reasoning flow must retain an explicit localized single-conclusion label');
+assert.match(split, /systemUiText\('create\.searchConclusion'\)/,
+  'reasoning flow must retain localized existing-conclusion search');
+assert.doesNotMatch(split, /结论（只能选择一个）|搜索已有结论节点/,
+  'reasoning system copy must come from i18n rather than hard-coded Chinese');
 
-console.log('Create ownership isolation checks passed');
+console.log('Create ownership isolation and i18n checks passed');

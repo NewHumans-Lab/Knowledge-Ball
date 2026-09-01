@@ -10,6 +10,13 @@ import { inferLegacyDeclaredLayer } from '../../domain/KnowledgeLayerPolicy';
 import type { KnowledgeLineageMeta } from '../../domain/KnowledgeLineage';
 import { lineageRoleFor } from '../../domain/KnowledgeLineage';
 import type { KnowledgeRelationItem, KnowledgeRelations } from '../../domain/KnowledgeRelations';
+import { getLocale, subscribeLocale } from '../../i18n/Locale';
+import {
+  systemUiText,
+  voteSideText,
+  voteTallyText,
+  type SystemUiTextKey,
+} from '../../i18n/SystemUiText';
 import {
   KNOWLEDGE_HISTORY_COLOR,
   KNOWLEDGE_OPPOSITION_COLOR,
@@ -51,14 +58,14 @@ export interface NodeDetailControllerOptions {
   onClose?: () => void;
 }
 
-const ACTION_LABEL: Readonly<Record<NodeDetailAction, string>> = Object.freeze({
-  edit: '优化',
-  derive: '新增',
-  'derive-reasoning': '新增推理',
-  negate: '提出对立观点',
-  decompose: '分解',
-  resolve: '重新验证',
-  dispute: '争议',
+const ACTION_LABEL_KEY: Readonly<Record<NodeDetailAction, SystemUiTextKey>> = Object.freeze({
+  edit: 'detail.actionOptimize',
+  derive: 'detail.actionAdd',
+  'derive-reasoning': 'detail.actionAddReasoning',
+  negate: 'detail.actionOppose',
+  decompose: 'detail.actionDecompose',
+  resolve: 'detail.actionRevalidate',
+  dispute: 'detail.actionDispute',
 });
 const LABEL_SWITCH_CLASS = 'node-detail-labels-off';
 const VOTE_REFRESH_MS = 3_000;
@@ -115,25 +122,28 @@ function relationMarkup(relations: KnowledgeRelations): string {
   ) => {
     const items = relations[relationKind];
     if (items.length === 0) return '';
-    return `<div class="node-detail-relations ${className}" role="group" aria-label="${label}" data-relation-count="${items.length}">${items.map(item => {
+    return `<div class="node-detail-relations ${className}" role="group" aria-label="${escapeHtml(label)}" data-relation-count="${items.length}">${items.map(item => {
       const color = relationNodeTextColor(item);
       const colorStyle = color ? ` style="--relation-node-color:${color}"` : '';
       return `<button type="button" class="node-detail-relation" data-relation-kind="${relationKind}" data-related-node-id="${escapeHtml(item.id)}" title="${escapeHtml(item.title)}"${colorStyle}>${escapeHtml(item.title)}</button>`;
     }).join('')}</div>`;
   };
   return [
-    render('left', 'previous', '上一个节点'),
-    render('top', 'history', '历史版本'),
-    render('right', 'next', '下一个节点'),
-    render('bottom', 'opposition', '否定历史'),
+    render('left', 'previous', systemUiText('detail.previous')),
+    render('top', 'history', systemUiText('detail.history')),
+    render('right', 'next', systemUiText('detail.next')),
+    render('bottom', 'opposition', systemUiText('detail.oppositionHistory')),
   ].join('');
 }
 
-export function formatNodeContributionTime(value: string | undefined | null): string {
+export function formatNodeContributionTime(
+  value: string | undefined | null,
+  locale = getLocale(),
+): string {
   if (!value) return '—';
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return '—';
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -155,6 +165,7 @@ export class NodeDetailController {
   private readonly onViewed?: NodeDetailControllerOptions['onViewed'];
   private readonly onClose?: NodeDetailControllerOptions['onClose'];
   private readonly root: HTMLElement;
+  private readonly unsubscribeLocale: () => void;
   private currentId: string | null = null;
   private editMenuOpen = false;
   private positionFrame: number | null = null;
@@ -177,6 +188,9 @@ export class NodeDetailController {
     this.root.setAttribute('aria-live', 'polite');
     document.body.appendChild(this.root);
     window.addEventListener('resize', this.positionCurrent, { passive: true });
+    this.unsubscribeLocale = subscribeLocale(() => {
+      if (this.isOpen()) this.refresh();
+    });
   }
 
   isOpen(): boolean {
@@ -211,8 +225,8 @@ export class NodeDetailController {
       return;
     }
     // Local interaction state belongs to the controller, not to the DOM that
-    // render() replaces. Async mastery/public refreshes can land during a real
-    // pointer click, so rebuilding must project the already-selected menu state.
+    // render() replaces. Async mastery/public/locale refreshes can land during a
+    // real pointer click, so rebuilding must project the already-selected state.
     this.render(node);
     this.positionCurrent();
   }
@@ -234,6 +248,7 @@ export class NodeDetailController {
   }
 
   destroy(): void {
+    this.unsubscribeLocale();
     this.close();
     window.removeEventListener('resize', this.positionCurrent);
     this.root.remove();
@@ -256,31 +271,31 @@ export class NodeDetailController {
       this.editMenuOpen = false;
       interaction = `
         <div class="node-detail-vote node-detail-interaction">
-          <div class="node-detail-vote-title">投票</div>
+          <div class="node-detail-vote-title">${escapeHtml(systemUiText('detail.vote'))}</div>
           <div class="node-detail-vote-actions">
-            <button type="button" class="node-detail-vote-button agree" data-vote-side="AGREE" disabled><span>同意</span><small>能量 −1</small></button>
-            <button type="button" class="node-detail-vote-button disagree" data-vote-side="DISAGREE" disabled><span>反对</span><small>能量 −1</small></button>
+            <button type="button" class="node-detail-vote-button agree" data-vote-side="AGREE" disabled><span>${escapeHtml(voteSideText('AGREE'))}</span><small>${escapeHtml(systemUiText('detail.energyMinus1'))}</small></button>
+            <button type="button" class="node-detail-vote-button disagree" data-vote-side="DISAGREE" disabled><span>${escapeHtml(voteSideText('DISAGREE'))}</span><small>${escapeHtml(systemUiText('detail.energyMinus1'))}</small></button>
           </div>
-          <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '正在同步投票状态…' : '共享服务未配置，暂不能投票'}</div>
+          <div class="node-detail-vote-status" role="status" aria-live="polite">${escapeHtml(account ? systemUiText('detail.syncingVote') : systemUiText('detail.voteUnavailable'))}</div>
         </div>
       `;
     } else if (oldLineage && node.status === 'verified') {
       this.editMenuOpen = false;
       interaction = `
         <div class="node-detail-reactivation node-detail-interaction">
-          <div class="node-detail-vote-title">设为当前最优</div>
+          <div class="node-detail-vote-title">${escapeHtml(systemUiText('detail.setBest'))}</div>
           <div class="node-detail-vote-actions">
-            <button type="button" class="node-detail-vote-button agree" data-reactivate-intent="1" disabled><span>同意</span><small data-reactivation-stake>能量 −10</small></button>
-            <button type="button" class="node-detail-vote-button disagree" disabled><span>反对</span><small>此处不可用</small></button>
+            <button type="button" class="node-detail-vote-button agree" data-reactivate-intent="1" disabled><span>${escapeHtml(voteSideText('AGREE'))}</span><small data-reactivation-stake>${escapeHtml(systemUiText('detail.energyMinus', { energy: 10 }))}</small></button>
+            <button type="button" class="node-detail-vote-button disagree" disabled><span>${escapeHtml(voteSideText('DISAGREE'))}</span><small>${escapeHtml(systemUiText('common.unavailableHere'))}</small></button>
           </div>
           <div class="node-detail-confirm" hidden>
-            <div>请确认该知识点为当前最优</div>
+            <div>${escapeHtml(systemUiText('detail.confirmBest'))}</div>
             <div class="node-detail-confirm-actions">
-              <button type="button" data-reactivate-cancel>取消</button>
-              <button type="button" data-reactivate-confirm>确认</button>
+              <button type="button" data-reactivate-cancel>${escapeHtml(systemUiText('common.cancel'))}</button>
+              <button type="button" data-reactivate-confirm>${escapeHtml(systemUiText('common.confirm'))}</button>
             </div>
           </div>
-          <div class="node-detail-vote-status" role="status" aria-live="polite">${account ? '正在同步本轮能量…' : '共享服务未配置，暂不能重新验证'}</div>
+          <div class="node-detail-vote-status" role="status" aria-live="polite">${escapeHtml(account ? systemUiText('detail.syncingEnergy') : systemUiText('detail.revalidationUnavailable'))}</div>
         </div>
       `;
     } else if (oldLineage && node.status === 'disputed') {
@@ -290,12 +305,12 @@ export class NodeDetailController {
       this.editMenuOpen = false;
       interaction = `
         <div class="node-detail-cascade-status node-detail-interaction" role="status">
-          前提的当前版本已经变化，此知识正在等待重新验证。
+          ${escapeHtml(systemUiText('detail.cascadeWaiting'))}
         </div>
       `;
     } else {
       interaction = `
-        <button type="button" class="node-detail-edit" aria-expanded="${this.editMenuOpen}">编辑</button>
+        <button type="button" class="node-detail-edit" aria-expanded="${this.editMenuOpen}">${escapeHtml(systemUiText('common.edit'))}</button>
         <div class="node-detail-edit-menu"${this.editMenuOpen ? '' : ' hidden'}></div>
       `;
     }
@@ -305,13 +320,13 @@ export class NodeDetailController {
     delete this.root.dataset.revalidationInitiator;
     this.root.innerHTML = `
       ${relationMarkup(relations)}
-      <button type="button" class="node-detail-close" aria-label="关闭知识节点详情">×</button>
+      <button type="button" class="node-detail-close" aria-label="${escapeHtml(systemUiText('detail.close'))}">×</button>
       <h2 class="node-detail-title">${escapeHtml(node.title)}</h2>
-      <div class="node-detail-content">${escapeHtml(node.reasoning || '（未填写）')}</div>
+      <div class="node-detail-content">${escapeHtml(node.reasoning || systemUiText('common.none'))}</div>
       ${interaction}
       <div class="node-detail-meta">
-        <span>贡献者 · <b>${escapeHtml(contributor)}</b></span>
-        <span>时间 · <b>${escapeHtml(time)}</b></span>
+        <span>${escapeHtml(systemUiText('detail.contributor'))} · <b>${escapeHtml(contributor)}</b></span>
+        <span>${escapeHtml(systemUiText('detail.time'))} · <b>${escapeHtml(time)}</b></span>
       </div>
     `;
 
@@ -355,7 +370,7 @@ export class NodeDetailController {
     for (const action of actions) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = ACTION_LABEL[action];
+      button.textContent = systemUiText(ACTION_LABEL_KEY[action]);
       button.dataset.nodeDetailAction = action;
       button.addEventListener('click', () => {
         const id = this.currentId;
@@ -383,13 +398,15 @@ export class NodeDetailController {
     try {
       const quote = await account.getKnowledgeRevalidationQuote(nodeId);
       if (!this.isCurrentVote(nodeId, token)) return;
-      stakeLabel.textContent = `能量 −${displayEnergy(quote.stake)}`;
+      stakeLabel.textContent = systemUiText('detail.energyMinus', { energy: displayEnergy(quote.stake) });
       intent.disabled = false;
-      if (status) status.textContent = '确认后启动重新验证';
+      if (status) status.textContent = systemUiText('detail.revalidationReady');
     } catch (error) {
       if (!this.isCurrentVote(nodeId, token)) return;
       intent.disabled = true;
-      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '本轮能量同步失败';
+      if (status) status.textContent = error instanceof Error
+        ? systemUiText('detail.syncFailedWithMessage', { message: error.message })
+        : systemUiText('detail.energySyncFailed');
       return;
     }
 
@@ -400,7 +417,7 @@ export class NodeDetailController {
       this.root.dataset.voteBusy = '1';
       intent.disabled = true;
       submit.disabled = true;
-      if (status) status.textContent = '正在启动重新验证…';
+      if (status) status.textContent = systemUiText('detail.startingRevalidation');
       try {
         const snapshot = await account.startKnowledgeRevalidation(nodeId);
         if (!this.isCurrentVote(nodeId, token)) return;
@@ -413,7 +430,9 @@ export class NodeDetailController {
         if (!this.isCurrentVote(nodeId, token)) return;
         intent.disabled = false;
         submit.disabled = false;
-        if (status) status.textContent = error instanceof Error ? `启动失败：${error.message}` : '重新验证启动失败';
+        if (status) status.textContent = error instanceof Error
+          ? systemUiText('detail.startFailedWithMessage', { message: error.message })
+          : systemUiText('detail.revalidationStartFailed');
       } finally {
         delete this.root.dataset.voteBusy;
       }
@@ -424,12 +443,12 @@ export class NodeDetailController {
     const stake = snapshot ? displayEnergy(snapshot.stake) : '…';
     return `
       <div class="node-detail-revalidation node-detail-interaction">
-        <div class="node-detail-vote-title">重新验证 · ORIGINAL_DESIGN_V1</div>
+        <div class="node-detail-vote-title">${escapeHtml(systemUiText('detail.revalidationTitle'))}</div>
         <div class="node-detail-vote-actions">
-          <button type="button" class="node-detail-vote-button agree" data-revalidation-side="AGREE" disabled><span>同意</span><small>能量 −${stake}</small></button>
-          <button type="button" class="node-detail-vote-button disagree" data-revalidation-side="DISAGREE" disabled><span>反对</span><small>能量 −${stake}</small></button>
+          <button type="button" class="node-detail-vote-button agree" data-revalidation-side="AGREE" disabled><span>${escapeHtml(voteSideText('AGREE'))}</span><small>${escapeHtml(systemUiText('detail.energyMinus', { energy: stake }))}</small></button>
+          <button type="button" class="node-detail-vote-button disagree" data-revalidation-side="DISAGREE" disabled><span>${escapeHtml(voteSideText('DISAGREE'))}</span><small>${escapeHtml(systemUiText('detail.energyMinus', { energy: stake }))}</small></button>
         </div>
-        <div class="node-detail-vote-status" role="status" aria-live="polite">${configured ? '正在同步重新验证状态…' : '共享服务未配置，暂不能投票'}</div>
+        <div class="node-detail-vote-status" role="status" aria-live="polite">${escapeHtml(configured ? systemUiText('detail.syncingRevalidation') : systemUiText('detail.voteUnavailable'))}</div>
       </div>
     `;
   }
@@ -447,7 +466,9 @@ export class NodeDetailController {
     } catch (error) {
       if (!this.isCurrentVote(nodeId, token)) return;
       const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
-      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '重新验证状态同步失败';
+      if (status) status.textContent = error instanceof Error
+        ? systemUiText('detail.syncFailedWithMessage', { message: error.message })
+        : systemUiText('detail.revalidationSyncFailed');
     }
   }
 
@@ -489,7 +510,9 @@ export class NodeDetailController {
     } catch (error) {
       if (!this.isCurrentVote(nodeId, token)) return;
       const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
-      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '重新验证状态同步失败';
+      if (status) status.textContent = error instanceof Error
+        ? systemUiText('detail.syncFailedWithMessage', { message: error.message })
+        : systemUiText('detail.revalidationSyncFailed');
       if (document.visibilityState !== 'hidden') this.scheduleRevalidationRefresh(nodeId, token, account);
     }
   }
@@ -506,7 +529,7 @@ export class NodeDetailController {
     const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-revalidation-side]'));
     buttons.forEach(button => { button.disabled = true; });
     const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
-    if (status) status.textContent = `${side === 'AGREE' ? '同意' : '反对'}票提交中…`;
+    if (status) status.textContent = systemUiText('detail.revalidationVoteSubmitting', { side: voteSideText(side) });
     try {
       const snapshot = await account.castKnowledgeRevalidationVote(nodeId, side);
       if (!this.isCurrentVote(nodeId, token)) return;
@@ -515,7 +538,9 @@ export class NodeDetailController {
       else this.handleFinalizedRevalidation(snapshot);
     } catch (error) {
       if (!this.isCurrentVote(nodeId, token)) return;
-      if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '重新验证投票失败';
+      if (status) status.textContent = error instanceof Error
+        ? systemUiText('detail.voteFailedWithMessage', { message: error.message })
+        : systemUiText('detail.revalidationVoteFailed');
       buttons.forEach(button => { button.disabled = this.root.dataset.revalidationInitiator === '1'; });
       this.scheduleRevalidationRefresh(nodeId, token, account);
     } finally {
@@ -528,7 +553,7 @@ export class NodeDetailController {
     const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-revalidation-side]'));
     for (const button of buttons) {
       const side = button.dataset.revalidationSide as PendingVoteSide | undefined;
-      button.querySelector('small')!.textContent = `能量 −${displayEnergy(snapshot.stake)}`;
+      button.querySelector('small')!.textContent = systemUiText('detail.energyMinus', { energy: displayEnergy(snapshot.stake) });
       button.classList.toggle('active', Boolean(snapshot.mySide && side === snapshot.mySide));
       button.disabled = !open
         || snapshot.mySide !== null
@@ -536,22 +561,28 @@ export class NodeDetailController {
     }
     const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
     if (!status) return;
-    const gate = snapshot.accuracyGate === undefined ? '' : ` · 准确率≥${snapshot.accuracyGate}%`;
+    const gate = snapshot.accuracyGate === undefined
+      ? ''
+      : ` · ${systemUiText('detail.accuracyGate', { percent: snapshot.accuracyGate })}`;
     const scope = snapshot.scope === 'LOCAL_10' ? 'LOCAL_10' : 'GLOBAL';
-    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    const tally = voteTallyText(snapshot.agreeCount, snapshot.disagreeCount, snapshot.requiredVotes);
     if (!open) {
-      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
-      status.textContent = `${snapshot.verdict === 'CORRECT' ? '旧知识重新成为当前' : '当前知识保持不变'} · ${reason} · ${tally}`;
+      const reason = snapshot.closeReason === 'TIMEOUT'
+        ? systemUiText('detail.timeout')
+        : systemUiText('detail.voteReached');
+      status.textContent = `${snapshot.verdict === 'CORRECT' ? systemUiText('detail.oldCurrent') : systemUiText('detail.currentUnchanged')} · ${reason} · ${tally}`;
       return;
     }
+    const stage = systemUiText('detail.stage', { stage: snapshot.stage });
     if (this.root.dataset.revalidationInitiator === '1') {
-      status.textContent = `已发起 · 第 ${snapshot.stage} 阶段 · ${scope}${gate} · ${tally}`;
+      status.textContent = `${systemUiText('detail.started')} · ${stage} · ${scope}${gate} · ${tally}`;
       return;
     }
     if (snapshot.mySide) {
-      status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${scope}${gate} · ${tally}`;
+      const voted = systemUiText('detail.voted', { side: voteSideText(snapshot.mySide) });
+      status.textContent = `${justVoted ? `${systemUiText('detail.voteSuccess')} · ` : ''}${voted} · ${scope}${gate} · ${tally}`;
     } else {
-      status.textContent = `第 ${snapshot.stage} 阶段 · ${scope}${gate} · ${tally}`;
+      status.textContent = `${stage} · ${scope}${gate} · ${tally}`;
     }
   }
 
@@ -602,10 +633,10 @@ export class NodeDetailController {
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `
       <div class="node-detail-vote node-detail-interaction node-detail-cascade-vote">
-        <div class="node-detail-vote-title">自动级联重审</div>
+        <div class="node-detail-vote-title">${escapeHtml(systemUiText('detail.autoCascade'))}</div>
         <div class="node-detail-vote-actions">
-          <button type="button" class="node-detail-vote-button agree" data-cascade-vote-side="AGREE"><span>同意</span><small>能量 −1</small></button>
-          <button type="button" class="node-detail-vote-button disagree" data-cascade-vote-side="DISAGREE"><span>反对</span><small>能量 −1</small></button>
+          <button type="button" class="node-detail-vote-button agree" data-cascade-vote-side="AGREE"><span>${escapeHtml(voteSideText('AGREE'))}</span><small>${escapeHtml(systemUiText('detail.energyMinus1'))}</small></button>
+          <button type="button" class="node-detail-vote-button disagree" data-cascade-vote-side="DISAGREE"><span>${escapeHtml(voteSideText('DISAGREE'))}</span><small>${escapeHtml(systemUiText('detail.energyMinus1'))}</small></button>
         </div>
         <div class="node-detail-vote-status" role="status" aria-live="polite"></div>
       </div>
@@ -654,7 +685,7 @@ export class NodeDetailController {
     const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-cascade-vote-side]'));
     buttons.forEach(button => { button.disabled = true; });
     const status = this.root.querySelector<HTMLElement>('.node-detail-cascade-vote .node-detail-vote-status');
-    if (status) status.textContent = `${side === 'AGREE' ? '同意' : '反对'}票提交中 · 能量 −1…`;
+    if (status) status.textContent = systemUiText('detail.voteSubmitting', { side: voteSideText(side) });
     try {
       const snapshot = await account.castPendingKnowledgeVote(nodeId, side);
       if (!this.isCurrentVote(nodeId, token) || snapshot.roundKind !== 'CASCADE') return;
@@ -663,7 +694,9 @@ export class NodeDetailController {
       else this.handleFinalizedCascade(snapshot);
     } catch (error) {
       if (!this.isCurrentVote(nodeId, token)) return;
-      if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '投票失败';
+      if (status) status.textContent = error instanceof Error
+        ? systemUiText('detail.voteFailedWithMessage', { message: error.message })
+        : systemUiText('detail.voteFailed');
       this.scheduleCascadeRefresh(nodeId, token, account);
     } finally {
       delete this.root.dataset.voteBusy;
@@ -680,14 +713,16 @@ export class NodeDetailController {
     }
     const status = this.root.querySelector<HTMLElement>('.node-detail-cascade-vote .node-detail-vote-status');
     if (!status) return;
-    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    const tally = voteTallyText(snapshot.agreeCount, snapshot.disagreeCount, snapshot.requiredVotes);
     if (!open) {
-      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
-      status.textContent = `${snapshot.verdict === 'CORRECT' ? '级联重审通过' : '级联重审未通过，知识已悬置'} · ${reason} · ${tally}`;
+      const reason = snapshot.closeReason === 'TIMEOUT'
+        ? systemUiText('detail.timeout')
+        : systemUiText('detail.voteReached');
+      status.textContent = `${snapshot.verdict === 'CORRECT' ? systemUiText('detail.cascadePassed') : systemUiText('detail.cascadeSuspended')} · ${reason} · ${tally}`;
     } else if (snapshot.mySide) {
-      status.textContent = `已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${tally}`;
+      status.textContent = `${systemUiText('detail.voted', { side: voteSideText(snapshot.mySide) })} · ${tally}`;
     } else {
-      status.textContent = `无发起人、无发起人票 · ${tally}`;
+      status.textContent = `${systemUiText('detail.cascadeNoInitiator')} · ${tally}`;
     }
   }
 
@@ -730,7 +765,7 @@ export class NodeDetailController {
       } catch {
         if (!this.isCurrentVote(nodeId, token)) return;
         const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
-        if (status) status.textContent = '身份确认失败，暂不能投票';
+        if (status) status.textContent = systemUiText('detail.identityFailed');
         return;
       }
     }
@@ -756,7 +791,9 @@ export class NodeDetailController {
     } catch (error) {
       if (!this.isCurrentVote(nodeId, token)) return;
       const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
-      if (status) status.textContent = error instanceof Error ? `同步失败：${error.message}` : '投票状态同步失败';
+      if (status) status.textContent = error instanceof Error
+        ? systemUiText('detail.syncFailedWithMessage', { message: error.message })
+        : systemUiText('detail.voteStateSyncFailed');
       if (document.visibilityState !== 'hidden') this.scheduleVoteRefresh(nodeId, token);
     }
   }
@@ -769,7 +806,7 @@ export class NodeDetailController {
     const buttons = Array.from(this.root.querySelectorAll<HTMLButtonElement>('[data-vote-side]'));
     buttons.forEach(button => { button.disabled = true; });
     const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
-    if (status) status.textContent = `${side === 'AGREE' ? '同意' : '反对'}票提交中 · 能量 −1…`;
+    if (status) status.textContent = systemUiText('detail.voteSubmitting', { side: voteSideText(side) });
     try {
       const snapshot = await account.castPendingKnowledgeVote(nodeId, side);
       if (!this.isCurrentVote(nodeId, token)) return;
@@ -778,7 +815,9 @@ export class NodeDetailController {
       else this.handleFinalizedVote(snapshot);
     } catch (error) {
       if (!this.isCurrentVote(nodeId, token)) return;
-      if (status) status.textContent = error instanceof Error ? `投票失败：${error.message}` : '投票失败';
+      if (status) status.textContent = error instanceof Error
+        ? systemUiText('detail.voteFailedWithMessage', { message: error.message })
+        : systemUiText('detail.voteFailed');
       buttons.forEach(button => { button.disabled = false; });
       this.scheduleVoteRefresh(nodeId, token);
     } finally {
@@ -796,18 +835,21 @@ export class NodeDetailController {
     }
     const status = this.root.querySelector<HTMLElement>('.node-detail-vote-status');
     if (!status) return;
-    const tally = `同意 ${snapshot.agreeCount}/${snapshot.requiredVotes} · 反对 ${snapshot.disagreeCount}/${snapshot.requiredVotes}`;
+    const tally = voteTallyText(snapshot.agreeCount, snapshot.disagreeCount, snapshot.requiredVotes);
     if (!open) {
-      const reason = snapshot.closeReason === 'TIMEOUT' ? '时间到期' : '达到票数';
-      status.textContent = `${snapshot.verdict === 'CORRECT' ? '已判定正确' : '已判定错误'} · ${reason} · ${tally}`;
+      const reason = snapshot.closeReason === 'TIMEOUT'
+        ? systemUiText('detail.timeout')
+        : systemUiText('detail.voteReached');
+      status.textContent = `${snapshot.verdict === 'CORRECT' ? systemUiText('detail.correct') : systemUiText('detail.incorrect')} · ${reason} · ${tally}`;
       return;
     }
     if (this.root.dataset.voteCreator === '1') {
-      status.textContent = `你是该知识的提交者，不能参与本轮投票 · ${tally}`;
+      status.textContent = systemUiText('detail.creatorCannotVote', { tally });
       return;
     }
     if (snapshot.mySide) {
-      status.textContent = `${justVoted ? '投票成功 · ' : ''}已投${snapshot.mySide === 'AGREE' ? '同意' : '反对'} · ${tally}`;
+      const voted = systemUiText('detail.voted', { side: voteSideText(snapshot.mySide) });
+      status.textContent = `${justVoted ? `${systemUiText('detail.voteSuccess')} · ` : ''}${voted} · ${tally}`;
     } else {
       status.textContent = tally;
     }

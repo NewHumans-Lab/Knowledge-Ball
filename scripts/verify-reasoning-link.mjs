@@ -35,16 +35,18 @@ assert.match(app, /knowledgeCreate\.openStandalone\(\)/);
 assert.match(app, /knowledgeCreate\.openReasoning\(id\)/);
 assert.match(app, /type: 'reasoning'/);
 assert.match(app, /\[reasoningId\]: 'middle'/);
-assert.match(detail, /derive: '新增'/);
-assert.match(detail, /'derive-reasoning': '新增推理'/);
-assert.doesNotMatch(detail, /基于此新增/);
+assert.match(detail, /derive: 'detail\.actionAdd'/);
+assert.match(detail, /'derive-reasoning': 'detail\.actionAddReasoning'/);
+assert.doesNotMatch(detail, /derive: '新增'|'derive-reasoning': '新增推理'|基于此新增/, 'detail create actions must come from i18n keys');
 
 assert.match(createUi, /data-picker-search/);
 assert.match(createUi, /data-picker-selected/);
 assert.match(createUi, /if \(kind === 'conclusion'\) selected\.clear\(\)/);
 assert.match(createUi, /conclusionIds\.length !== 1/);
 assert.match(createUi, /selectedOrder/);
-assert.match(createUi, /没有匹配的已有节点/);
+assert.match(createUi, /systemUiText\(active \? 'create\.selectedCancel' : 'create\.select'\)/);
+assert.match(createUi, /systemUiText\('create\.noExisting'\)/);
+assert.doesNotMatch(createUi, /没有匹配的已有节点/, 'create-picker empty state must come from i18n rather than hard-coded Chinese');
 assert.match(createUi, /onCreateReasoning\(\{ title, premiseIds, reasoning, conclusionIds \}\)/);
 
-console.log('Reasoning-link single-concrete-conclusion UI, protocol, database identity, and DAG architecture checks passed');
+console.log('Reasoning-link single-concrete-conclusion UI, protocol, database identity, DAG, and i18n architecture checks passed');

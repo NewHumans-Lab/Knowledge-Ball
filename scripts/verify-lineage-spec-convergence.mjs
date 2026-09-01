@@ -26,8 +26,9 @@ assert.doesNotMatch(panel, /encodeLineageIntent|decodeLineageIntent|KBL3:/);
 assert.doesNotMatch(panel, /openNegateForm|openEditForm/);
 
 assert.doesNotMatch(detail, /NodeDetailControllerLegacy/);
-assert.match(detail, /edit: '优化'/);
-assert.match(detail, /negate: '提出对立观点'/);
+assert.match(detail, /edit: 'detail\.actionOptimize'/);
+assert.match(detail, /negate: 'detail\.actionOppose'/);
+assert.doesNotMatch(detail, /edit: '优化'|negate: '提出对立观点'/, 'detail action copy must come from i18n rather than hard-coded Chinese');
 assert.equal(existsSync('src/ui/panels/NodeDetailLineageUi.ts'), false, 'NodeDetail must not regain a second DOM/lifecycle owner');
 assert.match(detail, /snapshot\.roundKind !== 'CASCADE'/);
 assert.doesNotMatch(detail, /snapshot\.policyVersion !== 'ORIGINAL_DESIGN_V1'/);
