@@ -24,6 +24,7 @@ export const SUPPLEMENTAL_SYSTEM_UI_TEXT = {
     en: 'Disputed knowledge, or claims explicitly submitted as probabilistic or uncertain, such as “possibly”, “perhaps”, “80% probability”, hypotheses, predictions, opinions, and value judgments.',
   },
   'create.conclusionSingle': { 'zh-CN': '结论（只能选择一个）', en: 'Conclusion (select one only)' },
+  'create.conclusionSingleRequired': { 'zh-CN': '请从已有节点中选择且只能选择一个结论。', en: 'Select exactly one existing conclusion.' },
   'create.reasoningSingleConclusionNote': {
     'zh-CN': '一个推理球固定服务一个具体结论球。前提可以选择多个，结论只能选择一个；重新选择结论会替换之前的选择。',
     en: 'Each reasoning ball serves one specific conclusion ball. You may select multiple premises, but only one conclusion; selecting another conclusion replaces the previous choice.',
