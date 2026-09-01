@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
+import { setLocale } from '../../i18n/Locale';
+import { systemUiText, voteTallyText } from '../../i18n/SystemUiText';
 import { formatNodeContributionTime, relationNodeTextColor } from './NodeDetailController';
 import { NODE_LAYER_COLOR_HEX, NODE_SPECIAL_COLOR_HEX } from '../config/KnowledgeUiConfig';
 
@@ -10,23 +12,43 @@ const scene = readFileSync('src/ui/scene/KnowledgeScene.ts', 'utf8');
 const relationDomain = readFileSync('src/domain/KnowledgeRelations.ts', 'utf8');
 
 assert.equal(existsSync('src/ui/panels/NodeDetailControllerLegacy.ts'), false, 'there must be one NodeDetailController implementation');
+setLocale('zh-CN');
 assert.equal(formatNodeContributionTime(undefined), '—');
 assert.equal(formatNodeContributionTime('invalid'), '—');
 assert.match(formatNodeContributionTime('2026-08-21T04:00:00.000Z'), /^2026-08-21\s/);
 
-for (const text of ['贡献者 ·', '时间 ·', '>编辑<']) {
-  assert(detail.includes(text), `near-node detail must render ${text}`);
+// System-owned detail copy must come from the locale source of truth rather than
+// being embedded as Chinese literals in the controller. User/community values
+// remain escaped and rendered verbatim.
+for (const key of ['detail.contributor', 'detail.time', 'common.edit', 'detail.vote', 'detail.creatorCannotVote'] as const) {
+  assert(detail.includes(`systemUiText('${key}')`) || detail.includes(`systemUiText('${key}',`), `detail must render ${key} through i18n`);
 }
+assert(detail.includes('ACTION_LABEL_KEY'), 'detail action labels must be represented as i18n keys');
+for (const key of ['detail.actionOptimize', 'detail.actionAdd', 'detail.actionAddReasoning', 'detail.actionOppose', 'detail.actionDecompose']) {
+  assert(detail.includes(`'${key}'`), `single detail engine must expose localized action key ${key}`);
+}
+assert(detail.includes("subscribeLocale(() =>"), 'an already-open detail surface must refresh immediately after locale changes');
+assert(detail.includes('escapeHtml(node.title)'), 'user-authored node titles must render without translation');
+assert(detail.includes("escapeHtml(node.reasoning || systemUiText('common.none'))"), 'user-authored knowledge content must render verbatim with only the empty-state copy localized');
+assert(detail.includes('escapeHtml(item.title)'), 'related user-authored node titles must remain unchanged');
+assert(!detail.includes('你是该知识的提交者'), 'creator-vote copy must not be hard-coded in the controller');
+assert.equal(/[\u3400-\u9FFF]/u.test(detail), false, 'NodeDetailController must not contain hard-coded CJK system copy');
+
+setLocale('en');
+assert.equal(systemUiText('detail.contributor'), 'Contributor');
+assert.equal(systemUiText('detail.time'), 'Time');
+assert.equal(systemUiText('detail.creatorCannotVote', { tally: 'Agree 1/2 · Disagree 0/2' }), 'You submitted this knowledge, so you cannot vote in this round · Agree 1/2 · Disagree 0/2');
+assert.equal(voteTallyText(1, 0, 2), 'Agree 1/2 · Disagree 0/2');
+assert(!/[\u3400-\u9FFF]/u.test(systemUiText('detail.creatorCannotVote', { tally: voteTallyText(1, 0, 2) })), 'English creator restriction must contain no Chinese system characters');
+setLocale('zh-CN');
+assert.equal(systemUiText('detail.contributor'), '贡献者');
+assert.equal(voteTallyText(1, 0, 2), '同意 1/2 · 反对 0/2');
+
 assert(!detail.includes('node-detail-content-label'), 'near-node detail must not render a redundant content label');
-assert(!detail.includes('>内容<'), 'the standalone content heading must stay removed');
 assert(detail.indexOf('node-detail-content') < detail.indexOf('node-detail-meta'), 'knowledge content must appear before contributor/time metadata');
-assert(detail.indexOf('贡献者 ·') < detail.indexOf('时间 ·'), 'contributor and time must remain two ordered footer rows');
-for (const action of ['优化', '新增', '新增推理', '提出对立观点', '分解']) {
-  assert(detail.includes(action), `single detail engine must expose ${action}`);
-}
-assert(!detail.includes("derive: '基于此新增'"), 'legacy combined 基于此新增 action must stay removed');
+assert(!detail.includes("derive: '基于此新增'"), 'legacy combined create action must stay removed');
 assert(!detail.includes("merge: '合并'") && !detail.includes("| 'merge'"), 'removed merge action must not return to the detail engine');
-assert(detail.includes("derive: '新增'") && detail.includes("'derive-reasoning': '新增推理'"), 'detail must expose two explicit create actions');
+assert(detail.includes("derive: 'detail.actionAdd'") && detail.includes("'derive-reasoning': 'detail.actionAddReasoning'"), 'detail must expose two explicit localized create actions');
 assert(!detail.includes('NodeDetailControllerLegacy'), 'detail must not inherit from a copied legacy controller');
 assert.equal(existsSync('src/ui/panels/NodeDetailLineageUi.ts'), false, 'near-node detail must have exactly one DOM/lifecycle owner');
 assert(!app.includes('NodeDetailLineageUi') && !app.includes('nodeDetailLineageUi'), 'app must not coordinate a second detail lifecycle');
@@ -87,9 +109,9 @@ assert(detail.includes('--relation-node-color'), 'relation markup must carry the
 assert(relationDomain.includes('declaredLayer: node.declaredLayer'), 'relation items must preserve the node declaration needed to reproduce its actual scene layer colour');
 
 assert(detail.includes("node.status === 'pending'"), 'flashing/pending nodes must use the pending interaction branch');
-assert(detail.includes('node-detail-vote-title">投票<'), 'pending detail must replace the edit entry with a vote heading');
-assert(detail.includes('data-vote-side="AGREE" disabled><span>同意</span><small>能量 −1</small>'), 'pending detail must expose the agree one-energy action');
-assert(detail.includes('data-vote-side="DISAGREE" disabled><span>反对</span><small>能量 −1</small>'), 'pending detail must expose the disagree one-energy action');
+assert(detail.includes("systemUiText('detail.vote')"), 'pending detail must replace the edit entry with a localized vote heading');
+assert(detail.includes('data-vote-side="AGREE" disabled') && detail.includes("voteSideText('AGREE')") && detail.includes("systemUiText('detail.energyMinus1')"), 'pending detail must expose the localized agree one-energy action');
+assert(detail.includes('data-vote-side="DISAGREE" disabled') && detail.includes("voteSideText('DISAGREE')"), 'pending detail must expose the localized disagree one-energy action');
 assert(detail.includes('account.getPendingKnowledgeVote(nodeId)'), 'near-node vote controls must read the authoritative existing vote state');
 assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'near-node vote controls must reuse the real existing vote RPC');
 assert(detail.includes("knowledge-ball:verdict-finalized"), 'near-node finalization must reuse the existing graph reconciliation signal');
@@ -97,7 +119,7 @@ assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'near-node vote tally must re
 assert(app.includes('actorId: metadata.actorId'), 'near-node detail must receive contributor metadata through the authoritative adapter');
 assert(detail.includes('await account.currentUserId()'), 'initial pending detail must compare the current account with the node creator');
 assert(detail.includes("this.root.dataset.voteCreator = '1'"), 'initial creator identity must lock the first-round vote controls');
-assert(detail.includes('你是该知识的提交者，不能参与本轮投票'), 'first-round creator must see an explicit no-self-vote explanation');
+assert(detail.includes("systemUiText('detail.creatorCannotVote', { tally })"), 'first-round creator must see an explicit localized no-self-vote explanation');
 assert(detail.includes('data-vote-side="AGREE" disabled') && detail.includes('data-vote-side="DISAGREE" disabled'), 'vote buttons must stay disabled until identity and server state are known');
 assert(detail.includes("typeof window === 'undefined'"), 'vote client creation must stay browser-lazy so pure node-detail tests do not require Vite runtime env');
 assert(!detail.includes('const voteAccount = createProductionAuthClient()'), 'vote client must not initialize at module import time');
@@ -106,11 +128,11 @@ assert(!detail.includes('setInterval('), 'near-node voting must not add a perman
 // Human V1 revalidation must show the stake before confirmation using the
 // authoritative next topic stage. The first 30 stages show 10; later stages
 // are allowed to update the same label from the server quote (20, 30, ...).
-assert(detail.includes('data-reactivation-stake>能量 −10</small>'), 'revalidation entry must visibly start with the first-tier ten-energy cost');
+assert(detail.includes('data-reactivation-stake') && detail.includes("systemUiText('detail.energyMinus', { energy: 10 })"), 'revalidation entry must visibly start with the localized first-tier ten-energy cost');
 assert(detail.includes('account.getKnowledgeRevalidationQuote(nodeId)'), 'revalidation entry must read the authoritative next-stage stake before enabling confirmation');
-assert(detail.includes('stakeLabel.textContent = `能量 −${displayEnergy(quote.stake)}`'), 'revalidation entry must replace the visible cost with the server-quoted stage stake');
+assert(detail.includes("stakeLabel.textContent = systemUiText('detail.energyMinus', { energy: displayEnergy(quote.stake) })"), 'revalidation entry must replace the visible cost with the localized server-quoted stage stake');
 assert(detail.includes('intent.disabled = false'), 'revalidation intent must stay disabled until the stake quote is known');
-assert(detail.includes('button.querySelector(\'small\')!.textContent = `能量 −${displayEnergy(snapshot.stake)}`'), 'active revalidation votes must continue to display the exact round stake');
+assert(detail.includes("button.querySelector('small')!.textContent = systemUiText('detail.energyMinus', { energy: displayEnergy(snapshot.stake) })"), 'active revalidation votes must continue to display the exact localized round stake');
 
 // Automatic dependency cascade is a focused V3 enhancement, not a copied
 // detail controller. It reuses the authoritative pending-vote RPC.
@@ -119,8 +141,8 @@ assert(detail.includes("snapshot.roundKind !== 'CASCADE'"), 'cascade interaction
 assert(!detail.includes("snapshot.policyVersion !== 'ORIGINAL_DESIGN_V1'"), 'cascade interaction must not infer round semantics from human V1 policy identity');
 assert(detail.includes('data-cascade-vote-side="AGREE"'), 'cascade interaction must expose agree');
 assert(detail.includes('data-cascade-vote-side="DISAGREE"'), 'cascade interaction must expose disagree');
-assert(detail.includes('能量 −1'), 'cascade ordinary vote cost must remain one energy');
-assert(detail.includes('无发起人、无发起人票'), 'cascade interaction must state the no-initiator rule');
+assert(detail.includes("systemUiText('detail.energyMinus1')"), 'cascade ordinary vote cost must remain one localized energy');
+assert(detail.includes("systemUiText('detail.cascadeNoInitiator')"), 'cascade interaction must state the localized no-initiator rule');
 assert(detail.includes('account.castPendingKnowledgeVote(nodeId, side)'), 'cascade must reuse the authoritative pending-vote RPC');
 assert(detail.includes('VOTE_REFRESH_MS = 3_000'), 'cascade tally must reuse the detail owner polling cadence without a permanent interval');
 assert(detail.includes("knowledge-ball:verdict-finalized"), 'cascade finalization must request public-stream convergence');
@@ -175,4 +197,4 @@ assert(css.includes('html.node-detail-labels-off .node-label'), 'the detail labe
 assert(css.includes('display:none!important'), 'the detail label switch must override per-frame inline label visibility while active');
 assert(detail.includes('this.onDetailNodeChange(null);'), 'closing detail must also release selected-node detail ownership');
 
-console.log('Near-node detail canonical relation regression tests passed');
+console.log('Near-node detail canonical relation and i18n regression tests passed');
