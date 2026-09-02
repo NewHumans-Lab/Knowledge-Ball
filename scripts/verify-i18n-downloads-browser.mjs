@@ -176,8 +176,15 @@ async function assertLocaleAndRuntime(page) {
   await page.waitForFunction(() => document.documentElement.lang === 'zh-CN');
   assert.equal((await page.locator('#btnSettings').textContent())?.trim(), '⚙ 设置', 'system UI must switch back to Chinese without reload');
   assert.equal((await page.locator('#openWhitePaper b').textContent())?.trim(), '白皮书', 'White Paper destination must switch back to Chinese');
+  await page.evaluate(() => {
+    window.__whitePaperOpenCalls = [];
+    window.open = (...args) => {
+      window.__whitePaperOpenCalls.push(args.map(value => String(value)));
+      return null;
+    };
+  });
   await page.locator('#openWhitePaper').click();
-  const [, chineseOpen] = await page.evaluate(() => window.__whitePaperOpenCalls);
+  const [chineseOpen] = await page.evaluate(() => window.__whitePaperOpenCalls);
   assert.match(chineseOpen[0], /\/whitepapers\/Knowledge-Ball-White-Paper-ZH\.pdf$/, 'Chinese locale must open the Chinese PDF');
   assert.deepEqual(chineseOpen.slice(1), ['_blank', 'noopener,noreferrer'], 'Chinese PDF must retain isolated-tab behavior');
 }
