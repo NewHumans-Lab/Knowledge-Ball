@@ -764,6 +764,13 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     return true;
   };
 
+  const labelCenterWorld = (node: KnowledgeSceneNode, record: NodeMeshRecord, target: THREE.Vector3) => {
+    if (!isCoreNodeId(node.id) && !chainIsolationState && node.pos) {
+      return target.copy(node.pos).applyMatrix4(nodesGroup.matrixWorld);
+    }
+    return record.group.getWorldPosition(target);
+  };
+
   const labels = () => {
     scene.updateMatrixWorld(true);
     cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
@@ -778,7 +785,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
         const localizedLabel = displayLabelForNode(n);
         if (label.textContent !== localizedLabel) label.textContent = localizedLabel;
       }
-      record.group.getWorldPosition(worldPos);
+      labelCenterWorld(n, record, worldPos);
       projectedPos.copy(worldPos).project(camera);
       record.shell.getWorldScale(shellWorldScale);
       const renderedSphereRadius = Math.max(Math.abs(shellWorldScale.x), Math.abs(shellWorldScale.y), Math.abs(shellWorldScale.z));
