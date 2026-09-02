@@ -1,0 +1,108 @@
+name: Apply label spatial anchor
+
+on:
+  push:
+    branches:
+      - fix/perspective-label-edge-anchor
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/perspective-label-edge-anchor
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Apply spatial-anchor implementation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          scene_path = Path('src/ui/scene/KnowledgeScene.ts')
+          source = scene_path.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, got {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "  shell: THREE.Mesh<THREE.SphereGeometry, NodeShellMaterial>;\n  point: THREE.Sprite;",
+              "  shell: THREE.Mesh<THREE.SphereGeometry, NodeShellMaterial>;\n  labelAnchor: THREE.Object3D;\n  point: THREE.Sprite;",
+              'record label anchor field',
+          )
+          replace_once(
+              "  const shellWorldScale = new THREE.Vector3();\n  const labelAnchorWorld = new THREE.Vector3();\n  const labelAnchorProjected = new THREE.Vector3();\n  const cameraUp = new THREE.Vector3();",
+              "  const labelAnchorWorld = new THREE.Vector3();\n  const labelAnchorProjected = new THREE.Vector3();",
+              'remove synthetic camera-up projection state',
+          )
+          replace_once(
+              "    group.add(shell, point, dot);",
+              "    const labelAnchor = new THREE.Object3D();\n    group.add(shell, point, dot, labelAnchor);",
+              'attach label anchor to node group',
+          )
+          replace_once(
+              "      group,\n      shell,\n      point,",
+              "      group,\n      shell,\n      labelAnchor,\n      point,",
+              'store label anchor in node record',
+          )
+          replace_once(
+              "      record.shell.scale.setScalar(radius * compensation);\n      record.point.scale.setScalar(radius * 2.4 * compensation);",
+              "      record.shell.scale.setScalar(radius * compensation);\n      record.labelAnchor.position.set(0, radius * compensation, 0);\n      record.point.scale.setScalar(radius * 2.4 * compensation);",
+              'place label anchor on sphere surface',
+          )
+          replace_once(
+              "    cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();\n",
+              "",
+              'remove camera-up synthesis',
+          )
+          replace_once(
+              "      record.shell.getWorldScale(shellWorldScale);\n      const renderedSphereRadius = Math.max(Math.abs(shellWorldScale.x), Math.abs(shellWorldScale.y), Math.abs(shellWorldScale.z));\n      labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius);\n      labelAnchorProjected.copy(labelAnchorWorld).project(camera);",
+              "      record.labelAnchor.getWorldPosition(labelAnchorWorld);\n      labelAnchorProjected.copy(labelAnchorWorld).project(camera);",
+              'project shared 3D anchor',
+          )
+
+          scene_path.write_text(source)
+
+          package_path = Path('package.json')
+          package_source = package_path.read_text()
+          old = "npx esbuild src/ui/scene/ChainIsolation.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/chain-isolation.mjs && node .test-dist/chain-isolation.mjs && npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts"
+          new = "npx esbuild src/ui/scene/ChainIsolation.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/chain-isolation.mjs && node .test-dist/chain-isolation.mjs && npx esbuild src/ui/scene/LabelSpatialAnchorRegression.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-spatial-anchor.mjs && node .test-dist/label-spatial-anchor.mjs && npx esbuild src/ui/scene/KnowledgeSceneRegression.test.ts"
+          if package_source.count(old) != 1:
+              raise SystemExit(f'package test:scene insertion: expected exactly one match, got {package_source.count(old)}')
+          package_path.write_text(package_source.replace(old, new, 1))
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run scene regression suite
+        run: npm run test:scene
+
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui/scene/KnowledgeScene.ts package.json
+          if git diff --cached --quiet; then
+            echo "No implementation changes to commit"
+            exit 0
+          fi
+          git commit -m "Attach labels to node-space anchors"
+          git push origin HEAD:fix/perspective-label-edge-anchor
