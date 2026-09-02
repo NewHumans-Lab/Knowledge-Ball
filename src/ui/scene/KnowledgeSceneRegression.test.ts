@@ -225,10 +225,11 @@ assert(labelsSource.includes('const frontFacing = isCoreNodeId(n.id) || worldPos
 assert(labelsSource.includes('&& frontFacing'), 'front-facing status must participate directly in label display');
 assert(labelsSource.includes('selectStableShellLabels'), 'large-mobile labels must use the stable shell-priority 12..18 selector');
 assert(!labelsSource.includes('index % 4'), 'large-mobile labels must not fall back to arbitrary index thinning');
-assert(labelsSource.includes('record.shell.getWorldScale(shellWorldScale)'), 'label anchor must read the sphere current rendered size');
-assert(labelsSource.includes('labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius)'), 'label anchor must sit on the camera-up edge of the rendered sphere');
-assert(labelsSource.includes('labelAnchorProjected.copy(labelAnchorWorld).project(camera)'), 'sphere-top anchor must be projected through the current camera');
-assert(labelsSource.includes('y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,'), 'label top must be the direct projected sphere-top coordinate');
+assert(labelsSource.includes('record.labelAnchor.getWorldPosition(labelAnchorWorld)'), 'label anchor must resolve from the same 3D node hierarchy as the sphere');
+assert(labelsSource.includes('labelAnchorProjected.copy(labelAnchorWorld).project(camera)'), 'shared 3D label anchor must be projected through the current camera');
+assert(!labelsSource.includes('cameraUp'), 'label placement must not synthesize a second camera-relative sphere-top position');
+assert(!labelsSource.includes('renderedSphereRadius'), 'label placement must not reconstruct the sphere radius after world projection');
+assert(labelsSource.includes('y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,'), 'label top must be the direct projection of the node-owned spatial anchor');
 assert(!sceneSource.includes('LABEL_SPHERE_GAP_PX'), 'scene must not keep a second pixel-gap authority');
 assert(!labelsSource.includes('margin-top'), 'scene projection must not compensate label spacing through CSS assumptions');
 assert(!labelsSource.includes("translate(-50%, 10px)"), 'legacy below-center label offset must stay removed');
