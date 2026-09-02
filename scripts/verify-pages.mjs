@@ -32,6 +32,7 @@ function validateHtml(html) {
   assert.doesNotMatch(html, /隐藏\/恢复未接触的知识节点/, 'obsolete binary Personal shell must never ship in a built artifact');
   assert.match(html, /id="openDownloads"/, 'Settings must expose the nested Downloads destination');
   assert.match(html, /id="downloadsOverlay"/, 'Pages HTML must include the Downloads destination');
+  assert.match(html, /id="openWhitePaper"/, 'Settings must expose the localized White Paper destination');
   assert.match(html, /class="app-download ios-download-card"/, 'Downloads must include Apple/iOS');
   assert.match(html, /class="app-download android-download-card"/, 'Downloads must include Android');
   assert.match(html, /class="app-download windows-download-card"/, 'Downloads must include Windows');
@@ -97,6 +98,8 @@ async function verifyLocalBuild() {
   validatePwaManifest(JSON.parse(await readFile('dist/manifest.webmanifest', 'utf8')));
   const manifest = JSON.parse(await readFile('dist/downloads/latest.json', 'utf8'));
   validateReleaseManifest(manifest);
+  await access(resolve('dist/whitepapers/Knowledge-Ball-White-Paper-ZH.pdf'));
+  await access(resolve('dist/whitepapers/Knowledge-Ball-White-Paper-EN.pdf'));
   console.log(`GitHub Pages build regression tests passed (${assets.length} local assets checked)`);
 }
 

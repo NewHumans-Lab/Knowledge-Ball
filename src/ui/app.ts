@@ -76,6 +76,7 @@ import { setupMobileShell } from '../mobile/MobileShell';
 import { seedDemoKnowledge } from '../demo/seedDemoKnowledge';
 import { bootstrapRemoteFirst } from '../bootstrap/RemoteFirstBootstrap';
 import { getLocale, initializeLocale, setLocale, subscribeLocale } from '../i18n/Locale';
+import { openWhitePaper } from './WhitePaper';
 
 initializeLocale();
 
@@ -742,6 +743,9 @@ const closeDownloads = () => {
 };
 opt<HTMLButtonElement>('downloadsClose')?.addEventListener('click', closeDownloads);
 downloadsOverlay?.addEventListener('click', event => { if (event.target === downloadsOverlay) closeDownloads(); });
+opt<HTMLButtonElement>('openWhitePaper')?.addEventListener('click', () => {
+  void openWhitePaper(getLocale());
+});
 subscribeLocale(() => {
   if (localeSelect) localeSelect.value = getLocale();
   const { nodeId, surface } = knowledgeSurfaceState.snapshot();
