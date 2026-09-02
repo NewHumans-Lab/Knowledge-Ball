@@ -73,8 +73,22 @@ jobs:
               "      record.labelAnchor.getWorldPosition(labelAnchorWorld);\n      labelAnchorProjected.copy(labelAnchorWorld).project(camera);",
               'project shared 3D anchor',
           )
-
           scene_path.write_text(source)
+
+          regression_path = Path('src/ui/scene/KnowledgeSceneRegression.test.ts')
+          regression = regression_path.read_text()
+          old_assertions = """assert(labelsSource.includes('record.shell.getWorldScale(shellWorldScale)'), 'label anchor must read the sphere current rendered size');
+assert(labelsSource.includes('labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius)'), 'label anchor must sit on the camera-up edge of the rendered sphere');
+assert(labelsSource.includes('labelAnchorProjected.copy(labelAnchorWorld).project(camera)'), 'sphere-top anchor must be projected through the current camera');
+assert(labelsSource.includes('y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,'), 'label top must be the direct projected sphere-top coordinate');"""
+          new_assertions = """assert(labelsSource.includes('record.labelAnchor.getWorldPosition(labelAnchorWorld)'), 'label anchor must resolve from the same 3D node hierarchy as the sphere');
+assert(labelsSource.includes('labelAnchorProjected.copy(labelAnchorWorld).project(camera)'), 'shared 3D label anchor must be projected through the current camera');
+assert(!labelsSource.includes('cameraUp'), 'label placement must not synthesize a second camera-relative sphere-top position');
+assert(!labelsSource.includes('renderedSphereRadius'), 'label placement must not reconstruct the sphere radius after world projection');
+assert(labelsSource.includes('y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,'), 'label top must be the direct projection of the node-owned spatial anchor');"""
+          if regression.count(old_assertions) != 1:
+              raise SystemExit(f'legacy label assertions: expected exactly one match, got {regression.count(old_assertions)}')
+          regression_path.write_text(regression.replace(old_assertions, new_assertions, 1))
 
           package_path = Path('package.json')
           package_source = package_path.read_text()
@@ -99,7 +113,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/ui/scene/KnowledgeScene.ts package.json
+          git add src/ui/scene/KnowledgeScene.ts src/ui/scene/KnowledgeSceneRegression.test.ts package.json
           if git diff --cached --quiet; then
             echo "No implementation changes to commit"
             exit 0
