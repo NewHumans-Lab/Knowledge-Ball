@@ -193,7 +193,7 @@ function loadLiveKit(): Promise<LiveKitGlobal> {
 }
 
 export function installVoiceRoomRuntime(): void {
-  if (Capacitor.isNativePlatform()) return;
+  if (Capacitor.isNativePlatform()) document.documentElement.dataset.voiceRoomNative = '1';
   if (document.documentElement.dataset.voiceRoomRuntime === '1') return;
   const main = document.querySelector<HTMLElement>('.main');
   if (!main) return;

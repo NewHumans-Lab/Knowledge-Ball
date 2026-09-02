@@ -45,17 +45,33 @@ assert.deepEqual(parseVoiceRoomStatusPayload({ rooms: [
 assert.match(LIVEKIT_CLIENT_CDN, /livekit-client@2\.22\.1/, 'browser SDK must be version-pinned');
 
 const runtime = readFileSync('src/ui/voice/VoiceRoomRuntime.ts', 'utf8');
-assert.match(runtime, /Capacitor\.isNativePlatform\(\)/, 'V1 voice runtime must fail closed on native shells until microphone manifests are explicitly added');
+assert.doesNotMatch(runtime, /if \(Capacitor\.isNativePlatform\(\)\) return/, 'voice runtime must not be disabled on Android/iOS shells');
+assert.match(runtime, /dataset\.voiceRoomNative/, 'native shells must initialize the same voice runtime instead of a separate fork');
 assert.match(runtime, /pendingRoom/, 'join attempts must track an in-flight room so superseded connects can be disconnected');
 assert.match(runtime, /joinSerial/, 'join attempts must be serialized and stale completions ignored');
 assert.match(runtime, /micActionSerial/, 'microphone toggles must ignore completions from stale rooms');
 assert.match(runtime, /voice-room-audio-start/, 'blocked autoplay must expose a user-gesture retry control');
 assert.match(runtime, /SPEAKING_REPEAT_MS/, 'continuous local speech must keep sending bounded speaking heartbeats');
+assert.match(runtime, /nextRoom\.connect\(response\.url, response\.token, \{ autoSubscribe: true \}\)/, 'join credentials must connect to LiveKit before controls are exposed');
+assert.match(runtime, /nextRoom\.localParticipant\.setMicrophoneEnabled\(true\)/, 'joining must request microphone publication after LiveKit connects');
+assert.match(runtime, /events\.TrackSubscribed/, 'remote audio tracks must be subscribed and attached');
+assert.match(runtime, /events\.ActiveSpeakersChanged/, 'LiveKit active-speaker state must drive speaking feedback');
+assert.match(runtime, /action: 'speaking'/, 'local speaking must heartbeat through the authenticated voice endpoint');
+assert.match(runtime, /leaveButton\.addEventListener\('click', \(\) => \{ void leaveRoom\(\); \}\)/, 'leave control must disconnect the tracked room');
 assert.match(runtime, /window\.addEventListener\('pageshow', resumeRuntime\)/, 'bfcache restores must resume voice status/render scheduling');
 assert.match(runtime, /if \(wanted\.size > 0\) renderRaf = window\.requestAnimationFrame\(renderMarkers\)/, 'voice DOM rendering must sleep when there are no markers');
 assert.match(runtime, /STATUS_BACKOFF_MAX_MS/, 'unavailable voice backends must use bounded polling backoff');
 assert.match(runtime, /dataset\.livekitFailed/, 'failed CDN loads must be reset so a later join can retry');
 assert.match(runtime, /min-width:44px;height:44px/, 'touch hit target must remain at least 44 CSS pixels on mobile');
+
+const androidManifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
+assert.match(androidManifest, /android\.permission\.RECORD_AUDIO/, 'Android package must declare microphone capture permission');
+assert.match(androidManifest, /android\.permission\.MODIFY_AUDIO_SETTINGS/, 'Android package must allow WebRTC audio routing changes');
+assert.match(androidManifest, /android\.hardware\.microphone[^>]+required="false"/, 'microphone hardware must remain optional for listener-only installs');
+
+const iosInfoPlist = readFileSync('ios/App/App/Info.plist', 'utf8');
+assert.match(iosInfoPlist, /NSMicrophoneUsageDescription/, 'iOS package must provide the system microphone privacy prompt description');
+assert.match(iosInfoPlist, /knowledge node voice room/i, 'iOS microphone prompt must explain the voice-room purpose');
 
 const edgeFunction = readFileSync('supabase/functions/livekit-voice/index.ts', 'utf8');
 assert.match(edgeFunction, /livekit-server-sdk@2\.18\.0/, 'server SDK must be version-pinned');
@@ -73,4 +89,4 @@ assert.doesNotMatch(edgeFunction, /declaredNodeIds\(accessToken,\s*true\)/, 'neg
 assert.doesNotMatch(edgeFunction, /createRoom\(/, 'rooms must remain lazy and auto-create only when somebody joins');
 assert.doesNotMatch(edgeFunction, /camera|screen_share/, 'voice join grants must not authorize camera or screen sharing');
 
-console.log('Projection render scheduler + node voice-room regression tests passed');
+console.log('Projection render scheduler + end-to-end node voice-room regression tests passed');
