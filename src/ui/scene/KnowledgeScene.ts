@@ -125,6 +125,7 @@ type NodeShellMaterial = THREE.MeshMatcapMaterial | THREE.MeshPhongMaterial;
 type NodeMeshRecord = {
   group: THREE.Group;
   shell: THREE.Mesh<THREE.SphereGeometry, NodeShellMaterial>;
+  labelAnchor: THREE.Object3D;
   point: THREE.Sprite;
   dot: THREE.Sprite;
   baseShellOpacity: number;
@@ -454,10 +455,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const ndc = new THREE.Vector2();
   const worldPos = new THREE.Vector3();
   const projectedPos = new THREE.Vector3();
-  const shellWorldScale = new THREE.Vector3();
   const labelAnchorWorld = new THREE.Vector3();
   const labelAnchorProjected = new THREE.Vector3();
-  const cameraUp = new THREE.Vector3();
   let relationIndexNodes: readonly KnowledgeSceneNode[] | null = null;
   let relationIndex = createKnowledgeRelationIndex([]);
 
@@ -503,7 +502,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const dot = new THREE.Sprite(dotMaterial);
     dot.visible = !core;
     dot.renderOrder = core ? 22 : 2;
-    group.add(shell, point, dot);
+    const labelAnchor = new THREE.Object3D();
+    group.add(shell, point, dot, labelAnchor);
     nodesGroup.add(group);
     const label = document.createElement('div');
     label.className = 'node-label';
@@ -514,6 +514,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     return nodeMap[n.id] = {
       group,
       shell,
+      labelAnchor,
       point,
       dot,
       baseShellOpacity: shellMaterial.opacity,
@@ -680,6 +681,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       record.shell.visible = true;
       record.point.visible = !core;
       record.shell.scale.setScalar(radius * compensation);
+      record.labelAnchor.position.set(0, radius * compensation, 0);
       record.point.scale.setScalar(radius * 2.4 * compensation);
       record.dot.scale.setScalar((n.mastery === 'mastered' ? radius * 3.6 : n.mastery === 'touched' ? radius * 2.65 : radius * 1.5) * compensation);
       const pointMaterial = record.point.material as THREE.SpriteMaterial;
@@ -773,7 +775,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const labels = () => {
     scene.updateMatrixWorld(true);
-    cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
     const allNodes = getNodes();
     const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const activeNodes = allNodes.filter(node => Boolean(nodeMap[node.id]));
@@ -787,9 +788,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       }
       labelCenterWorld(n, record, worldPos);
       projectedPos.copy(worldPos).project(camera);
-      record.shell.getWorldScale(shellWorldScale);
-      const renderedSphereRadius = Math.max(Math.abs(shellWorldScale.x), Math.abs(shellWorldScale.y), Math.abs(shellWorldScale.z));
-      labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius);
+      record.labelAnchor.getWorldPosition(labelAnchorWorld);
       labelAnchorProjected.copy(labelAnchorWorld).project(camera);
       const frontFacing = isCoreNodeId(n.id) || worldPos.dot(camera.position) > 0;
       const onScreen = labelAnchorProjected.x >= -1 && labelAnchorProjected.x <= 1 && labelAnchorProjected.y >= -1 && labelAnchorProjected.y <= 1;
