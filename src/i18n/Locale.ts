@@ -16,6 +16,7 @@ const en = {
   'settings.font.serif': 'Serif', 'settings.font.mono': 'Monospace',
   'settings.language': 'Language', 'settings.downloads': 'Downloads',
   'settings.downloads.hint': 'Get Knowledge Ball for your platform',
+  'settings.whitePaper': 'White Paper', 'settings.whitePaper.hint': 'Read the English edition',
   'downloads.title': 'Downloads', 'downloads.back': 'Back to Settings',
   'downloads.ios.title': 'Apple / iOS', 'downloads.ios.meta': 'Version 0.2.0 · iOS 14 or later. Install with Safari.',
   'downloads.ios.action': 'Install iOS app', 'downloads.android.title': 'Android',
@@ -58,7 +59,7 @@ const en = {
 export type TranslationKey = keyof typeof en;
 const zhCN: Record<TranslationKey, string> = {
   'app.account':'个人账户','app.settings':'设置','app.current':'当前','app.search':'输入问题，或搜索知识节点…','app.send':'搜索','app.close':'返回知识球','app.backNodeDetail':'返回节点详情','app.cancel':'取消','app.submit':'提交知识','app.brandTagline':'动态关系知识场',
-  'settings.title':'设置','settings.appearance':'知识节点球体','settings.radius':'球体半径 (mm)','settings.labels':'知识节点文字标签','settings.fontSize':'字号','settings.color':'颜色','settings.font':'字体','settings.brightness':'亮度','settings.font.default':'默认无衬线','settings.font.serif':'衬线（宋体风格）','settings.font.mono':'等宽','settings.language':'语言','settings.downloads':'下载','settings.downloads.hint':'获取适合你平台的知识球',
+  'settings.title':'设置','settings.appearance':'知识节点球体','settings.radius':'球体半径 (mm)','settings.labels':'知识节点文字标签','settings.fontSize':'字号','settings.color':'颜色','settings.font':'字体','settings.brightness':'亮度','settings.font.default':'默认无衬线','settings.font.serif':'衬线（宋体风格）','settings.font.mono':'等宽','settings.language':'语言','settings.downloads':'下载','settings.downloads.hint':'获取适合你平台的知识球','settings.whitePaper':'白皮书','settings.whitePaper.hint':'查看中文版',
   'downloads.title':'下载','downloads.back':'返回设置','downloads.ios.title':'Apple / iOS','downloads.ios.meta':'版本 0.2.0 · iOS 14 及以上。使用 Safari 安装。','downloads.ios.action':'安装 iOS 应用','downloads.android.title':'Android','downloads.android.meta':'版本 0.2.0 · Android 7.0 及以上。','downloads.android.action':'下载 Android 安装包（APK）','downloads.windows.title':'Windows','downloads.windows.meta':'此仓库目前没有 Windows 安装程序。','downloads.unavailable':'暂未提供','downloads.update':'检查更新','downloads.share':'分享当前版本',
   'legend.title':'知识层级','legend.inner':'第一层 · 语义与基础事实','legend.middle':'第二层 · 严谨推理','legend.outer':'第三层 · 概率与争议','legend.help':'第一层包括静态语义关系；第二层只表达推理结构；第三层表达争议或提交时明确声明的不确定 / 概率知识。',
   'account.title':'个人账户','account.auth':'身份验证状态','account.verified':'已验证 · 凭证式','account.reputation':'声誉积分','account.lit':'已点亮知识节点','account.contributions':'本人贡献节点数',
