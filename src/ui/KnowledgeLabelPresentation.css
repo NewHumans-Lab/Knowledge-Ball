@@ -1,10 +1,9 @@
 /* KnowledgeScene writes the exact rendered sphere-top screen coordinate.
-   Keep typography unchanged and apply one small, fixed visual overlap so labels
-   sit against the sphere edge at every font size instead of scaling the offset. */
+   Keep typography unchanged and let the label box end exactly at that anchor;
+   presentation CSS must not add a second offset toward or away from the sphere. */
 .node-label {
   position: absolute;
   transform: translate(-50%, -100%);
-  translate: 0 2px;
   margin: 0;
   font-size: var(--label-size);
   color: var(--label-color);
