@@ -129,12 +129,17 @@ async function assertLocaleAndRuntime(page) {
   assert.equal((await page.locator('#btnSettings').textContent())?.trim(), '⚙ Settings', 'header Settings must switch immediately to English');
   assert.equal((await page.locator('#openDownloads b').textContent())?.trim(), 'Downloads', 'Settings download destination must switch to English');
   assert.equal((await page.locator('#openWhitePaper b').textContent())?.trim(), 'White Paper', 'White Paper destination must switch to English');
-  const englishPopupPromise = page.waitForEvent('popup');
+  await page.evaluate(() => {
+    window.__whitePaperOpenCalls = [];
+    window.open = (...args) => {
+      window.__whitePaperOpenCalls.push(args.map(value => String(value)));
+      return null;
+    };
+  });
   await page.locator('#openWhitePaper').click();
-  const englishPopup = await englishPopupPromise;
-  await englishPopup.waitForURL(/\/whitepapers\/Knowledge-Ball-White-Paper-EN\.pdf$/);
-  assert.match(englishPopup.url(), /\/whitepapers\/Knowledge-Ball-White-Paper-EN\.pdf$/, 'English locale must open the English PDF');
-  await englishPopup.close();
+  const [englishOpen] = await page.evaluate(() => window.__whitePaperOpenCalls);
+  assert.match(englishOpen[0], /\/whitepapers\/Knowledge-Ball-White-Paper-EN\.pdf$/, 'English locale must open the English PDF');
+  assert.deepEqual(englishOpen.slice(1), ['_blank', 'noopener,noreferrer'], 'Web PDF must open in an isolated new tab');
 
   await page.evaluate(userText => {
     const sentinel = document.createElement('section');
@@ -171,12 +176,10 @@ async function assertLocaleAndRuntime(page) {
   await page.waitForFunction(() => document.documentElement.lang === 'zh-CN');
   assert.equal((await page.locator('#btnSettings').textContent())?.trim(), '⚙ 设置', 'system UI must switch back to Chinese without reload');
   assert.equal((await page.locator('#openWhitePaper b').textContent())?.trim(), '白皮书', 'White Paper destination must switch back to Chinese');
-  const chinesePopupPromise = page.waitForEvent('popup');
   await page.locator('#openWhitePaper').click();
-  const chinesePopup = await chinesePopupPromise;
-  await chinesePopup.waitForURL(/\/whitepapers\/Knowledge-Ball-White-Paper-ZH\.pdf$/);
-  assert.match(chinesePopup.url(), /\/whitepapers\/Knowledge-Ball-White-Paper-ZH\.pdf$/, 'Chinese locale must open the Chinese PDF');
-  await chinesePopup.close();
+  const [, chineseOpen] = await page.evaluate(() => window.__whitePaperOpenCalls);
+  assert.match(chineseOpen[0], /\/whitepapers\/Knowledge-Ball-White-Paper-ZH\.pdf$/, 'Chinese locale must open the Chinese PDF');
+  assert.deepEqual(chineseOpen.slice(1), ['_blank', 'noopener,noreferrer'], 'Chinese PDF must retain isolated-tab behavior');
 }
 
 async function assertMobileKeyboardOverlay(page) {
