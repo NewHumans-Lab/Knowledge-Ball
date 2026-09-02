@@ -104,8 +104,8 @@ async function assertLabelAppearanceControls(page) {
     };
   });
   assert.ok(labelPresentation, 'a real visible label must expose computed presentation metrics');
-  assert.ok(labelPresentation.textGap >= -2.5 && labelPresentation.textGap <= -1, `label text must overlap the direct sphere-top anchor by about 2px so it visually touches the sphere edge (actual=${labelPresentation.textGap})`);
-  assert.equal(labelPresentation.translate, '0px 2px', 'label presentation must move toward the sphere by one fixed 2px visual inset');
+  assert.ok(labelPresentation.textGap >= -0.1 && labelPresentation.textGap <= 0.75, `label text must end directly at the sphere-top anchor without an extra visual offset (actual=${labelPresentation.textGap})`);
+  assert.equal(labelPresentation.translate, 'none', 'label presentation must not apply a second translate toward the sphere');
   assert.equal(labelPresentation.marginTop, '0px', 'label presentation must not add a second vertical gap');
   assert.equal(labelPresentation.paddingTop, '0px', 'label frame must not add top padding');
   assert.equal(labelPresentation.paddingBottom, '0px', 'label frame must not add bottom padding');
