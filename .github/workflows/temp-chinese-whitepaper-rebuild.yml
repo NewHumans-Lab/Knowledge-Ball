@@ -1,0 +1,164 @@
+name: Temporary Chinese whitepaper rebuild
+
+on:
+  push:
+    branches:
+      - fix/chinese-whitepaper-pdf
+    paths:
+      - '.github/workflows/temp-chinese-whitepaper-rebuild.yml'
+      - '.tmp-whitepaper/xmlpkg/**'
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install document tooling and CJK fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice fonts-noto-cjk poppler-utils python3-pil zip
+
+      - name: Rebuild maintainer-provided Chinese source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .tmp-whitepaper/xmlpkg/chunk-*.b64 | base64 -d > /tmp/docx_xml.tgz
+          echo 'e25763ef7957501de9bff0b086a65b30674e66dbcc6464aff10862f1a7941290  /tmp/docx_xml.tgz' | sha256sum -c -
+          rm -rf /tmp/docx /tmp/whitepaper-out
+          mkdir -p /tmp/docx /tmp/whitepaper-out
+          tar -xzf /tmp/docx_xml.tgz -C /tmp/docx
+          mkdir -p /tmp/docx/word/media
+
+          python3 <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import subprocess
+          from pathlib import Path
+
+          media = Path('/tmp/docx/word/media')
+          try:
+              font_path = subprocess.check_output(
+                  ['fc-match', '-f', '%{file}', 'Noto Sans CJK SC'], text=True
+              ).strip()
+          except Exception:
+              font_path = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
+
+          def font(size):
+              return ImageFont.truetype(font_path, size=size)
+
+          def lerp(a, b, t):
+              return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+          cyan = (61, 220, 235)
+          blue = (71, 126, 245)
+          purple = (143, 83, 238)
+          dark = (4, 8, 18)
+          gray = (125, 134, 151)
+
+          # image1.png — core semantic sphere motif.
+          im = Image.new('RGB', (566, 566), dark)
+          d = ImageDraw.Draw(im)
+          d.ellipse((35, 25, 350, 340), fill=(35, 206, 222))
+          d.ellipse((230, 200, 555, 540), fill=(59, 109, 235))
+          d.ellipse((-85, 300, 300, 690), fill=(130, 70, 230))
+          d.line([(180, 210), (286, 286)], fill=(210, 247, 250), width=38)
+          d.line([(286, 286), (390, 365)], fill=(187, 208, 255), width=38)
+          d.line([(286, 286), (190, 402)], fill=(224, 205, 255), width=38)
+          d.ellipse((240, 240, 332, 332), fill=(255, 255, 255))
+          im.save(media / 'image1.png', optimize=True)
+
+          # image2.png — cyan → blue → purple state gradient.
+          im = Image.new('RGB', (1600, 18))
+          px = im.load()
+          for x in range(1600):
+              t = x / 1599
+              c = lerp(cyan, blue, t * 2) if t <= .5 else lerp(blue, purple, (t - .5) * 2)
+              for y in range(18):
+                  px[x, y] = c
+          im.save(media / 'image2.png', optimize=True)
+
+          # image3.png — seven-stage lifecycle nodes.
+          im = Image.new('RGB', (1800, 330), 'white')
+          d = ImageDraw.Draw(im)
+          xs = [150, 400, 650, 900, 1150, 1400, 1650]
+          y = 165
+          for i in range(len(xs)-1):
+              d.line((xs[i]+70, y, xs[i+1]-70, y), fill=gray, width=8)
+              d.polygon([(xs[i+1]-75, y-14), (xs[i+1]-48, y), (xs[i+1]-75, y+14)], fill=gray)
+          f = font(58)
+          for i, x in enumerate(xs):
+              t = i / 6
+              c = lerp(cyan, blue, t * 2) if t <= .5 else lerp(blue, purple, (t - .5) * 2)
+              d.ellipse((x-70, y-70, x+70, y+70), fill=c, outline=(25, 30, 42), width=4)
+              txt = str(i+1)
+              box = d.textbbox((0,0), txt, font=f)
+              d.text((x-(box[2]-box[0])/2, y-(box[3]-box[1])/2-5), txt, font=f, fill='white')
+          im.save(media / 'image3.png', optimize=True)
+
+          # image4.png — three semantic shells and fixed core.
+          im = Image.new('RGB', (1200, 740), 'white')
+          d = ImageDraw.Draw(im)
+          cx, cy = 500, 370
+          for r, c, w in [(305, purple, 16), (220, blue, 16), (135, cyan, 16)]:
+              d.ellipse((cx-r, cy-r, cx+r, cy+r), outline=c, width=w)
+          d.line((cx, cy, cx, cy-94), fill=(70,75,90), width=10)
+          d.line((cx, cy, cx-82, cy+58), fill=(70,75,90), width=10)
+          d.line((cx, cy, cx+82, cy+58), fill=(70,75,90), width=10)
+          for x,y,c in [(cx,cy-105,cyan),(cx-92,cy+65,blue),(cx+92,cy+65,purple)]:
+              d.ellipse((x-25,y-25,x+25,y+25), fill=c)
+          d.ellipse((cx-30,cy-30,cx+30,cy+30), fill=(255,245,185), outline=(70,75,90), width=4)
+          f = font(44)
+          for idx, (yy, c) in enumerate([(175,purple),(335,blue),(495,cyan)], start=1):
+              d.ellipse((900, yy-22, 944, yy+22), fill=c)
+              d.text((970, yy-29), str(idx), font=f, fill=(40,44,55))
+          im.save(media / 'image4.png', optimize=True)
+
+          # image5.png — authoritative data flow.
+          im = Image.new('RGB', (1600, 760), 'white')
+          d = ImageDraw.Draw(im)
+          labels = ['客户端命令','协议校验','原子事件','当前投影','三维图谱映射','可验证界面']
+          f = font(42)
+          for i, label in enumerate(labels):
+              y0 = 35 + i * 118
+              t = i / 5
+              c = lerp(cyan, blue, t * 2) if t <= .5 else lerp(blue, purple, (t - .5) * 2)
+              d.rounded_rectangle((330, y0, 1270, y0+78), radius=28, fill=c)
+              box = d.textbbox((0,0), label, font=f)
+              d.text((800-(box[2]-box[0])/2, y0+13), label, font=f, fill='white')
+              if i < len(labels)-1:
+                  x = 800
+                  d.line((x, y0+80, x, y0+112), fill=gray, width=7)
+                  d.polygon([(x-13,y0+102),(x+13,y0+102),(x,y0+118)], fill=gray)
+          im.save(media / 'image5.png', optimize=True)
+          PY
+
+          (cd /tmp/docx && zip -qr /tmp/Knowledge-Ball-White-Paper-ZH.docx .)
+          unzip -t /tmp/Knowledge-Ball-White-Paper-ZH.docx
+          libreoffice --headless --convert-to pdf --outdir /tmp/whitepaper-out /tmp/Knowledge-Ball-White-Paper-ZH.docx
+
+          PDF=/tmp/whitepaper-out/Knowledge-Ball-White-Paper-ZH.pdf
+          test -s "$PDF"
+          test "$(pdfinfo "$PDF" | awk '/^Pages:/ {print $2}')" = '17'
+          pdftotext "$PDF" /tmp/whitepaper.txt
+          grep -q '知识球白皮书' /tmp/whitepaper.txt
+          pdffonts "$PDF" | tee /tmp/fonts.txt
+          grep -q 'NotoSansCJK' /tmp/fonts.txt
+          awk 'NR>2 && $6 != "yes" { bad=1 } END { exit bad }' /tmp/fonts.txt
+          cp "$PDF" public/whitepapers/Knowledge-Ball-White-Paper-ZH.pdf
+
+      - name: Commit only the rebuilt PDF asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/whitepapers/Knowledge-Ball-White-Paper-ZH.pdf
+          if git diff --cached --quiet; then
+            echo 'No PDF change produced'
+            exit 1
+          fi
+          git commit -m 'Replace Chinese white paper PDF'
+          git push
