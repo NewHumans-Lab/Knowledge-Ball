@@ -189,7 +189,7 @@ It should emit semantic intent, not manage persistence or GPU destruction.
 
 Owns:
 
-- showing detail/edit/create/negate/decompose/merge views;
+- showing detail/edit/create/negate/merge views;
 - local form state;
 - navigation between presentation layers.
 
