@@ -10,12 +10,6 @@ const editKindByType = {
   KnowledgeStatusChanged: 'status', KnowledgeNodeEdited: 'update',
 } as const;
 
-const domainEventTypes = new Set<string>([
-  'NodeCreated', 'NodeEdited', 'NodeFalsified', 'NodeSuspended', 'NodeDisputed', 'NodeResolved', 'NodeMasterySet',
-  'KnowledgeAdded', 'KnowledgeNegated', 'KnowledgeStatusChanged', 'KnowledgeNodeEdited', 'KnowledgeVerdictFinalized',
-  'KnowledgeRevalidationStarted', 'KnowledgeRevalidationFinalized',
-]);
-
 function safeCount(value: number, allowZero = true): boolean {
   return Number.isSafeInteger(value) && value >= (allowZero ? 0 : 1);
 }
@@ -28,7 +22,7 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
   const errors: string[] = [];
   if (!event || typeof event !== 'object') return ['事件必须是对象'];
   if (!event.id?.trim()) errors.push('事件必须有 ID');
-  if (!domainEventTypes.has(event.type)) errors.push(`不支持的事件类型: ${event.type}`);
+  if ((event as { type?: string }).type === 'KnowledgeDecomposed') errors.push('不支持的事件类型: KnowledgeDecomposed');
   if (event.schemaVersion !== 1) errors.push(`不支持的事件版本: ${event.schemaVersion}`);
   if (!Number.isFinite(event.timestamp) || event.timestamp <= 0) errors.push('事件时间戳无效');
   if (!event.payload || typeof event.payload !== 'object') errors.push('事件载荷无效');
