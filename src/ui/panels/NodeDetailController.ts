@@ -28,7 +28,7 @@ import {
   type KnowledgeNodeType,
 } from '../config/KnowledgeUiConfig';
 
-export type NodeDetailAction = 'edit' | 'derive' | 'derive-reasoning' | 'negate' | 'decompose' | 'resolve' | 'dispute';
+export type NodeDetailAction = 'edit' | 'derive' | 'derive-reasoning' | 'negate' | 'resolve' | 'dispute';
 
 export interface NodeDetailNode {
   id: string;
@@ -63,7 +63,6 @@ const ACTION_LABEL_KEY: Readonly<Record<NodeDetailAction, SystemUiTextKey>> = Ob
   derive: 'detail.actionAdd',
   'derive-reasoning': 'detail.actionAddReasoning',
   negate: 'detail.actionOppose',
-  decompose: 'detail.actionDecompose',
   resolve: 'detail.actionRevalidate',
   dispute: 'detail.actionDispute',
 });
