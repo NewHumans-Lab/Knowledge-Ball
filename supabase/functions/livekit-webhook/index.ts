@@ -3,23 +3,23 @@ import { RoomServiceClient, WebhookReceiver } from 'npm:livekit-server-sdk@2.18.
 const ROOM_PREFIX = 'knowledge:';
 const NODE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
-function requiredEnv(name) {
+function requiredEnv(name: string): string {
   const value = Deno.env.get(name)?.trim();
   if (!value) throw new Error(`Missing ${name}`);
   return value;
 }
 
-function normalizeLiveKitUrl(value) {
+function normalizeLiveKitUrl(value: string): string {
   if (value.startsWith('wss://')) return `https://${value.slice('wss://'.length)}`;
   if (value.startsWith('ws://')) return `http://${value.slice('ws://'.length)}`;
   return value.replace(/\/$/, '');
 }
 
-function readSecretKey() {
+function readSecretKey(): string {
   const named = Deno.env.get('SUPABASE_SECRET_KEYS')?.trim();
   if (named) {
     try {
-      const parsed = JSON.parse(named);
+      const parsed = JSON.parse(named) as Record<string, unknown>;
       if (typeof parsed.default === 'string' && parsed.default.trim()) return parsed.default.trim();
       for (const value of Object.values(parsed)) if (typeof value === 'string' && value.trim()) return value.trim();
     } catch { /* fall through to legacy secret */ }
@@ -27,10 +27,10 @@ function readSecretKey() {
   return requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
 }
 
-async function writeRoomStatus(nodeId, participants) {
+async function writeRoomStatus(nodeId: string, participants: number): Promise<void> {
   const supabaseUrl = requiredEnv('SUPABASE_URL').replace(/\/$/, '');
   const secretKey = readSecretKey();
-  const headers = {
+  const headers: Record<string, string> = {
     apikey: secretKey,
     'Content-Type': 'application/json',
     Prefer: 'resolution=merge-duplicates,return=minimal',
@@ -44,7 +44,7 @@ async function writeRoomStatus(nodeId, participants) {
   if (!response.ok) throw new Error(`voice_room_status write failed: ${response.status} ${await response.text()}`);
 }
 
-Deno.serve(async req => {
+Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
   try {
     const apiKey = requiredEnv('LIVEKIT_API_KEY');
