@@ -15,10 +15,10 @@
 .kb-auth-form input:focus,.kb-auth-form textarea:focus{border-color:var(--accent-primary)}
 .kb-profile-edit-title{margin:0 0 16px;font-size:16px;color:var(--ink)}
 .kb-profile-edit-form textarea{min-height:88px;resize:vertical}
-.kb-avatar-edit-row{display:flex;align-items:center;gap:12px;padding:2px 0 4px}
+.kb-avatar-edit-row{display:flex;align-items:center;gap:12px;padding:2px 0 4px;position:relative}
 .kb-profile-avatar-preview{flex:0 0 auto}
-.kb-avatar-upload-action{margin:0;min-width:108px}
-.kb-avatar-file-input{display:none!important}
+.kb-avatar-upload-action{margin:0;width:120px;min-width:120px;pointer-events:none}
+.kb-avatar-file-input{display:block!important;position:absolute;left:60px;top:2px;width:120px!important;height:48px;padding:0!important;margin:0;opacity:0;cursor:pointer;z-index:2}
 .kb-auth-submit{width:100%;margin-top:4px;padding:10px 12px}
 .kb-auth-back{width:100%;margin-top:8px}
 .kb-auth-status{margin-top:10px;min-height:18px;text-align:center}
