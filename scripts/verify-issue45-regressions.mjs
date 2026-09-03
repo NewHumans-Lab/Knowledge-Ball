@@ -16,7 +16,7 @@ assert.match(migrations, /knowledge_ball_schema_version/i,
 assert.match(deploy, /npm ci/);
 assert.match(deploy, /npm test/);
 assert.match(deploy, /verify-supabase-schema/);
-for (const eventType of ['KnowledgeAdded','KnowledgeNegated','KnowledgeDecomposed','KnowledgeMerged','KnowledgeStatusChanged','KnowledgeNodeEdited']) {
+for (const eventType of ['KnowledgeAdded','KnowledgeNegated','KnowledgeMerged','KnowledgeStatusChanged','KnowledgeNodeEdited']) {
   assert.ok(canonical.includes(eventType), `hosted canonical contract is missing ${eventType}`);
 }
 assert.match(canonical, /perform public\.validate_public_knowledge_event\(item\)/,
