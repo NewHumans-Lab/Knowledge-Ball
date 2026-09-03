@@ -58,18 +58,20 @@ assert.match(ui, /id="kbProfileEditForm"/,
   'profile editing must use one ordinary form instead of sequential prompts');
 assert.match(ui, /name="displayName"/,
   'profile form must include display name');
-assert.match(ui, /id="kbAvatarFile"[\s\S]*type="file"[\s\S]*accept="image\/\*"/,
-  'profile form must select an avatar from the device image picker');
+assert.match(ui, /<label class="btn ghost kb-avatar-upload-action" for="kbAvatarFile">修改头像<\/label>[\s\S]*id="kbAvatarFile"[\s\S]*type="file"[\s\S]*accept="image\/\*"/,
+  'profile form must use native label activation for the rendered device image picker');
+assert.doesNotMatch(ui, /kbAvatarChoose|avatarFile\?\.click\(\)/,
+  'avatar selection must not proxy a file input through JavaScript click');
 assert.doesNotMatch(ui, /name="avatarUrl" type="url"/,
   'users must not be asked to paste an avatar URL');
 assert.match(accountCss, /\.kb-avatar-edit-row\{[^}]*position:relative/,
-  'avatar picker hit target must have a positioned container');
-assert.match(accountCss, /\.kb-avatar-file-input\{[^}]*display:block!important[^}]*position:absolute[^}]*opacity:0[^}]*z-index:2/,
-  'the real file input must stay pointer-active over the visible avatar button on mobile');
+  'avatar picker row must own the rendered offscreen file input');
+assert.match(accountCss, /\.kb-avatar-file-input\{[^}]*display:block!important[^}]*position:absolute[^}]*left:-10000px[^}]*opacity:1/,
+  'the real file input must remain rendered for Android WebView native label activation');
 assert.doesNotMatch(accountCss, /\.kb-avatar-file-input\{[^}]*display:none/i,
-  'mobile avatar picking must not depend on clicking a display:none file input');
-assert.match(accountCss, /\.kb-avatar-upload-action\{[^}]*pointer-events:none/,
-  'the visible avatar button must not intercept the direct tap meant for the real file input');
+  'mobile avatar picking must not use a display:none file input');
+assert.doesNotMatch(accountCss, /\.kb-avatar-file-input\{[^}]*opacity:0/,
+  'mobile avatar picking must not depend on a fully transparent file input hit target');
 assert.match(ui, /prepareAvatarWebp\(file\)/,
   'selected avatar must be processed before upload');
 assert.match(ui, /uploadAvatarWebp\(this\.account, image\)/,
@@ -176,5 +178,5 @@ assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Registered public-write gate, mobile avatar picker boundary, avatar upload boundary, explicit account ownership, authoritative accuracy, zero-write production smoke, and account UI checks passed');
+console.log('Registered public-write gate, native mobile avatar picker boundary, avatar upload boundary, explicit account ownership, authoritative accuracy, zero-write production smoke, and account UI checks passed');
 // This regression intentionally guards the web account ownership boundary.
