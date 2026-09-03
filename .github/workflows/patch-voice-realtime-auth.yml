@@ -1,0 +1,29 @@
+name: Patch voice Realtime auth
+
+on:
+  push:
+    branches:
+      - fix/voice-room-event-push
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'Refresh voice Realtime auth') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/voice-room-event-push
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/patch-voice-realtime-auth.mjs
+      - name: Commit final patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Refresh voice Realtime auth"
+          git push origin HEAD:fix/voice-room-event-push
