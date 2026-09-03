@@ -2,9 +2,9 @@ import { Capacitor } from '@capacitor/core';
 import { createProductionAuthClient } from '../../auth/AuthClient';
 
 export const LIVEKIT_CLIENT_CDN = 'https://cdn.jsdelivr.net/npm/livekit-client@2.22.1/dist/livekit-client.umd.min.js';
+export const SUPABASE_REALTIME_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.109.0/dist/umd/supabase.js';
 export const VOICE_ROOM_PREFIX = 'knowledge:';
-const STATUS_INTERVAL_MS = 2500;
-const STATUS_BACKOFF_MAX_MS = 60_000;
+export const VOICE_ROOM_STATUS_TOPIC = 'voice-room-status';
 const SPEAKING_HEARTBEAT_MS = 900;
 const SPEAKING_REPEAT_MS = 1500;
 
@@ -60,6 +60,17 @@ type LiveKitGlobal = {
   Room: new (options?: Record<string, unknown>) => LiveKitRoom;
   RoomEvent: Record<string, string>;
   isBrowserSupported?: () => boolean;
+};
+type RealtimeChannel = {
+  on: (type: 'broadcast', filter: { event: string }, listener: (payload: unknown) => void) => RealtimeChannel;
+  subscribe: (listener?: (status: string) => void) => RealtimeChannel;
+};
+type SupabaseRealtimeClient = {
+  realtime: { setAuth: (token?: string) => Promise<void> };
+  channel: (topic: string, options: { config: { private: boolean } }) => RealtimeChannel;
+};
+type SupabaseGlobal = {
+  createClient: (url: string, key: string, options?: Record<string, unknown>) => SupabaseRealtimeClient;
 };
 
 type JoinResponse = {
@@ -192,6 +203,49 @@ function loadLiveKit(): Promise<LiveKitGlobal> {
   return liveKitLoadPromise;
 }
 
+let supabaseLoadPromise: Promise<SupabaseGlobal> | null = null;
+
+function loadSupabaseRealtime(): Promise<SupabaseGlobal> {
+  const current = (window as unknown as { supabase?: SupabaseGlobal }).supabase;
+  if (current) return Promise.resolve(current);
+  if (supabaseLoadPromise) return supabaseLoadPromise;
+
+  supabaseLoadPromise = new Promise((resolve, reject) => {
+    let existing = document.querySelector<HTMLScriptElement>('script[data-knowledge-ball-supabase]');
+    if (existing?.dataset.supabaseFailed === '1' || existing?.dataset.supabaseLoaded === '1') {
+      existing.remove();
+      existing = null;
+    }
+    const script = existing ?? document.createElement('script');
+    const cleanupFailure = () => {
+      script.dataset.supabaseFailed = '1';
+      script.remove();
+      supabaseLoadPromise = null;
+      reject(new Error('Supabase Realtime SDK failed to load'));
+    };
+    const finish = () => {
+      const sdk = (window as unknown as { supabase?: SupabaseGlobal }).supabase;
+      if (!sdk) {
+        cleanupFailure();
+        return;
+      }
+      script.dataset.supabaseLoaded = '1';
+      resolve(sdk);
+    };
+    script.addEventListener('load', finish, { once: true });
+    script.addEventListener('error', cleanupFailure, { once: true });
+    if (!existing) {
+      script.src = SUPABASE_REALTIME_CDN;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      script.dataset.knowledgeBallSupabase = '1';
+      document.head.appendChild(script);
+    }
+  });
+
+  return supabaseLoadPromise;
+}
+
 export function installVoiceRoomRuntime(): void {
   if (Capacitor.isNativePlatform()) document.documentElement.dataset.voiceRoomNative = '1';
   if (document.documentElement.dataset.voiceRoomRuntime === '1') return;
@@ -247,8 +301,8 @@ export function installVoiceRoomRuntime(): void {
   let localSpeaking = false;
   let lastSpeakingHeartbeat = 0;
   let speakingTimer: number | null = null;
-  let statusTimer: number | null = null;
-  let statusFailures = 0;
+  let realtimeClient: SupabaseRealtimeClient | null = null;
+  let realtimeChannel: RealtimeChannel | null = null;
   let renderRaf = 0;
   let stopped = false;
   let joinSerial = 0;
@@ -289,32 +343,60 @@ export function installVoiceRoomRuntime(): void {
     renderRaf = window.requestAnimationFrame(renderMarkers);
   };
 
-  const scheduleStatus = (delay: number) => {
-    if (stopped) return;
-    if (statusTimer !== null) window.clearTimeout(statusTimer);
-    statusTimer = window.setTimeout(() => {
-      statusTimer = null;
-      void refreshStatus();
-    }, delay);
-  };
-
   const refreshStatus = async () => {
     if (stopped) return;
     try {
       const next = parseVoiceRoomStatusPayload(await voiceRequest({ action: 'status' }));
       statuses.clear();
       for (const item of next) statuses.set(item.nodeId, item);
-      statusFailures = 0;
       ensureRenderLoop();
-      scheduleStatus(document.hidden ? 15_000 : STATUS_INTERVAL_MS);
     } catch (error) {
-      statusFailures += 1;
-      if (import.meta.env.DEV) console.debug('[Knowledge-Ball voice] status unavailable', error);
-      const permanentConfigurationError = error instanceof VoiceServiceError && error.status === 503;
-      const exponential = Math.min(STATUS_BACKOFF_MAX_MS, STATUS_INTERVAL_MS * (2 ** Math.min(statusFailures, 5)));
-      const delay = document.hidden ? STATUS_BACKOFF_MAX_MS : permanentConfigurationError ? STATUS_BACKOFF_MAX_MS : exponential;
-      scheduleStatus(delay);
+      if (import.meta.env.DEV) console.debug('[Knowledge-Ball voice] initial status unavailable', error);
     }
+  };
+
+  const applyRealtimeStatus = (payload: unknown) => {
+    const envelope = payload as { payload?: unknown };
+    if (!envelope?.payload || typeof envelope.payload !== 'object') return;
+    const change = envelope.payload as Record<string, unknown>;
+    const nodeId = typeof change.nodeId === 'string' ? change.nodeId : '';
+    const participants = Number(change.participants);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(nodeId)) return;
+    if (!Number.isSafeInteger(participants) || participants < 0) return;
+    if (participants === 0) statuses.delete(nodeId);
+    else statuses.set(nodeId, { nodeId, participants, speaking: false });
+    ensureRenderLoop();
+  };
+
+  const connectStatusRealtime = async () => {
+    if (stopped || realtimeChannel || !authClient || !supabaseUrl || !publishableKey) return;
+    try {
+      const statusAuthClient = authClient;
+      const session = await statusAuthClient.session();
+      const sdk = await loadSupabaseRealtime();
+      if (stopped || realtimeChannel) return;
+      const client = sdk.createClient(supabaseUrl, publishableKey, {
+        accessToken: async () => (await statusAuthClient.session()).access_token,
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      });
+      await client.realtime.setAuth(session.access_token);
+      const channel = client
+        .channel(VOICE_ROOM_STATUS_TOPIC, { config: { private: true } })
+        .on('broadcast', { event: 'voice_room_status_changed' }, applyRealtimeStatus);
+      realtimeClient = client;
+      realtimeChannel = channel;
+      channel.subscribe(status => {
+        if (import.meta.env.DEV && status !== 'SUBSCRIBED') console.debug('[Knowledge-Ball voice] realtime status', status);
+      });
+    } catch (error) {
+      if (import.meta.env.DEV) console.debug('[Knowledge-Ball voice] realtime unavailable', error);
+    }
+  };
+
+  const initializeStatusPush = async () => {
+    await refreshStatus();
+    if (stopped) return;
+    await connectStatusRealtime();
   };
 
   const remoteTrackSubscribed = (trackValue: unknown) => {
@@ -403,7 +485,6 @@ export function installVoiceRoomRuntime(): void {
     joinSerial += 1;
     await disconnectTrackedRooms();
     ensureRenderLoop();
-    void refreshStatus();
   };
 
   const joinRoom = async (nodeId: string) => {
@@ -441,8 +522,6 @@ export function installVoiceRoomRuntime(): void {
 
       nextRoom.on(events.TrackSubscribed, remoteTrackSubscribed);
       nextRoom.on(events.TrackUnsubscribed, remoteTrackUnsubscribed);
-      nextRoom.on(events.ParticipantConnected, () => { if (room === nextRoom) void refreshStatus(); });
-      nextRoom.on(events.ParticipantDisconnected, () => { if (room === nextRoom) void refreshStatus(); });
       nextRoom.on(events.ActiveSpeakersChanged, (speakersValue: unknown) => {
         if (room !== nextRoom || !Array.isArray(speakersValue)) return;
         const speakingLocally = speakersValue.some(value => (value as LiveKitParticipant)?.identity === nextParticipantIdentity);
@@ -462,7 +541,6 @@ export function installVoiceRoomRuntime(): void {
         if (room === nextRoom) room = null;
         if (currentNodeId === nodeId) resetSessionUi();
         ensureRenderLoop();
-        void refreshStatus();
       });
 
       await nextRoom.connect(response.url, response.token, { autoSubscribe: true });
@@ -505,7 +583,6 @@ export function installVoiceRoomRuntime(): void {
       }
       updatePanel();
       ensureRenderLoop();
-      await refreshStatus();
     } catch (error) {
       if (stale()) return;
       await disconnectTrackedRooms();
@@ -616,10 +693,6 @@ export function installVoiceRoomRuntime(): void {
     if (stopped) return;
     stopped = true;
     joinSerial += 1;
-    if (statusTimer !== null) {
-      window.clearTimeout(statusTimer);
-      statusTimer = null;
-    }
     if (renderRaf !== 0) {
       window.cancelAnimationFrame(renderRaf);
       renderRaf = 0;
@@ -630,25 +703,16 @@ export function installVoiceRoomRuntime(): void {
   const resumeRuntime = () => {
     if (!stopped) return;
     stopped = false;
-    statusFailures = 0;
-    scheduleStatus(0);
     ensureRenderLoop();
   };
 
   window.addEventListener('pagehide', suspendRuntime);
   window.addEventListener('pageshow', resumeRuntime);
   document.addEventListener('visibilitychange', () => {
-    if (stopped) return;
-    if (document.hidden) {
-      scheduleStatus(STATUS_BACKOFF_MAX_MS);
-    } else {
-      statusFailures = 0;
-      scheduleStatus(0);
-      ensureRenderLoop();
-    }
+    if (!stopped && !document.hidden) ensureRenderLoop();
   });
 
-  scheduleStatus(0);
+  void initializeStatusPush();
   ensureRenderLoop();
 }
 
