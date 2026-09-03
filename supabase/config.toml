@@ -1,0 +1,2 @@
+[functions.livekit-webhook]
+verify_jwt = false
