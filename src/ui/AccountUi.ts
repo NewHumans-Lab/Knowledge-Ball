@@ -7,6 +7,7 @@ import {
 } from '../auth/AuthClient';
 import { safeAvatarUrl } from '../auth/AuthProfilePresentation';
 import { prepareAvatarWebp, uploadAvatarWebp } from './AvatarStorage';
+import { pickNativeAndroidAvatar, usesNativeAndroidAvatarPicker } from './NativeAvatarPicker';
 import './AccountUi.css';
 
 const EXPIRY_SWEEP_MS = 5 * 60_000;
@@ -230,14 +231,17 @@ export class AccountUiController {
 
   private renderProfileEditForm(body: HTMLElement): void {
     if (!this.cached) return;
+    const nativeAndroidPicker = usesNativeAndroidAvatarPicker();
+    const avatarPicker = nativeAndroidPicker
+      ? '<button class="btn ghost kb-avatar-upload-action" id="kbAvatarNativeChoose" type="button">修改头像</button>'
+      : '<label class="btn ghost kb-avatar-upload-action" for="kbAvatarFile">修改头像</label><input class="kb-avatar-file-input" id="kbAvatarFile" name="avatarFile" type="file" accept="image/*" aria-label="选择头像图片">';
     body.innerHTML = `
       <section class="kb-auth-card" aria-label="修改个人资料">
         <h3 class="kb-profile-edit-title">修改资料</h3>
         <form class="kb-auth-form kb-profile-edit-form" id="kbProfileEditForm" novalidate>
           <div class="kb-avatar-edit-row">
             <div class="kb-profile-avatar kb-profile-avatar-preview" id="kbProfileAvatarPreview"></div>
-            <label class="btn ghost kb-avatar-upload-action" for="kbAvatarFile">修改头像</label>
-            <input class="kb-avatar-file-input" id="kbAvatarFile" name="avatarFile" type="file" accept="image/*" aria-label="选择头像图片">
+            ${avatarPicker}
           </div>
           <label>用户名
             <input name="username" type="text" inputmode="text" autocomplete="username" minlength="3" maxlength="24" pattern="[a-z0-9_]{3,24}" value="${escapeHtml(this.cached.username ?? '')}" placeholder="3-24 位小写字母、数字或下划线" required>
@@ -256,17 +260,41 @@ export class AccountUiController {
 
     const avatarPreview = body.querySelector<HTMLElement>('#kbProfileAvatarPreview');
     if (avatarPreview) renderAvatarImage(avatarPreview, this.cached);
-    const avatarFile = body.querySelector<HTMLInputElement>('#kbAvatarFile');
-    avatarFile?.addEventListener('change', () => {
-      const file = avatarFile.files?.[0];
-      avatarFile.value = '';
-      if (file) void this.replaceAvatar(body, file);
-    });
+
+    if (nativeAndroidPicker) {
+      const nativeChoose = body.querySelector<HTMLButtonElement>('#kbAvatarNativeChoose');
+      nativeChoose?.addEventListener('click', () => void this.chooseNativeAvatar(body, nativeChoose));
+    } else {
+      const avatarFile = body.querySelector<HTMLInputElement>('#kbAvatarFile');
+      avatarFile?.addEventListener('change', () => {
+        const file = avatarFile.files?.[0];
+        avatarFile.value = '';
+        if (file) void this.replaceAvatar(body, file);
+      });
+    }
+
     body.querySelector('#kbProfileEditBack')?.addEventListener('click', () => this.open(false));
     body.querySelector<HTMLFormElement>('#kbProfileEditForm')?.addEventListener('submit', event => {
       event.preventDefault();
       void this.submitProfileEditForm(body, event.currentTarget as HTMLFormElement);
     });
+  }
+
+  private async chooseNativeAvatar(body: HTMLElement, button: HTMLButtonElement): Promise<void> {
+    button.disabled = true;
+    this.accountStatus(body, '正在打开相册…');
+    try {
+      const file = await pickNativeAndroidAvatar();
+      if (!file) {
+        this.accountStatus(body, '未选择头像');
+        return;
+      }
+      await this.replaceAvatar(body, file);
+    } catch (error) {
+      this.accountStatus(body, error instanceof Error ? error.message : '无法打开头像选择器');
+    } finally {
+      button.disabled = false;
+    }
   }
 
   private async replaceAvatar(body: HTMLElement, file: File): Promise<void> {
@@ -281,7 +309,9 @@ export class AccountUiController {
     }
 
     const avatarFile = body.querySelector<HTMLInputElement>('#kbAvatarFile');
+    const nativeChoose = body.querySelector<HTMLButtonElement>('#kbAvatarNativeChoose');
     if (avatarFile) avatarFile.disabled = true;
+    if (nativeChoose) nativeChoose.disabled = true;
     this.accountStatus(body, '正在处理头像…');
     try {
       const image = await prepareAvatarWebp(file);
@@ -301,6 +331,7 @@ export class AccountUiController {
       this.accountStatus(body, error instanceof Error ? error.message : '头像更新失败');
     } finally {
       if (avatarFile) avatarFile.disabled = false;
+      if (nativeChoose) nativeChoose.disabled = false;
     }
   }
 
