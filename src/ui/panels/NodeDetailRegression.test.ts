@@ -24,9 +24,11 @@ for (const key of ['detail.contributor', 'detail.time', 'common.edit', 'detail.v
   assert(detail.includes(`systemUiText('${key}')`) || detail.includes(`systemUiText('${key}',`), `detail must render ${key} through i18n`);
 }
 assert(detail.includes('ACTION_LABEL_KEY'), 'detail action labels must be represented as i18n keys');
-for (const key of ['detail.actionOptimize', 'detail.actionAdd', 'detail.actionAddReasoning', 'detail.actionOppose', 'detail.actionDecompose']) {
+for (const key of ['detail.actionOptimize', 'detail.actionAdd', 'detail.actionAddReasoning', 'detail.actionOppose']) {
   assert(detail.includes(`'${key}'`), `single detail engine must expose localized action key ${key}`);
 }
+assert(!detail.includes('detail.actionDecompose'), 'retired decomposition localization must not return to the detail engine');
+assert(!detail.includes("| 'decompose'"), 'retired decomposition action must not return to the detail action union');
 assert(detail.includes("subscribeLocale(() =>"), 'an already-open detail surface must refresh immediately after locale changes');
 assert(detail.includes('escapeHtml(node.title)'), 'user-authored node titles must render without translation');
 assert(detail.includes("escapeHtml(node.reasoning || systemUiText('common.none'))"), 'user-authored knowledge content must render verbatim with only the empty-state copy localized');
