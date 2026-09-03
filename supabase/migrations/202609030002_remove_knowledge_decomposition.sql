@@ -182,7 +182,7 @@ begin
     if item.event_type = 'KnowledgeAdded'
        and item.envelope #>> '{payload,edit,kind}' = 'add'
        and item.envelope #>> '{payload,edit,mode}' = 'reasoning-link' then
-      perform private.project_reasoning_link_event_values(item.event_type, item.envelope);
+      perform private.project_reasoning_link_event_values(item.envelope);
     end if;
   end loop;
 end $$;
