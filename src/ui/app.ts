@@ -21,10 +21,7 @@ import { resolveNode as cmdResolveNode } from '../command/ResolveNode';
 import { setMastery as cmdSetMastery } from '../command/SetMastery';
 import { disputeNode as cmdDisputeNode } from '../command/DisputeNode';
 import { executeKnowledgeEdit } from '../command/KnowledgeEdit';
-import {
-  type AddEdit,
-  type DecomposeEdit,
-} from '../protocol/KnowledgeEditingProtocol';
+import { type AddEdit } from '../protocol/KnowledgeEditingProtocol';
 import type { DomainEvent, PublicKnowledgeEvent } from '../event/Event';
 import { FilteredKnowledgePersistence } from '../persistence/KnowledgePersistence';
 import { SyncEngine } from '../sync/SyncEngine';
@@ -57,7 +54,6 @@ import {
 import {
   PanelController,
   type CreateNodePayload,
-  type DecomposeNodePayload,
   type LineageCandidatePayload,
   type PanelNodeSummary,
 } from './panels/PanelController';
@@ -296,7 +292,6 @@ function getNodeDetailActions(id: string): NodeDetailAction[] {
   const node = getNodeById(id);
   if (!node || lineageRoleFor(node) !== 'current') return [];
   const actions: NodeDetailAction[] = ['edit', 'derive', 'derive-reasoning'];
-  if (node.type === 'reasoning') actions.push('decompose');
   if (node.status !== 'falsified' && node.status !== 'suspended') actions.push('negate');
   if (node.status === 'suspended') actions.push('resolve');
   if (node.status === 'disputed') actions.push('dispute');
@@ -480,7 +475,7 @@ async function createReasoningKnowledge(payload: CreateReasoningKnowledgePayload
 }
 
 async function applyKnowledgeEdit(
-  edit: AddEdit | DecomposeEdit,
+  edit: AddEdit,
   declaredLayers?: Readonly<Record<string, UserKnowledgeLayer>>,
 ): Promise<void> {
   await executeKnowledgeEdit(store, projection, edit, commitPublicEvent, declaredLayers);
@@ -504,33 +499,6 @@ async function opposeKnowledgeNode(id: string, payload: LineageCandidatePayload)
     reasoning: payload.description,
     declaredLayer: payload.layer,
   }, commitPublicEvent);
-}
-
-async function decomposeKnowledgeNode(id: string, payload: DecomposeNodePayload): Promise<void> {
-  const reasoning = projection.state.nodesById[id];
-  if (!reasoning || reasoning.type !== 'reasoning') throw new Error('分解目标必须是推理过程');
-  const edit: DecomposeEdit = {
-    kind: 'decompose',
-    chain: {
-      premiseIds: [...reasoning.premises],
-      reasoningId: id,
-      conclusionId: payload.conclusionId,
-    },
-    reasoningSteps: payload.reasoningSteps.map(step => ({
-      id: generateNodeId(),
-      title: step.title,
-      type: 'reasoning',
-      reasoning: step.reasoning,
-      logicRuleId: step.logicRuleId,
-    })),
-    intermediateConclusions: payload.intermediateConclusions.map(item => ({
-      id: generateNodeId(),
-      title: item.title,
-      type: item.type,
-      reasoning: item.description,
-    })),
-  };
-  await applyKnowledgeEdit(edit);
 }
 
 async function resolveKnowledgeNode(id: string): Promise<void> {
@@ -579,7 +547,6 @@ panel = new PanelController({
   onCreateNode: Capacitor.isNativePlatform() ? createKnowledgeNode : undefined,
   onOptimizeNode: optimizeKnowledgeNode,
   onOpposeNode: opposeKnowledgeNode,
-  onDecomposeNode: decomposeKnowledgeNode,
   onResolveNode: resolveKnowledgeNode,
   onDisputeNode: disputeKnowledgeNode,
   onSetMastery: setKnowledgeMastery,

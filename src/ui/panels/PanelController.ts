@@ -52,12 +52,6 @@ export interface LineageCandidatePayload {
   description: string;
 }
 
-export interface DecomposeNodePayload {
-  conclusionId: string;
-  reasoningSteps: Array<{ title: string; reasoning: string; logicRuleId: string }>;
-  intermediateConclusions: Array<{ title: string; type: KnowledgeNodeType; description: string }>;
-}
-
 export interface PanelControllerCallbacks {
   getNodes: () => PanelNodeSummary[];
   getNodeById: (id: string) => PanelNodeSummary | null;
@@ -65,7 +59,6 @@ export interface PanelControllerCallbacks {
   onCreateNode?: (payload: CreateNodePayload) => Promise<void> | void;
   onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
-  onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
   onResolveNode: (id: string) => Promise<void> | void;
   onDisputeNode: (id: string) => Promise<void> | void;
   onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
@@ -121,7 +114,7 @@ export interface PanelControllerElements {
   toast?: HTMLElement;
 }
 
-export type PanelNodeAction = 'edit' | 'negate' | 'decompose' | 'resolve' | 'dispute';
+export type PanelNodeAction = 'edit' | 'negate' | 'resolve' | 'dispute';
 
 type LineageCandidateKind = 'optimization' | 'opposition';
 type PanelView = 'detail' | 'subview';
@@ -140,10 +133,6 @@ function shortText(input: string, max = 20): string {
   return `${input.slice(0, max)}…`;
 }
 
-function safeText(input: string | undefined | null): string {
-  return (input ?? '').trim();
-}
-
 export class PanelController {
   private readonly getNodes: () => PanelNodeSummary[];
   private readonly getNodeById: (id: string) => PanelNodeSummary | null;
@@ -151,7 +140,6 @@ export class PanelController {
   private readonly onCreateNode?: (payload: CreateNodePayload) => Promise<void> | void;
   private readonly onOptimizeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
-  private readonly onDecomposeNode: (id: string, payload: DecomposeNodePayload) => Promise<void> | void;
   private readonly onResolveNode: (id: string) => Promise<void> | void;
   private readonly onDisputeNode: (id: string) => Promise<void> | void;
   private readonly onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
@@ -215,7 +203,6 @@ export class PanelController {
     this.onCreateNode = options.onCreateNode;
     this.onOptimizeNode = options.onOptimizeNode;
     this.onOpposeNode = options.onOpposeNode;
-    this.onDecomposeNode = options.onDecomposeNode;
     this.onResolveNode = options.onResolveNode;
     this.onDisputeNode = options.onDisputeNode;
     this.onSetMastery = options.onSetMastery;
@@ -429,7 +416,6 @@ export class PanelController {
         <button class="btn ghost" id="btnEditNode">Optimize · 优化</button>
         ${this.onCreateNode ? '<button class="btn ghost" id="btnDeriveNode">Add · 新增</button>' : ''}
       </div>
-      ${node.type === 'reasoning' ? '<div class="action-grid"><button class="btn ghost" id="btnDecompose">Decompose · 分解</button></div>' : ''}
       ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Oppose · 提出对立观点</button>` : ''}
       ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
       ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
@@ -678,7 +664,6 @@ export class PanelController {
     switch (action) {
       case 'edit': return true;
       case 'negate': return node.status !== 'falsified' && node.status !== 'suspended';
-      case 'decompose': return node.type === 'reasoning';
       case 'resolve': return node.status === 'suspended';
       case 'dispute': return node.status === 'disputed';
     }
@@ -691,9 +676,6 @@ export class PanelController {
         return;
       case 'negate':
         this.openLineageCandidateForm(id, 'opposition');
-        return;
-      case 'decompose':
-        this.openDecomposeForm(id);
         return;
       case 'resolve':
         void this.resolveNodeAction(id);
@@ -717,14 +699,12 @@ export class PanelController {
     const optimizeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
     const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
     const opposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
-    const decomposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDecompose');
     const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
     const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
 
     optimizeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'edit'));
     deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
     opposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'negate'));
-    decomposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'decompose'));
     resolveBtn?.addEventListener('click', () => this.executeNodeAction(id, 'resolve'));
     disputeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'dispute'));
 
@@ -802,10 +782,6 @@ export class PanelController {
     });
   }
 
-  private isDerivedType(type: KnowledgeNodeType): boolean {
-    return !['axiom', 'definition', 'fact', 'logic-symbol', 'reasoning'].includes(type);
-  }
-
   private updateCreateMode(): void {
     const layer = isUserKnowledgeLayer(this.fType.value) ? this.fType.value : 'inner';
     const allowsPremises = layer !== 'inner';
@@ -827,85 +803,9 @@ export class PanelController {
     ].join('');
   }
 
-  private logicRuleOptions(selectedId?: string): string {
-    const rules = this.getNodes().filter(node => node.type === 'logic-symbol' && node.status !== 'falsified');
-    return [
-      '<option value="">请选择逻辑符号</option>',
-      ...rules.map(rule => `<option value="${escapeHtml(rule.id)}" ${rule.id === selectedId ? 'selected' : ''}>${escapeHtml(rule.title)}</option>`),
-    ].join('');
-  }
-
   private showOperationError(error: unknown): void {
     console.error('[Knowledge-Ball] knowledge edit failed:', error);
     this.showToast(error instanceof Error ? `操作失败：${error.message}` : '操作失败');
-  }
-
-  private openDecomposeForm(id: string): void {
-    const reasoning = this.getNodeById(id);
-    if (!reasoning || reasoning.type !== 'reasoning') return;
-    this.enterPanelSubview(id);
-    const conclusions = this.getNodes().filter(node => node.type !== 'reasoning' && node.premises.includes(id));
-    this.panelTitle.textContent = `分解：${reasoning.title}`;
-    this.panelBody.innerHTML = `
-      <div class="field-reasoning-band"><div class="reasoning-stage">前提<b>已连接</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">中间推理<b>未完成</b></div><span class="reasoning-arrow">→</span><div class="reasoning-stage">结论<b>等待连接</b></div></div>
-      <div class="operation-progress" aria-label="分解进度"><span style="width:33%"></span></div>
-      <div class="field">
-        <label>原结论</label>
-        <select id="decomposeConclusion">
-          ${conclusions.map(node => `<option value="${escapeHtml(node.id)}">${escapeHtml(node.title)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="field"><label>步骤一标题</label><input type="text" id="stepOneTitle"></div>
-      <div class="field"><label>步骤一推理过程</label><textarea id="stepOneReasoning"></textarea></div>
-      <div class="field"><label>步骤一逻辑符号</label><select id="stepOneLogic">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
-      <div class="field"><label>中间结论标题</label><input type="text" id="middleTitle"></div>
-      <div class="field"><label>中间结论描述</label><textarea id="middleDescription"></textarea></div>
-      <div class="field"><label>步骤二标题</label><input type="text" id="stepTwoTitle"></div>
-      <div class="field"><label>步骤二推理过程</label><textarea id="stepTwoReasoning"></textarea></div>
-      <div class="field"><label>步骤二逻辑符号</label><select id="stepTwoLogic">${this.logicRuleOptions(reasoning.logicRuleId)}</select></div>
-      <p class="note-small" style="text-align:left;">只有完整形成“原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论”后，系统才写入一个原子分解事件。内部细分类由系统沿用原结论结构，不要求用户选择。</p>
-    `;
-    this.panelActions.innerHTML = `
-      <button class="btn primary" id="submitDecompose">检查完整链并分解</button>
-      <button class="btn ghost" id="cancelOperation">取消</button>
-    `;
-    this.panelActions.querySelector<HTMLButtonElement>('#cancelOperation')?.addEventListener('click', () => this.returnToNodeDetail(id));
-    this.panelActions.querySelector<HTMLButtonElement>('#submitDecompose')?.addEventListener('click', async () => {
-      const value = <T extends HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector: string) =>
-        safeText(this.panelBody.querySelector<T>(selector)?.value);
-      const conclusionId = value<HTMLSelectElement>('#decomposeConclusion');
-      const conclusionType = this.getNodeById(conclusionId)?.type;
-      if (!conclusionType || !this.isDerivedType(conclusionType)) {
-        this.showToast('原结论的内部结构无法用于分解，请先检查该知识链。');
-        return;
-      }
-      const payload: DecomposeNodePayload = {
-        conclusionId,
-        reasoningSteps: [
-          { title: value<HTMLInputElement>('#stepOneTitle'), reasoning: value<HTMLTextAreaElement>('#stepOneReasoning'), logicRuleId: value<HTMLSelectElement>('#stepOneLogic') },
-          { title: value<HTMLInputElement>('#stepTwoTitle'), reasoning: value<HTMLTextAreaElement>('#stepTwoReasoning'), logicRuleId: value<HTMLSelectElement>('#stepTwoLogic') },
-        ],
-        intermediateConclusions: [{
-          title: value<HTMLInputElement>('#middleTitle'),
-          type: conclusionType,
-          description: value<HTMLTextAreaElement>('#middleDescription'),
-        }],
-      };
-      const complete = payload.conclusionId &&
-        payload.reasoningSteps.every(step => step.title && step.reasoning && step.logicRuleId) &&
-        payload.intermediateConclusions.every(item => item.title && item.description);
-      if (!complete) {
-        this.showToast('分解链不完整：两个推理步骤、中间结论和逻辑符号都必须填写。');
-        return;
-      }
-      try {
-        await this.onDecomposeNode(id, payload);
-        this.showToast('完整分解事件已提交；旧推理保留并默认隐藏');
-        this.closeNodePanel();
-      } catch (error) {
-        this.showOperationError(error);
-      }
-    });
   }
 
   private renderPremiseList(): void {

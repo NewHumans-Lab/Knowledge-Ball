@@ -31,7 +31,7 @@ export type NodeDisputedEvent = EventEnvelope<'NodeDisputed', { nodeId: string }
 export type NodeResolvedEvent = EventEnvelope<'NodeResolved', { nodeId: string }>;
 export type NodeMasterySetEvent = EventEnvelope<'NodeMasterySet', { nodeId: string; mastery: Mastery }, 'personal'>;
 
-import type { AddEdit, DecomposeEdit, NegateEdit } from '../protocol/KnowledgeEditingProtocol';
+import type { AddEdit, NegateEdit } from '../protocol/KnowledgeEditingProtocol';
 
 export interface KnowledgeOptimizationMetadata {
   targetId: string;
@@ -50,7 +50,6 @@ export type KnowledgeAddedEvent = EventEnvelope<'KnowledgeAdded', {
   opposition?: KnowledgeOppositionMetadata;
 }>;
 export type KnowledgeNegatedEvent = EventEnvelope<'KnowledgeNegated', { edit: NegateEdit }>;
-export type KnowledgeDecomposedEvent = EventEnvelope<'KnowledgeDecomposed', { edit: DecomposeEdit }>;
 export type KnowledgeStatusChangedEvent = EventEnvelope<'KnowledgeStatusChanged', {
   edit: { kind: 'status'; nodeId: string; status: 'verified' | 'suspended' | 'disputed'; causeNodeId?: string };
 }>;
@@ -100,7 +99,7 @@ export type KnowledgeRevalidationFinalizedEvent = EventEnvelope<'KnowledgeRevali
 
 export type PublicKnowledgeEvent =
   | NodeCreatedEvent | NodeEditedEvent | NodeFalsifiedEvent | NodeSuspendedEvent | NodeResolvedEvent | NodeDisputedEvent
-  | KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent
+  | KnowledgeAddedEvent | KnowledgeNegatedEvent
   | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent | KnowledgeVerdictFinalizedEvent
   | KnowledgeRevalidationStartedEvent | KnowledgeRevalidationFinalizedEvent;
 export type PersonalKnowledgeEvent = NodeMasterySetEvent;
@@ -115,8 +114,8 @@ export function isPublicKnowledgeEvent(event: DomainEvent): event is PublicKnowl
 
 // Only client-writable command families belong here. Verdict/revalidation lifecycle
 // events are server-authored and sync-readable but can never be pushed by clients.
-export function isCanonicalPublicKnowledgeEvent(event: DomainEvent): event is KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeDecomposedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent {
-  return event.scope === 'public' && ['KnowledgeAdded','KnowledgeNegated','KnowledgeDecomposed','KnowledgeStatusChanged','KnowledgeNodeEdited'].includes(event.type);
+export function isCanonicalPublicKnowledgeEvent(event: DomainEvent): event is KnowledgeAddedEvent | KnowledgeNegatedEvent | KnowledgeStatusChangedEvent | KnowledgeNodeEditedEvent {
+  return event.scope === 'public' && ['KnowledgeAdded','KnowledgeNegated','KnowledgeStatusChanged','KnowledgeNodeEdited'].includes(event.type);
 }
 export function migrateEventScope(event: DomainEvent): DomainEvent {
   return event.scope ? event : { ...event, scope: event.type === 'NodeMasterySet' ? 'personal' : 'public' } as DomainEvent;

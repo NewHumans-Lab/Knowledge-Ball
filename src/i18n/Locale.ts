@@ -127,7 +127,7 @@ const USER_TEXT_SELECTOR = [
   '#kbProfileName', '#kbProfileUsername', '#kbProfileBio',
   '.knowledge-picker-chip', '.knowledge-picker-option > span',
   '.search-item[data-node-id] > span',
-  '#fLogicRule option:not([value=""])', '#decomposeConclusion option',
+  '#fLogicRule option:not([value=""])',
   'input', 'textarea',
 ].join(',');
 const USER_ATTRIBUTE_SELECTOR = [
@@ -156,7 +156,6 @@ function translateWrappedUserValue(value: string): string | null {
         [/^已预选「(.*)」作为推理前提；因此默认进入第二层。$/s, m => `“${m[1]}” is preselected as a reasoning premise, so Layer 2 is selected by default.`],
         [/^编辑节点 · 优化：(.*)$/s, m => `Edit node · Optimize: ${m[1]}`],
         [/^编辑节点 · 对立观点：(.*)$/s, m => `Edit node · Opposition: ${m[1]}`],
-        [/^分解：(.*)$/s, m => `Decompose: ${m[1]}`],
       ]
     : [
         [/^Node submitted: (.*)$/s, m => `节点已提交：${m[1]}`],
@@ -164,7 +163,6 @@ function translateWrappedUserValue(value: string): string | null {
         [/^“(.*)” is preselected as a reasoning premise, so Layer 2 is selected by default\.$/s, m => `已预选「${m[1]}」作为推理前提；因此默认进入第二层。`],
         [/^Edit node · Optimize: (.*)$/s, m => `编辑节点 · 优化：${m[1]}`],
         [/^Edit node · Opposition: (.*)$/s, m => `编辑节点 · 对立观点：${m[1]}`],
-        [/^Decompose: (.*)$/s, m => `分解：${m[1]}`],
       ];
   for (const [pattern, render] of patterns) {
     const match = value.match(pattern);

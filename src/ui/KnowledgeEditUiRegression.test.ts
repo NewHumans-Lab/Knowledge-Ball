@@ -36,7 +36,7 @@ assert(!html.includes('<option value="fact">事实 Fact</option>'), 'submission 
 assert(!html.includes('<option value="theorem">定理 Theorem</option>'), 'submission form must not ask users for internal fine-grained node types');
 assert(!html.includes('<option value="prediction">预测 Prediction</option>'), 'submission form must not ask users for internal fine-grained node types');
 assert(!panel.includes('id="editType"'), 'optimization form must not expose an internal node-type field');
-assert(!panel.includes('id="middleType"'), 'decomposition form must not ask users to classify intermediate conclusions');
+assert(!panel.includes('id="middleType"'), 'retired intermediate-type selector must stay absent');
 assert(!panel.includes('id="mergeConclusionType"'), 'merge form must not display a fine-grained conclusion type selector');
 
 assert(panel.includes('<option value="inner">第一层 · 语义与基础事实</option>'), 'legacy submission UI must offer the canonical first layer');
@@ -56,11 +56,16 @@ assert(panel.includes('选择推理前提后已切换到第二层'), 'adding an 
 assert(!panel.includes('已验证前提，因此按协议自动进入第二层'), 'verified-premise state must not silently rewrite semantic classification');
 assert(!panel.includes('理论必须选择一个已有逻辑符号'), 'logic symbols must not remain a mandatory submission gate');
 
-assert(panel.includes('openDecomposeForm'), 'single controller is missing the decomposition flow');
+for (const retired of ['openDecomposeForm', 'DecomposeNodePayload', "'decompose'", 'btnDecompose', 'decomposeConclusion']) {
+  assert(!panel.includes(retired), `retired decomposition UI leaked into PanelController: ${retired}`);
+}
+assert(!app.includes('DecomposeEdit') && !app.includes('decomposeKnowledgeNode') && !app.includes("actions.push('decompose')"), 'application must not construct or expose decomposition');
+assert(!detail.includes("| 'decompose'") && !detail.includes('detail.actionDecompose'), 'node detail must not expose decomposition');
+assert(!protocol.includes('DecomposeEdit') && !protocol.includes("kind: 'decompose'"), 'active knowledge protocol must not retain decomposition');
+assert(!events.includes('KnowledgeDecomposed'), 'event model must not retain decomposition');
 assert(!panel.includes('openEditForm'), 'current-node edits must not retain an in-place edit subview');
 assert(!panel.includes('openNegateForm'), 'current-node opposition must not retain the legacy immediate-negation subview');
 assert(!panel.includes('反例知识节点（至少一个）'), 'current product UI must not expose the legacy immediate-negation form');
-assert(panel.includes('原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论'), 'decomposition UI must show the complete chain contract');
 for (const removed of ['MergeDefinitionPayload', 'MergeTheoryPayload', 'onMergeDefinitions', 'onMergeTheories', 'btnMerge', 'openMergeForm', 'openDefinitionMergeForm', 'openTheoryMergeForm', 'data-merge-source', 'submitMerge']) {
   assert(!panel.includes(removed), `removed merge flow leaked into PanelController: ${removed}`);
 }
@@ -68,7 +73,6 @@ assert(!app.includes('MergeEdit') && !app.includes("kind: 'merge'"), 'applicatio
 assert(!detail.includes("| 'merge'") && !detail.includes("merge: '合并'"), 'node-detail edit menu must not retain merge as an action');
 assert(!protocol.includes('MergeEdit') && !protocol.includes("kind: 'merge'"), 'active knowledge protocol must not retain merge variants');
 assert(!events.includes('KnowledgeMerged'), 'event model must not retain an unused KnowledgeMerged type');
-assert(panel.includes('type: conclusionType'), 'decomposition must derive internal fine type from the existing conclusion rather than ask the user');
 
 assert(panel.includes('Optimize · 优化'), 'current-node edit action must be immutable optimization');
 assert(panel.includes('Oppose · 提出对立观点'), 'current-node negate action must be pending opposition');

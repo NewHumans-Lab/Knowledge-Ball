@@ -48,15 +48,6 @@ export interface NegateEdit {
   correctedReasoning?: NewProtocolNode;
 }
 
-export interface DecomposeEdit {
-  kind: 'decompose';
-  chain: ReasoningChain;
-  /** Two or more smaller inference processes replacing the original process. */
-  reasoningSteps: NewProtocolNode[];
-  /** Exactly one new conclusion between each adjacent pair of reasoning steps. */
-  intermediateConclusions: NewProtocolNode[];
-}
-
 export interface AddAtomicEdit {
   kind: 'add';
   mode: 'atomic';
@@ -86,7 +77,7 @@ export interface AddReasoningLinkEdit {
 }
 
 export type AddEdit = AddAtomicEdit | AddTheoryEdit | AddReasoningLinkEdit;
-export type KnowledgeEdit = NegateEdit | DecomposeEdit | AddEdit;
+export type KnowledgeEdit = NegateEdit | AddEdit;
 
 export interface KnowledgeEditResult {
   nodes: ProtocolNode[];
@@ -359,21 +350,6 @@ export function validateKnowledgeEdit(nodes: ProtocolNode[], edit: KnowledgeEdit
     }
   }
 
-  if (edit.kind === 'decompose') {
-    errors.push(...validateReasoningChain(nodes, edit.chain));
-    if (edit.reasoningSteps.length < 2) errors.push('分解必须包含至少两个推理过程');
-    if (edit.intermediateConclusions.length !== edit.reasoningSteps.length - 1) {
-      errors.push('相邻推理过程之间必须且只能添加一个中间知识结论');
-    }
-    if (edit.reasoningSteps.some(step => step.type !== 'reasoning')) {
-      errors.push('分解中的每个推理步骤都必须是 reasoning 类型');
-    }
-    if (edit.intermediateConclusions.some(node => node.type === 'reasoning' || ATOMIC_TYPES.has(node.type))) {
-      errors.push('分解产生的中间结论必须是定理、假说、预测、观点或价值判断');
-    }
-    errors.push(...validateDraftBatch(nodes, [...edit.reasoningSteps, ...edit.intermediateConclusions]));
-  }
-
   return unique(errors);
 }
 
@@ -461,28 +437,6 @@ function mutateKnowledgeEditInPlace(nodes: ProtocolNode[], edit: KnowledgeEdit):
     }
     restoreClaimsWhoseOppositionWasNegated(nodes, target.id);
   }
-
-  if (edit.kind === 'decompose') {
-    const original = byId.get(edit.chain.reasoningId)!;
-    const conclusion = byId.get(edit.chain.conclusionId)!;
-    let premises = edit.chain.premiseIds;
-
-    edit.reasoningSteps.forEach((step, index) => {
-      append(nodeFromDraft(step, premises));
-      const intermediate = edit.intermediateConclusions[index];
-      if (intermediate) {
-        append(nodeFromDraft(intermediate, [step.id]));
-        premises = [intermediate.id];
-      }
-    });
-
-    const finalReasoning = edit.reasoningSteps[edit.reasoningSteps.length - 1]!;
-    conclusion.premises = conclusion.premises.map(id => id === original.id ? finalReasoning.id : id);
-    original.supersededBy = edit.reasoningSteps[0].id;
-    original.status = 'suspended';
-    original.hidden = true;
-  }
-
 }
 
 /**

@@ -181,7 +181,6 @@ export const SYSTEM_TEXT_CATALOG = {
   'panel.dependencies': { 'zh-CN':'下游依赖节点', en:'Downstream dependent nodes' },
   'panel.optimize': { 'zh-CN':'优化', en:'Optimize' },
   'panel.add': { 'zh-CN':'新增', en:'Add' },
-  'panel.decompose': { 'zh-CN':'分解', en:'Decompose' },
   'panel.oppose': { 'zh-CN':'提出对立观点', en:'Oppose' },
   'panel.resolve': { 'zh-CN':'✓ 标记重新验证通过', en:'✓ Mark revalidation passed' },
   'panel.dispute': { 'zh-CN':'✓ 标记争议中', en:'✓ Mark disputed' },
@@ -210,21 +209,6 @@ export const SYSTEM_TEXT_CATALOG = {
   'panel.fillCandidate': { 'zh-CN':'请完整填写名称、知识层级和内容。', en:'Complete the name, knowledge layer, and content.' },
   'panel.optimizationSubmitted': { 'zh-CN':'优化候选已提交，等待验证', en:'Optimization candidate submitted; awaiting validation' },
   'panel.oppositionSubmitted': { 'zh-CN':'对立候选已提交，等待验证', en:'Opposition candidate submitted; awaiting validation' },
-  'panel.originalConclusion': { 'zh-CN':'原结论', en:'Original conclusion' },
-  'panel.stepOneTitle': { 'zh-CN':'步骤一标题', en:'Step 1 title' },
-  'panel.stepOneReasoning': { 'zh-CN':'步骤一推理过程', en:'Step 1 reasoning' },
-  'panel.stepOneLogic': { 'zh-CN':'步骤一逻辑符号', en:'Step 1 logic symbol' },
-  'panel.middleConclusionTitle': { 'zh-CN':'中间结论标题', en:'Intermediate conclusion title' },
-  'panel.middleConclusionDescription': { 'zh-CN':'中间结论描述', en:'Intermediate conclusion description' },
-  'panel.stepTwoTitle': { 'zh-CN':'步骤二标题', en:'Step 2 title' },
-  'panel.stepTwoReasoning': { 'zh-CN':'步骤二推理过程', en:'Step 2 reasoning' },
-  'panel.stepTwoLogic': { 'zh-CN':'步骤二逻辑符号', en:'Step 2 logic symbol' },
-  'panel.decomposeProgress': { 'zh-CN':'分解进度', en:'Decomposition progress' },
-  'panel.decomposeNote': { 'zh-CN':'只有完整形成“原前提 → 步骤一 → 中间结论 → 步骤二 → 原结论”后，系统才写入一个原子分解事件。内部细分类由系统沿用原结论结构，不要求用户选择。', en:'The system writes one atomic decomposition event only after the full chain “original premises → step 1 → intermediate conclusion → step 2 → original conclusion” is complete. Internal subtypes inherit the original conclusion structure and do not require user selection.' },
-  'panel.decomposeSubmit': { 'zh-CN':'检查完整链并分解', en:'Validate full chain and decompose' },
-  'panel.decomposeInvalidConclusion': { 'zh-CN':'原结论的内部结构无法用于分解，请先检查该知识链。', en:'The original conclusion structure cannot be decomposed; check the knowledge chain first.' },
-  'panel.decomposeIncomplete': { 'zh-CN':'分解链不完整：两个推理步骤、中间结论和逻辑符号都必须填写。', en:'The decomposition chain is incomplete: both reasoning steps, the intermediate conclusion, and logic symbols are required.' },
-  'panel.decomposeSubmitted': { 'zh-CN':'完整分解事件已提交；旧推理保留并默认隐藏', en:'The complete decomposition event was submitted; the old reasoning is retained and hidden by default' },
   'panel.premiseAutoLayer': { 'zh-CN':'选择推理前提后已切换到第二层；第一层只表达非推导性的语义 / 基础事实。', en:'Selecting a reasoning premise switched the node to Layer 2; Layer 1 represents only non-inferential semantics / foundational facts.' },
 
   'detail.previous': { 'zh-CN':'上一个节点', en:'Previous node' },
@@ -262,7 +246,6 @@ export const SYSTEM_TEXT_CATALOG = {
   'detail.actionAdd': { 'zh-CN':'新增', en:'Add' },
   'detail.actionAddReasoning': { 'zh-CN':'新增推理', en:'Add reasoning' },
   'detail.actionOppose': { 'zh-CN':'提出对立观点', en:'Oppose' },
-  'detail.actionDecompose': { 'zh-CN':'分解', en:'Decompose' },
   'detail.actionRevalidate': { 'zh-CN':'重新验证', en:'Revalidate' },
   'detail.actionDispute': { 'zh-CN':'争议', en:'Dispute' },
 
@@ -270,7 +253,6 @@ export const SYSTEM_TEXT_CATALOG = {
   'app.remoteNotReady': { 'zh-CN':'公共知识远程通道尚未初始化', en:'The public knowledge remote channel is not initialized' },
   'app.layer1NoPremise': { 'zh-CN':'第一层是非推导性的语义 / 基础事实层，不能直接带推理前提', en:'Layer 1 is non-inferential semantics/foundational facts and cannot directly contain reasoning premises' },
   'app.layer1NoChain': { 'zh-CN':'第一层不能建立派生链', en:'Layer 1 cannot create a derived chain' },
-  'app.decomposeTarget': { 'zh-CN':'分解目标必须是推理过程', en:'The decompose target must be a reasoning process' },
 } as const satisfies Record<string, SystemCopyPair>;
 
 export type SystemTextKey = keyof typeof SYSTEM_TEXT_CATALOG;

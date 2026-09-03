@@ -6,7 +6,7 @@ import { validateOppositionProposal } from '../domain/KnowledgeOpposition';
 import { validateKnowledgeEdit, type ProtocolNode } from '../protocol/KnowledgeEditingProtocol';
 
 const editKindByType = {
-  KnowledgeAdded: 'add', KnowledgeNegated: 'negate', KnowledgeDecomposed: 'decompose',
+  KnowledgeAdded: 'add', KnowledgeNegated: 'negate',
   KnowledgeStatusChanged: 'status', KnowledgeNodeEdited: 'update',
 } as const;
 
@@ -22,6 +22,7 @@ export function validateDomainEventEnvelope(event: DomainEvent): string[] {
   const errors: string[] = [];
   if (!event || typeof event !== 'object') return ['事件必须是对象'];
   if (!event.id?.trim()) errors.push('事件必须有 ID');
+  if ((event as { type?: string }).type === 'KnowledgeDecomposed') errors.push('不支持的事件类型: KnowledgeDecomposed');
   if (event.schemaVersion !== 1) errors.push(`不支持的事件版本: ${event.schemaVersion}`);
   if (!Number.isFinite(event.timestamp) || event.timestamp <= 0) errors.push('事件时间戳无效');
   if (!event.payload || typeof event.payload !== 'object') errors.push('事件载荷无效');
@@ -136,7 +137,7 @@ export function validateDomainEventAgainstState(event: DomainEvent, state: Graph
       if (event.payload.optimization) return validateOptimizationEvent(event, state);
       if (event.payload.opposition) return validateOppositionEvent(event, state);
       return validateKnowledgeEdit(protocolNodes(state), event.payload.edit);
-    case 'KnowledgeNegated': case 'KnowledgeDecomposed':
+    case 'KnowledgeNegated':
       return validateKnowledgeEdit(protocolNodes(state), event.payload.edit);
     case 'KnowledgeStatusChanged': {
       const target = state.nodesById[event.payload.edit.nodeId];

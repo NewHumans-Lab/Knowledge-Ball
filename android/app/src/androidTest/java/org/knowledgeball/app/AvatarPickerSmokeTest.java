@@ -68,7 +68,7 @@ public class AvatarPickerSmokeTest {
                 "const button=document.createElement('button');" +
                 "button.id='avatarPickerProbe';" +
                 "button.textContent='修改头像';" +
-                "button.style.cssText='position:fixed;left:24px;top:96px;z-index:2147483647;width:160px;height:56px';" +
+                "button.style.cssText='position:fixed;left:32px;top:160px;z-index:2147483647;width:280px;height:112px;touch-action:manipulation';" +
                 "button.addEventListener('click',()=>{" +
                 "window.__kbAvatarPickerProbe='called';" +
                 "window.Capacitor.Plugins.AvatarPicker.pickImage().then(r=>{window.__kbAvatarPickerProbe=r?.canceled?'canceled':'resolved';}).catch(()=>{window.__kbAvatarPickerProbe='rejected';});" +
@@ -93,27 +93,62 @@ public class AvatarPickerSmokeTest {
                 webViewSize[1] = webView.getHeight();
             });
 
-            double scaleX = webViewSize[0] / probe.getDouble("viewportWidth");
-            double scaleY = webViewSize[1] / probe.getDouble("viewportHeight");
-            int tapX = webViewOrigin[0] + (int) Math.round(probe.getDouble("x") * scaleX);
-            int tapY = webViewOrigin[1] + (int) Math.round(probe.getDouble("y") * scaleY);
-            assertTrue("Unable to tap native avatar picker probe", device.click(tapX, tapY));
+            // CSS pixels are square. Use the horizontal viewport ratio for both axes so
+            // system/status-bar insets cannot distort the Y mapping through WebView height.
+            double cssToScreenScale = webViewSize[0] / probe.getDouble("viewportWidth");
+            int tapX = webViewOrigin[0] + (int) Math.round(probe.getDouble("x") * cssToScreenScale);
+            int tapY = webViewOrigin[1] + (int) Math.round(probe.getDouble("y") * cssToScreenScale);
+            assertTrue("Avatar probe tap X is outside the WebView: " + tapX,
+                tapX >= webViewOrigin[0] && tapX < webViewOrigin[0] + webViewSize[0]);
+            assertTrue("Avatar probe tap Y is outside the WebView: " + tapY,
+                tapY >= webViewOrigin[1] && tapY < webViewOrigin[1] + webViewSize[1]);
 
-            long deadline = System.currentTimeMillis() + 10_000;
+            // JavaScript layout is synchronous, while the WebView compositor/touch hit-test
+            // tree can lag a frame on a cold emulator. Let it settle before a real UiDevice tap.
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            device.waitForIdle();
+            Thread.sleep(500);
+            assertTrue("Native avatar probe lost its CSS hit-test point before physical tap",
+                "\"avatarPickerProbe\"".equals(evaluate(scenario,
+                    "document.elementFromPoint(" + probe.getDouble("x") + "," + probe.getDouble("y") + ")?.id||''")));
+
             boolean chooserOpened = false;
             boolean clickReachedJavaScript = false;
-            while (System.currentTimeMillis() < deadline) {
+            for (int attempt = 0; attempt < 3 && !chooserOpened && !clickReachedJavaScript; attempt += 1) {
+                assertTrue("Unable to tap native avatar picker probe at (" + tapX + ", " + tapY + ")",
+                    device.click(tapX, tapY));
+
+                long attemptDeadline = System.currentTimeMillis() + 2_500;
+                while (System.currentTimeMillis() < attemptDeadline) {
+                    String currentPackage = device.getCurrentPackageName();
+                    if (currentPackage != null && !APP_PACKAGE.equals(currentPackage)) {
+                        chooserOpened = true;
+                        break;
+                    }
+                    clickReachedJavaScript = !"\"idle\"".equals(evaluate(scenario, "window.__kbAvatarPickerProbe"));
+                    if (clickReachedJavaScript) break;
+                    Thread.sleep(200);
+                }
+
+                if (!chooserOpened && !clickReachedJavaScript) {
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    device.waitForIdle();
+                    Thread.sleep(300);
+                }
+            }
+
+            assertTrue("Physical avatar tap did not reach the WebView button at (" + tapX + ", " + tapY + ")",
+                clickReachedJavaScript || chooserOpened);
+
+            long chooserDeadline = System.currentTimeMillis() + 10_000;
+            while (!chooserOpened && System.currentTimeMillis() < chooserDeadline) {
                 String currentPackage = device.getCurrentPackageName();
                 if (currentPackage != null && !APP_PACKAGE.equals(currentPackage)) {
                     chooserOpened = true;
                     break;
                 }
-                if (!clickReachedJavaScript) {
-                    clickReachedJavaScript = !"\"idle\"".equals(evaluate(scenario, "window.__kbAvatarPickerProbe"));
-                }
                 Thread.sleep(200);
             }
-            assertTrue("Physical avatar tap did not reach the WebView button", clickReachedJavaScript || chooserOpened);
             assertTrue("Native AvatarPicker plugin did not open the Android document picker", chooserOpened);
 
             device.pressBack();
