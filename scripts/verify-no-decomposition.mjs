@@ -5,7 +5,6 @@ const currentFiles = [
   'src/protocol/KnowledgeEditingProtocol.ts',
   'src/command/KnowledgeEdit.ts',
   'src/event/Event.ts',
-  'src/event/EventValidation.ts',
   'src/projection/GraphProjection.ts',
   'src/ui/app.ts',
   'src/ui/panels/PanelController.ts',
@@ -36,6 +35,19 @@ for (const path of currentFiles) {
   assert.ok(!/\bdecompose\b/i.test(source), `${path} still contains an active decomposition reference`);
   assert.ok(!source.includes('分解'), `${path} still contains decomposition product copy`);
 }
+
+// The envelope validator is the one current runtime file allowed to name the
+// retired event: it must reject it explicitly. It must not map that event back
+// to a supported edit kind or dispatch it into knowledge-edit validation.
+const eventValidation = await readFile('src/event/EventValidation.ts', 'utf8');
+assert.match(eventValidation, /type\?: string[^\n]*KnowledgeDecomposed[^\n]*不支持的事件类型: KnowledgeDecomposed/,
+  'runtime envelope validation must explicitly reject legacy KnowledgeDecomposed events');
+assert.ok(!/KnowledgeDecomposed\s*:\s*['"]decompose['"]/.test(eventValidation),
+  'retired decomposition events must not regain an edit-kind mapping');
+assert.ok(!/case ['"]KnowledgeDecomposed['"]/.test(eventValidation),
+  'retired decomposition events must not regain a state-validation dispatch branch');
+assert.ok(!eventValidation.includes('DecomposeEdit'),
+  'runtime event validation must not depend on the retired decomposition edit type');
 
 const migration = await readFile('supabase/migrations/202609030002_remove_knowledge_decomposition.sql', 'utf8');
 assert.match(migration, /delete from public\.public_knowledge_events[\s\S]*event_type = 'KnowledgeDecomposed'[\s\S]*kind\}' = 'decompose'/,
