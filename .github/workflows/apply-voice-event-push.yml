@@ -1,0 +1,30 @@
+name: Apply voice event push
+
+on:
+  push:
+    branches:
+      - fix/voice-room-event-push
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, 'Apply voice room event push') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/voice-room-event-push
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Apply deterministic edits
+        run: node scripts/apply-voice-event-push.mjs
+      - name: Commit final implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply voice room event push"
+          git push origin HEAD:fix/voice-room-event-push
