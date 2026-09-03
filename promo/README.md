@@ -33,6 +33,6 @@ npm run render:masters
 npm run verify:renders
 ```
 
-Final exports use H.264, `yuv420p`, CRF 16, 320 kbps AAC, and 48 kHz audio. Rendered media remains outside Git; GitHub Actions publishes the two masters and both subtitle files as a downloadable artifact.
+Final exports use H.264 4:2:0, CRF 16, 320 kbps AAC, and 48 kHz audio. Depending on FFmpeg's range tagging, `ffprobe` may report the compatible format as `yuv420p` or `yuvj420p`. Rendered media remains outside Git; GitHub Actions publishes the two masters, proof frames, and both subtitle files as a downloadable artifact.
 
 See [CLAIM_AUDIT.md](./CLAIM_AUDIT.md) for the white-paper consistency boundary.

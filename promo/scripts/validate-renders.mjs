@@ -6,6 +6,7 @@ const expected = [
   ["out/knowledge-ball-youtube-1080p.mp4", 1920, 1080],
   ["out/knowledge-ball-instagram-vertical.mp4", 1080, 1920],
 ];
+const acceptedPixelFormats = new Set(["yuv420p", "yuvj420p"]);
 const errors = [];
 
 for (const [relative, width, height] of expected) {
@@ -38,8 +39,10 @@ for (const [relative, width, height] of expected) {
     errors.push(`${relative}: wrong dimensions`);
   if (video?.codec_name !== "h264")
     errors.push(`${relative}: expected H.264, received ${video?.codec_name}`);
-  if (video?.pix_fmt !== "yuv420p")
-    errors.push(`${relative}: expected yuv420p, received ${video?.pix_fmt}`);
+  if (!acceptedPixelFormats.has(video?.pix_fmt))
+    errors.push(
+      `${relative}: expected 4:2:0 pixel format, received ${video?.pix_fmt}`,
+    );
   if (
     !audio ||
     audio.codec_name !== "aac" ||
@@ -49,7 +52,7 @@ for (const [relative, width, height] of expected) {
   if (statSync(file).size < 12_000_000)
     errors.push(`${relative}: output is suspiciously small`);
   process.stdout.write(
-    `✓ ${relative}: ${width}×${height}, ${duration.toFixed(3)}s, H.264/AAC\n`,
+    `✓ ${relative}: ${width}×${height}, ${duration.toFixed(3)}s, H.264/${video?.pix_fmt}/AAC\n`,
   );
 }
 

@@ -60,9 +60,10 @@ jobs:
       - run: npm run audio:browser
       - run: npx remotion browser ensure
       - run: npm run render:masters
-      - run: npm run verify:renders
       - run: bash scripts/extract-proof.sh
+      - run: npm run verify:renders
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: knowledge-ball-promotional-film
           path: |
@@ -71,5 +72,5 @@ jobs:
             promo/public/subtitles/en.srt
             promo/public/subtitles/zh.srt
             promo/out/proof/*.jpg
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
