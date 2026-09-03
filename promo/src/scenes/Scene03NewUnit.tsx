@@ -110,7 +110,7 @@ export const Scene03NewUnit: React.FC<{ scene: StoryScene; index: number }> = ({
           position: "absolute",
           left: vertical ? 98 : 365,
           right: vertical ? 98 : 365,
-          top: vertical ? 1325 : 835,
+          top: vertical ? 1540 : 835,
           textAlign: "center",
           color: COLORS.muted,
           fontSize: vertical ? 21 : 18,
