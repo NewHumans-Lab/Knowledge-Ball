@@ -236,7 +236,7 @@ export class AccountUiController {
         <form class="kb-auth-form kb-profile-edit-form" id="kbProfileEditForm" novalidate>
           <div class="kb-avatar-edit-row">
             <div class="kb-profile-avatar kb-profile-avatar-preview" id="kbProfileAvatarPreview"></div>
-            <button class="btn ghost kb-avatar-upload-action" id="kbAvatarChoose" type="button">修改头像</button>
+            <label class="btn ghost kb-avatar-upload-action" for="kbAvatarFile">修改头像</label>
             <input class="kb-avatar-file-input" id="kbAvatarFile" name="avatarFile" type="file" accept="image/*" aria-label="选择头像图片">
           </div>
           <label>用户名
@@ -257,7 +257,6 @@ export class AccountUiController {
     const avatarPreview = body.querySelector<HTMLElement>('#kbProfileAvatarPreview');
     if (avatarPreview) renderAvatarImage(avatarPreview, this.cached);
     const avatarFile = body.querySelector<HTMLInputElement>('#kbAvatarFile');
-    body.querySelector('#kbAvatarChoose')?.addEventListener('click', () => avatarFile?.click());
     avatarFile?.addEventListener('change', () => {
       const file = avatarFile.files?.[0];
       avatarFile.value = '';
@@ -281,8 +280,8 @@ export class AccountUiController {
       return;
     }
 
-    const choose = body.querySelector<HTMLButtonElement>('#kbAvatarChoose');
-    if (choose) choose.disabled = true;
+    const avatarFile = body.querySelector<HTMLInputElement>('#kbAvatarFile');
+    if (avatarFile) avatarFile.disabled = true;
     this.accountStatus(body, '正在处理头像…');
     try {
       const image = await prepareAvatarWebp(file);
@@ -301,7 +300,7 @@ export class AccountUiController {
     } catch (error) {
       this.accountStatus(body, error instanceof Error ? error.message : '头像更新失败');
     } finally {
-      if (choose) choose.disabled = false;
+      if (avatarFile) avatarFile.disabled = false;
     }
   }
 
