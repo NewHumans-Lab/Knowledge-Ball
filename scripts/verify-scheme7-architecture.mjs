@@ -6,7 +6,6 @@ const accountUi = await readFile('src/ui/AccountUi.ts', 'utf8');
 const panelController = await readFile('src/ui/panels/PanelController.ts', 'utf8');
 const syncEngine = await readFile('src/sync/SyncEngine.ts', 'utf8');
 const syncCoordinator = await readFile('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
-const supabaseAdapter = await readFile('src/sync/SupabaseSyncAdapter.ts', 'utf8');
 const sources = await Promise.all(['src/ui/app.ts', 'vite.config.ts', 'package.json'].map(file => readFile(file, 'utf8')));
 
 assert.match(app, /new SyncEngine\(/, 'web runtime must instantiate SyncEngine');
@@ -62,9 +61,11 @@ assert.doesNotMatch(
 );
 assert.match(
   panelController,
-  /export type PanelNodeAction = 'edit' \| 'negate' \| 'decompose' \| 'resolve' \| 'dispute'/,
+  /export type PanelNodeAction = 'edit' \| 'negate' \| 'resolve' \| 'dispute'/,
   'all supported non-create node operations must remain available',
 );
+assert.doesNotMatch(panelController, /\| 'decompose'|btnDecompose|openDecomposeForm|onDecomposeNode|DecomposeNodePayload/,
+  'retired decomposition operation must not survive in the panel action contract');
 assert.doesNotMatch(panelController, /\| 'merge'|btnMerge|openMergeForm|onMergeDefinitions|onMergeTheories/,
   'removed merge operation must not survive in the panel action contract');
 assert.match(
@@ -72,7 +73,7 @@ assert.match(
   /openNodeAction\(id: string, action: PanelNodeAction\): boolean/,
   'PanelController must expose one explicit semantic entry point for NodeDetail actions',
 );
-for (const action of ['edit', 'negate', 'decompose', 'resolve', 'dispute']) {
+for (const action of ['edit', 'negate', 'resolve', 'dispute']) {
   assert.ok(
     panelController.includes(`executeNodeAction(id, '${action}')`),
     `panel action ${action} must share the explicit implementation`,
