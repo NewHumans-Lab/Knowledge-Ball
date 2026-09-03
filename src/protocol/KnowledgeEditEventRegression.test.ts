@@ -98,34 +98,16 @@ async function run(): Promise<void> {
   assert.deepEqual(runtime.projection.state.nodesById.c1.premises, ['r1'], 'add event must survive reload');
   assert.equal(runtime.projection.state.nodesById.r1.logicRuleId, 'logic', 'logic classification must survive reload');
 
-  const nodesByIdBeforeDecompose = runtime.projection.state.nodesById;
-  const untouchedPremiseBeforeDecompose = runtime.projection.state.nodesById.p1;
-  const editedReasoningBeforeDecompose = runtime.projection.state.nodesById.r1;
-  const conclusionBeforeDecompose = runtime.projection.state.nodesById.c1;
-  const beforeDecompose = runtime.store.size();
-  const decomposeEvent = await executeKnowledgeEdit(runtime.store, runtime.projection, {
-    kind: 'decompose',
-    chain: { premiseIds: ['p1', 'p2'], reasoningId: 'r1', conclusionId: 'c1' },
-    reasoningSteps: [
-      { id: 'r1a', title: 'Inference step A', type: 'reasoning', reasoning: 'First atomic inference step', logicRuleId: 'logic' },
-      { id: 'r1b', title: 'Inference step B', type: 'reasoning', reasoning: 'Second atomic inference step', logicRuleId: 'logic' },
-    ],
-    intermediateConclusions: [
-      { id: 'm1', title: 'Intermediate result', type: 'theorem', reasoning: 'Result connecting both inference steps' },
-    ],
-  });
-  assert.equal(decomposeEvent.type, 'KnowledgeDecomposed');
-  assert.equal(runtime.store.size(), beforeDecompose + 1, 'decomposition must append one event');
-  assert.equal(runtime.projection.state.nodesById, nodesByIdBeforeDecompose, 'projection edits must preserve the authoritative nodesById record');
-  assert.equal(runtime.projection.state.nodesById.p1, untouchedPremiseBeforeDecompose, 'unaffected nodes must keep object identity');
-  assert.equal(runtime.projection.state.nodesById.r1, editedReasoningBeforeDecompose, 'edited existing nodes must be mutated in place');
-  assert.equal(runtime.projection.state.nodesById.c1, conclusionBeforeDecompose, 'rewired existing conclusions must keep object identity');
-  assert.equal(runtime.projection.state.nodesById.r1.hidden, true);
-  assert.deepEqual(runtime.projection.state.nodesById.r1a.premises, ['p1', 'p2']);
-  assert.deepEqual(runtime.projection.state.nodesById.m1.premises, ['r1a']);
-  assert.deepEqual(runtime.projection.state.nodesById.r1b.premises, ['m1']);
-  assert.deepEqual(runtime.projection.state.nodesById.c1.premises, ['r1b']);
-
+  const beforeRetiredEvent = runtime.store.size();
+  assert.throws(() => runtime.store.append({
+    id: 'retired-decomposition-event',
+    type: 'KnowledgeDecomposed',
+    scope: 'public',
+    schemaVersion: 1,
+    timestamp: Date.now(),
+    payload: { edit: { kind: 'decompose' } },
+  } as unknown as DomainEvent));
+  assert.equal(runtime.store.size(), beforeRetiredEvent, 'retired decomposition events must be rejected before append');
 
   const negateEvent = await executeKnowledgeEdit(runtime.store, runtime.projection, {
     kind: 'negate',
@@ -177,7 +159,7 @@ async function run(): Promise<void> {
   runtime = boot(persistence);
   runtime = boot(persistence);
   assert.equal(runtime.store.size(), finalSize, 'repeated reload must not duplicate edit events');
-  assert.equal(runtime.projection.state.nodesById.r1.hidden, true, 'decomposed source must survive as hidden history');
+  assert.equal(runtime.projection.state.nodesById.r1.hidden, false, 'remaining reasoning must survive replay unchanged');
   assert.equal(runtime.projection.state.nodesById['c1'].hidden, false, 'restored state must survive replay');
 
   console.log('Knowledge edit command/event regression tests passed');
