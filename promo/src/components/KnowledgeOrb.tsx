@@ -213,15 +213,16 @@ export const KnowledgeOrb: React.FC<{
               key={label}
               style={{
                 position: "absolute",
-                left: vertical ? undefined : center + radii[i] * 0.75,
-                right: vertical ? 46 : undefined,
+                left:
+                  vertical || i === 2 ? undefined : center + radii[i] * 0.75,
+                right: vertical ? 46 : i === 2 ? 20 : undefined,
                 top: center - radii[i] * (0.66 + i * 0.055) - 16,
                 color: colors[i],
                 fontSize: vertical ? 17 : 15,
                 fontWeight: 800,
                 letterSpacing: 1.25,
                 whiteSpace: "nowrap",
-                textAlign: vertical ? "right" : undefined,
+                textAlign: vertical || i === 2 ? "right" : undefined,
                 textShadow: "0 5px 20px #030512",
               }}
             >
