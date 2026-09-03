@@ -2,12 +2,54 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ProjectionRenderScheduler } from './ProjectionRenderScheduler';
 import {
+  CORE_ONBOARDING_STEP_IDS,
+  CORE_ONBOARDING_STORAGE_KEY,
+  persistCoreOnboardingStatus,
+  shouldOfferCoreOnboarding,
+} from './onboarding/CoreOnboardingRuntime';
+import {
   LIVEKIT_CLIENT_CDN,
   SUPABASE_REALTIME_CDN,
   VOICE_ROOM_STATUS_TOPIC,
   parseVoiceRoomStatusPayload,
   roomNameForNode,
 } from './voice/VoiceRoomRuntime';
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>();
+  get length(): number { return this.values.size; }
+  clear(): void { this.values.clear(); }
+  getItem(key: string): string | null { return this.values.get(key) ?? null; }
+  key(index: number): string | null { return [...this.values.keys()][index] ?? null; }
+  removeItem(key: string): void { this.values.delete(key); }
+  setItem(key: string, value: string): void { this.values.set(key, String(value)); }
+}
+
+assert.deepEqual([...CORE_ONBOARDING_STEP_IDS], ['zoom', 'rotate', 'longpress', 'tap', 'voice'], 'newcomer guide must contain only the five requested core controls in the requested order');
+assert.equal(CORE_ONBOARDING_STORAGE_KEY, 'knowledge-ball.core-onboarding.v1');
+const freshStorage = new MemoryStorage();
+assert.equal(shouldOfferCoreOnboarding(freshStorage), true, 'a genuinely fresh browser may receive onboarding');
+const localeOnlyStorage = new MemoryStorage();
+localeOnlyStorage.setItem('knowledge-ball.locale.v1', 'en');
+assert.equal(shouldOfferCoreOnboarding(localeOnlyStorage), true, 'choosing a locale alone must not make a newcomer look experienced');
+const returningStorage = new MemoryStorage();
+returningStorage.setItem('knowledge-ball.supabase-guest-session.v1', '{}');
+assert.equal(shouldOfferCoreOnboarding(returningStorage), false, 'existing Knowledge Ball usage must suppress rollout onboarding for returning users');
+const skippedStorage = new MemoryStorage();
+assert.equal(persistCoreOnboardingStatus(skippedStorage, 'skipped'), true);
+assert.equal(shouldOfferCoreOnboarding(skippedStorage), false, 'skip must permanently suppress automatic onboarding');
+const completedStorage = new MemoryStorage();
+assert.equal(persistCoreOnboardingStatus(completedStorage, 'completed'), true);
+assert.equal(shouldOfferCoreOnboarding(completedStorage), false, 'completion must permanently suppress automatic onboarding');
+assert.equal(shouldOfferCoreOnboarding(null), false, 'when durable browser storage is unavailable onboarding must fail closed rather than repeat');
+
+const onboardingRuntime = readFileSync('src/ui/onboarding/CoreOnboardingRuntime.ts', 'utf8');
+assert.match(onboardingRuntime, /AUTO_START_ELIGIBLE = shouldOfferCoreOnboarding\(safeLocalStorage\(\)\)/, 'newcomer eligibility must be captured before current startup can create session/sync storage');
+assert.match(onboardingRuntime, /installCoreOnboarding\(host, storage, AUTO_START_ELIGIBLE\)/, 'captured newcomer eligibility must survive later startup storage writes');
+assert.match(onboardingRuntime, /#nodeDetailOverlay\.open \.voice-detail-mic/, 'voice step must target the real node-detail microphone control when it is visible');
+assert.match(onboardingRuntime, /min-height:44px/, 'onboarding controls must remain at least 44 CSS pixels high for mobile touch');
+assert.match(onboardingRuntime, /prefers-reduced-motion:reduce/, 'onboarding spotlight motion must respect reduced-motion preference');
+assert.doesNotMatch(onboardingRuntime, /from '@capacitor\/core'/, 'onboarding must remain one shared Web runtime instead of platform-specific forks');
 
 const queued: Array<() => void> = [];
 let renders = 0;
@@ -117,4 +159,4 @@ assert.match(voiceMigration, /on realtime\.messages/i, 'private Broadcast must b
 const supabaseConfig = readFileSync('supabase/config.toml', 'utf8');
 assert.match(supabaseConfig, /\[functions\.livekit-webhook\][\s\S]*verify_jwt\s*=\s*false/, 'external LiveKit webhook must bypass Supabase JWT verification and use LiveKit signature verification');
 
-console.log('Projection render scheduler + end-to-end node voice-room regression tests passed');
+console.log('Projection render scheduler + newcomer onboarding + end-to-end node voice-room regression tests passed');
