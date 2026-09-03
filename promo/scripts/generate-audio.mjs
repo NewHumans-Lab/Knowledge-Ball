@@ -123,6 +123,8 @@ run("ffmpeg", [
   "0",
   "-i",
   concatList,
+  "-af",
+  "apad=whole_dur=300",
   "-t",
   "300",
   "-ar",
