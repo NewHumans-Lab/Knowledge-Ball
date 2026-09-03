@@ -70,6 +70,12 @@ jobs:
           script: >-
             bash -lc 'set -euxo pipefail;
             mkdir -p artifacts/android;
+            adb wait-for-device;
+            adb shell settings put global hide_error_dialogs 1 || true;
+            adb shell am force-stop com.google.android.apps.nexuslauncher || true;
+            adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS || true;
+            adb shell input keyevent KEYCODE_BACK || true;
+            sleep 1;
             cd android;
             test_status=0;
             ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > ../artifacts/android/gradle-connected-test.log 2>&1 || test_status=$?;
