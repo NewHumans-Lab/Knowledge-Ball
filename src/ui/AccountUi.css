@@ -17,8 +17,8 @@
 .kb-profile-edit-form textarea{min-height:88px;resize:vertical}
 .kb-avatar-edit-row{display:flex;align-items:center;gap:12px;padding:2px 0 4px;position:relative}
 .kb-profile-avatar-preview{flex:0 0 auto}
-.kb-avatar-upload-action{margin:0;width:120px;min-width:120px;pointer-events:none}
-.kb-avatar-file-input{display:block!important;position:absolute;left:60px;top:2px;width:120px!important;height:48px;padding:0!important;margin:0;opacity:0;cursor:pointer;z-index:2}
+.kb-avatar-upload-action{margin:0;width:120px;min-width:120px;height:40px;display:inline-flex!important;flex-direction:row!important;align-items:center;justify-content:center;gap:0!important;font:600 13px inherit!important;color:var(--ink)!important;cursor:pointer}
+.kb-avatar-file-input{display:block!important;position:absolute;left:-10000px;top:0;width:1px!important;height:1px;padding:0!important;margin:0;border:0!important;opacity:1;pointer-events:auto}
 .kb-auth-submit{width:100%;margin-top:4px;padding:10px 12px}
 .kb-auth-back{width:100%;margin-top:8px}
 .kb-auth-status{margin-top:10px;min-height:18px;text-align:center}
