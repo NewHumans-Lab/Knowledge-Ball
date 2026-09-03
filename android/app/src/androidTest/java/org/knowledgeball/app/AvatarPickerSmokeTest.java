@@ -77,29 +77,43 @@ public class AvatarPickerSmokeTest {
                 "const r=button.getBoundingClientRect();" +
                 "const x=Math.round(r.left+r.width/2);" +
                 "const y=Math.round(r.top+r.height/2);" +
-                "return {x,y,hit:document.elementFromPoint(x,y)?.id||''};" +
+                "return {x,y,viewportWidth:window.innerWidth,viewportHeight:window.innerHeight,hit:document.elementFromPoint(x,y)?.id||''};" +
                 "})()");
 
             JSONObject probe = new JSONObject(result);
-            assertTrue("Native avatar probe must receive the real screen tap",
+            assertTrue("Native avatar probe must occupy its CSS hit-test point",
                 "avatarPickerProbe".equals(probe.getString("hit")));
 
             int[] webViewOrigin = new int[2];
-            scenario.onActivity(activity -> activity.getBridge().getWebView().getLocationOnScreen(webViewOrigin));
-            int tapX = webViewOrigin[0] + probe.getInt("x");
-            int tapY = webViewOrigin[1] + probe.getInt("y");
+            int[] webViewSize = new int[2];
+            scenario.onActivity(activity -> {
+                WebView webView = activity.getBridge().getWebView();
+                webView.getLocationOnScreen(webViewOrigin);
+                webViewSize[0] = webView.getWidth();
+                webViewSize[1] = webView.getHeight();
+            });
+
+            double scaleX = webViewSize[0] / probe.getDouble("viewportWidth");
+            double scaleY = webViewSize[1] / probe.getDouble("viewportHeight");
+            int tapX = webViewOrigin[0] + (int) Math.round(probe.getDouble("x") * scaleX);
+            int tapY = webViewOrigin[1] + (int) Math.round(probe.getDouble("y") * scaleY);
             assertTrue("Unable to tap native avatar picker probe", device.click(tapX, tapY));
 
             long deadline = System.currentTimeMillis() + 10_000;
             boolean chooserOpened = false;
+            boolean clickReachedJavaScript = false;
             while (System.currentTimeMillis() < deadline) {
                 String currentPackage = device.getCurrentPackageName();
                 if (currentPackage != null && !APP_PACKAGE.equals(currentPackage)) {
                     chooserOpened = true;
                     break;
                 }
+                if (!clickReachedJavaScript) {
+                    clickReachedJavaScript = !"\"idle\"".equals(evaluate(scenario, "window.__kbAvatarPickerProbe"));
+                }
                 Thread.sleep(200);
             }
+            assertTrue("Physical avatar tap did not reach the WebView button", clickReachedJavaScript || chooserOpened);
             assertTrue("Native AvatarPicker plugin did not open the Android document picker", chooserOpened);
 
             device.pressBack();
