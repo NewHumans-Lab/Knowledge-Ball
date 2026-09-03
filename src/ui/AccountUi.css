@@ -2,6 +2,7 @@
 .kb-profile-head small{display:block;color:var(--ink-faint);margin-top:3px}
 .kb-profile-avatar{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--bg-deep);border:1px solid var(--accent-primary);color:var(--accent-primary);font-weight:700}
 .kb-profile-avatar img,.avatar-btn:not([data-brand-logo]) img{width:100%;height:100%;object-fit:cover}
+.avatar-btn:not([data-brand-logo]){overflow:hidden;border-radius:50%}
 .kb-profile-bio{font-size:12px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px}
 .kb-account-main-action{width:100%;margin-top:8px}
 .kb-auth-card{width:100%}
@@ -14,6 +15,10 @@
 .kb-auth-form input:focus,.kb-auth-form textarea:focus{border-color:var(--accent-primary)}
 .kb-profile-edit-title{margin:0 0 16px;font-size:16px;color:var(--ink)}
 .kb-profile-edit-form textarea{min-height:88px;resize:vertical}
+.kb-avatar-edit-row{display:flex;align-items:center;gap:12px;padding:2px 0 4px}
+.kb-profile-avatar-preview{flex:0 0 auto}
+.kb-avatar-upload-action{margin:0;min-width:108px}
+.kb-avatar-file-input{display:none!important}
 .kb-auth-submit{width:100%;margin-top:4px;padding:10px 12px}
 .kb-auth-back{width:100%;margin-top:8px}
 .kb-auth-status{margin-top:10px;min-height:18px;text-align:center}

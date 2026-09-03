@@ -6,6 +6,7 @@ import {
   type PersonalMastery,
 } from '../auth/AuthClient';
 import { safeAvatarUrl } from '../auth/AuthProfilePresentation';
+import { prepareAvatarWebp, uploadAvatarWebp } from './AvatarStorage';
 import './AccountUi.css';
 
 const EXPIRY_SWEEP_MS = 5 * 60_000;
@@ -27,11 +28,14 @@ export interface AccountUiOptions {
 
 export class AccountUiController {
   private readonly account = createProductionAuthClient();
+  private readonly brandLogoTemplate: HTMLImageElement | null;
   private cached: AccountProfile | null = null;
   private expirySweepTimer: number | null = null;
   private loginRequiredTimer: number | null = null;
 
   constructor(private readonly options: AccountUiOptions) {
+    const brandLogo = this.options.avatarButton?.querySelector<HTMLImageElement>('img') ?? null;
+    this.brandLogoTemplate = brandLogo ? brandLogo.cloneNode(true) as HTMLImageElement : null;
     if (this.options.accountClose instanceof HTMLButtonElement) this.options.accountClose.type = 'button';
     this.options.accountClose?.setAttribute('aria-label', '返回知识球');
     this.options.accountClose?.setAttribute('title', '返回知识球');
@@ -230,14 +234,16 @@ export class AccountUiController {
       <section class="kb-auth-card" aria-label="修改个人资料">
         <h3 class="kb-profile-edit-title">修改资料</h3>
         <form class="kb-auth-form kb-profile-edit-form" id="kbProfileEditForm" novalidate>
+          <div class="kb-avatar-edit-row">
+            <div class="kb-profile-avatar kb-profile-avatar-preview" id="kbProfileAvatarPreview"></div>
+            <button class="btn ghost kb-avatar-upload-action" id="kbAvatarChoose" type="button">修改头像</button>
+            <input class="kb-avatar-file-input" id="kbAvatarFile" name="avatarFile" type="file" accept="image/*" aria-label="选择头像图片">
+          </div>
           <label>用户名
             <input name="username" type="text" inputmode="text" autocomplete="username" minlength="3" maxlength="24" pattern="[a-z0-9_]{3,24}" value="${escapeHtml(this.cached.username ?? '')}" placeholder="3-24 位小写字母、数字或下划线" required>
           </label>
           <label>显示名称
             <input name="displayName" type="text" maxlength="60" value="${escapeHtml(this.cached.displayName ?? '')}" placeholder="公开显示的名称">
-          </label>
-          <label>头像地址
-            <input name="avatarUrl" type="url" inputmode="url" maxlength="2048" value="${escapeHtml(this.cached.avatarUrl ?? '')}" placeholder="https://…（可选）">
           </label>
           <label>个人简介
             <textarea name="bio" maxlength="280" placeholder="最多 280 字">${escapeHtml(this.cached.bio ?? '')}</textarea>
@@ -245,14 +251,58 @@ export class AccountUiController {
           <button class="btn primary kb-auth-submit" type="submit">保存资料</button>
         </form>
         <button class="btn ghost kb-auth-back" id="kbProfileEditBack" type="button">取消</button>
-        <div class="form-hint kb-auth-status" id="kbAccountStatus">一次填写并保存全部资料。</div>
+        <div class="form-hint kb-auth-status" id="kbAccountStatus">头像选择后立即更新；其他资料点击保存后更新。</div>
       </section>`;
 
+    const avatarPreview = body.querySelector<HTMLElement>('#kbProfileAvatarPreview');
+    if (avatarPreview) renderAvatarImage(avatarPreview, this.cached);
+    const avatarFile = body.querySelector<HTMLInputElement>('#kbAvatarFile');
+    body.querySelector('#kbAvatarChoose')?.addEventListener('click', () => avatarFile?.click());
+    avatarFile?.addEventListener('change', () => {
+      const file = avatarFile.files?.[0];
+      avatarFile.value = '';
+      if (file) void this.replaceAvatar(body, file);
+    });
     body.querySelector('#kbProfileEditBack')?.addEventListener('click', () => this.open(false));
     body.querySelector<HTMLFormElement>('#kbProfileEditForm')?.addEventListener('submit', event => {
       event.preventDefault();
       void this.submitProfileEditForm(body, event.currentTarget as HTMLFormElement);
     });
+  }
+
+  private async replaceAvatar(body: HTMLElement, file: File): Promise<void> {
+    if (!this.account || !this.cached?.passwordLoginEnabled) {
+      this.flashLoginRequired();
+      return;
+    }
+    const username = this.cached.username;
+    if (!username) {
+      this.accountStatus(body, '账户用户名缺失，请重新登录后重试');
+      return;
+    }
+
+    const choose = body.querySelector<HTMLButtonElement>('#kbAvatarChoose');
+    if (choose) choose.disabled = true;
+    this.accountStatus(body, '正在处理头像…');
+    try {
+      const image = await prepareAvatarWebp(file);
+      this.accountStatus(body, '正在上传头像…');
+      const avatarUrl = await uploadAvatarWebp(this.account, image);
+      this.cached = await this.account.updateProfile({
+        username,
+        displayName: this.cached.displayName ?? '',
+        avatarUrl,
+        bio: this.cached.bio ?? '',
+      });
+      this.updateAvatar();
+      const preview = body.querySelector<HTMLElement>('#kbProfileAvatarPreview');
+      if (preview) renderAvatarImage(preview, this.cached);
+      this.accountStatus(body, '头像已更新');
+    } catch (error) {
+      this.accountStatus(body, error instanceof Error ? error.message : '头像更新失败');
+    } finally {
+      if (choose) choose.disabled = false;
+    }
   }
 
   private async submitProfileEditForm(body: HTMLElement, form: HTMLFormElement): Promise<void> {
@@ -262,7 +312,7 @@ export class AccountUiController {
     }
     const username = formValue(form, 'username').trim().toLowerCase();
     const displayName = formValue(form, 'displayName').trim();
-    const avatarUrl = formValue(form, 'avatarUrl').trim();
+    const avatarUrl = this.cached.avatarUrl ?? '';
     const bio = formValue(form, 'bio').trim();
 
     if (!/^[a-z0-9_]{3,24}$/.test(username)) {
@@ -271,10 +321,6 @@ export class AccountUiController {
     }
     if (displayName.length > 60) {
       this.accountStatus(body, '显示名称最多 60 字');
-      return;
-    }
-    if (avatarUrl && !safeAvatarUrl(avatarUrl)) {
-      this.accountStatus(body, '头像地址必须是 HTTPS 链接');
       return;
     }
     if (bio.length > 280) {
@@ -311,23 +357,7 @@ export class AccountUiController {
 
   private renderProfile(body: HTMLElement, profile: AccountProfile | null): void {
     const avatar = body.querySelector<HTMLElement>('#kbProfileAvatar');
-    if (avatar) {
-      avatar.replaceChildren();
-      const src = safeAvatarUrl(profile?.avatarUrl);
-      if (src) {
-        const image = document.createElement('img');
-        image.src = src;
-        image.alt = '';
-        image.referrerPolicy = 'no-referrer';
-        image.addEventListener('error', () => {
-          image.remove();
-          avatar.textContent = initial(profile);
-        }, { once: true });
-        avatar.append(image);
-      } else {
-        avatar.textContent = initial(profile);
-      }
-    }
+    if (avatar) renderAvatarImage(avatar, profile);
     const set = (selector: string, value: string) => {
       const element = body.querySelector<HTMLElement>(selector);
       if (element) element.textContent = value;
@@ -343,22 +373,13 @@ export class AccountUiController {
   private updateAvatar(): void {
     const avatar = this.options.avatarButton;
     if (!avatar) return;
-    if (!avatar.hasAttribute('data-brand-logo')) {
+    if (this.cached?.passwordLoginEnabled) {
+      avatar.removeAttribute('data-brand-logo');
+      renderAvatarImage(avatar, this.cached);
+    } else {
+      avatar.setAttribute('data-brand-logo', '');
       avatar.replaceChildren();
-      const src = safeAvatarUrl(this.cached?.avatarUrl);
-      if (src) {
-        const image = document.createElement('img');
-        image.src = src;
-        image.alt = '';
-        image.referrerPolicy = 'no-referrer';
-        image.addEventListener('error', () => {
-          image.remove();
-          avatar.textContent = initial(this.cached);
-        }, { once: true });
-        avatar.append(image);
-      } else {
-        avatar.textContent = initial(this.cached);
-      }
+      if (this.brandLogoTemplate) avatar.append(this.brandLogoTemplate.cloneNode(true));
     }
     avatar.title = '个人空间 · 账户与知识记录';
     avatar.dataset.authState = this.cached?.passwordLoginEnabled ? 'registered' : 'guest';
@@ -391,6 +412,24 @@ export function installAccountUi(options: AccountUiOptions): AccountUiController
 function formValue(form: HTMLFormElement, fieldName: string): string {
   const field = form.elements.namedItem(fieldName);
   return field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement ? field.value : '';
+}
+
+function renderAvatarImage(avatar: HTMLElement, profile: AccountProfile | null): void {
+  avatar.replaceChildren();
+  const src = safeAvatarUrl(profile?.avatarUrl);
+  if (src) {
+    const image = document.createElement('img');
+    image.src = src;
+    image.alt = '';
+    image.referrerPolicy = 'no-referrer';
+    image.addEventListener('error', () => {
+      image.remove();
+      avatar.textContent = initial(profile);
+    }, { once: true });
+    avatar.append(image);
+  } else {
+    avatar.textContent = initial(profile);
+  }
 }
 
 function name(profile: AccountProfile | null): string {

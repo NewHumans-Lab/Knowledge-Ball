@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [auth, ui, app, vite, sync, migration, profileGate, publicWriteGate, accuracyMigration, productionBrowser, deploy] = await Promise.all([
+const [auth, ui, avatarStorage, app, vite, sync, migration, profileGate, publicWriteGate, accuracyMigration, avatarMigration, productionBrowser, deploy] = await Promise.all([
   readFile('src/auth/AuthClient.ts','utf8'),
   readFile('src/ui/AccountUi.ts','utf8'),
+  readFile('src/ui/AvatarStorage.ts','utf8'),
   readFile('src/ui/app.ts','utf8'),
   readFile('vite.config.ts','utf8'),
   readFile('src/sync/SupabaseSyncAdapter.ts','utf8'),
@@ -11,6 +12,7 @@ const [auth, ui, app, vite, sync, migration, profileGate, publicWriteGate, accur
   readFile('supabase/migrations/202608200003_profile_edit_requires_account.sql','utf8'),
   readFile('supabase/migrations/202608200004_registered_public_writes.sql','utf8'),
   readFile('supabase/migrations/202608210002_account_accuracy.sql','utf8'),
+  readFile('supabase/migrations/202609030001_profile_avatar_storage.sql','utf8'),
   readFile('scripts/verify-production-browser-zero-write.mjs','utf8'),
   readFile('.github/workflows/deploy.yml','utf8'),
 ]);
@@ -55,14 +57,46 @@ assert.match(ui, /id="kbProfileEditForm"/,
   'profile editing must use one ordinary form instead of sequential prompts');
 assert.match(ui, /name="displayName"/,
   'profile form must include display name');
-assert.match(ui, /name="avatarUrl" type="url"/,
-  'profile form must include avatar URL');
+assert.match(ui, /id="kbAvatarFile"[\s\S]*type="file"[\s\S]*accept="image\/\*"/,
+  'profile form must select an avatar from the device image picker');
+assert.doesNotMatch(ui, /name="avatarUrl" type="url"/,
+  'users must not be asked to paste an avatar URL');
+assert.match(ui, /prepareAvatarWebp\(file\)/,
+  'selected avatar must be processed before upload');
+assert.match(ui, /uploadAvatarWebp\(this\.account, image\)/,
+  'processed avatar must be uploaded through the dedicated storage path');
+assert.match(ui, /this\.cached = await this\.account\.updateProfile\([\s\S]*avatarUrl/,
+  'uploaded avatar URL must be written back to the account profile');
+assert.match(ui, /avatar\.removeAttribute\('data-brand-logo'\)[\s\S]*renderAvatarImage\(avatar, this\.cached\)[\s\S]*avatar\.setAttribute\('data-brand-logo', ''\)/,
+  'registered users must show profile avatars while guests retain the Knowledge Ball logo');
 assert.match(ui, /textarea name="bio" maxlength="280"/,
   'profile form must include the bio field');
 assert.match(ui, />保存资料</,
   'profile form must save all fields together');
 assert.doesNotMatch(ui, /\bprompt\s*\(/,
   'account UI must not use sequential browser prompt dialogs');
+
+assert.match(avatarStorage, /AVATAR_SIZE = 512/,
+  'avatar processing must normalize images to 512px');
+assert.match(avatarStorage, /Math\.min\(decoded\.width, decoded\.height\)/,
+  'avatar processing must crop the source to a square');
+assert.match(avatarStorage, /canvas\.toBlob\([\s\S]*'image\/webp'/,
+  'avatar processing must encode WebP in the browser');
+assert.match(avatarStorage, /storage\/v1\/object\/\$\{AVATAR_BUCKET\}/,
+  'avatar upload must target Supabase Storage');
+assert.match(avatarStorage, /'x-upsert': 'true'/,
+  'one stable avatar object must be replaced instead of accumulating uploads');
+assert.match(avatarStorage, /storage\/v1\/object\/public\/\$\{AVATAR_BUCKET\}/,
+  'the stored profile URL must use the public avatar object URL');
+
+assert.match(avatarMigration, /insert into storage\.buckets[\s\S]*'avatars'[\s\S]*'image\/webp'/,
+  'avatar migration must create the public WebP-only Storage bucket');
+assert.match(avatarMigration, /target_name = auth\.uid\(\)::text \|\| '\/avatar\.webp'/,
+  'avatar objects must be fixed to the authenticated user path');
+assert.match(avatarMigration, /p\.password_login_enabled[\s\S]*u\.is_anonymous is false/,
+  'Supabase anonymous sessions must not gain avatar write access');
+assert.match(avatarMigration, /for insert[\s\S]*for select[\s\S]*for update/,
+  'avatar upserts must have the exact Storage RLS permissions they require');
 
 assert.match(app, /const accountUi = installAccountUi\(/,
   'every shell must install account presentation through one explicit application integration point');
@@ -133,5 +167,5 @@ assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Registered public-write gate, explicit account ownership, authoritative accuracy, zero-write production smoke, and account UI checks passed');
+console.log('Registered public-write gate, avatar upload boundary, explicit account ownership, authoritative accuracy, zero-write production smoke, and account UI checks passed');
 // This regression intentionally guards the web account ownership boundary.
