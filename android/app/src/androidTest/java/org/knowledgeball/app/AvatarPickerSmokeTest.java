@@ -54,46 +54,41 @@ public class AvatarPickerSmokeTest {
     }
 
     @Test
-    public void directAvatarTapOpensNativeFileChooser() throws Exception {
+    public void nativeAvatarButtonOpensSystemDocumentPicker() throws Exception {
         UiDevice device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.moveToState(Lifecycle.State.RESUMED);
-            waitFor(scenario, "document.readyState==='complete' && !!document.querySelector('#avatarBtn')");
+            waitFor(scenario, "document.readyState==='complete' && !!window.Capacitor?.Plugins?.AvatarPicker");
             waitForPackage(device, APP_PACKAGE, 10_000);
 
             String result = evaluate(scenario,
                 "(() => {" +
                 "document.querySelector('#avatarPickerProbe')?.remove();" +
-                "const host=document.createElement('div');" +
-                "host.id='avatarPickerProbe';" +
-                "host.className='kb-auth-form kb-avatar-edit-row';" +
-                "host.style.cssText='position:fixed;left:24px;top:96px;z-index:2147483647;width:220px;height:60px;background:#fff';" +
-                "host.innerHTML='<div class=\"kb-profile-avatar kb-profile-avatar-preview\"></div><label id=\"kbAvatarProbeLabel\" class=\"btn ghost kb-avatar-upload-action\" for=\"kbAvatarProbeFile\">修改头像</label><input class=\"kb-avatar-file-input\" id=\"kbAvatarProbeFile\" type=\"file\" accept=\"image/*\" aria-label=\"选择头像图片\">';" +
-                "document.body.append(host);" +
-                "const input=host.querySelector('#kbAvatarProbeFile');" +
-                "const label=host.querySelector('#kbAvatarProbeLabel');" +
-                "const r=label.getBoundingClientRect();" +
+                "window.__kbAvatarPickerProbe='idle';" +
+                "const button=document.createElement('button');" +
+                "button.id='avatarPickerProbe';" +
+                "button.textContent='修改头像';" +
+                "button.style.cssText='position:fixed;left:24px;top:96px;z-index:2147483647;width:160px;height:56px';" +
+                "button.addEventListener('click',()=>{" +
+                "window.__kbAvatarPickerProbe='called';" +
+                "window.Capacitor.Plugins.AvatarPicker.pickImage().then(r=>{window.__kbAvatarPickerProbe=r?.canceled?'canceled':'resolved';}).catch(()=>{window.__kbAvatarPickerProbe='rejected';});" +
+                "});" +
+                "document.body.append(button);" +
+                "const r=button.getBoundingClientRect();" +
                 "const x=Math.round(r.left+r.width/2);" +
                 "const y=Math.round(r.top+r.height/2);" +
-                "const inputStyle=getComputedStyle(input);" +
-                "return {x,y,inputDisplay:inputStyle.display,inputOpacity:inputStyle.opacity,inputLeft:input.getBoundingClientRect().left,labelFor:label.htmlFor,hit:document.elementFromPoint(x,y)?.id||''};" +
+                "return {x,y,hit:document.elementFromPoint(x,y)?.id||''};" +
                 "})()");
 
             JSONObject probe = new JSONObject(result);
-            assertTrue("Avatar file input must remain rendered", "block".equals(probe.getString("inputDisplay")));
-            assertTrue("Avatar file input must not be transparent", "1".equals(probe.getString("inputOpacity")));
-            assertTrue("Avatar file input must be moved offscreen instead of display:none",
-                probe.getDouble("inputLeft") < -1000);
-            assertTrue("Avatar label must natively target the file input",
-                "kbAvatarProbeFile".equals(probe.getString("labelFor")));
-            assertTrue("Visible avatar control must receive the real screen tap",
-                "kbAvatarProbeLabel".equals(probe.getString("hit")));
+            assertTrue("Native avatar probe must receive the real screen tap",
+                "avatarPickerProbe".equals(probe.getString("hit")));
 
             int[] webViewOrigin = new int[2];
             scenario.onActivity(activity -> activity.getBridge().getWebView().getLocationOnScreen(webViewOrigin));
             int tapX = webViewOrigin[0] + probe.getInt("x");
             int tapY = webViewOrigin[1] + probe.getInt("y");
-            assertTrue("Unable to tap avatar picker label", device.click(tapX, tapY));
+            assertTrue("Unable to tap native avatar picker probe", device.click(tapX, tapY));
 
             long deadline = System.currentTimeMillis() + 10_000;
             boolean chooserOpened = false;
@@ -105,10 +100,11 @@ public class AvatarPickerSmokeTest {
                 }
                 Thread.sleep(200);
             }
-            assertTrue("Native avatar label did not open an Android file chooser", chooserOpened);
+            assertTrue("Native AvatarPicker plugin did not open the Android document picker", chooserOpened);
 
             device.pressBack();
             waitForPackage(device, APP_PACKAGE, 10_000);
+            waitFor(scenario, "window.__kbAvatarPickerProbe==='canceled'");
             evaluate(scenario, "document.querySelector('#avatarPickerProbe')?.remove();true");
         }
     }
