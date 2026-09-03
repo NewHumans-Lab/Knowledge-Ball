@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [auth, ui, avatarStorage, app, vite, sync, migration, profileGate, publicWriteGate, accuracyMigration, avatarMigration, productionBrowser, deploy] = await Promise.all([
+const [auth, ui, accountCss, avatarStorage, app, vite, sync, migration, profileGate, publicWriteGate, accuracyMigration, avatarMigration, productionBrowser, deploy] = await Promise.all([
   readFile('src/auth/AuthClient.ts','utf8'),
   readFile('src/ui/AccountUi.ts','utf8'),
+  readFile('src/ui/AccountUi.css','utf8'),
   readFile('src/ui/AvatarStorage.ts','utf8'),
   readFile('src/ui/app.ts','utf8'),
   readFile('vite.config.ts','utf8'),
@@ -61,6 +62,14 @@ assert.match(ui, /id="kbAvatarFile"[\s\S]*type="file"[\s\S]*accept="image\/\*"/,
   'profile form must select an avatar from the device image picker');
 assert.doesNotMatch(ui, /name="avatarUrl" type="url"/,
   'users must not be asked to paste an avatar URL');
+assert.match(accountCss, /\.kb-avatar-edit-row\{[^}]*position:relative/,
+  'avatar picker hit target must have a positioned container');
+assert.match(accountCss, /\.kb-avatar-file-input\{[^}]*display:block!important[^}]*position:absolute[^}]*opacity:0[^}]*z-index:2/,
+  'the real file input must stay pointer-active over the visible avatar button on mobile');
+assert.doesNotMatch(accountCss, /\.kb-avatar-file-input\{[^}]*display:none/i,
+  'mobile avatar picking must not depend on clicking a display:none file input');
+assert.match(accountCss, /\.kb-avatar-upload-action\{[^}]*pointer-events:none/,
+  'the visible avatar button must not intercept the direct tap meant for the real file input');
 assert.match(ui, /prepareAvatarWebp\(file\)/,
   'selected avatar must be processed before upload');
 assert.match(ui, /uploadAvatarWebp\(this\.account, image\)/,
@@ -167,5 +176,5 @@ assert.doesNotMatch(ui, /write_entry|刷新余额/i);
 for (const item of ['drop function public.register_verified_phone','legacy_phone_registration_registry','legacy_phone_referrals','ensure_anonymous_profile','0.000000']) {
   assert.ok(migration.includes(item), `missing cleanup: ${item}`);
 }
-console.log('Registered public-write gate, avatar upload boundary, explicit account ownership, authoritative accuracy, zero-write production smoke, and account UI checks passed');
+console.log('Registered public-write gate, mobile avatar picker boundary, avatar upload boundary, explicit account ownership, authoritative accuracy, zero-write production smoke, and account UI checks passed');
 // This regression intentionally guards the web account ownership boundary.
