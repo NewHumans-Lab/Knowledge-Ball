@@ -6,6 +6,7 @@ const accountUi = await readFile('src/ui/AccountUi.ts', 'utf8');
 const panelController = await readFile('src/ui/panels/PanelController.ts', 'utf8');
 const syncEngine = await readFile('src/sync/SyncEngine.ts', 'utf8');
 const syncCoordinator = await readFile('src/sync/PublicKnowledgeSyncCoordinator.ts', 'utf8');
+const supabaseAdapter = await readFile('src/sync/SupabaseSyncAdapter.ts', 'utf8');
 const sources = await Promise.all(['src/ui/app.ts', 'vite.config.ts', 'package.json'].map(file => readFile(file, 'utf8')));
 
 assert.match(app, /new SyncEngine\(/, 'web runtime must instantiate SyncEngine');
