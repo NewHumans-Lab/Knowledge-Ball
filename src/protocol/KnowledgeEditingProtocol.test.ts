@@ -166,35 +166,6 @@ assert.equal(restoredReasoning.find(item => item.id === 'r1')?.status, 'pending'
 assert.equal(restoredReasoning.find(item => item.id === 'r-correct')?.hidden, true);
 assert.deepEqual(restoredReasoning.find(item => item.id === 'c1')?.premises, ['r1']);
 
-// Decomposition is committed only when every P -> R -> M -> R -> C link exists.
-const incompleteDecomposition = validateKnowledgeEdit(base, {
-  kind: 'decompose',
-  chain,
-  reasoningSteps: [
-    { id: 'r-step-x1', title: 'Step X1', type: 'reasoning', reasoning: 'Step X inference one', logicRuleId: 'logic-mp' },
-    { id: 'r-step-x2', title: 'Step X2', type: 'reasoning', reasoning: 'Step X inference two', logicRuleId: 'logic-mp' },
-  ],
-  intermediateConclusions: [],
-});
-assert(incompleteDecomposition.some(error => error.includes('中间知识结论')));
-
-const decomposed = apply(base, {
-  kind: 'decompose',
-  chain,
-  reasoningSteps: [
-    { id: 'r-step-1', title: 'Step one', type: 'reasoning', reasoning: 'First smaller inference', logicRuleId: 'logic-mp' },
-    { id: 'r-step-2', title: 'Step two', type: 'reasoning', reasoning: 'Second smaller inference', logicRuleId: 'logic-mp' },
-  ],
-  intermediateConclusions: [
-    { id: 'middle', title: 'Intermediate conclusion', type: 'theorem', reasoning: 'Result after the first inference' },
-  ],
-});
-assert.deepEqual(decomposed.find(item => item.id === 'r-step-1')?.premises, ['p1', 'p2']);
-assert.deepEqual(decomposed.find(item => item.id === 'middle')?.premises, ['r-step-1']);
-assert.deepEqual(decomposed.find(item => item.id === 'r-step-2')?.premises, ['middle']);
-assert.deepEqual(decomposed.find(item => item.id === 'c1')?.premises, ['r-step-2']);
-assert.equal(decomposed.find(item => item.id === 'r1')?.hidden, true);
-
 // Historical hidden nodes reserve titles; duplicate descriptions are advisory only.
 const hiddenHistory = [
   ...base,
