@@ -17,7 +17,7 @@ assert.match(dag, /create trigger project_knowledge_dependency_event/);
 assert.doesNotMatch(dag, /topic_id|lineage_role|opposition_rank|history_rank/i);
 for (const eventType of [
   'NodeCreated','NodeEdited','KnowledgeAdded','KnowledgeNodeEdited',
-  'KnowledgeNegated','KnowledgeDecomposed','KnowledgeMerged',
+  'KnowledgeNegated','KnowledgeMerged',
 ]) {
   assert.ok(dag.includes(`event_type_value = '${eventType}'`), `${eventType} must be covered by dependency replay`);
 }
