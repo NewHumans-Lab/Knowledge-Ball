@@ -371,10 +371,12 @@ export function installVoiceRoomRuntime(): void {
   const connectStatusRealtime = async () => {
     if (stopped || realtimeChannel || !authClient || !supabaseUrl || !publishableKey) return;
     try {
-      const session = await authClient.session();
+      const statusAuthClient = authClient;
+      const session = await statusAuthClient.session();
       const sdk = await loadSupabaseRealtime();
       if (stopped || realtimeChannel) return;
       const client = sdk.createClient(supabaseUrl, publishableKey, {
+        accessToken: async () => (await statusAuthClient.session()).access_token,
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       });
       await client.realtime.setAuth(session.access_token);

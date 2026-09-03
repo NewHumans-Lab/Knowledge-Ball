@@ -69,6 +69,7 @@ assert.match(runtime, /await refreshStatus\(\);[\s\S]*await connectStatusRealtim
 assert.match(runtime, /channel\(VOICE_ROOM_STATUS_TOPIC, \{ config: \{ private: true \} \}\)/, 'voice count updates must use one private Broadcast channel');
 assert.match(runtime, /\.on\('broadcast', \{ event: 'voice_room_status_changed' \}/, 'voice count changes must arrive through Broadcast');
 assert.match(runtime, /client\.realtime\.setAuth\(session\.access_token\)/, 'private Realtime must authenticate with the existing Supabase session');
+assert.match(runtime, /accessToken: async \(\) => \(await statusAuthClient\.session\(\)\)\.access_token/, 'the same Realtime connection must refresh its JWT without status polling');
 assert.doesNotMatch(runtime, /ParticipantConnected[^\n]+refreshStatus|ParticipantDisconnected[^\n]+refreshStatus/, 'LiveKit participant events must not trigger client status queries');
 assert.match(runtime, /dataset\.livekitFailed/, 'failed CDN loads must be reset so a later join can retry');
 assert.match(runtime, /min-width:44px;height:44px/, 'touch hit target must remain at least 44 CSS pixels on mobile');
