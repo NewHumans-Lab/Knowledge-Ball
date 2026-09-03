@@ -98,7 +98,7 @@ verifyPng('windows/assets/icon.png', 512, 512, false);
 verifyIco('windows/assets/icon.ico', [16, 32, 48, 64, 128, 256]);
 
 const homepage = text('index.html');
-assert(homepage.includes('data-brand-logo'), 'homepage account launcher must be marked as the brand logo');
+assert(homepage.includes('data-brand-logo'), 'homepage account launcher must start with the brand logo for guests');
 assert(homepage.includes('/src/assets/knowledge-ball-logo.png'), 'homepage must render the bundled canonical logo');
 assert(homepage.includes('./favicon.ico') && homepage.includes('./apple-touch-icon.png'), 'homepage icon links are incomplete');
 assert(!homepage.includes('>RS</'), 'legacy initials still appear in the homepage launcher');
@@ -110,7 +110,8 @@ assert(manifest.icons?.some(icon => icon.src === './icons/icon-512.png' && icon.
 assert(manifest.icons?.some(icon => icon.src === './icons/icon-maskable-512.png' && icon.purpose === 'maskable'), 'web manifest is missing the maskable icon');
 
 const accountUi = text('src/ui/AccountUi.ts');
-assert(accountUi.includes("!avatar.hasAttribute('data-brand-logo')"), 'account updates must preserve the brand logo');
+assert(accountUi.includes("avatar.setAttribute('data-brand-logo', '')"), 'guest account state must restore the brand logo');
+assert(accountUi.includes("avatar.removeAttribute('data-brand-logo')"), 'registered account state must be allowed to replace the brand logo with the user avatar');
 
 const launcherBackground = text('android/app/src/main/res/values/ic_launcher_background.xml');
 const androidStyles = text('android/app/src/main/res/values/styles.xml');
