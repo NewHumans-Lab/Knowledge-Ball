@@ -1,3 +1,4 @@
+import './onboarding/CoreOnboardingRuntime';
 import './voice/VoiceRoomRuntime';
 
 export type ProjectionRenderFlush = () => void;

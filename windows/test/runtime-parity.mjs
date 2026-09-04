@@ -16,7 +16,16 @@ await mkdir(artifacts, { recursive: true });
 
 async function deterministic(page) {
   await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.renderNodes?.length), null, { timeout: 30_000 });
-  await page.evaluate(() => { localStorage.setItem('knowledge-ball.locale.v1', 'zh-CN'); window.__debug.scene.stop(); });
+  // Newcomer onboarding has its own browser acceptance. Runtime parity must
+  // compare the same stable returning-user state on Electron and Web instead
+  // of comparing an already-used desktop session with a fresh Web newcomer.
+  await page.evaluate(() => {
+    localStorage.setItem('knowledge-ball.core-onboarding.v1', 'skipped');
+    localStorage.setItem('knowledge-ball.locale.v1', 'zh-CN');
+    window.__debug.scene.stop();
+  });
+  const onboardingSkip = page.locator('.kb-core-onboarding-skip');
+  if (await onboardingSkip.count()) await onboardingSkip.click();
   await page.waitForTimeout(250);
 }
 

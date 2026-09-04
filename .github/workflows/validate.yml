@@ -27,6 +27,8 @@ jobs:
         run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - run: npm run test:i18n
       - run: npm run test:download
+      - name: Verify account onboarding migration semantics
+        run: node scripts/verify-core-onboarding-migration.mjs
       - name: Validate Supabase release configuration without database writes
         if: github.event_name == 'pull_request'
         run: node scripts/verify-supabase-schema.mjs
@@ -37,6 +39,10 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify zh-CN core labels are visibly above WebGL
         run: node scripts/verify-core-label-visibility-browser.mjs
+      - name: Verify newcomer core onboarding in a real mobile browser
+        run: node scripts/verify-core-onboarding-browser.mjs
+      - name: Verify account onboarding sync across two browser devices
+        run: node scripts/verify-core-onboarding-account-browser.mjs
       - name: Verify Settings downloads and zh-CN/en localization
         run: node scripts/verify-i18n-downloads-browser.mjs
       - name: Verify split standalone/reasoning creation on a real mobile page
