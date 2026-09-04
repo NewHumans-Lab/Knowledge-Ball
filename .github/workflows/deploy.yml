@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - 'public/downloads/latest.json'
+      - '.github/workflows/deploy.yml'
 
 permissions:
   contents: read
