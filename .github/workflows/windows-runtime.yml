@@ -15,6 +15,10 @@ on:
       - '.github/workflows/android-runtime.yml'
       - '.github/workflows/windows-runtime.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
