@@ -35,6 +35,8 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
+      - name: Verify zh-CN core labels are visibly above WebGL
+        run: node scripts/verify-core-label-visibility-browser.mjs
       - name: Verify newcomer core onboarding in a real mobile browser
         run: node scripts/verify-core-onboarding-browser.mjs
       - name: Verify account onboarding sync across two browser devices
