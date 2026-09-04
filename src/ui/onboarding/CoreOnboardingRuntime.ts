@@ -1,24 +1,48 @@
 export const CORE_ONBOARDING_STORAGE_KEY = 'knowledge-ball.core-onboarding.v1';
+export const CORE_ONBOARDING_OWNER_KEY = 'knowledge-ball.core-onboarding-owner.v1';
 export const CORE_ONBOARDING_STEP_IDS = ['zoom', 'rotate', 'longpress', 'tap', 'voice'] as const;
 export type CoreOnboardingStepId = typeof CORE_ONBOARDING_STEP_IDS[number];
 export type CoreOnboardingStatus = 'completed' | 'skipped';
 
 const LOCALE_STORAGE_KEY = 'knowledge-ball.locale.v1';
+const GUEST_SESSION_KEY = 'knowledge-ball.supabase-guest-session.v1';
 const APP_STORAGE_PREFIX = 'knowledge-ball.';
-const IGNORED_USAGE_KEYS = new Set([CORE_ONBOARDING_STORAGE_KEY, LOCALE_STORAGE_KEY]);
+const IGNORED_USAGE_KEYS = new Set([CORE_ONBOARDING_STORAGE_KEY, CORE_ONBOARDING_OWNER_KEY, LOCALE_STORAGE_KEY]);
+const ACCOUNT_SYNC_WAIT_ATTEMPTS = 80;
+const ACCOUNT_SYNC_WAIT_MS = 50;
+
+type SessionIdentity = { accessToken: string; userId: string | null };
+let activeOnboardingClose: (() => void) | null = null;
 
 function safeLocalStorage(): Storage | null {
   try { return typeof window === 'undefined' ? null : window.localStorage; } catch { return null; }
 }
 
-function hasFinalStatus(storage: Storage | null): boolean {
-  if (!storage) return false;
+function finalStatus(storage: Storage | null): CoreOnboardingStatus | null {
+  if (!storage) return null;
   try {
     const status = storage.getItem(CORE_ONBOARDING_STORAGE_KEY);
-    return status === 'completed' || status === 'skipped';
+    return status === 'completed' || status === 'skipped' ? status : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function finalStatusOwner(storage: Storage | null): string | null {
+  if (!storage) return null;
+  try { return storage.getItem(CORE_ONBOARDING_OWNER_KEY); } catch { return null; }
+}
+
+function hasFinalStatus(storage: Storage | null): boolean {
+  return finalStatus(storage) !== null;
+}
+
+function clearLocalFinalStatus(storage: Storage | null): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(CORE_ONBOARDING_STORAGE_KEY);
+    storage.removeItem(CORE_ONBOARDING_OWNER_KEY);
+  } catch { /* optional local cache */ }
 }
 
 export function shouldOfferCoreOnboarding(storage: Storage | null): boolean {
@@ -38,13 +62,172 @@ export function shouldOfferCoreOnboarding(storage: Storage | null): boolean {
   }
 }
 
-export function persistCoreOnboardingStatus(storage: Storage | null, status: CoreOnboardingStatus): boolean {
+export function persistCoreOnboardingStatus(
+  storage: Storage | null,
+  status: CoreOnboardingStatus,
+  ownerId?: string | null,
+): boolean {
   if (!storage) return false;
   try {
     storage.setItem(CORE_ONBOARDING_STORAGE_KEY, status);
+    if (ownerId) storage.setItem(CORE_ONBOARDING_OWNER_KEY, ownerId);
+    else storage.removeItem(CORE_ONBOARDING_OWNER_KEY);
     return true;
   } catch {
     return false;
+  }
+}
+
+function decodeJwtSubject(accessToken: string): string | null {
+  try {
+    const payload = accessToken.split('.')[1];
+    if (!payload || typeof atob !== 'function') return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+    const decoded = JSON.parse(atob(padded)) as Record<string, unknown>;
+    return typeof decoded.sub === 'string' && decoded.sub ? decoded.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+function currentSessionIdentity(storage: Storage | null): SessionIdentity | null {
+  if (!storage) return null;
+  try {
+    const raw = JSON.parse(storage.getItem(GUEST_SESSION_KEY) ?? 'null') as Record<string, unknown> | null;
+    const accessToken = typeof raw?.access_token === 'string' ? raw.access_token : '';
+    if (!accessToken) return null;
+    return { accessToken, userId: decodeJwtSubject(accessToken) };
+  } catch {
+    return null;
+  }
+}
+
+function supabaseConfig(): { url: string; publishableKey: string } | null {
+  const url = import.meta.env?.VITE_SUPABASE_URL?.trim();
+  const publishableKey = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  return url && publishableKey ? { url: url.replace(/\/$/, ''), publishableKey } : null;
+}
+
+async function rpcRequest(
+  config: { url: string; publishableKey: string },
+  identity: SessionIdentity,
+  rpc: string,
+  body: Record<string, unknown>,
+): Promise<unknown> {
+  const response = await fetch(`${config.url}/rest/v1/rpc/${rpc}`, {
+    method: 'POST',
+    headers: {
+      apikey: config.publishableKey,
+      Authorization: `Bearer ${identity.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const value = await response.json().catch(() => ({})) as unknown;
+  if (!response.ok) throw new Error(`core onboarding account RPC ${rpc} failed (${response.status})`);
+  return value;
+}
+
+async function ensureAccountProfile(
+  config: { url: string; publishableKey: string },
+  identity: SessionIdentity,
+): Promise<void> {
+  await rpcRequest(config, identity, 'ensure_anonymous_profile', {});
+}
+
+function accountStatusFrom(value: unknown): CoreOnboardingStatus | null {
+  const record = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const status = record.core_onboarding_status;
+  return status === 'completed' || status === 'skipped' ? status : null;
+}
+
+async function readAccountStatus(
+  config: { url: string; publishableKey: string },
+  identity: SessionIdentity,
+): Promise<CoreOnboardingStatus | null> {
+  await ensureAccountProfile(config, identity);
+  return accountStatusFrom(await rpcRequest(config, identity, 'get_my_account', {}));
+}
+
+async function writeAccountStatus(
+  config: { url: string; publishableKey: string },
+  identity: SessionIdentity,
+  status: CoreOnboardingStatus,
+): Promise<CoreOnboardingStatus | null> {
+  await ensureAccountProfile(config, identity);
+  return accountStatusFrom(await rpcRequest(config, identity, 'set_core_onboarding_status', { new_status: status }));
+}
+
+async function waitForSessionIdentity(storage: Storage | null): Promise<SessionIdentity | null> {
+  for (let attempt = 0; attempt < ACCOUNT_SYNC_WAIT_ATTEMPTS; attempt += 1) {
+    const identity = currentSessionIdentity(storage);
+    if (identity) return identity;
+    await new Promise(resolve => window.setTimeout(resolve, ACCOUNT_SYNC_WAIT_MS));
+  }
+  return null;
+}
+
+async function reconcileCoreOnboardingAccount(initialEligible: boolean): Promise<boolean> {
+  const storage = safeLocalStorage();
+  const config = supabaseConfig();
+  if (!storage || !config) return initialEligible && !hasFinalStatus(storage);
+
+  const identity = await waitForSessionIdentity(storage);
+  if (!identity) return initialEligible && !hasFinalStatus(storage);
+
+  let localStatus = finalStatus(storage);
+  let localOwner = finalStatusOwner(storage);
+  if (localStatus && localOwner && identity.userId && localOwner !== identity.userId) {
+    // One installation may sign into another account. Never upload account A's
+    // dismissal to account B. The previous account is protected by its cloud copy.
+    clearLocalFinalStatus(storage);
+    localStatus = null;
+    localOwner = null;
+  }
+
+  try {
+    const remoteStatus = await readAccountStatus(config, identity);
+    if (remoteStatus) {
+      persistCoreOnboardingStatus(storage, remoteStatus, identity.userId);
+      activeOnboardingClose?.();
+      return false;
+    }
+
+    if (localStatus && (!localOwner || !identity.userId || localOwner === identity.userId)) {
+      await writeAccountStatus(config, identity, localStatus);
+      persistCoreOnboardingStatus(storage, localStatus, identity.userId);
+      return false;
+    }
+
+    if (!initialEligible) {
+      // Existing users are intentionally excluded from rollout. Backfill that
+      // exclusion to the identity so a new device does not incorrectly treat
+      // the same existing user as a newcomer later.
+      const stored = await writeAccountStatus(config, identity, 'skipped');
+      persistCoreOnboardingStatus(storage, stored ?? 'skipped', identity.userId);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.warn('[Knowledge-Ball] core onboarding account sync deferred:', error);
+    return initialEligible && !hasFinalStatus(storage);
+  }
+}
+
+async function persistFinalStatusToAccount(status: CoreOnboardingStatus): Promise<void> {
+  const storage = safeLocalStorage();
+  const config = supabaseConfig();
+  const identity = currentSessionIdentity(storage);
+  if (!storage || !config || !identity) return;
+  try {
+    const stored = await writeAccountStatus(config, identity, status);
+    persistCoreOnboardingStatus(storage, stored ?? status, identity.userId);
+  } catch (error) {
+    // The local final state remains authoritative for this installation and is
+    // retried on the next account reconciliation after connectivity returns.
+    console.warn('[Knowledge-Ball] core onboarding account write deferred:', error);
   }
 }
 
@@ -236,12 +419,20 @@ export function installCoreOnboarding(
   const cleanup = (status?: CoreOnboardingStatus) => {
     if (disposed) return;
     disposed = true;
-    if (status) persistCoreOnboardingStatus(storage, status);
+    if (status) {
+      const identity = currentSessionIdentity(storage);
+      persistCoreOnboardingStatus(storage, status, identity?.userId);
+      void persistFinalStatusToAccount(status);
+    }
     window.removeEventListener('resize', render);
     window.removeEventListener('storage', onStorage);
     root.remove();
+    if (activeOnboardingClose === closeWithoutStatus) activeOnboardingClose = null;
     document.documentElement.dataset.coreOnboarding = status ?? 'closed';
   };
+
+  const closeWithoutStatus = () => cleanup();
+  activeOnboardingClose = closeWithoutStatus;
 
   const onStorage = (event: StorageEvent) => {
     if (event.key !== CORE_ONBOARDING_STORAGE_KEY) return;
@@ -261,24 +452,24 @@ export function installCoreOnboarding(
   window.addEventListener('storage', onStorage);
   render();
   queueMicrotask(() => nextButton.focus({ preventScroll: true }));
-  return () => cleanup();
+  return closeWithoutStatus;
 }
 
 const AUTO_START_ELIGIBLE = shouldOfferCoreOnboarding(safeLocalStorage());
 
-function autoInstallCoreOnboarding(): void {
-  if (!AUTO_START_ELIGIBLE) return;
+function waitForSceneAndInstall(eligible: boolean): void {
+  if (!eligible) return;
   const storage = safeLocalStorage();
   const host = document.getElementById('canvasHost');
   if (!host) return;
   const labelsLayer = document.getElementById('labelsLayer');
   let attempts = 0;
   const waitForScene = () => {
-    if (!document.documentElement.isConnected || !host.isConnected) return;
+    if (!document.documentElement.isConnected || !host.isConnected || hasFinalStatus(storage)) return;
     attempts += 1;
     const sceneReady = Boolean(host.querySelector('canvas')) && Boolean(labelsLayer?.querySelector('.node-label'));
     if (sceneReady || attempts >= 240) {
-      installCoreOnboarding(host, storage, AUTO_START_ELIGIBLE);
+      installCoreOnboarding(host, storage, eligible);
       return;
     }
     window.requestAnimationFrame(waitForScene);
@@ -286,10 +477,38 @@ function autoInstallCoreOnboarding(): void {
   window.requestAnimationFrame(waitForScene);
 }
 
+async function autoInstallCoreOnboarding(): Promise<void> {
+  const eligible = await reconcileCoreOnboardingAccount(AUTO_START_ELIGIBLE);
+  waitForSceneAndInstall(eligible);
+}
+
+async function watchForIdentityChange(previousToken: string | null): Promise<void> {
+  const storage = safeLocalStorage();
+  for (let attempt = 0; attempt < ACCOUNT_SYNC_WAIT_ATTEMPTS * 3; attempt += 1) {
+    const identity = currentSessionIdentity(storage);
+    if (identity?.accessToken && identity.accessToken !== previousToken) {
+      const eligible = await reconcileCoreOnboardingAccount(AUTO_START_ELIGIBLE);
+      if (eligible && !document.querySelector('.kb-core-onboarding')) waitForSceneAndInstall(true);
+      return;
+    }
+    await new Promise(resolve => window.setTimeout(resolve, ACCOUNT_SYNC_WAIT_MS));
+  }
+}
+
+function installAccountIdentityWatcher(): void {
+  document.addEventListener('submit', event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || form.id !== 'kbAuthForm') return;
+    const previousToken = currentSessionIdentity(safeLocalStorage())?.accessToken ?? null;
+    void watchForIdentityChange(previousToken);
+  }, true);
+}
+
 if (typeof window !== 'undefined') {
+  installAccountIdentityWatcher();
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', autoInstallCoreOnboarding, { once: true });
+    document.addEventListener('DOMContentLoaded', () => { void autoInstallCoreOnboarding(); }, { once: true });
   } else {
-    queueMicrotask(autoInstallCoreOnboarding);
+    queueMicrotask(() => { void autoInstallCoreOnboarding(); });
   }
 }
