@@ -1,0 +1,443 @@
+1
+00:00:01,200 --> 00:00:05,000
+We can now ask a machine a question
+
+2
+00:00:05,000 --> 00:00:07,850
+and receive an answer in seconds.
+
+3
+00:00:07,850 --> 00:00:11,175
+But the hardest questions did not disappear.
+
+4
+00:00:11,175 --> 00:00:14,025
+Where did this conclusion come from?
+
+5
+00:00:14,025 --> 00:00:15,925
+Which premises carry it?
+
+6
+00:00:15,925 --> 00:00:18,775
+What is the strongest live objection?
+
+7
+00:00:18,775 --> 00:00:22,575
+And if the answer changes tomorrow, who can
+
+8
+00:00:22,575 --> 00:00:24,000
+still see why?
+
+9
+00:00:27,200 --> 00:00:28,885
+Publishing made information abundant.
+
+10
+00:00:28,885 --> 00:00:30,570
+Search made it retrievable.
+
+11
+00:00:30,570 --> 00:00:32,676
+Generative AI made synthesis instantaneous.
+
+12
+00:00:32,676 --> 00:00:36,045
+Yet the structure behind an answer remains scattered
+
+13
+00:00:36,045 --> 00:00:38,994
+across pages, footnotes, comments, and overwritten revisions.
+
+14
+00:00:38,994 --> 00:00:42,364
+A reader still has to rebuild the dependency
+
+15
+00:00:42,364 --> 00:00:45,733
+graph by hand: the definition in use, the
+
+16
+00:00:45,733 --> 00:00:49,103
+independent evidence, the hidden assumption, the counterexample, and
+
+17
+00:00:49,103 --> 00:00:52,052
+the moment a prior conclusion stopped holding.
+
+18
+00:00:52,052 --> 00:00:55,000
+Knowledge Ball begins at that unresolved layer.
+
+19
+00:00:58,200 --> 00:01:00,744
+It is not another answer engine.
+
+20
+00:01:00,744 --> 00:01:04,136
+It is a spatial, versioned knowledge network designed
+
+21
+00:01:04,136 --> 00:01:07,528
+to make claims inspectable, challengeable, revisable, and learnable.
+
+22
+00:01:07,528 --> 00:01:10,496
+A durable Knowledge Node keeps its identity.
+
+23
+00:01:10,496 --> 00:01:13,888
+A Claim Version records one assertion at one
+
+24
+00:01:13,888 --> 00:01:15,160
+point in time.
+
+25
+00:01:15,160 --> 00:01:18,552
+A Reasoning Node binds explicit premises to one
+
+26
+00:01:18,552 --> 00:01:19,400
+concrete conclusion.
+
+27
+00:01:19,400 --> 00:01:22,792
+A material change creates a new version; it
+
+28
+00:01:22,792 --> 00:01:25,760
+does not silently overwrite the old one.
+
+29
+00:01:25,760 --> 00:01:27,032
+Names remain labels.
+
+30
+00:01:27,032 --> 00:01:30,000
+Identity, lineage, and relationships carry the history.
+
+31
+00:01:33,200 --> 00:01:35,067
+Those relationships become space.
+
+32
+00:01:35,067 --> 00:01:38,800
+The cyan inner shell holds definitions, facts, and
+
+33
+00:01:38,800 --> 00:01:39,733
+logic symbols.
+
+34
+00:01:39,733 --> 00:01:43,467
+The blue middle shell holds other admitted public
+
+35
+00:01:43,467 --> 00:01:43,933
+knowledge.
+
+36
+00:01:43,933 --> 00:01:47,667
+The violet outer shell holds pending, disputed, predictive,
+
+37
+00:01:47,667 --> 00:01:49,067
+and value-laden content.
+
+38
+00:01:49,067 --> 00:01:50,933
+Geometry is not decoration.
+
+39
+00:01:50,933 --> 00:01:52,800
+Shells encode semantic status.
+
+40
+00:01:52,800 --> 00:01:54,200
+Chains encode dependency.
+
+41
+00:01:54,200 --> 00:01:56,533
+Deterministic placement protects spatial memory.
+
+42
+00:01:56,533 --> 00:02:00,267
+The interface leads with overview, then relationships, then
+
+43
+00:02:00,267 --> 00:02:04,000
+full content when the user zooms or focuses.
+
+44
+00:02:07,200 --> 00:02:08,873
+Creation is not acceptance.
+
+45
+00:02:08,873 --> 00:02:12,218
+Under the committed protocol design, a candidate is
+
+46
+00:02:12,218 --> 00:02:15,564
+checked for reference integrity, legal relations, cycles, duplicate
+
+47
+00:02:15,564 --> 00:02:17,655
+risk, and real semantic change.
+
+48
+00:02:17,655 --> 00:02:21,000
+Support and opposition stake against that exact version.
+
+49
+00:02:21,000 --> 00:02:24,345
+The first side to reach the current eligibility-adjusted
+
+50
+00:02:24,345 --> 00:02:26,436
+threshold produces a bounded verdict.
+
+51
+00:02:26,436 --> 00:02:27,273
+Bounded matters.
+
+52
+00:02:27,273 --> 00:02:30,618
+Correct means currently accepted under a known evidence
+
+53
+00:02:30,618 --> 00:02:33,964
+set and rule set—not eternal truth, and not
+
+54
+00:02:33,964 --> 00:02:35,636
+truth manufactured by popularity.
+
+55
+00:02:35,636 --> 00:02:38,982
+New evidence can create a new version or
+
+56
+00:02:38,982 --> 00:02:39,818
+opposing branch.
+
+57
+00:02:39,818 --> 00:02:43,164
+The active view may change while admitted history
+
+58
+00:02:43,164 --> 00:02:44,000
+remains auditable.
+
+59
+00:02:47,200 --> 00:02:50,296
+Energy gives judgment a cost, but it is
+
+60
+00:02:50,296 --> 00:02:53,392
+not a token launch and it is not
+
+61
+00:02:53,392 --> 00:02:54,553
+external financial value.
+
+62
+00:02:54,553 --> 00:02:57,649
+In the current design, submitting a candidate, supporting
+
+63
+00:02:57,649 --> 00:03:00,745
+it, or opposing it each locks one unit
+
+64
+00:03:00,745 --> 00:03:02,294
+against a specific version.
+
+65
+00:03:02,294 --> 00:03:03,842
+Settlement follows double-entry accounting.
+
+66
+00:03:03,842 --> 00:03:06,938
+Every internal transfer balances, and global net Energy
+
+67
+00:03:06,938 --> 00:03:07,712
+remains zero.
+
+68
+00:03:07,712 --> 00:03:09,260
+The ledger is authoritative.
+
+69
+00:03:09,260 --> 00:03:12,356
+A client may request an action and display
+
+70
+00:03:12,356 --> 00:03:15,452
+the result; it may never declare a balance
+
+71
+00:03:15,452 --> 00:03:17,000
+or perform privileged settlement.
+
+72
+00:03:20,200 --> 00:03:22,600
+One network, two strictly separated questions.
+
+73
+00:03:22,600 --> 00:03:25,800
+Public knowledge asks: what version does the protocol
+
+74
+00:03:25,800 --> 00:03:27,400
+currently accept, and why?
+
+75
+00:03:27,400 --> 00:03:30,600
+Private mastery asks: what have I seen, understood,
+
+76
+00:03:30,600 --> 00:03:32,200
+saved, illuminated, or hidden?
+
+77
+00:03:32,200 --> 00:03:35,400
+Personal state does not enter public voting, public
+
+78
+00:03:35,400 --> 00:03:37,000
+events, or public accuracy.
+
+79
+00:03:37,000 --> 00:03:40,200
+Hiding a conclusion in personal mode can hide
+
+80
+00:03:40,200 --> 00:03:43,000
+its reasoning without rewriting the shared graph.
+
+81
+00:03:43,000 --> 00:03:45,000
+Visitors may inspect public knowledge.
+
+82
+00:03:45,000 --> 00:03:48,200
+Public changes still pass through identity, permission, and
+
+83
+00:03:48,200 --> 00:03:49,000
+protocol boundaries.
+
+84
+00:03:52,200 --> 00:03:55,218
+The working prototype is built with TypeScript, Vite,
+
+85
+00:03:55,218 --> 00:03:55,972
+and Three.
+
+86
+00:03:55,972 --> 00:03:58,990
+js, with the web implementation shared into Android
+
+87
+00:03:58,990 --> 00:04:00,122
+and Windows packages.
+
+88
+00:04:00,122 --> 00:04:03,139
+The backend direction uses Supabase and Postgres for
+
+89
+00:04:03,139 --> 00:04:06,157
+identity, events, the Energy ledger, and row-level security.
+
+90
+00:04:06,157 --> 00:04:08,797
+The server—not the visualization—is the authority boundary.
+
+91
+00:04:08,797 --> 00:04:11,815
+The practical starting points are bounded domains: learning
+
+92
+00:04:11,815 --> 00:04:14,833
+maps, research synthesis, organizational decisions, and structured context
+
+93
+00:04:14,833 --> 00:04:15,587
+for AI.
+
+94
+00:04:15,587 --> 00:04:18,228
+Models may extract candidate claims and relationships.
+
+95
+00:04:18,228 --> 00:04:19,359
+People confirm intent.
+
+96
+00:04:19,359 --> 00:04:22,000
+The protocol, not the model, decides admission.
+
+97
+00:04:25,200 --> 00:04:28,216
+As of White Paper one point zero, Knowledge
+
+98
+00:04:28,216 --> 00:04:31,232
+Ball is a working prototype with a converging
+
+99
+00:04:31,232 --> 00:04:33,494
+protocol—not infrastructure proven at internet scale.
+
+100
+00:04:33,494 --> 00:04:35,002
+The theory is coherent.
+
+101
+00:04:35,002 --> 00:04:36,510
+Engineering viability is moderate.
+
+102
+00:04:36,510 --> 00:04:38,018
+Commercial value remains unproven.
+
+103
+00:04:38,018 --> 00:04:41,034
+Large-scale operation still needs evidence: stronger identity, domain
+
+104
+00:04:41,034 --> 00:04:44,051
+governance, source quality, deterministic layout, recovery, and sustained
+
+105
+00:04:44,051 --> 00:04:44,805
+mobile performance.
+
+106
+00:04:44,805 --> 00:04:47,444
+That honesty is part of the product.
+
+107
+00:04:47,444 --> 00:04:48,575
+Knowledge is energy.
+
+108
+00:04:48,575 --> 00:04:50,460
+Every conclusion can be questioned.
+
+109
+00:04:50,460 --> 00:04:52,345
+Every revision leaves a reason.
+
+110
+00:04:52,345 --> 00:04:55,361
+Every person can see the real distance between
+
+111
+00:04:55,361 --> 00:04:58,000
+themselves and what they want to know.

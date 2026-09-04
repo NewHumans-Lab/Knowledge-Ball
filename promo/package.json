@@ -1,0 +1,47 @@
+{
+  "name": "promo",
+  "version": "1.0.0",
+  "description": "Five-minute Knowledge Ball promotional film for YouTube and Instagram",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@remotion/captions": "4.0.520",
+    "@remotion/cli": "4.0.520",
+    "@remotion/fonts": "4.0.520",
+    "@remotion/google-fonts": "4.0.520",
+    "@remotion/media": "4.0.520",
+    "@remotion/three": "4.0.520",
+    "@remotion/transitions": "4.0.520",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.520"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.520",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio --no-open",
+    "build": "remotion bundle",
+    "upgrade": "remotion upgrade",
+    "lint": "eslint src && tsc --noEmit",
+    "subtitles": "node --experimental-strip-types scripts/generate-subtitles.mjs",
+    "ambient": "bash scripts/generate-ambient.sh",
+    "audio:browser": "node --experimental-strip-types scripts/generate-audio.mjs",
+    "assets:placeholder": "npm run subtitles && npm run ambient",
+    "validate": "node --experimental-strip-types scripts/validate-story.mjs",
+    "render:youtube": "remotion render KnowledgeBall-YouTube-1080p out/knowledge-ball-youtube-1080p.mp4 --codec=h264 --crf=16 --audio-bitrate=320k --pixel-format=yuv420p --concurrency=2",
+    "render:instagram": "remotion render KnowledgeBall-Instagram-Vertical out/knowledge-ball-instagram-vertical.mp4 --codec=h264 --crf=16 --audio-bitrate=320k --pixel-format=yuv420p --concurrency=2",
+    "render:masters": "npm run render:youtube && npm run render:instagram",
+    "verify:renders": "node scripts/validate-renders.mjs"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}
