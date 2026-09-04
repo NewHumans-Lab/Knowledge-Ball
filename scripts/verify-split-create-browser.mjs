@@ -198,10 +198,14 @@ try {
     await overlay.locator('[data-create-cancel]').click();
     await page.locator('#knowledgeCreateOverlay.show').waitFor({ state: 'hidden' });
 
-    // A reasoning node itself has no merge action. Open the canonical near-node
-    // detail, then enter optimization from its real edit menu. The action form
-    // has exactly two semantic inputs: name and inference process.
-    await page.evaluate(reasoningId => window.__debug.nodeDetail.open(reasoningId), reasoningResult.id);
+    // Pending nodes intentionally expose voting rather than edit controls. Use a
+    // verified reasoning node to validate the real canonical optimization path.
+    const verifiedReasoningId = await page.evaluate(() => {
+      const nodes = Object.values(window.__debug.projection.state.nodesById);
+      return nodes.find(node => node.type === 'reasoning' && node.status === 'verified' && (!node.lineage || node.lineage.role === 'current'))?.id ?? null;
+    });
+    assert.ok(verifiedReasoningId, 'fixture must contain a verified current reasoning node');
+    await page.evaluate(reasoningId => window.__debug.nodeDetail.open(reasoningId), verifiedReasoningId);
     await page.locator('#nodeDetailOverlay.open').waitFor({ state: 'visible' });
     await page.locator('.node-detail-edit').click();
     assert.equal(await page.locator('[data-node-detail-action="merge"]').count(), 0, 'reasoning node must not expose Merge');
