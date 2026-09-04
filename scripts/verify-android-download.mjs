@@ -15,6 +15,7 @@ const vite = await readFile('vite.config.ts', 'utf8');
 const androidRelease = await readFile('.github/workflows/android-release.yml', 'utf8');
 const windowsRelease = await readFile('.github/workflows/windows-release.yml', 'utf8');
 const deploy = await readFile('.github/workflows/deploy.yml', 'utf8');
+const pagesMaterializer = await readFile('scripts/materialize-pages-android-apk.mjs', 'utf8');
 
 function assertUnavailable(artifact, distribution) {
   assert.equal(artifact.available, false);
@@ -84,6 +85,11 @@ assert.match(vite, /publishedNativeArtifact\('android', 'apk', 'download'\)/, 'P
 assert.match(vite, /1_000_000 \+ Number\.parseInt\(run, 10\) \* 100 \+ Number\.parseInt\(attempt, 10\)/, 'Vite build identity must derive the same monotonic CI code');
 assert.match(gradle, /1_000_000 \+ ciRunNumber\.toInteger\(\) \* 100 \+ ciRunAttempt\.toInteger\(\)/, 'Gradle versionCode must derive the same monotonic CI code');
 assert.match(releaseUi, /manifest\.platforms\.android/, 'Android download state must come from the release manifest');
+assert.match(releaseUi, /ANDROID_DOWNLOAD_PATH = 'downloads\/Knowledge-Ball-Android-latest\.apk'/, 'Web Android download must use the stable same-origin Pages APK alias');
+assert.match(releaseUi, /configureAnchor\('androidDownload',[\s\S]*androidDownloadUrl\(\)\)/, 'Android download action must resolve to the Pages alias instead of exposing the GitHub Release URL');
+assert.match(pagesMaterializer, /android\.urls\?\.download/, 'Pages APK alias must still originate from the authoritative GitHub Release asset');
+assert.match(pagesMaterializer, /createHash\('sha256'\)/, 'Pages APK alias must verify the authoritative SHA-256 before publication');
+assert.match(pagesMaterializer, /Knowledge-Ball-Android-latest\.apk/, 'Pages must publish one stable same-origin APK alias');
 assert.match(mobileShell, /AndroidUpdate\.downloadAndInstall/, 'native Android update must use the verified installer plugin');
 assert.doesNotMatch(mobileShell, /platform === 'android'[\s\S]{0,500}Browser\.open/, 'Android update must not fall back to opening the APK in a browser');
 assert.match(nativeUpdater, /MessageDigest\.getInstance\("SHA-256"\)/, 'native updater must verify the published checksum');
@@ -98,6 +104,7 @@ assert.match(androidRelease, /update-release-manifest\.mjs android/, 'Android re
 assert.match(windowsRelease, /update-release-manifest\.mjs windows/, 'Windows release must publish its authoritative manifest state');
 assert.match(androidRelease, /native-release-publication/, 'Android publication must share the cross-platform serialization lock');
 assert.match(windowsRelease, /native-release-publication/, 'Windows publication must share the cross-platform serialization lock');
+assert.match(deploy, /materialize-pages-android-apk\.mjs/, 'Pages deployment must materialize the verified same-origin APK alias before upload');
 assert.match(deploy, /paths:\s*\n\s*- 'public\/downloads\/latest\.json'/, 'Pages keeps manifest-push deployment as an explicit fallback');
 assert.match(deploy, /workflow_run:/, 'Pages must subscribe to completed native release workflows because GITHUB_TOKEN manifest pushes do not recursively trigger Actions');
 assert.match(deploy, /workflows: \['Android Signed Release', 'Windows Release'\]/, 'Pages must follow every native workflow that mutates the shared release manifest');
