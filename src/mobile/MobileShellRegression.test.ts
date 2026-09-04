@@ -1,5 +1,5 @@
 import { CURRENT_APP_VERSION, UPDATE_MANIFEST_URL, applyPlatformVisibility, chooseBackAction, isNewerVersion, overlayCloseSelector, setupMobileShell } from './MobileShell';
-import { shouldOfferUpdate } from '../release/ReleaseManifest';
+import { compareBuildNumbers, shouldOfferUpdate } from '../release/ReleaseManifest';
 import packageJson from '../../package.json';
 
 function assertEqual(actual: unknown, expected: unknown): void {
@@ -22,10 +22,16 @@ assertEqual(CURRENT_APP_VERSION, packageJson.version);
 assertEqual(UPDATE_MANIFEST_URL.endsWith('/latest.json'), true);
 assertEqual(setupMobileShell(), setupMobileShell());
 
-assertEqual(shouldOfferUpdate('1.1.0', '1.0.0', 'remote', 'current'), true);
-assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', 'remote', 'current'), true);
-assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', 'same', 'same'), false);
-assertEqual(shouldOfferUpdate('0.9.9', '1.0.0', 'remote-new-build', 'current-build'), false);
+assertEqual(compareBuildNumbers('1003501', '1003401'), 1);
+assertEqual(compareBuildNumbers('1003401', '1003501'), -1);
+assertEqual(compareBuildNumbers('1003501', '1003501'), 0);
+assertEqual(compareBuildNumbers('remote', '1003501'), null);
+assertEqual(shouldOfferUpdate('1.1.0', '1.0.0', '1', '9999999'), true);
+assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', '1003501', '1003401'), true);
+assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', '1003401', '1003501'), false);
+assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', '1003501', '1003501'), false);
+assertEqual(shouldOfferUpdate('1.0.0', '1.0.0', 'remote', 'current'), false);
+assertEqual(shouldOfferUpdate('0.9.9', '1.0.0', '9999999', '1'), false);
 
 const classes = new Set<string>();
 const webDownload = { hidden: false };
