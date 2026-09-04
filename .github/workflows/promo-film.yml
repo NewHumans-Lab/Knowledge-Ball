@@ -1,0 +1,76 @@
+name: Promotional Film
+
+on:
+  pull_request:
+    paths:
+      - "promo/**"
+      - ".github/workflows/promo-film.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promo-film-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate source and claims
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: promo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: promo/package-lock.json
+      - run: npm ci
+      - run: npm run subtitles
+      - run: npm run validate
+      - run: npm run lint
+      - run: npm run build
+
+  render:
+    name: Render and inspect masters
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: promo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: promo/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python -m pip install --disable-pip-version-check edge-tts
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - run: npm run subtitles
+      - run: npm run ambient
+      - run: npm run audio:browser
+      - run: npx remotion browser ensure
+      - run: npm run render:masters
+      - run: bash scripts/extract-proof.sh
+      - run: npm run verify:renders
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: knowledge-ball-promotional-film
+          path: |
+            promo/out/knowledge-ball-youtube-1080p.mp4
+            promo/out/knowledge-ball-instagram-vertical.mp4
+            promo/public/subtitles/en.srt
+            promo/public/subtitles/zh.srt
+            promo/out/proof/*.jpg
+          if-no-files-found: warn
+          retention-days: 30
