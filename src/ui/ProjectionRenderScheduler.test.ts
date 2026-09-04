@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ProjectionRenderScheduler } from './ProjectionRenderScheduler';
 import {
+  CORE_ONBOARDING_OWNER_KEY,
   CORE_ONBOARDING_STEP_IDS,
   CORE_ONBOARDING_STORAGE_KEY,
   persistCoreOnboardingStatus,
@@ -27,6 +28,7 @@ class MemoryStorage implements Storage {
 
 assert.deepEqual([...CORE_ONBOARDING_STEP_IDS], ['zoom', 'rotate', 'longpress', 'tap', 'voice'], 'newcomer guide must contain only the five requested core controls in the requested order');
 assert.equal(CORE_ONBOARDING_STORAGE_KEY, 'knowledge-ball.core-onboarding.v1');
+assert.equal(CORE_ONBOARDING_OWNER_KEY, 'knowledge-ball.core-onboarding-owner.v1');
 const freshStorage = new MemoryStorage();
 assert.equal(shouldOfferCoreOnboarding(freshStorage), true, 'a genuinely fresh browser may receive onboarding');
 const localeOnlyStorage = new MemoryStorage();
@@ -36,20 +38,36 @@ const returningStorage = new MemoryStorage();
 returningStorage.setItem('knowledge-ball.supabase-guest-session.v1', '{}');
 assert.equal(shouldOfferCoreOnboarding(returningStorage), false, 'existing Knowledge Ball usage must suppress rollout onboarding for returning users');
 const skippedStorage = new MemoryStorage();
-assert.equal(persistCoreOnboardingStatus(skippedStorage, 'skipped'), true);
+assert.equal(persistCoreOnboardingStatus(skippedStorage, 'skipped', 'user-a'), true);
+assert.equal(skippedStorage.getItem(CORE_ONBOARDING_OWNER_KEY), 'user-a', 'local final state must remember which identity owns it');
 assert.equal(shouldOfferCoreOnboarding(skippedStorage), false, 'skip must permanently suppress automatic onboarding');
 const completedStorage = new MemoryStorage();
-assert.equal(persistCoreOnboardingStatus(completedStorage, 'completed'), true);
+assert.equal(persistCoreOnboardingStatus(completedStorage, 'completed', 'user-b'), true);
+assert.equal(completedStorage.getItem(CORE_ONBOARDING_OWNER_KEY), 'user-b', 'completion must remain account-scoped locally');
 assert.equal(shouldOfferCoreOnboarding(completedStorage), false, 'completion must permanently suppress automatic onboarding');
 assert.equal(shouldOfferCoreOnboarding(null), false, 'when durable browser storage is unavailable onboarding must fail closed rather than repeat');
 
 const onboardingRuntime = readFileSync('src/ui/onboarding/CoreOnboardingRuntime.ts', 'utf8');
 assert.match(onboardingRuntime, /AUTO_START_ELIGIBLE = shouldOfferCoreOnboarding\(safeLocalStorage\(\)\)/, 'newcomer eligibility must be captured before current startup can create session/sync storage');
-assert.match(onboardingRuntime, /installCoreOnboarding\(host, storage, AUTO_START_ELIGIBLE\)/, 'captured newcomer eligibility must survive later startup storage writes');
+assert.match(onboardingRuntime, /reconcileCoreOnboardingAccount\(AUTO_START_ELIGIBLE\)/, 'automatic onboarding must reconcile the account before it opens');
+assert.match(onboardingRuntime, /set_core_onboarding_status/, 'final onboarding state must be written through the dedicated authenticated account RPC');
+assert.match(onboardingRuntime, /ensure_anonymous_profile/, 'account sync must reuse and ensure the current immutable profile rather than create a second identity model');
+assert.match(onboardingRuntime, /localOwner !== identity\.userId/, 'one browser must not upload one account onboarding state into another account after login switching');
+assert.match(onboardingRuntime, /form\.id !== 'kbAuthForm'/, 'username/password identity changes must trigger a fresh account-state reconciliation');
 assert.match(onboardingRuntime, /#nodeDetailOverlay\.open \.voice-detail-mic/, 'voice step must target the real node-detail microphone control when it is visible');
 assert.match(onboardingRuntime, /min-height:44px/, 'onboarding controls must remain at least 44 CSS pixels high for mobile touch');
 assert.match(onboardingRuntime, /prefers-reduced-motion:reduce/, 'onboarding spotlight motion must respect reduced-motion preference');
 assert.doesNotMatch(onboardingRuntime, /from '@capacitor\/core'/, 'onboarding must remain one shared Web runtime instead of platform-specific forks');
+
+const onboardingMigration = readFileSync('supabase/migrations/202609040001_core_onboarding_account_status.sql', 'utf8');
+assert.match(onboardingMigration, /add column if not exists core_onboarding_status text/i, 'account profile must persist the final onboarding state');
+assert.match(onboardingMigration, /core_onboarding_status in \('completed', 'skipped'\)/i, 'database must reject non-final onboarding states');
+assert.match(onboardingMigration, /and core_onboarding_status is null/i, 'account onboarding state must be first-write-only and impossible to reset through the RPC');
+assert.match(onboardingMigration, /where user_id = actor/i, 'onboarding RPC must only mutate the current auth.uid profile');
+assert.match(onboardingMigration, /revoke all on function public\.set_core_onboarding_status\(text\) from public, anon/i, 'anonymous/public roles must not bypass authenticated RPC ownership');
+assert.match(onboardingMigration, /grant execute on function public\.set_core_onboarding_status\(text\) to authenticated/i, 'the current Supabase identity may persist its own final state');
+assert.match(onboardingMigration, /'core_onboarding_status', p\.core_onboarding_status/i, 'get_my_account must return the cross-device onboarding state');
+assert.match(onboardingMigration, /202609040001/, 'schema version must advance with account onboarding persistence');
 
 const queued: Array<() => void> = [];
 let renders = 0;
@@ -159,4 +177,4 @@ assert.match(voiceMigration, /on realtime\.messages/i, 'private Broadcast must b
 const supabaseConfig = readFileSync('supabase/config.toml', 'utf8');
 assert.match(supabaseConfig, /\[functions\.livekit-webhook\][\s\S]*verify_jwt\s*=\s*false/, 'external LiveKit webhook must bypass Supabase JWT verification and use LiveKit signature verification');
 
-console.log('Projection render scheduler + newcomer onboarding + end-to-end node voice-room regression tests passed');
+console.log('Projection render scheduler + account-scoped newcomer onboarding + end-to-end node voice-room regression tests passed');
