@@ -198,12 +198,15 @@ try {
     await overlay.locator('[data-create-cancel]').click();
     await page.locator('#knowledgeCreateOverlay.show').waitFor({ state: 'hidden' });
 
-    // A reasoning node itself has no merge action. Its optimization form has exactly
-    // two semantic inputs: name and inference process. Layer/endpoints are inherited.
-    await page.evaluate(reasoningId => window.__debug.panel.openNodePanel(reasoningId), reasoningResult.id);
+    // A reasoning node itself has no merge action. Open the canonical near-node
+    // detail, then enter optimization from its real edit menu. The action form
+    // has exactly two semantic inputs: name and inference process.
+    await page.evaluate(reasoningId => window.__debug.nodeDetail.open(reasoningId), reasoningResult.id);
+    await page.locator('#nodeDetailOverlay.open').waitFor({ state: 'visible' });
+    await page.locator('.node-detail-edit').click();
+    assert.equal(await page.locator('[data-node-detail-action="merge"]').count(), 0, 'reasoning node must not expose Merge');
+    await page.locator('[data-node-detail-action="edit"]').click();
     await page.locator('#panel.open').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#panelActions #btnMerge').count(), 0, 'reasoning node must not expose Merge');
-    await page.locator('#panelActions #btnEditNode').click();
     await page.locator('#lineageCandidateTitle').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#lineageCandidateTitle').count(), 1, 'reasoning optimization must expose name');
     assert.equal(await page.locator('#lineageCandidateDescription').count(), 1, 'reasoning optimization must expose inference process');
@@ -213,7 +216,7 @@ try {
     assert.match((await page.locator('#panelBody').textContent()) ?? '', /推理节点优化只允许修改名称和推理过程/, 'reasoning optimization must explain the frozen endpoint structure');
 
     assert.deepEqual(errors, [], `split-create browser path must not emit page errors: ${errors.join(' | ')}`);
-    console.log('Split standalone/reasoning uniqueness and reasoning-optimization real mobile acceptance passed');
+    console.log('Split standalone/reasoning uniqueness and canonical-detail reasoning-optimization real mobile acceptance passed');
   } finally {
     await browser.close();
   }
