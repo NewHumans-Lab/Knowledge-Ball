@@ -27,6 +27,8 @@ jobs:
         run: npx esbuild src/ui/scene/StableShellLabelBudgetReversibility.test.ts --bundle --platform=node --format=esm --outfile=.test-dist/label-budget-reversibility.mjs && node .test-dist/label-budget-reversibility.mjs
       - run: npm run test:i18n
       - run: npm run test:download
+      - name: Verify account onboarding migration semantics
+        run: node scripts/verify-core-onboarding-migration.mjs
       - name: Validate Supabase release configuration without database writes
         if: github.event_name == 'pull_request'
         run: node scripts/verify-supabase-schema.mjs
