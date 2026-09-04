@@ -3,7 +3,7 @@ name: Deploy to GitHub Pages
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ['Android Signed Release']
+    workflows: ['Android Signed Release', 'Windows Release']
     types: [completed]
   push:
     branches: [main]
@@ -22,10 +22,18 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Pin authoritative main revision
+        id: source
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -55,6 +63,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.source_sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -67,4 +77,4 @@ jobs:
           npm install --no-save playwright
           npx playwright install --with-deps chromium
       - name: Zero-write deployed Pages browser gate
-        run: node scripts/verify-production-browser-zero-write.mjs "${{ steps.deployment.outputs.page_url }}" "${GITHUB_SHA}" "${{ vars.VITE_SUPABASE_URL }}"
+        run: node scripts/verify-production-browser-zero-write.mjs "${{ steps.deployment.outputs.page_url }}" "${{ needs.build.outputs.source_sha }}" "${{ vars.VITE_SUPABASE_URL }}"
