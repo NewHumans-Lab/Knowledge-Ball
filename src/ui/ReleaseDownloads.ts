@@ -2,13 +2,20 @@ import { Capacitor } from '@capacitor/core';
 import { getLocale, subscribeLocale } from '../i18n/Locale';
 import type { ReleaseArtifact, ReleaseManifest } from '../release/ReleaseManifest';
 
-const REMOTE_MANIFEST_URL = 'https://newhumans-lab.github.io/Knowledge-Ball/downloads/latest.json';
+const REMOTE_SITE_ROOT = 'https://newhumans-lab.github.io/Knowledge-Ball/';
+const REMOTE_MANIFEST_URL = new URL('downloads/latest.json', REMOTE_SITE_ROOT).toString();
+const ANDROID_DOWNLOAD_PATH = 'downloads/Knowledge-Ball-Android-latest.apk';
 
 let manifest: ReleaseManifest | null = null;
 
 function manifestUrl(): string {
   if (Capacitor.isNativePlatform()) return REMOTE_MANIFEST_URL;
   return new URL('downloads/latest.json', document.baseURI).toString();
+}
+
+function androidDownloadUrl(): string {
+  if (Capacitor.isNativePlatform()) return new URL(ANDROID_DOWNLOAD_PATH, REMOTE_SITE_ROOT).toString();
+  return new URL(ANDROID_DOWNLOAD_PATH, document.baseURI).toString();
 }
 
 async function loadManifest(): Promise<ReleaseManifest> {
@@ -52,12 +59,20 @@ function setMeta(id: string, text: string): void {
   if (element) element.textContent = text;
 }
 
-function configureAnchor(id: string, artifact: ReleaseArtifact, urlKey: string, label: string, unavailableLabel: string): void {
+function configureAnchor(
+  id: string,
+  artifact: ReleaseArtifact,
+  urlKey: string,
+  label: string,
+  unavailableLabel: string,
+  resolvedUrl?: string,
+): void {
   const anchor = document.getElementById(id) as HTMLAnchorElement | null;
   if (!anchor) return;
   anchor.removeAttribute('data-i18n');
-  const url = artifact.urls[urlKey];
-  const enabled = artifact.available && Boolean(url);
+  const publishedUrl = artifact.urls[urlKey];
+  const url = resolvedUrl ?? publishedUrl;
+  const enabled = artifact.available && Boolean(publishedUrl) && Boolean(url);
   anchor.textContent = enabled ? label : unavailableLabel;
   anchor.classList.toggle('primary', enabled);
   anchor.setAttribute('aria-disabled', enabled ? 'false' : 'true');
@@ -65,9 +80,12 @@ function configureAnchor(id: string, artifact: ReleaseArtifact, urlKey: string, 
   anchor.style.pointerEvents = enabled ? '' : 'none';
   if (enabled && url) {
     anchor.href = url;
-    if (urlKey === 'download') {
-      const filename = new URL(url).pathname.split('/').pop();
+    const target = new URL(url, document.baseURI);
+    if (urlKey === 'download' && target.origin === window.location.origin) {
+      const filename = target.pathname.split('/').pop();
       if (filename) anchor.download = filename;
+    } else {
+      anchor.removeAttribute('download');
     }
   } else {
     anchor.removeAttribute('href');
@@ -104,7 +122,7 @@ function render(): void {
   configureAnchor('iosDownload', iosWeb, 'install', text.iosWebAction, text.unavailable);
 
   setMeta('androidDownloadMeta', android.available && android.version ? text.androidMeta(android.version) : text.androidUnavailable);
-  configureAnchor('androidDownload', android, 'download', text.androidAction, text.unavailable);
+  configureAnchor('androidDownload', android, 'download', text.androidAction, text.unavailable, androidDownloadUrl());
 
   setMeta('windowsDownloadMeta', windows.available ? text.windowsAction : text.windowsUnavailable);
   configureWindows(windows, text.windowsAction, text.unavailable);

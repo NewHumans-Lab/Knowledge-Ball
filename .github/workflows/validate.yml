@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Materialize verified Android APK into Pages artifact
+        run: node scripts/materialize-pages-android-apk.mjs
       - run: node scripts/verify-seo.mjs
       - run: npm run test:pages
       - run: npm test
