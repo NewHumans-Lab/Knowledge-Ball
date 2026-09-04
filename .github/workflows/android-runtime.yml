@@ -1,18 +1,7 @@
 name: Android Runtime Gate
 
 on:
-  pull_request:
-    paths:
-      - 'android/**'
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite.config.ts'
-      - '.github/workflows/android-runtime.yml'
   push:
-    branches: [main]
     paths:
       - 'android/**'
       - 'src/**'
@@ -22,6 +11,7 @@ on:
       - 'package-lock.json'
       - 'vite.config.ts'
       - '.github/workflows/android-runtime.yml'
+      - '.github/workflows/windows-runtime.yml'
 
 permissions:
   contents: read
