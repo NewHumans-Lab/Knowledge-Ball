@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -12,6 +12,12 @@ import packageJson from '../../package.json';
 export const CURRENT_APP_VERSION = packageJson.version;
 export const CURRENT_APP_BUILD = typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : 'local';
 export const UPDATE_MANIFEST_URL = 'https://newhumans-lab.github.io/Knowledge-Ball/downloads/latest.json';
+
+type AndroidUpdatePlugin = {
+  downloadAndInstall(options: { url: string; checksum: string; fileName: string }): Promise<{ status: string }>;
+};
+
+const AndroidUpdate = registerPlugin<AndroidUpdatePlugin>('AndroidUpdate');
 
 export type BackAction = 'close-overlay' | 'close-panel' | 'exit';
 
@@ -71,10 +77,21 @@ async function checkForUpdate(): Promise<void> {
       return;
     }
 
-    const url = platform === 'ios' ? release.urls.install : release.urls.download;
-    if (!url) throw new Error(`${platform} release URL unavailable`);
+    if (platform === 'ios') {
+      const url = release.urls.install;
+      if (!url) throw new Error('ios release URL unavailable');
+      setActionStatus(platform, t('mobile.found', { version: release.version }));
+      await Browser.open({ url });
+      return;
+    }
+
+    const url = release.urls.download;
+    if (!url || !release.checksum || !/^sha256:[0-9a-f]{64}$/i.test(release.checksum)) {
+      throw new Error('android release metadata incomplete');
+    }
+    const fileName = new URL(url).pathname.split('/').pop() || `knowledge-ball-android-v${release.version}-b${release.build}.apk`;
     setActionStatus(platform, t('mobile.found', { version: release.version }));
-    await Browser.open({ url });
+    await AndroidUpdate.downloadAndInstall({ url, checksum: release.checksum, fileName });
   } catch (error) {
     console.error('Unable to check for updates', error);
     setActionStatus(platform, t('mobile.updateError'));
