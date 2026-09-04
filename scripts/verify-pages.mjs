@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -6,6 +7,7 @@ const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
 const expectedBase = '/Knowledge-Ball/';
 const productName = 'Knowledge Ball';
 const remoteRoot = process.argv[2];
+const androidPagesAlias = 'downloads/Knowledge-Ball-Android-latest.apk';
 
 function pageAssets(html) {
   return [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
@@ -48,7 +50,7 @@ function validateHtml(html) {
 
 function validatePwaManifest(manifest) {
   assert.equal(manifest.name, productName, 'PWA name must use the canonical product name');
-  assert.equal(manifest.short_name, productName, 'PWA short name must use the canonical product name');
+  assert.equal(manifest.short_name, productName, 'PWA short_name must use the canonical product name');
 }
 
 function validateUnavailableArtifact(artifact, distribution) {
@@ -88,6 +90,17 @@ function validateReleaseManifest(manifest) {
   validateNativeArtifact(manifest.platforms.windows, 'installer', 'installer');
 }
 
+function expectedSha256(checksum) {
+  const match = /^sha256:([0-9a-f]{64})$/i.exec(checksum ?? '');
+  assert.ok(match, 'published Android checksum must be a valid SHA-256');
+  return match[1].toLowerCase();
+}
+
+function assertBufferSha256(bytes, checksum, label) {
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  assert.equal(actual, expectedSha256(checksum), `${label} must match the authoritative Android SHA-256`);
+}
+
 async function verifyLocalBuild() {
   const html = await readFile('dist/index.html', 'utf8');
   const assets = validateHtml(html);
@@ -98,6 +111,11 @@ async function verifyLocalBuild() {
   validatePwaManifest(JSON.parse(await readFile('dist/manifest.webmanifest', 'utf8')));
   const manifest = JSON.parse(await readFile('dist/downloads/latest.json', 'utf8'));
   validateReleaseManifest(manifest);
+  if (manifest.platforms.android.available) {
+    const apk = await readFile(resolve('dist', androidPagesAlias));
+    assert.ok(apk.length > 0, 'Pages Android APK alias must not be empty');
+    assertBufferSha256(apk, manifest.platforms.android.checksum, 'Pages Android APK alias');
+  }
   await access(resolve('dist/whitepapers/Knowledge-Ball-White-Paper-ZH.pdf'));
   await access(resolve('dist/whitepapers/Knowledge-Ball-White-Paper-EN.pdf'));
   console.log(`GitHub Pages build regression tests passed (${assets.length} local assets checked)`);
@@ -125,6 +143,15 @@ async function verifyBinaryRelease(url, label) {
   await response.body?.cancel();
 }
 
+async function verifyBinaryChecksum(url, checksum, label) {
+  const response = await fetchWithRetry(url);
+  const contentType = response.headers.get('content-type') ?? '';
+  assert.match(contentType, /application\/(?:vnd\.android\.package-archive|octet-stream)/i, `${label} must resolve to an APK binary`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  assert.ok(bytes.length > 0, `${label} must not be empty`);
+  assertBufferSha256(bytes, checksum, label);
+}
+
 async function verifyLiveSite(root) {
   const normalizedRoot = root.endsWith('/') ? root : `${root}/`;
   const pageUrl = new URL(expectedBase.replace(/^\//, ''), new URL('/', normalizedRoot));
@@ -150,7 +177,8 @@ async function verifyLiveSite(root) {
   await iosWebResponse.body?.cancel();
 
   if (manifest.platforms.android.available) {
-    await verifyBinaryRelease(manifest.platforms.android.urls.download, 'Android APK');
+    await verifyBinaryRelease(manifest.platforms.android.urls.download, 'Android upstream Release APK');
+    await verifyBinaryChecksum(new URL(androidPagesAlias, pageUrl), manifest.platforms.android.checksum, 'Pages Android APK alias');
   } else {
     assert.deepEqual(manifest.platforms.android.urls, {});
   }
