@@ -98,8 +98,15 @@ assert.match(androidRelease, /update-release-manifest\.mjs android/, 'Android re
 assert.match(windowsRelease, /update-release-manifest\.mjs windows/, 'Windows release must publish its authoritative manifest state');
 assert.match(androidRelease, /native-release-publication/, 'Android publication must share the cross-platform serialization lock');
 assert.match(windowsRelease, /native-release-publication/, 'Windows publication must share the cross-platform serialization lock');
-assert.match(deploy, /paths:\s*\n\s*- 'public\/downloads\/latest\.json'/, 'Pages must deploy only after a release manifest publication push');
-assert.doesNotMatch(deploy, /workflow_run:/, 'Pages deployment must not race a still-running native release workflow');
+assert.match(deploy, /paths:\s*\n\s*- 'public\/downloads\/latest\.json'/, 'Pages keeps manifest-push deployment as an explicit fallback');
+assert.match(deploy, /workflow_run:/, 'Pages must subscribe to completed native release workflows because GITHUB_TOKEN manifest pushes do not recursively trigger Actions');
+assert.match(deploy, /workflows: \['Android Signed Release', 'Windows Release'\]/, 'Pages must follow every native workflow that mutates the shared release manifest');
+assert.match(deploy, /types: \[completed\]/, 'Pages must wait until native publication has fully completed');
+assert.match(deploy, /github\.event\.workflow_run\.conclusion == 'success'/, 'failed native releases must never deploy Pages');
+assert.match(deploy, /github\.event\.workflow_run\.head_branch == 'main'/, 'only authoritative main releases may trigger Pages');
+assert.match(deploy, /ref: main/, 'Pages build must resolve the authoritative main branch after release publication');
+assert.match(deploy, /source_sha: \$\{\{ steps\.source\.outputs\.sha \}\}/, 'Pages must pin the exact source revision used for its artifact');
+assert.match(deploy, /ref: \$\{\{ needs\.build\.outputs\.source_sha \}\}/, 'post-deploy verification must use the exact revision that produced the Pages artifact');
 
 const iosInstall = await readFile('public/ios-install.html', 'utf8');
 const webManifest = JSON.parse(await readFile('public/manifest.webmanifest', 'utf8'));
