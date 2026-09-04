@@ -11,6 +11,15 @@ alter table public.knowledge_ball_profiles
   add constraint knowledge_ball_profiles_core_onboarding_status_check
   check (core_onboarding_status is null or core_onboarding_status in ('completed', 'skipped'));
 
+-- Every profile that exists when this feature is rolled out is already a returning
+-- Knowledge Ball identity. Mark it once so that logging into that old account on a
+-- brand-new device can never make it look like a newcomer. Profiles created after
+-- this migration omit the column and therefore start at NULL, which is the only
+-- server-side state eligible for the walkthrough.
+update public.knowledge_ball_profiles
+set core_onboarding_status = 'skipped'
+where core_onboarding_status is null;
+
 create or replace function public.get_my_account() returns jsonb
 language sql
 security definer
@@ -110,7 +119,7 @@ grant execute on function public.get_my_account() to authenticated;
 grant execute on function public.set_core_onboarding_status(text) to authenticated;
 
 comment on column public.knowledge_ball_profiles.core_onboarding_status is
-  'Permanent final state of the five-step core newcomer walkthrough; NULL means not yet dismissed.';
+  'Permanent final state of the five-step core newcomer walkthrough; NULL means a post-rollout identity that has not dismissed it yet.';
 comment on function public.set_core_onboarding_status(text) is
   'Sets the current identity core onboarding state exactly once to completed or skipped.';
 
