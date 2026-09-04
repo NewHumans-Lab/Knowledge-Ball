@@ -34,6 +34,15 @@ export function compareSemanticVersions(left: string, right: string): -1 | 0 | 1
   return 0;
 }
 
+export function compareBuildNumbers(left: string, right: string): -1 | 0 | 1 | null {
+  if (!/^\d+$/.test(left) || !/^\d+$/.test(right)) return null;
+  const a = BigInt(left);
+  const b = BigInt(right);
+  if (a > b) return 1;
+  if (a < b) return -1;
+  return 0;
+}
+
 export function shouldOfferUpdate(
   remoteVersion: string,
   currentVersion: string,
@@ -43,7 +52,7 @@ export function shouldOfferUpdate(
   const versionOrder = compareSemanticVersions(remoteVersion, currentVersion);
   if (versionOrder > 0) return true;
   if (versionOrder < 0) return false;
-  return remoteBuild !== currentBuild;
+  return compareBuildNumbers(remoteBuild, currentBuild) === 1;
 }
 
 export function isCurrentArtifact(
