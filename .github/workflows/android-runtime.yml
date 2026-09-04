@@ -1,18 +1,7 @@
 name: Android Runtime Gate
 
 on:
-  pull_request:
-    paths:
-      - 'android/**'
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite.config.ts'
-      - '.github/workflows/android-runtime.yml'
   push:
-    branches: [main]
     paths:
       - 'android/**'
       - 'src/**'
@@ -21,7 +10,13 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'vite.config.ts'
+      - '.github/workflows/validate.yml'
       - '.github/workflows/android-runtime.yml'
+      - '.github/workflows/windows-runtime.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

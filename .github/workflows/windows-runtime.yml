@@ -1,27 +1,23 @@
 name: Windows Runtime Gate
 
 on:
-  pull_request:
-    paths:
-      - 'windows/**'
-      - 'src/**'
-      - 'public/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vite.config.ts'
-      - '.github/workflows/windows-runtime.yml'
   push:
-    branches: [main]
     paths:
       - 'windows/**'
+      - 'android/**'
       - 'src/**'
       - 'public/**'
       - 'index.html'
       - 'package.json'
       - 'package-lock.json'
       - 'vite.config.ts'
+      - '.github/workflows/validate.yml'
+      - '.github/workflows/android-runtime.yml'
       - '.github/workflows/windows-runtime.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

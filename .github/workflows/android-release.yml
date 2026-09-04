@@ -41,6 +41,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Compute authoritative Android release code
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_CODE=$((1000000 + GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          if [ "$RELEASE_CODE" -gt 2147483647 ]; then
+            echo "Android versionCode exceeds platform limit: $RELEASE_CODE" >&2
+            exit 1
+          fi
+          echo "ANDROID_VERSION_CODE=$RELEASE_CODE" >> "$GITHUB_ENV"
+          echo "APP_BUILD=$RELEASE_CODE" >> "$GITHUB_ENV"
+          echo "Authoritative Android build/versionCode: $RELEASE_CODE"
+
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -64,19 +77,6 @@ jobs:
             "platforms;android-${ANDROID_API_LEVEL}" \
             "build-tools;${ANDROID_BUILD_TOOLS_VERSION}"
           echo "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS_VERSION}" >> "$GITHUB_PATH"
-
-      - name: Enable and verify KVM acceleration
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -c /dev/kvm
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          sudo chmod 666 /dev/kvm
-          test -r /dev/kvm
-          test -w /dev/kvm
-          ls -l /dev/kvm
 
       - name: Require the authoritative signing identity
         shell: bash
@@ -115,7 +115,7 @@ jobs:
       - name: Prove packaged asset parity
         run: node android/scripts/verify-packaged-assets.mjs
 
-      - name: Inspect the authoritative published APK signer when one exists
+      - name: Inspect the authoritative published APK when one exists
         shell: bash
         run: |
           set -euo pipefail
@@ -134,6 +134,9 @@ jobs:
           apksigner verify --print-certs "$RUNNER_TEMP/published.apk" | tee "$RUNNER_TEMP/published-signing.txt"
           grep 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/published-signing.txt" | sed 's/.*: //' > "$RUNNER_TEMP/published-cert.sha256"
           test -s "$RUNNER_TEMP/published-cert.sha256"
+          PUBLISHED_VERSION_CODE=$(aapt dump badging "$RUNNER_TEMP/published.apk" | sed -n "s/.*versionCode='\([0-9][0-9]*\)'.*/\1/p" | head -n1)
+          test -n "$PUBLISHED_VERSION_CODE"
+          echo "PUBLISHED_VERSION_CODE=$PUBLISHED_VERSION_CODE" >> "$GITHUB_ENV"
           echo "HAS_PUBLISHED_ANDROID=true" >> "$GITHUB_ENV"
 
       - name: Build signed release APK
@@ -144,7 +147,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
-      - name: Verify signature and upgrade compatibility
+      - name: Verify signature and strictly increasing versionCode
         shell: bash
         run: |
           set -euo pipefail
@@ -153,11 +156,21 @@ jobs:
           apksigner verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/new-signing.txt"
           grep 'Signer #1 certificate SHA-256 digest:' "$RUNNER_TEMP/new-signing.txt" | sed 's/.*: //' > "$RUNNER_TEMP/new-cert.sha256"
           test -s "$RUNNER_TEMP/new-cert.sha256"
+          NEW_VERSION_CODE=$(aapt dump badging "$APK" | sed -n "s/.*versionCode='\([0-9][0-9]*\)'.*/\1/p" | head -n1)
+          test -n "$NEW_VERSION_CODE"
+          test "$NEW_VERSION_CODE" = "$ANDROID_VERSION_CODE" || {
+            echo "APK versionCode $NEW_VERSION_CODE does not match authoritative build $ANDROID_VERSION_CODE" >&2
+            exit 1
+          }
           if [ "${HAS_PUBLISHED_ANDROID:-false}" = "true" ]; then
             diff -u "$RUNNER_TEMP/published-cert.sha256" "$RUNNER_TEMP/new-cert.sha256" || {
               echo 'Refusing to publish: the new APK signer does not match the currently published APK, so in-place upgrades would fail.' >&2
               exit 1
             }
+            if [ "$NEW_VERSION_CODE" -le "${PUBLISHED_VERSION_CODE}" ]; then
+              echo "Refusing to publish non-upgrade APK: new versionCode $NEW_VERSION_CODE <= published $PUBLISHED_VERSION_CODE" >&2
+              exit 1
+            fi
           else
             echo 'Initial authoritative Android release: accepting the configured signer as the upgrade identity for future releases.'
           fi
@@ -225,13 +238,14 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(node -p "require('./package.json').version")
-          BUILD="$GITHUB_RUN_NUMBER"
+          BUILD="$ANDROID_VERSION_CODE"
           COMMIT="$GITHUB_SHA"
-          NAME="Knowledge-Ball-Android-v${VERSION}.apk"
+          NAME="Knowledge-Ball-Android-v${VERSION}-b${BUILD}.apk"
+          META="android-release-b${BUILD}.json"
           cp android/app/build/outputs/apk/release/app-release.apk "$NAME"
           SHA=$(sha256sum "$NAME" | awk '{print $1}')
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${NAME}"
-          cat > android-release.json <<JSON
+          cat > "$META" <<JSON
           {
             "platform": "android",
             "available": true,
@@ -244,20 +258,27 @@ jobs:
           }
           JSON
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
           echo "asset=$NAME" >> "$GITHUB_OUTPUT"
+          echo "metadata=$META" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
-      - name: Publish signed APK to GitHub Releases
+      - name: Publish immutable signed APK to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.metadata.outputs.version }}
           ASSET: ${{ steps.metadata.outputs.asset }}
+          META: ${{ steps.metadata.outputs.metadata }}
         shell: bash
         run: |
           set -euo pipefail
           gh release view "v${VERSION}" >/dev/null 2>&1 || gh release create "v${VERSION}" --title "Knowledge Ball v${VERSION}" --notes "Platform release artifacts for Knowledge Ball v${VERSION}."
-          gh release upload "v${VERSION}" "$ASSET" android-release.json --clobber
+          if gh release view "v${VERSION}" --json assets --jq '.assets[].name' | grep -Fxq "$ASSET"; then
+            echo "Refusing to overwrite immutable APK asset: $ASSET" >&2
+            exit 1
+          fi
+          gh release upload "v${VERSION}" "$ASSET" "$META"
 
       - name: Verify the published APK is byte-identical
         env:
@@ -276,10 +297,11 @@ jobs:
       - name: Publish Android availability to the Pages manifest
         env:
           VERSION: ${{ steps.metadata.outputs.version }}
+          META: ${{ steps.metadata.outputs.metadata }}
         shell: bash
         run: |
           set -euo pipefail
-          cp android-release.json "$RUNNER_TEMP/android-release.json"
+          cp "$META" "$RUNNER_TEMP/android-release.json"
           git reset --hard "$GITHUB_SHA"
           git fetch origin main
           git checkout -B main origin/main
@@ -290,7 +312,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'Android release manifest is already current.'
           else
-            git commit -m "Publish Android release v${VERSION}"
+            git commit -m "Publish Android release v${VERSION} build ${ANDROID_VERSION_CODE}"
             git push origin HEAD:main
           fi
 
@@ -301,7 +323,7 @@ jobs:
           name: android-signed-release-evidence
           path: |
             artifacts/android-release
-            android-release.json
+            android-release-b*.json
           if-no-files-found: warn
           compression-level: 0
           retention-days: 14

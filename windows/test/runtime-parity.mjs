@@ -165,8 +165,14 @@ try {
   await page.mouse.wheel(0, -120);
   assert.deepEqual(errors, [], `desktop runtime errors: ${errors.join('\n')}`);
 
-  await page.evaluate(() => { localStorage.setItem('knowledge-ball.locale.v1', 'zh-CN'); location.reload(); });
-  await deterministic(page);
+  // Return to the Chinese state through the same live locale controller already
+  // exercised above. Reloading here needlessly repeated cloud/bootstrap work and
+  // could leave a healthy packaged app waiting on a second remote initialization.
+  await page.locator('#btnSettings').click();
+  await page.locator('#settingsOverlay.show').waitFor();
+  await page.locator('#setLocale').selectOption('zh-CN');
+  await page.locator('#settingsClose').click();
+  await page.evaluate(() => window.__debug?.scene?.stop());
   await settleTransientUi(page);
   const desktopPng = await page.screenshot({ path: path.join(artifacts, 'desktop.png') });
 

@@ -7,8 +7,15 @@ def semanticVersion = rootPackageJson.version.toString()
 def versionParts = semanticVersion.tokenize('.').collect { part -> part.isInteger() ? part.toInteger() : 0 }
 while (versionParts.size() < 3) versionParts << 0
 def semanticVersionCode = Math.max(1, versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2])
+def explicitVersionCode = System.getenv('ANDROID_VERSION_CODE')
 def ciRunNumber = System.getenv('GITHUB_RUN_NUMBER')
-def appVersionCode = ciRunNumber?.isInteger() ? Math.max(semanticVersionCode, ciRunNumber.toInteger()) : semanticVersionCode
+def ciRunAttempt = System.getenv('GITHUB_RUN_ATTEMPT') ?: '1'
+def ciVersionCode = (ciRunNumber?.isInteger() && ciRunAttempt.isInteger())
+    ? 1_000_000 + ciRunNumber.toInteger() * 100 + ciRunAttempt.toInteger()
+    : null
+def appVersionCode = explicitVersionCode?.isInteger()
+    ? explicitVersionCode.toInteger()
+    : (ciVersionCode != null ? ciVersionCode : semanticVersionCode)
 
 def releaseKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
