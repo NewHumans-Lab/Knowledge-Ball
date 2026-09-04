@@ -74,9 +74,9 @@ assert(!detail.includes("| 'merge'") && !detail.includes("merge: '合并'"), 'no
 assert(!protocol.includes('MergeEdit') && !protocol.includes("kind: 'merge'"), 'active knowledge protocol must not retain merge variants');
 assert(!events.includes('KnowledgeMerged'), 'event model must not retain an unused KnowledgeMerged type');
 
-assert(panel.includes('Optimize · 优化'), 'current-node edit action must be immutable optimization');
-assert(panel.includes('Oppose · 提出对立观点'), 'current-node negate action must be pending opposition');
-assert(panel.includes('IMMUTABLE OPTIMIZATION') && panel.includes('IMMUTABLE OPPOSITION'), 'single controller must expose both immutable candidate forms');
+assert(detail.includes("edit: 'detail.actionOptimize'"), 'canonical detail edit action must enter immutable optimization');
+assert(detail.includes("negate: 'detail.actionOppose'"), 'canonical detail negate action must enter pending opposition');
+assert(panel.includes('IMMUTABLE OPTIMIZATION') && panel.includes('IMMUTABLE OPPOSITION'), 'action controller must expose both immutable candidate forms');
 assert(panel.includes("const reasoningOptimization = optimization && node.type === 'reasoning'"), 'optimization form must branch explicitly for reasoning nodes');
 assert(panel.includes("${reasoningOptimization ? '' : `<div class=\"field\"><label>知识层级</label><select id=\"lineageCandidateLayer\">"), 'reasoning optimization must not render the layer selector');
 assert(panel.includes("<label>${reasoningOptimization ? '推理过程' : '内容'}</label>"), 'reasoning optimization must label its editable body as inference process');

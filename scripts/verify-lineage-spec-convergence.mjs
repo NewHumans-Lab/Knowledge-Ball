@@ -18,12 +18,13 @@ assert.equal(existsSync('src/ui/panels/NodeDetailControllerLegacy.ts'), false, '
 
 assert.match(panel, /onOptimizeNode/);
 assert.match(panel, /onOpposeNode/);
-assert.match(panel, /Optimize · 优化/);
-assert.match(panel, /Oppose · 提出对立观点/);
+assert.match(panel, /IMMUTABLE OPTIMIZATION/);
+assert.match(panel, /IMMUTABLE OPPOSITION/);
 assert.match(panel, /名称[\s\S]*知识层级[\s\S]*内容/);
 assert.match(panel, /节点类型、前提关系和逻辑规则身份全部沿用当前球/);
 assert.doesNotMatch(panel, /encodeLineageIntent|decodeLineageIntent|KBL3:/);
 assert.doesNotMatch(panel, /openNegateForm|openEditForm/);
+assert.doesNotMatch(panel, /btnEditNode|btnNegate|mastery-display|bindPanelRuntimeEvents/, 'action controller must not retain the old node-detail surface');
 
 assert.doesNotMatch(detail, /NodeDetailControllerLegacy/);
 assert.match(detail, /edit: 'detail\.actionOptimize'/);
@@ -40,6 +41,7 @@ assert.match(app, /executeKnowledgeOptimization/);
 assert.match(app, /executeKnowledgeOpposition/);
 assert.match(app, /onOptimizeNode: optimizeKnowledgeNode/);
 assert.match(app, /onOpposeNode: opposeKnowledgeNode/);
+assert.match(app, /panel\.openNodeAction\(id, action\)/, 'canonical detail actions must delegate to the action-only panel controller');
 assert.doesNotMatch(app, /NodeDetailLineageUi|nodeDetailLineageUi/, 'app must have one NodeDetail lifecycle owner');
 assert.doesNotMatch(app, /LineageIntentBridge|encodeLineageIntent|decodeLineageIntent/);
 assert.doesNotMatch(command, /decodeLineageIntent|executeKnowledgeOptimization|executeKnowledgeOpposition/);
@@ -63,4 +65,4 @@ assert.match(sql, /lineage candidate title already exists/);
 assert.match(sql, /canonical_knowledge_title\(candidate_title\)[\s\S]*canonical_knowledge_title\(target_title\)/);
 assert.doesNotMatch(sql, /energy_accounts|energy_ledger_entries|CHALLENGE_STAKE|VOTE_STAKE/);
 
-console.log('Knowledge Lineage V3 structured convergence checks passed');
+console.log('Knowledge Lineage V3 structured convergence and single-detail ownership checks passed');

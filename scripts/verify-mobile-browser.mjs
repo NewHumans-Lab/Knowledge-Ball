@@ -247,7 +247,8 @@ try{
     await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
     await page.waitForFunction(title=>[...document.querySelectorAll('.node-label')].some(label=>label.textContent?.trim()===title&&label.style.display!=='none'),target.title);
 
-    // Re-open the same node at its preserved position and verify all edit variants are entered through one text control.
+    // Re-open the same node at its preserved position and verify optimization enters the action form,
+    // then returns to the single canonical node detail rather than reviving the removed legacy detail page.
     await page.touchscreen.tap(pointAfterDetail.x,pointAfterDetail.y);
     await page.locator('#nodeDetailOverlay.open').waitFor({state:'visible'});
     await page.locator('#nodeDetailOverlay .node-detail-edit').click();
@@ -262,12 +263,14 @@ try{
     await optimizationAction.tap();
     await page.locator('#panelTitle').filter({hasText:'编辑节点'}).waitFor({state:'visible'});
     assert.equal(await page.locator('#nodeDetailOverlay.open').count(),0,'choosing an edit operation must close the near-node viewer before opening the editor');
-    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'),'返回节点详情','legacy editor subview keeps its existing safe back semantics');
+    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'),'返回节点详情','editor action exit must explicitly return to canonical node detail');
     await page.locator('#panelClose').click();
-    await page.waitForFunction(title=>document.getElementById('panelTitle')?.textContent?.trim()===title,target.title);
-    assert.ok(await page.locator('#panel').evaluate(element=>element.classList.contains('open')),'editor back must return to the existing operation host');
-    await page.locator('#panelClose').click();
-    await page.waitForFunction(()=>!document.getElementById('panel')?.classList.contains('open'));
+    const returnedDetail=page.locator('#nodeDetailOverlay.open');
+    await returnedDetail.waitFor({state:'visible'});
+    assert.equal(await page.locator('#panel.open').count(),0,'editor back must close the action panel instead of reopening the legacy detail host');
+    assert.equal((await returnedDetail.locator('.node-detail-title').textContent())?.trim(),target.title,'editor back must reopen the current canonical detail for the same node');
+    await returnedDetail.locator('.node-detail-close').click();
+    await page.locator('#nodeDetailOverlay').waitFor({state:'hidden'});
 
     const searchTarget=targets[1];
     await page.evaluate(()=>window.__debug.scene.start());

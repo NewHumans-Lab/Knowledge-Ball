@@ -19,6 +19,20 @@ async function waitForServer() {
   throw new Error('Vite preview did not become reachable');
 }
 
+async function assertCanonicalDetail(page, candidate) {
+  await page.waitForFunction(
+    ({ id, title }) => {
+      const detail = document.querySelector('#nodeDetailOverlay.open');
+      return document.querySelector('#panel.open') === null
+        && detail?.getAttribute('data-node-id') === id
+        && detail?.querySelector('.node-detail-title')?.textContent === title
+        && document.querySelector('#btnEditNode') === null;
+    },
+    candidate,
+    { timeout: 5_000 },
+  );
+}
+
 try {
   await waitForServer();
   const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader'] });
@@ -29,7 +43,7 @@ try {
     page.on('pageerror', error => pageErrors.push(error.message));
 
     await page.goto(`${origin}?explicit-panel-exit-regression=1`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-    await page.waitForFunction(() => Boolean(window.__debug?.panel && window.__debug?.renderNodes?.length), null, { timeout: 10_000 });
+    await page.waitForFunction(() => Boolean(window.__debug?.panel && window.__debug?.nodeDetail && window.__debug?.renderNodes?.length), null, { timeout: 10_000 });
 
     const candidate = await page.evaluate(() => {
       const core = new Set(['n1', 'n2', 'n16']);
@@ -40,24 +54,15 @@ try {
     assert.ok(candidate, 'fixture must expose an ordinary node');
 
     const opened = await page.evaluate(id => window.__debug.panel.openNodeAction(id, 'edit'), candidate.id);
-    assert.equal(opened, true, 'explicit edit action must open the optimization subview');
+    assert.equal(opened, true, 'explicit edit action must open the optimization action surface');
     await page.locator('#panel.open').waitFor({ state: 'visible', timeout: 5_000 });
-    assert.match(await page.locator('#panelTitle').innerText(), /^编辑节点 · 优化：/, 'Chinese edit action must be in a panel subview');
-    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), '返回节点详情', 'Chinese subview close must explicitly mean return to node detail');
+    assert.match(await page.locator('#panelTitle').innerText(), /^编辑节点 · 优化：/, 'Chinese edit action must be in the action panel');
+    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), '返回节点详情', 'Chinese action close must explicitly return to node detail');
 
     await page.locator('#panelClose').click();
-    await page.waitForFunction(
-      ({ id, title }) => document.querySelector('#panel.open') !== null
-        && document.querySelector('#panelTitle')?.textContent === title
-        && document.querySelector('#panelClose')?.getAttribute('aria-label') === '返回知识球'
-        && document.querySelector('#btnEditNode') !== null
-        && window.__debug?.panel !== undefined
-        && window.__debug?.renderNodes?.some(node => node.id === id),
-      candidate,
-      { timeout: 5_000 },
-    );
-    await page.locator('#panelClose').click();
-    await page.waitForFunction(() => document.querySelector('#panel.open') === null, null, { timeout: 5_000 });
+    await assertCanonicalDetail(page, candidate);
+    await page.locator('#nodeDetailOverlay .node-detail-close').click();
+    await page.waitForFunction(() => document.querySelector('#nodeDetailOverlay.open') === null, null, { timeout: 5_000 });
 
     await page.locator('#btnSettings').click();
     await page.locator('#settingsOverlay.show').waitFor({ state: 'visible', timeout: 5_000 });
@@ -66,25 +71,19 @@ try {
     await page.locator('#settingsClose').click();
 
     const openedEnglish = await page.evaluate(id => window.__debug.panel.openNodeAction(id, 'edit'), candidate.id);
-    assert.equal(openedEnglish, true, 'English explicit edit action must open the same optimization subview');
+    assert.equal(openedEnglish, true, 'English explicit edit action must open the same optimization action surface');
     await page.locator('#panel.open').waitFor({ state: 'visible', timeout: 5_000 });
-    assert.match(await page.locator('#panelTitle').innerText(), /^Edit node · Optimize:/, 'panel subview system title must localize while preserving the node title');
+    assert.match(await page.locator('#panelTitle').innerText(), /^Edit node · Optimize:/, 'panel action title must localize while preserving the node title');
     assert.ok((await page.locator('#panelTitle').innerText()).endsWith(candidate.title), 'user-authored node title must remain unchanged inside the localized panel title');
-    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), 'Back to node details', 'English subview close must localize after its semantic label changes');
+    assert.equal(await page.locator('#panelClose').getAttribute('aria-label'), 'Back to node details', 'English action close must localize');
 
     await page.locator('#panelClose').click();
-    await page.waitForFunction(
-      ({ title }) => document.querySelector('#panel.open') !== null
-        && document.querySelector('#panelTitle')?.textContent === title
-        && document.querySelector('#panelClose')?.getAttribute('aria-label') === 'Back to Knowledge Ball',
-      candidate,
-      { timeout: 5_000 },
-    );
-    await page.locator('#panelClose').click();
-    await page.waitForFunction(() => document.querySelector('#panel.open') === null, null, { timeout: 5_000 });
+    await assertCanonicalDetail(page, candidate);
+    await page.locator('#nodeDetailOverlay .node-detail-close').click();
+    await page.waitForFunction(() => document.querySelector('#nodeDetailOverlay.open') === null, null, { timeout: 5_000 });
 
     assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join(' | ')}`);
-    console.log('Explicit panel exit real mobile-page regression passed in zh-CN and en');
+    console.log('Action exit returns to the single canonical node detail in zh-CN and en');
   } finally {
     await browser.close();
   }
