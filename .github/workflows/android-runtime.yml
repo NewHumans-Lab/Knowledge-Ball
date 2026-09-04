@@ -10,6 +10,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'vite.config.ts'
+      - '.github/workflows/validate.yml'
       - '.github/workflows/android-runtime.yml'
       - '.github/workflows/windows-runtime.yml'
 
