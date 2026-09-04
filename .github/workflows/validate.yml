@@ -37,6 +37,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify newcomer core onboarding in a real mobile browser
         run: node scripts/verify-core-onboarding-browser.mjs
+      - name: Verify account onboarding sync across two browser devices
+        run: node scripts/verify-core-onboarding-account-browser.mjs
       - name: Verify Settings downloads and zh-CN/en localization
         run: node scripts/verify-i18n-downloads-browser.mjs
       - name: Verify split standalone/reasoning creation on a real mobile page
