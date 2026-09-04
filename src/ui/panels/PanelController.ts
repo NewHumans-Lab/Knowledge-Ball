@@ -1,16 +1,10 @@
 import {
   KNOWLEDGE_LAYER_HELP,
-  KNOWLEDGE_LAYER_LABEL,
   isUserKnowledgeLayer,
   type KnowledgeLayer,
   type UserKnowledgeLayer,
 } from '../../domain/KnowledgeLayerPolicy';
 import {
-  MASTERY_LABEL,
-  STATUS_COLOR_HEX,
-  STATUS_LABEL,
-  TYPE_COLOR_HEX,
-  TYPE_LABEL,
   type KnowledgeMastery,
   type KnowledgeNodeStatus,
   type KnowledgeNodeType,
@@ -117,7 +111,7 @@ export interface PanelControllerElements {
 export type PanelNodeAction = 'edit' | 'negate' | 'resolve' | 'dispute';
 
 type LineageCandidateKind = 'optimization' | 'opposition';
-type PanelView = 'detail' | 'subview';
+type PanelView = 'idle' | 'action';
 
 function escapeHtml(input: string): string {
   return input
@@ -133,6 +127,12 @@ function shortText(input: string, max = 20): string {
   return `${input.slice(0, max)}…`;
 }
 
+/**
+ * Owns action forms, native compatibility create UI, settings/account overlays,
+ * and toast feedback. Node detail rendering belongs exclusively to
+ * NodeDetailController. Keeping one detail owner prevents stale legacy DOM from
+ * resurfacing when an action exits.
+ */
 export class PanelController {
   private readonly getNodes: () => PanelNodeSummary[];
   private readonly getNodeById: (id: string) => PanelNodeSummary | null;
@@ -142,7 +142,6 @@ export class PanelController {
   private readonly onOpposeNode: (id: string, payload: LineageCandidatePayload) => Promise<void> | void;
   private readonly onResolveNode: (id: string) => Promise<void> | void;
   private readonly onDisputeNode: (id: string) => Promise<void> | void;
-  private readonly onSetMastery: (id: string, mastery: KnowledgeMastery) => Promise<void> | void;
   private readonly onSelectRelatedNode?: (id: string) => void;
   private readonly onOverlayVisibilityChange?: (visible: boolean) => void;
   private readonly onNodePanelChange?: (id: string | null) => void;
@@ -194,7 +193,8 @@ export class PanelController {
   private selectedId: string | null = null;
   private prefillPremise: string | null = null;
   private toastTimer: number | null = null;
-  private panelView: PanelView = 'detail';
+  private panelView: PanelView = 'idle';
+  private routingDetail = false;
 
   constructor(options: PanelControllerCallbacks & PanelControllerElements) {
     this.getNodes = options.getNodes;
@@ -205,7 +205,6 @@ export class PanelController {
     this.onOpposeNode = options.onOpposeNode;
     this.onResolveNode = options.onResolveNode;
     this.onDisputeNode = options.onDisputeNode;
-    this.onSetMastery = options.onSetMastery;
     this.onSelectRelatedNode = options.onSelectRelatedNode;
     this.onOverlayVisibilityChange = options.onOverlayVisibilityChange;
     this.onNodePanelChange = options.onNodePanelChange;
@@ -254,7 +253,7 @@ export class PanelController {
 
     this.toast = options.toast;
 
-    this.configureExitControl(this.panelClose, '返回知识球');
+    this.configureExitControl(this.panelClose, '返回节点详情');
     this.configureExitControl(this.modalClose, '返回上一层');
     this.configureExitControl(this.accountClose, '返回知识球');
     this.configureExitControl(this.settingsClose, '返回知识球');
@@ -300,142 +299,32 @@ export class PanelController {
     }
   }
 
+  /**
+   * Compatibility router for callers that still ask PanelController to show a
+   * detail. It never renders detail markup; the single authoritative detail
+   * surface is NodeDetailController via onSelectRelatedNode/openNode.
+   */
   openNodePanel(id: string): void {
-    performance.mark?.('knowledge-panel-open-start');
-    const nodes = this.getNodes();
-    const byId = new Map(nodes.map(node => [node.id, node]));
-    const node = byId.get(id);
-    if (!node) return;
-
-    this.selectedId = id;
-    this.panelView = 'detail';
-    this.updatePanelExitLabel();
-    this.onOverlayVisibilityChange?.(true);
-    this.panel.classList.add('open');
-    this.onNodePanelChange?.(id);
-    this.panelTitle.textContent = node.title;
-
-    const typeColor = TYPE_COLOR_HEX[node.type] ?? '#ffffff';
-    const statusColor = STATUS_COLOR_HEX[node.status] ?? '#ffffff';
-    const effectiveLayerLabel = node.effectiveLayer ? KNOWLEDGE_LAYER_LABEL[node.effectiveLayer] : '层级未计算';
-    const declaredLayerLabel = node.declaredLayer ? KNOWLEDGE_LAYER_LABEL[node.declaredLayer] : '历史兼容';
-    const layerAdjusted = Boolean(node.declaredLayer && node.effectiveLayer && node.declaredLayer !== node.effectiveLayer);
-
-    const premisesHtml = node.premises.map(pid => {
-      const p = byId.get(pid);
-      if (!p) return '';
-      return `<div class="chip" data-jump="${escapeHtml(pid)}">${escapeHtml(shortText(p.title, 20))}</div>`;
-    }).join('') || '<div class="chip empty">无已记录前置知识</div>';
-
-    const depsHtml = nodes
-      .filter(n => n.premises.includes(id) || n.logicRuleId === id)
-      .map(n => `<div class="chip" data-jump="${escapeHtml(n.id)}">${escapeHtml(shortText(n.title, 20))}</div>`)
-      .join('') || '<div class="chip empty">暂无下游依赖节点</div>';
-
-    const twinNodes = node.twinGroup
-      ? nodes.filter(n => n.twinGroup === node.twinGroup && n.id !== node.id)
-      : [];
-
-    const twinHtml = twinNodes.length
-      ? `
-        <div class="field">
-          <label>孪生证明</label>
-          <div class="chip-list">
-            ${twinNodes.map(t => `<div class="chip" data-jump="${escapeHtml(t.id)}">${escapeHtml(shortText(t.title, 18))}</div>`).join('')}
-          </div>
-        </div>
-      `
-      : '';
-
-    const logicRule = node.logicRuleId ? byId.get(node.logicRuleId) ?? null : null;
-    const logicRuleHtml = node.type === 'reasoning'
-      ? `
-        <div class="field">
-          <label>逻辑符号 / 推理分类</label>
-          <div class="chip-list">
-            ${logicRule
-              ? `<div class="chip" data-jump="${escapeHtml(logicRule.id)}">${escapeHtml(logicRule.title)}</div>`
-              : '<div class="chip empty">未指定正式规则</div>'}
-          </div>
-        </div>
-      `
-      : '';
-
-    const layerAdjustmentHtml = layerAdjusted
-      ? `<div class="difference-card"><b>当前显示层级调整</b><br>提交时：${escapeHtml(declaredLayerLabel)}<br>当前：${escapeHtml(effectiveLayerLabel)}<br>${node.status === 'disputed' && node.effectiveLayer === 'outer' ? '原因：该知识当前处于争议状态，因此显示在第三层；原始声明分类仍被保留。' : '当前状态触发了显示层级规则；原始声明分类不会被静默改写。'}</div>`
-      : '';
-
-    this.panelBody.innerHTML = `
-      <div class="badge-row">
-        <div class="badge">${escapeHtml(effectiveLayerLabel)}</div>
-        <div class="badge" style="color:${statusColor};border-color:${statusColor}66;">${STATUS_LABEL[node.status]}</div>
-        <div class="badge" style="color:${typeColor};border-color:${typeColor}66;">${TYPE_LABEL[node.type]} · 内部细分类</div>
-      </div>
-
-      ${layerAdjustmentHtml}
-
-      <div class="field">
-        <label>掌握程度</label>
-        <div class="mastery-display" id="masteryDisplay">${MASTERY_LABEL[node.mastery]}</div>
-        <div class="mastery-private">PRIVATE STATE · 仅你可见，不影响公共知识有效性</div>
-        <div class="mastery-demo-controls">
-          <div class="chip ${node.mastery === 'none' ? 'active' : ''}" data-mastery="none">未接触</div>
-          <div class="chip ${node.mastery === 'touched' ? 'active' : ''}" data-mastery="touched">接触过</div>
-          <div class="chip ${node.mastery === 'mastered' ? 'active' : ''}" data-mastery="mastered">完全掌握</div>
-        </div>
-      </div>
-
-      <div class="field-reasoning-band" aria-label="当前推理链">
-        <div class="reasoning-stage">PREMISES<b>${node.premises.length || '—'}</b></div><span class="reasoning-arrow">→</span>
-        <div class="reasoning-stage">REASONING<b>${node.type === 'reasoning' ? '当前节点' : (logicRule ? '已连接' : '—')}</b></div><span class="reasoning-arrow">→</span>
-        <div class="reasoning-stage">CONCLUSION<b>${node.type === 'reasoning' ? depsHtml === '' ? '—' : '下游' : '当前节点'}</b></div>
-      </div>
-
-      <div class="field">
-        <label>${node.type === 'reasoning' ? '推理过程' : '知识描述'}</label>
-        <div class="val">${escapeHtml(node.reasoning || '（未填写）')}</div>
-      </div>
-
-      ${logicRuleHtml}
-
-      <div class="field">
-        <label>前置知识点</label>
-        <div class="chip-list">${premisesHtml}</div>
-      </div>
-
-      <div class="field">
-        <label>下游依赖节点</label>
-        <div class="chip-list">${depsHtml}</div>
-      </div>
-
-      ${twinHtml}
-    `;
-
-    this.panelActions.innerHTML = `
-      <div class="action-grid">
-        <button class="btn ghost" id="btnEditNode">Optimize · 优化</button>
-        ${this.onCreateNode ? '<button class="btn ghost" id="btnDeriveNode">Add · 新增</button>' : ''}
-      </div>
-      ${node.status !== 'falsified' && node.status !== 'suspended' ? `<button class="btn danger" id="btnNegate">Oppose · 提出对立观点</button>` : ''}
-      ${node.status === 'suspended' ? `<button class="btn confirm" id="btnResolve">✓ 标记重新验证通过</button>` : ''}
-      ${node.status === 'disputed' ? `<button class="btn confirm" id="btnDispute">✓ 标记争议中</button>` : ''}
-      <div class="note-small">公共知识由服务器确认后进入共享事件流；浏览器只渲染当前内存投影。</div>
-    `;
-
-    this.bindPanelRuntimeEvents(id);
-    performance.mark?.('knowledge-panel-open-end');
-    performance.measure?.('knowledge-panel-open', 'knowledge-panel-open-start', 'knowledge-panel-open-end');
-    if (performance.getEntriesByName?.('knowledge-node-tap-start').length) {
-      performance.measure?.('knowledge-tap-to-panel', 'knowledge-node-tap-start', 'knowledge-panel-open-end');
+    if (!this.getNodeById(id)) return;
+    if (this.panelView === 'action' && this.selectedId === id && this.panel.classList.contains('open')) return;
+    if (this.routingDetail || !this.onSelectRelatedNode) return;
+    this.routingDetail = true;
+    try {
+      this.onSelectRelatedNode(id);
+    } finally {
+      this.routingDetail = false;
     }
   }
 
   closeNodePanel(): void {
     const wasOpen = this.selectedId !== null || this.panel.classList.contains('open');
     this.panel.classList.remove('open');
+    this.panelTitle.textContent = '';
+    this.panelBody.innerHTML = '';
+    this.panelActions.innerHTML = '';
     this.onOverlayVisibilityChange?.(false);
     this.selectedId = null;
-    this.panelView = 'detail';
+    this.panelView = 'idle';
     this.updatePanelExitLabel();
     if (wasOpen) this.onNodePanelChange?.(null);
   }
@@ -444,14 +333,19 @@ export class PanelController {
     const node = this.getNodeById(id);
     if (!node || !this.supportsNodeAction(node, action)) return false;
 
-    this.openNodePanel(id);
+    if (action === 'resolve' || action === 'dispute') {
+      void this.executeImmediateNodeAction(id, action);
+      return true;
+    }
+
+    this.enterPanelAction(id);
     this.executeNodeAction(id, action);
     return true;
   }
 
   openCreateModal(prefillPremiseId: string | null = null): void {
-    // Legacy combined create remains a native compatibility surface only. Web
-    // production intentionally uses KnowledgeCreateController's split flows.
+    // Native compatibility surface only. Web production uses the split
+    // KnowledgeCreateController flows.
     if (!this.onCreateNode) return;
     this.prefillPremise = prefillPremiseId;
     this.modalTitle.textContent = prefillPremiseId ? '基于现有知识提交新节点' : '提交新知识节点';
@@ -494,21 +388,19 @@ export class PanelController {
   openSettingsOverlay(): void {
     if (!this.settingsOverlay) return;
     this.settingsOverlay.classList.add('show');
-    if (this.onOpenSettings) this.onOpenSettings();
+    this.onOpenSettings?.();
   }
 
   closeSettingsOverlay = (): void => {
     this.settingsOverlay?.classList.remove('show');
-    if (this.onCloseSettings) this.onCloseSettings();
+    this.onCloseSettings?.();
   };
 
   showToast(message: string): void {
     if (!this.toast) return;
     this.toast.textContent = message;
     this.toast.classList.add('show');
-    if (this.toastTimer !== null) {
-      window.clearTimeout(this.toastTimer);
-    }
+    if (this.toastTimer !== null) window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => {
       this.toast?.classList.remove('show');
       this.toastTimer = null;
@@ -535,12 +427,8 @@ export class PanelController {
       this.setLabelBrightness.value = String(pct);
       if (this.setLabelBrightnessVal) this.setLabelBrightnessVal.textContent = `${pct}%`;
     }
-    if (typeof values.labelColor === 'string' && this.setLabelColor) {
-      this.setLabelColor.value = values.labelColor;
-    }
-    if (typeof values.labelFont === 'string' && this.setLabelFont) {
-      this.setLabelFont.value = values.labelFont;
-    }
+    if (typeof values.labelColor === 'string' && this.setLabelColor) this.setLabelColor.value = values.labelColor;
+    if (typeof values.labelFont === 'string' && this.setLabelFont) this.setLabelFont.value = values.labelFont;
   }
 
   private configureExitControl(control: HTMLElement | undefined, label: string): void {
@@ -551,25 +439,26 @@ export class PanelController {
   }
 
   private updatePanelExitLabel(): void {
-    this.configureExitControl(this.panelClose, this.panelView === 'subview' ? '返回节点详情' : '返回知识球');
+    this.configureExitControl(this.panelClose, this.panelView === 'action' ? '返回节点详情' : '返回知识球');
   }
 
-  private enterPanelSubview(id: string): void {
+  private enterPanelAction(id: string): void {
     this.selectedId = id;
-    this.panelView = 'subview';
+    this.panelView = 'action';
     this.updatePanelExitLabel();
+    this.onOverlayVisibilityChange?.(true);
+    this.panel.classList.add('open');
+    this.onNodePanelChange?.(id);
   }
 
   private returnToNodeDetail(id: string | null = this.selectedId): void {
-    if (!id) {
-      this.closeNodePanel();
-      return;
-    }
-    this.openNodePanel(id);
+    const targetId = id;
+    this.closeNodePanel();
+    if (targetId) this.onSelectRelatedNode?.(targetId);
   }
 
   private handlePanelExit(): void {
-    if (this.panelView === 'subview') {
+    if (this.panelView === 'action') {
       this.returnToNodeDetail();
       return;
     }
@@ -585,18 +474,14 @@ export class PanelController {
       if (e.target === this.modalOverlay) this.closeCreateModal();
     });
 
-    if (this.accountClose) {
-      this.accountClose.addEventListener('click', this.closeAccountOverlay);
-    }
+    if (this.accountClose) this.accountClose.addEventListener('click', this.closeAccountOverlay);
     if (this.accountOverlay) {
       this.accountOverlay.addEventListener('click', e => {
         if (e.target === this.accountOverlay) this.closeAccountOverlay();
       });
     }
 
-    if (this.settingsClose) {
-      this.settingsClose.addEventListener('click', this.closeSettingsOverlay);
-    }
+    if (this.settingsClose) this.settingsClose.addEventListener('click', this.closeSettingsOverlay);
     if (this.settingsOverlay) {
       this.settingsOverlay.addEventListener('click', e => {
         if (e.target === this.settingsOverlay) this.closeSettingsOverlay();
@@ -669,68 +554,30 @@ export class PanelController {
     }
   }
 
-  private executeNodeAction(id: string, action: PanelNodeAction): void {
-    switch (action) {
-      case 'edit':
-        this.openLineageCandidateForm(id, 'optimization');
-        return;
-      case 'negate':
-        this.openLineageCandidateForm(id, 'opposition');
-        return;
-      case 'resolve':
-        void this.resolveNodeAction(id);
-        return;
-      case 'dispute':
-        void this.disputeNodeAction(id);
+  private executeNodeAction(id: string, action: Extract<PanelNodeAction, 'edit' | 'negate'>): void {
+    if (action === 'edit') this.openLineageCandidateForm(id, 'optimization');
+    else this.openLineageCandidateForm(id, 'opposition');
+  }
+
+  private async executeImmediateNodeAction(id: string, action: Extract<PanelNodeAction, 'resolve' | 'dispute'>): Promise<void> {
+    try {
+      if (action === 'resolve') {
+        await this.onResolveNode(id);
+        this.showToast('节点已重新验证通过');
+      } else {
+        await this.onDisputeNode(id);
+        this.showToast('节点已标记为争议中');
+      }
+      this.onSelectRelatedNode?.(id);
+    } catch (error) {
+      this.showOperationError(error);
+      this.onSelectRelatedNode?.(id);
     }
-  }
-
-  private async resolveNodeAction(id: string): Promise<void> {
-    await this.onResolveNode(id);
-    this.showToast('节点已重新验证通过');
-  }
-
-  private async disputeNodeAction(id: string): Promise<void> {
-    await this.onDisputeNode(id);
-    this.showToast('节点已标记为争议中');
-  }
-
-  private bindPanelRuntimeEvents(id: string): void {
-    const optimizeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnEditNode');
-    const deriveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDeriveNode');
-    const opposeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnNegate');
-    const resolveBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnResolve');
-    const disputeBtn = this.panelActions.querySelector<HTMLButtonElement>('#btnDispute');
-
-    optimizeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'edit'));
-    deriveBtn?.addEventListener('click', () => this.openCreateModal(id));
-    opposeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'negate'));
-    resolveBtn?.addEventListener('click', () => this.executeNodeAction(id, 'resolve'));
-    disputeBtn?.addEventListener('click', () => this.executeNodeAction(id, 'dispute'));
-
-    this.panelBody.querySelectorAll<HTMLElement>('[data-jump]').forEach(el => {
-      el.addEventListener('click', () => {
-        const jumpId = el.dataset.jump;
-        if (!jumpId) return;
-        this.onSelectRelatedNode?.(jumpId);
-      });
-    });
-
-    this.panelBody.querySelectorAll<HTMLElement>('[data-mastery]').forEach(el => {
-      el.addEventListener('click', async () => {
-        const mastery = el.dataset.mastery as KnowledgeMastery | undefined;
-        if (!mastery) return;
-        await this.onSetMastery(id, mastery);
-        const node = this.getNodeById(id);
-        if (node) this.openNodePanel(id);
-      });
-    });
   }
 
   private openLineageCandidateForm(id: string, kind: LineageCandidateKind): void {
     const node = this.getNodeById(id);
     if (!node) return;
-    this.enterPanelSubview(id);
     const optimization = kind === 'optimization';
     const reasoningOptimization = optimization && node.type === 'reasoning';
     const candidateLayer = node.declaredLayer ?? node.effectiveLayer ?? 'outer';
@@ -835,33 +682,27 @@ export class PanelController {
     if (this.setNodeRadius) {
       this.setNodeRadius.addEventListener('input', () => {
         const v = Number.parseFloat(this.setNodeRadius!.value);
-        if (Number.isFinite(v) && this.setNodeRadiusVal) {
-          this.setNodeRadiusVal.textContent = `${v.toFixed(1)}mm`;
-        }
+        if (Number.isFinite(v) && this.setNodeRadiusVal) this.setNodeRadiusVal.textContent = `${v.toFixed(1)}mm`;
       });
     }
 
     if (this.setLabelSize) {
       this.setLabelSize.addEventListener('input', () => {
         const v = Number.parseFloat(this.setLabelSize!.value);
-        if (Number.isFinite(v) && this.setLabelSizeVal) {
-          this.setLabelSizeVal.textContent = `${v}px`;
-        }
+        if (Number.isFinite(v) && this.setLabelSizeVal) this.setLabelSizeVal.textContent = `${v}px`;
       });
     }
 
     if (this.setLabelBrightness) {
       this.setLabelBrightness.addEventListener('input', () => {
         const v = Number.parseFloat(this.setLabelBrightness!.value);
-        if (Number.isFinite(v) && this.setLabelBrightnessVal) {
-          this.setLabelBrightnessVal.textContent = `${v}%`;
-        }
+        if (Number.isFinite(v) && this.setLabelBrightnessVal) this.setLabelBrightnessVal.textContent = `${v}%`;
       });
     }
 
     if (this.onOpenSettings && this.settingsOverlay) {
       this.settingsOverlay.addEventListener('transitionend', () => {
-        // placeholder for future sync
+        // reserved for future settings synchronization
       });
     }
   }
