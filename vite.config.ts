@@ -5,7 +5,18 @@ import { defineConfig, type HtmlTagDescriptor } from 'vite';
 import packageJson from './package.json';
 
 const buildCommit = process.env.GITHUB_SHA ?? execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-const buildNumber = process.env.GITHUB_RUN_NUMBER ?? buildCommit.slice(0, 12);
+
+function deriveCiBuildNumber(): string | null {
+  const run = process.env.GITHUB_RUN_NUMBER;
+  const attempt = process.env.GITHUB_RUN_ATTEMPT ?? '1';
+  if (!run || !/^\d+$/.test(run) || !/^\d+$/.test(attempt)) return null;
+  return String(1_000_000 + Number.parseInt(run, 10) * 100 + Number.parseInt(attempt, 10));
+}
+
+const buildNumber = process.env.APP_BUILD
+  ?? process.env.ANDROID_VERSION_CODE
+  ?? deriveCiBuildNumber()
+  ?? buildCommit.slice(0, 12);
 const appVersion = packageJson.version;
 const nativeBuild = process.env.CAPACITOR_BUILD === 'true';
 const productName = 'Knowledge Ball';
