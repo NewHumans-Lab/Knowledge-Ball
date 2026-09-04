@@ -134,7 +134,11 @@ const USER_ATTRIBUTE_SELECTOR = [
   '[data-related-node-id]', '#kbProfileName', '#kbProfileUsername', '#kbProfileBio',
   '.knowledge-picker-chip', '.knowledge-picker-option > span', '.search-item[data-node-id] > span',
 ].join(',');
+const RUNTIME_TRANSLATION_EXCLUDED_SELECTOR = 'style,script,noscript,template';
 
+function isRuntimeTranslationExcluded(element: Element | null): boolean {
+  return Boolean(element?.closest(RUNTIME_TRANSLATION_EXCLUDED_SELECTOR));
+}
 function isUserTextElement(element: Element | null): boolean {
   return Boolean(element?.closest(USER_TEXT_SELECTOR));
 }
@@ -234,6 +238,7 @@ function localizePanelTitle(node: Text, original: string): boolean {
 }
 
 function localizeTextNode(node: Text): void {
+  if (isRuntimeTranslationExcluded(node.parentElement)) return;
   const original = node.nodeValue ?? '';
   const core = original.trim();
   if (!core) return;
@@ -257,7 +262,7 @@ function localizeTextNode(node: Text): void {
 }
 
 function localizeAttribute(element: Element, name: 'placeholder' | 'aria-label' | 'title'): void {
-  if (isUserAttributeElement(element)) return;
+  if (isRuntimeTranslationExcluded(element) || isUserAttributeElement(element)) return;
   const raw = element.getAttribute(name);
   const value = raw?.trim();
   if (!raw || !value) return;
@@ -291,6 +296,7 @@ function localizeAttribute(element: Element, name: 'placeholder' | 'aria-label' 
 
 function applyRuntimeTranslations(root: ParentNode): void {
   if (typeof document === 'undefined') return;
+  if (root instanceof Element && isRuntimeTranslationExcluded(root)) return;
   const processElement = (element: Element) => {
     localizeAttribute(element, 'placeholder');
     localizeAttribute(element, 'aria-label');
