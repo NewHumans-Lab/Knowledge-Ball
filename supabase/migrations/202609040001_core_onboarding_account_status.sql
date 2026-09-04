@@ -87,7 +87,7 @@ begin
   if actor is null then
     raise exception 'authentication required' using errcode = '42501';
   end if;
-  if new_status not in ('completed', 'skipped') then
+  if new_status is null or new_status not in ('completed', 'skipped') then
     raise exception 'invalid onboarding status' using errcode = '22023';
   end if;
 
