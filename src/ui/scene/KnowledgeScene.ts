@@ -66,6 +66,7 @@ import {
   selectStableShellLabels,
   type StableShellLabelCandidate,
 } from './StableShellLabelBudget';
+import { nodeScreenGeometryFromNdc } from './NodeScreenGeometry';
 
 export interface KnowledgeSceneNode {
   id: string;
@@ -349,16 +350,26 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, host.clientWidth / Math.max(host.clientHeight, 1), .5, 8000);
+  const initialRect = host.getBoundingClientRect();
+  const initialWidth = Math.max(initialRect.width, 1);
+  const initialHeight = Math.max(initialRect.height, 1);
+  const camera = new THREE.PerspectiveCamera(50, initialWidth / initialHeight, .5, 8000);
   camera.position.set(0, 0, DEFAULT_CAM_Z);
   const renderer = new THREE.WebGLRenderer({ antialias: KNOWLEDGE_SCENE_THEME.renderer.antialias, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobilePerformance ? KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio : KNOWLEDGE_SCENE_THEME.renderer.desktopPixelRatio));
-  renderer.setSize(host.clientWidth, host.clientHeight);
+  renderer.setSize(initialWidth, initialHeight, false);
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = !mobilePerformance;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.style.touchAction = 'none';
   host.appendChild(renderer.domElement);
+  const canvasViewport = () => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    return {
+      width: Math.max(rect.width, 1),
+      height: Math.max(rect.height, 1),
+    };
+  };
 
   const worldGroup = new THREE.Group();
   const edgesGroup = new THREE.Group();
@@ -455,8 +466,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const worldPos = new THREE.Vector3();
   const projectedPos = new THREE.Vector3();
   const shellWorldScale = new THREE.Vector3();
-  const labelAnchorWorld = new THREE.Vector3();
-  const labelAnchorProjected = new THREE.Vector3();
+  const radiusSampleWorld = new THREE.Vector3();
+  const radiusSampleProjected = new THREE.Vector3();
   const cameraUp = new THREE.Vector3();
   let relationIndexNodes: readonly KnowledgeSceneNode[] | null = null;
   let relationIndex = createKnowledgeRelationIndex([]);
@@ -774,6 +785,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const labels = () => {
     scene.updateMatrixWorld(true);
     cameraUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+    const viewport = canvasViewport();
     const allNodes = getNodes();
     const largeMobileGraph = mobilePerformance && allNodes.length > MOBILE_ACTIVE_NODE_TARGET;
     const activeNodes = allNodes.filter(node => Boolean(nodeMap[node.id]));
@@ -789,10 +801,16 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       projectedPos.copy(worldPos).project(camera);
       record.shell.getWorldScale(shellWorldScale);
       const renderedSphereRadius = Math.max(Math.abs(shellWorldScale.x), Math.abs(shellWorldScale.y), Math.abs(shellWorldScale.z));
-      labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius);
-      labelAnchorProjected.copy(labelAnchorWorld).project(camera);
+      radiusSampleWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius);
+      radiusSampleProjected.copy(radiusSampleWorld).project(camera);
+      const screenGeometry = nodeScreenGeometryFromNdc(
+        { x: projectedPos.x, y: projectedPos.y },
+        { x: radiusSampleProjected.x, y: radiusSampleProjected.y },
+        viewport,
+      );
       const frontFacing = isCoreNodeId(n.id) || worldPos.dot(camera.position) > 0;
-      const onScreen = labelAnchorProjected.x >= -1 && labelAnchorProjected.x <= 1 && labelAnchorProjected.y >= -1 && labelAnchorProjected.y <= 1;
+      const onScreen = screenGeometry.topX >= 0 && screenGeometry.topX <= viewport.width
+        && screenGeometry.topY >= 0 && screenGeometry.topY <= viewport.height;
       const baseVisible = record.group.visible
         && frontFacing
         && onScreen
@@ -803,8 +821,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
         n,
         label,
         baseVisible,
-        x: (projectedPos.x * .5 + .5) * host.clientWidth,
-        y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,
+        x: screenGeometry.topX,
+        y: screenGeometry.topY,
         shellRadius: worldPos.length(),
       };
     }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -813,7 +831,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const candidates: StableShellLabelCandidate[] = entries
         .filter(entry => entry.baseVisible)
         .map(entry => ({ id: entry.n.id, x: entry.x, y: entry.y, shellRadius: entry.shellRadius }));
-      visibleLabelIds = selectStableShellLabels(candidates, visibleLabelIds, host.clientWidth, host.clientHeight);
+      visibleLabelIds = selectStableShellLabels(candidates, visibleLabelIds, viewport.width, viewport.height);
     } else {
       visibleLabelIds = new Set(entries.filter(entry => entry.baseVisible).map(entry => entry.n.id));
     }
@@ -1143,10 +1161,11 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const resize = () => {
     if (mobilePerformance && isTextEntryElement(document.activeElement)) return;
-    camera.aspect = host.clientWidth / Math.max(host.clientHeight, 1);
-    camera.updateProjectionMatrix();
-    renderer.setSize(host.clientWidth, host.clientHeight);
     document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+    const viewport = canvasViewport();
+    camera.aspect = viewport.width / viewport.height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(viewport.width, viewport.height, false);
     largeGraphDirty = true;
     graphDirty = true;
   };

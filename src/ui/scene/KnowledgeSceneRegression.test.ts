@@ -22,6 +22,7 @@ import {
   selectStableShellLabels,
   type StableShellLabelCandidate,
 } from './StableShellLabelBudget';
+import { nodeScreenGeometryFromNdc } from './NodeScreenGeometry';
 import {
   CORE_AMBIENT_LIGHT_INTENSITY,
   CORE_SUN_LIGHT_INTENSITY,
@@ -133,6 +134,30 @@ assert(hasFiniteCoordinates({x:0,y:-1,z:2}));
 assert(!hasFiniteCoordinates({x:Number.NaN,y:0,z:0}));
 assert(!hasFiniteCoordinates({x:0,y:Number.POSITIVE_INFINITY,z:0}));
 
+const portraitScreenGeometry = nodeScreenGeometryFromNdc(
+  { x: 0, y: 0 },
+  { x: 0, y: .2 },
+  { width: 390, height: 844 },
+);
+assert(Math.abs(portraitScreenGeometry.centerX - 195) < 1e-9);
+assert(Math.abs(portraitScreenGeometry.centerY - 422) < 1e-9);
+assert(Math.abs(portraitScreenGeometry.radiusPx - 84.4) < 1e-9);
+assert(Math.abs(portraitScreenGeometry.topY - (portraitScreenGeometry.centerY - portraitScreenGeometry.radiusPx)) < 1e-9, 'label anchor must be centerY - radiusPx');
+const doubledScreenGeometry = nodeScreenGeometryFromNdc(
+  { x: 0, y: 0 },
+  { x: 0, y: .2 },
+  { width: 780, height: 1688 },
+);
+assert(Math.abs(doubledScreenGeometry.radiusPx - portraitScreenGeometry.radiusPx * 2) < 1e-9, 'radius must scale with the canvas CSS viewport');
+assert(Math.abs(doubledScreenGeometry.topY - portraitScreenGeometry.topY * 2) < 1e-9, 'sphere-top anchor must scale with the same canvas viewport');
+const driftedRadiusSample = nodeScreenGeometryFromNdc(
+  { x: .1, y: -.1 },
+  { x: .12, y: .1 },
+  { width: 412, height: 915 },
+);
+assert.equal(driftedRadiusSample.topX, driftedRadiusSample.centerX, 'label direction must stay vertically above the rendered center');
+assert(driftedRadiusSample.topY < driftedRadiusSample.centerY, 'screen-space sphere top must always subtract radiusPx');
+
 assert.equal(PENDING_PULSE_VISIBLE_MS + PENDING_PULSE_FADE_MS + PENDING_PULSE_LOW_MS + PENDING_PULSE_RISE_MS, PENDING_PULSE_PERIOD_MS);
 const visiblePulse = pendingPulseAtCycleMs(0);
 assert.equal(visiblePulse.opacityFactor, 1);
@@ -225,14 +250,24 @@ assert(labelsSource.includes('const frontFacing = isCoreNodeId(n.id) || worldPos
 assert(labelsSource.includes('&& frontFacing'), 'front-facing status must participate directly in label display');
 assert(labelsSource.includes('selectStableShellLabels'), 'large-mobile labels must use the stable shell-priority 12..18 selector');
 assert(!labelsSource.includes('index % 4'), 'large-mobile labels must not fall back to arbitrary index thinning');
-assert(labelsSource.includes('record.shell.getWorldScale(shellWorldScale)'), 'label anchor must read the sphere current rendered size');
-assert(labelsSource.includes('labelAnchorWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius)'), 'label anchor must sit on the camera-up edge of the rendered sphere');
-assert(labelsSource.includes('labelAnchorProjected.copy(labelAnchorWorld).project(camera)'), 'sphere-top anchor must be projected through the current camera');
-assert(labelsSource.includes('y: (-labelAnchorProjected.y * .5 + .5) * host.clientHeight,'), 'label top must be the direct projected sphere-top coordinate');
+assert(labelsSource.includes('record.shell.getWorldScale(shellWorldScale)'), 'screen radius measurement must read the sphere current rendered size');
+assert(labelsSource.includes('radiusSampleWorld.copy(worldPos).addScaledVector(cameraUp, renderedSphereRadius)'), '3D camera-up sample may measure radius but must not own final label placement');
+assert(labelsSource.includes('const screenGeometry = nodeScreenGeometryFromNdc('), 'labels must cross the explicit 3D-to-screen geometry boundary');
+assert(labelsSource.includes('x: screenGeometry.topX,'), 'label x must come only from screen geometry');
+assert(labelsSource.includes('y: screenGeometry.topY,'), 'label y must come only from centerY - radiusPx screen geometry');
+assert(!labelsSource.includes('host.clientWidth'), 'label placement must not mix host dimensions with the canvas viewport');
+assert(!labelsSource.includes('host.clientHeight'), 'label placement must not mix host dimensions with the canvas viewport');
 assert(!sceneSource.includes('LABEL_SPHERE_GAP_PX'), 'scene must not keep a second pixel-gap authority');
 assert(!labelsSource.includes('margin-top'), 'scene projection must not compensate label spacing through CSS assumptions');
 assert(!labelsSource.includes("translate(-50%, 10px)"), 'legacy below-center label offset must stay removed');
 assert(sceneSource.includes('if (mobilePerformance && isTextEntryElement(document.activeElement)) return;'), 'mobile text entry must suppress keyboard-driven scene resize');
+const resizeStart = sceneSource.indexOf('const resize =');
+const scheduleFrameStart = sceneSource.indexOf('const scheduleFrame =', resizeStart);
+assert(resizeStart >= 0 && scheduleFrameStart > resizeStart, 'resize block must remain discoverable');
+const resizeSource = sceneSource.slice(resizeStart, scheduleFrameStart);
+assert(resizeSource.indexOf("setProperty('--app-height'") < resizeSource.indexOf('const viewport = canvasViewport();'), 'layout height must settle before measuring the canvas viewport');
+assert(resizeSource.includes('camera.aspect = viewport.width / viewport.height;'), 'camera aspect must use the canvas viewport');
+assert(resizeSource.includes('renderer.setSize(viewport.width, viewport.height, false);'), 'renderer drawing buffer must follow the canvas CSS viewport without creating another CSS size authority');
 const labelPresentationSource = readFileSync('src/ui/KnowledgeLabelPresentation.css', 'utf8');
 assert(labelPresentationSource.includes('transform: translate(-50%, -100%);'), 'dedicated label presentation must extend the label upward from the sphere-top coordinate');
 assert(labelPresentationSource.includes('margin: 0;'), 'dedicated label presentation must not add a second vertical offset');
