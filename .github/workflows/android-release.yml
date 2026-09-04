@@ -68,6 +68,14 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
+      - name: Enable KVM acceleration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+          fi
+
       - name: Install Android build prerequisites
         shell: bash
         run: |
