@@ -53,7 +53,7 @@ const launchPanelAction = app.slice(
 assert.match(
   launchPanelAction,
   /panel\.openNodeAction\(id, action\)/,
-  'node detail actions must call the panel controller through an explicit semantic API',
+  'node detail actions must call the action controller through an explicit semantic API',
 );
 assert.doesNotMatch(
   launchPanelAction,
@@ -74,16 +74,25 @@ assert.match(
   /openNodeAction\(id: string, action: PanelNodeAction\): boolean/,
   'PanelController must expose one explicit semantic entry point for NodeDetail actions',
 );
-for (const action of ['edit', 'negate', 'resolve', 'dispute']) {
-  assert.ok(
-    panelController.includes(`executeNodeAction(id, '${action}')`),
-    `panel action ${action} must share the explicit implementation`,
-  );
-}
+assert.match(
+  panelController,
+  /if \(action === 'resolve' \|\| action === 'dispute'\) \{\s*void this\.executeImmediateNodeAction\(id, action\)/,
+  'resolve/dispute must use the explicit immediate action path without recreating a detail panel',
+);
+assert.match(
+  panelController,
+  /this\.enterPanelAction\(id\);\s*this\.executeNodeAction\(id, action\)/,
+  'edit/negate must enter the dedicated action form without rendering a second node detail',
+);
+assert.match(panelController, /case 'edit': return true;/, 'edit must remain supported');
+assert.match(panelController, /case 'negate': return node\.status !== 'falsified' && node\.status !== 'suspended';/, 'negate eligibility must remain explicit');
+assert.match(panelController, /case 'resolve': return node\.status === 'suspended';/, 'resolve eligibility must remain explicit');
+assert.match(panelController, /case 'dispute': return node\.status === 'disputed';/, 'dispute eligibility must remain explicit');
+assert.doesNotMatch(panelController, /bindPanelRuntimeEvents|mastery-display/, 'PanelController must not retain a hidden legacy node-detail renderer');
 
 assert.doesNotMatch(app, /saveNode|KnowledgeNodeRecord|KnowledgeRepository/, 'app must not persist node snapshots');
 assert.ok(sources.every(source => !source.includes('GitHubKnowledgeGateway')), 'legacy gateway must not be referenced');
 assert.ok(sources.every(source => !source.includes('/api/knowledge')), 'legacy API must not be referenced');
 await assert.rejects(access('server'), 'production Node server must be deleted');
 await assert.rejects(access('src/storage/GitHubKnowledgeGateway.ts'), 'legacy gateway must be deleted');
-console.log('Cloud-only server-authoritative public-data and explicit NodeDetail action architecture regression tests passed');
+console.log('Cloud-only server-authoritative public-data and single-detail action architecture regression tests passed');
