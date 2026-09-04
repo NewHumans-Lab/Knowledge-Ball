@@ -30,7 +30,6 @@ jobs:
       - name: Verify account onboarding migration semantics
         run: node scripts/verify-core-onboarding-migration.mjs
       - name: Validate Supabase release configuration without database writes
-        if: github.event_name == 'pull_request'
         run: node scripts/verify-supabase-schema.mjs
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
@@ -76,11 +75,13 @@ jobs:
           name: issue51-playwright-trace
           path: artifacts/issue51-trace.zip
           if-no-files-found: warn
-      - name: Verify pull request merges cleanly with its base
-        if: github.event_name == 'pull_request'
+      - name: Verify branch merges cleanly with target base
+        shell: bash
         run: |
-          git fetch origin "${{ github.base_ref }}"
-          npm run test:merge -- "origin/${{ github.base_ref }}"
+          BASE_REF="${{ github.base_ref }}"
+          if [ -z "$BASE_REF" ]; then BASE_REF="main"; fi
+          git fetch origin "$BASE_REF"
+          npm run test:merge -- "origin/$BASE_REF"
 
   android-build:
     runs-on: ubuntu-latest
