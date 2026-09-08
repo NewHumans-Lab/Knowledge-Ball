@@ -108,7 +108,7 @@ function installStyles(): void {
       min-width:44px;height:44px;padding:0;border:0;background:transparent;color:var(--accent-primary,#55ECFF)}
     .voice-node-marker[hidden]{display:none}
     .voice-node-visual{position:relative;display:block;width:44px;height:44px;pointer-events:none}
-    .voice-node-count{position:absolute;left:24px;top:50%;transform:translateY(-50%);min-width:14px;padding:2px 4px;border-radius:8px;
+    .voice-node-count{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);min-width:14px;padding:2px 4px;border-radius:8px;
       background:rgba(8,13,32,.72);color:var(--ink-dim,#B6C7DE);font:600 10px/1 Inter,'Noto Sans SC',sans-serif;text-align:center;white-space:nowrap;
       box-shadow:0 0 0 1px rgba(85,236,255,.18);backdrop-filter:blur(4px)}
     .voice-ripple{position:absolute;left:50%;top:50%;width:1px;height:1px;display:none;pointer-events:none}
@@ -142,7 +142,7 @@ function installStyles(): void {
     .voice-room-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
     .voice-room-audio{display:none}
     @media(max-width:640px){
-      .voice-node-count{left:22px;font-size:9px}
+      .voice-node-count{font-size:9px}
       .voice-detail-mic{top:2px;width:52px;height:52px;font-size:24px}
       .voice-detail-mic ~ .node-detail-title{margin-top:28px}
       .voice-room-panel{bottom:70px;max-width:94vw}.voice-room-title{max-width:120px}
@@ -651,6 +651,7 @@ export function installVoiceRoomRuntime(): void {
     if (stopped) return;
     const debug = getDebug();
     const wanted = wantedMarkerIds();
+    const layerRect = layer.getBoundingClientRect();
     syncDetailVoiceButton();
 
     for (const id of wanted) {
@@ -667,8 +668,8 @@ export function installVoiceRoomRuntime(): void {
       const point = debug?.scene?.screenPositionForNode(id) ?? null;
       marker.hidden = !point || participants < 1;
       if (point) {
-        marker.style.left = `${point.x}px`;
-        marker.style.top = `${point.y}px`;
+        marker.style.left = `${point.x - layerRect.left}px`;
+        marker.style.top = `${point.y - layerRect.top}px`;
       }
     }
 
