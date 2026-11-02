@@ -23,7 +23,7 @@ const snapshot: SpatialLayoutSnapshot = {
   ],
 };
 let publishResult = true;
-let publishedBody: Record<string, unknown> | null = null;
+const publishedBodies: Record<string, unknown>[] = [];
 const requests: string[] = [];
 const adapter = new SupabaseSyncAdapter({
   url: 'https://example.supabase.co',
@@ -42,7 +42,7 @@ const adapter = new SupabaseSyncAdapter({
       }]), { status: 200 });
     }
     if (url.endsWith('/rest/v1/rpc/publish_public_spatial_snapshot')) {
-      publishedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      publishedBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
       return new Response(JSON.stringify(publishResult), { status: 200 });
     }
     throw new Error('Unexpected Supabase request: ' + url);
@@ -51,10 +51,11 @@ const adapter = new SupabaseSyncAdapter({
 const loaded = await adapter.loadSpatialSnapshot();
 assert.deepEqual(loaded, snapshot, 'saved geometry must be read without modification');
 assert.equal(await adapter.publishSpatialSnapshot(snapshot), true);
-assert.equal(publishedBody?.expected_knowledge_version, 44);
-assert.equal(publishedBody?.algorithm_version, snapshot.algorithmVersion);
-assert.equal(publishedBody?.graph_signature, snapshot.graphSignature);
-assert.deepEqual(publishedBody?.snapshot_data, snapshot.nodes);
+const publishedBody = publishedBodies[0]!;
+assert.equal(publishedBody.expected_knowledge_version, 44);
+assert.equal(publishedBody.algorithm_version, snapshot.algorithmVersion);
+assert.equal(publishedBody.graph_signature, snapshot.graphSignature);
+assert.deepEqual(publishedBody.snapshot_data, snapshot.nodes);
 assert.ok(requests.every(url => !url.includes('service_role')), 'browser writes must use authenticated publishable-key requests');
 publishResult = false;
 assert.equal(await adapter.publishSpatialSnapshot(snapshot), false, 'stale event-head compare-and-swap must not publish');
