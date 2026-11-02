@@ -45,6 +45,8 @@ import {
   type KnowledgeSceneRuntime,
 } from './scene/KnowledgeScene';
 import { applyUniformLayerLayout } from './scene/UniformLayerLayout';
+import { createSpatialLayoutSnapshot, restoreSpatialLayoutSnapshot } from './scene/SpatialLayoutSnapshot';
+import type { SpatialLayoutSnapshot } from '../sync/SpatialSnapshot';
 
 import {
   InteractionController,
@@ -99,6 +101,8 @@ let nodeDetail: NodeDetailController | null = null;
 let interaction: InteractionController;
 const knowledgeSurfaceState = new KnowledgeSurfaceState();
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
+let remoteSpatialSnapshot: SpatialLayoutSnapshot | null = null;
+let deferRemoteLayout = false;
 let markingViewedNodeId: string | null = null;
 let currentViewerUserId: string | null = null;
 const locallyCreatedByMeNodeIds = new Set<string>();
@@ -166,7 +170,29 @@ function syncNodesFromProjection(): void {
     rendered.premises = effectivePremiseIds(dn, graphIndex);
     return rendered;
   });
-  applyUniformLayerLayout(layoutNodes);
+  if (deferRemoteLayout) {
+    renderNodes = layoutNodes.filter(node => nodeBelongsInLineageScene(node));
+    return;
+  }
+
+  const knowledgeVersion = syncEngine?.currentCursor() ?? '0';
+  const restored = Boolean(
+    productionSyncAdapter
+      && remoteSpatialSnapshot
+      && restoreSpatialLayoutSnapshot(layoutNodes, remoteSpatialSnapshot, knowledgeVersion),
+  );
+  if (!restored) {
+    applyUniformLayerLayout(layoutNodes);
+    if (productionSyncAdapter && syncEngine && layoutNodes.length > 0) {
+      // The existing 5R / icosahedral solver remains the only geometry owner.
+      // Cache publication is fire-and-forget; public event commits do not wait for it.
+      const snapshot = createSpatialLayoutSnapshot(layoutNodes, syncEngine.currentCursor());
+      remoteSpatialSnapshot = snapshot;
+      void productionSyncAdapter.publishSpatialSnapshot(snapshot).catch(error => {
+        console.warn('[Knowledge-Ball] spatial snapshot publication deferred:', error);
+      });
+    }
+  }
   renderNodes = layoutNodes.filter(node => nodeBelongsInLineageScene(node));
 }
 
@@ -775,9 +801,26 @@ function initializeSyncEngine(): void {
 
 initializeSyncEngine();
 
+async function hydrateRemoteWithSpatialSnapshot(): Promise<void> {
+  if (!productionSyncAdapter || !syncEngine) return;
+  deferRemoteLayout = true;
+  const snapshotRequest = productionSyncAdapter.loadSpatialSnapshot().catch(error => {
+    console.warn('[Knowledge-Ball] spatial snapshot read deferred:', error);
+    return null;
+  });
+  try {
+    const [, snapshot] = await Promise.all([syncEngine.sync(), snapshotRequest]);
+    remoteSpatialSnapshot = snapshot;
+  } finally {
+    deferRemoteLayout = false;
+    // Restore a matching snapshot or run the unchanged deterministic layout once.
+    flushProjectionRender();
+  }
+}
+
 void bootstrapRemoteFirst({
   hosted: productionSyncAdapter !== null,
-  hydrateRemote: () => syncEngine?.sync() ?? Promise.resolve(),
+  hydrateRemote: hydrateRemoteWithSpatialSnapshot,
   hasKnowledge: () => nodeList(projection.state).length > 0,
   seedDemo: seedDemoData,
 })
