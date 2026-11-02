@@ -103,6 +103,9 @@ jobs:
           java-version: 21
           cache: gradle
       - uses: android-actions/setup-android@v3
+        with:
+          # The legacy tools package was removed from Google's SDK repository.
+          packages: platform-tools
       - name: Install Android SDK 35
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
       - run: npm ci
