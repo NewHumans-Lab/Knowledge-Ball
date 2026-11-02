@@ -29,6 +29,14 @@ async function deterministic(page) {
   });
   const onboardingSkip = page.locator('.kb-core-onboarding-skip');
   if (await onboardingSkip.count()) await onboardingSkip.click();
+
+  // Writing localStorage after app startup does not change the live locale
+  // controller. Set the locale through the same Settings UI on both runtimes.
+  await page.locator('#btnSettings').click();
+  await page.locator('#settingsOverlay.show').waitFor();
+  await page.locator('#setLocale').selectOption('zh-CN');
+  assert.equal(await page.locator('#setLocale').inputValue(), 'zh-CN');
+  await page.locator('#settingsClose').click();
   await page.waitForTimeout(250);
 }
 
