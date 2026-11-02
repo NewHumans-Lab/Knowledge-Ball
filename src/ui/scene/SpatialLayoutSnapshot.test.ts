@@ -25,7 +25,7 @@ assert.equal(originalById.get('rejected-history')?.address, undefined, 'rejected
 assert.equal(originalById.get('rejected-history')?.pos, undefined, 'rejected lineage remains unplaced');
 
 const snapshot = createSpatialLayoutSnapshot(source, '44');
-assert.equal(snapshot.nodes.length, 4);
+assert.equal(snapshot.nodes.length, source.length);
 assert.equal(snapshot.nodes.find(node => node.id === 'reasoning-a')?.address, null);
 assert.equal(snapshot.nodes.find(node => node.id === 'unplaced-reasoning')?.pos, null);
 
