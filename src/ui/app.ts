@@ -834,7 +834,7 @@ const bootstrapReady = bootstrapRemoteFirst({
   .catch(error => {
     console.error('[Knowledge-Ball] remote-first bootstrap failed:', error);
     scene.start();
-    throw error;
+    return false;
   });
 
 window.addEventListener('resize', () => {

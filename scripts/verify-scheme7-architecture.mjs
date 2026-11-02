@@ -12,7 +12,7 @@ const sources = await Promise.all(['src/ui/app.ts', 'vite.config.ts', 'package.j
 assert.match(app, /new SyncEngine\(/, 'web runtime must instantiate SyncEngine');
 assert.match(app, /initializeSyncEngine\(\);/, 'web runtime must initialize hosted sync explicitly');
 assert.ok(
-  app.indexOf('initializeSyncEngine();') < app.indexOf('void bootstrapRemoteFirst('),
+  app.indexOf('initializeSyncEngine();') < app.indexOf('bootstrapReady = bootstrapRemoteFirst('),
   'hosted sync must initialize before the remote-first bootstrap decision',
 );
 assert.match(app, /hosted: productionSyncAdapter !== null/, 'hosted production must prohibit demo seeding');

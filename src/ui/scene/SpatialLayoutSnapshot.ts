@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { bindReasoningConclusions } from '../../domain/ReasoningConclusion';
+import { lineageRoleFor } from '../../domain/KnowledgeLineage';
 import { isSystemCoreNodeId } from '../../domain/KnowledgeLayerPolicy';
 import {
   generateIcosahedralGrid,
@@ -115,7 +116,9 @@ function snapshotMatchesExistingGeometry(nodes: readonly LayoutNode[], byId: Rea
     if (!saved) return false;
     const isReasoning = node.type === 'reasoning';
     const isCore = isSystemCoreNodeId(node.id);
-    const shouldHaveOrdinaryPlacement = !isReasoning && !isCore && (!node.hidden || !!node.lineage);
+    const shouldHaveOrdinaryPlacement = !isReasoning && !isCore
+      && lineageRoleFor(node) !== 'rejected'
+      && (!node.hidden || !!node.lineage);
 
     if (saved.address) {
       if (isReasoning || isCore || !saved.pos) return false;

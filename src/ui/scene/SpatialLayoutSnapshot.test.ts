@@ -9,6 +9,7 @@ const source: LayoutNode[] = [
   { id: 'reasoning-a', type: 'reasoning', premises: ['ordinary-a'], effectiveLayer: 'middle' },
   { id: 'ordinary-b', type: 'theorem', premises: ['reasoning-a'], effectiveLayer: 'middle' },
   { id: 'unplaced-reasoning', type: 'reasoning', premises: [], effectiveLayer: 'middle' },
+  { id: 'rejected-history', type: 'fact', premises: [], effectiveLayer: 'outer', lineage: { topicId: 'topic-a', proposal: 'optimization', targetId: 'ordinary-a', role: 'rejected', rank: 1 } },
 ];
 
 // Generate the cache through the real production geometry owners. The test does
@@ -20,6 +21,8 @@ assert.ok(originalById.get('ordinary-b')?.address, 'ordinary conclusion must use
 assert.equal(originalById.get('reasoning-a')?.address, undefined, 'Reasoning must remain outside ISG occupancy');
 assert.ok(originalById.get('reasoning-a')?.pos, 'bound Reasoning must retain its original radial projection');
 assert.equal(originalById.get('unplaced-reasoning')?.pos, undefined, 'unbound Reasoning remains unplaced');
+assert.equal(originalById.get('rejected-history')?.address, undefined, 'rejected lineage remains outside spatial occupancy');
+assert.equal(originalById.get('rejected-history')?.pos, undefined, 'rejected lineage remains unplaced');
 
 const snapshot = createSpatialLayoutSnapshot(source, '44');
 assert.equal(snapshot.nodes.length, 4);
