@@ -67,6 +67,7 @@ import {
   type StableShellLabelCandidate,
 } from './StableShellLabelBudget';
 import { nodeScreenGeometryFromNdc } from './NodeScreenGeometry';
+import type { SpatialAddress } from './Deterministic5RLayout';
 
 export interface KnowledgeSceneNode {
   id: string;
@@ -88,6 +89,7 @@ export interface KnowledgeSceneNode {
   vel?: THREE.Vector3;
   homePos?: THREE.Vector3;
   layer?: KnowledgeLayer;
+  address?: SpatialAddress;
 }
 
 export interface KnowledgeSceneCallbacks {
