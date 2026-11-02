@@ -138,11 +138,10 @@ class ConflictOnceStream extends RemoteStream {
 }
 const racingRemote = new ConflictOnceStream();
 const racingClient = client(racingRemote);
-await assert.rejects(addAtomic(racingClient, 'loser', 'Loser'), RemoteHeadConflictError);
-assert.equal(racingClient.projection.state.nodesById.winner?.title, 'Winner', 'conflict recovery pulls the actual remote winner');
-assert.equal(Object.prototype.hasOwnProperty.call(racingClient.projection.state.nodesById, 'loser'), false, 'conflicted local proposal is never applied as truth');
 await addAtomic(racingClient, 'loser', 'Loser');
-assert.equal(racingClient.projection.state.nodesById.loser?.title, 'Loser', 'explicit retry can commit against refreshed server state');
+assert.equal(racingClient.projection.state.nodesById.winner?.title, 'Winner', 'conflict recovery pulls the actual remote winner');
+assert.equal(racingClient.projection.state.nodesById.loser?.title, 'Loser', 'independent valid proposal retries automatically against refreshed server state');
+assert.equal(racingClient.engine.currentCursor(), '2', 'automatic conflict recovery converges to the latest accepted event head');
 
 const verdictRemote = new RemoteStream();
 verdictRemote.events.push(
