@@ -143,6 +143,11 @@ try {
   if (await page.locator('#panel.open').count()) await page.locator('#panelClose').click();
   await page.waitForFunction(() => !document.querySelector('#panel')?.classList.contains('open'));
 
+  // The detail view is a separate surface from the action panel. Close it too
+  // so the final desktop screenshot matches the untouched Web reference state.
+  await page.locator('#nodeDetailOverlay.open .node-detail-close').click();
+  await page.waitForFunction(() => !document.querySelector('#nodeDetailOverlay')?.classList.contains('open'));
+
   // Current split create flow and Toast layering. Use the same lowercase key
   // contract as the authoritative Web acceptance and InteractionController.
   await page.keyboard.press('Control+n');
