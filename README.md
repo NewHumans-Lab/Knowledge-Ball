@@ -35,6 +35,10 @@ After changing either Pages repository variable, trigger a fresh `Deploy to GitH
 
 Never expose a service-role key, database password, GitHub PAT, or other privileged secret in Vite variables. The migration enables RLS, authenticated reads, an atomic expected-head append RPC, immutable rows, and an owner-scoped private table reserved for future account-linked personal sync.
 
+## Spatial layout snapshots
+
+Node positions remain owned exclusively by the existing deterministic 5R / icosahedral layout. The browser stores that solver's exact `address`, `pos`, and `homePos` output as a versioned Supabase cache. Startup reuses it only when the public event head, graph signature, and layout algorithm version match; otherwise the same existing solver recomputes it. Snapshot calculation is client-side and publication is asynchronous, so knowledge writes never wait for another browser to refresh or finish layout work. The event stream remains the sole source of knowledge truth.
+
 ## Synchronization and conflicts
 
 `SyncEngine` persists a separate `knowledge-ball.sync-metadata.v1` record containing the remote cursor plus pending, acknowledged, and failed event IDs. Network failures keep pending work queued. Reconnect/startup sync pulls paginated remote events, then flushes pending public events. Expected-head conflicts cause pull/rebase/revalidation/retry; invalidated local work is retained as an explicit conflict report instead of being silently discarded. Event IDs make remote append idempotent, and acknowledged events are not repushed after reload.
