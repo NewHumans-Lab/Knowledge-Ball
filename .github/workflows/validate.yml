@@ -103,6 +103,9 @@ jobs:
           java-version: 21
           cache: gradle
       - uses: android-actions/setup-android@v3
+        with:
+          # The legacy tools package was removed from Google's SDK repository.
+          packages: platform-tools
       - name: Install Android SDK 35
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
       - run: npm ci
@@ -141,3 +144,26 @@ jobs:
       - name: Build iOS simulator app without signing
         working-directory: ios/App
         run: xcodebuild -workspace App.xcworkspace -scheme App -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+
+
+  spatial-layout-migration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: knowledge_ball_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d knowledge_ball_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply and exercise the spatial snapshot migration on PostgreSQL 17
+        env:
+          PGPASSWORD: postgres
+        run: psql "postgresql://postgres@localhost:5432/knowledge_ball_test" -v ON_ERROR_STOP=1 -f scripts/test-spatial-layout-migration.sql

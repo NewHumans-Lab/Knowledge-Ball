@@ -29,7 +29,7 @@ assert.match(snapshot, /syncAllPersonalMasteryFromProjection\(\)/,
 assert.doesNotMatch(snapshot, /syncNodesFromProjection\(\)/,
   'personal account hydration must not rebuild graph geometry');
 
-const bootstrapStart = app.indexOf('void bootstrapRemoteFirst');
+const bootstrapStart = app.indexOf('const bootstrapReady = bootstrapRemoteFirst');
 const bootstrapEnd = app.indexOf("window.addEventListener('resize'", bootstrapStart);
 const bootstrap = app.slice(bootstrapStart, bootstrapEnd);
 assert.match(bootstrap, /projectionRenderScheduler\.flushNow\(\)/,

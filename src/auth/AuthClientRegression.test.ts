@@ -1,7 +1,30 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { compactEnergy, parseKnowledgeRevalidation, parsePendingKnowledgeVote } from './AuthClient';
+import { compactEnergy, KnowledgeBallAuthClient, parseKnowledgeRevalidation, parsePendingKnowledgeVote } from './AuthClient';
 import { safeAvatarUrl } from './AuthProfilePresentation';
+
+const authStorage = new Map<string, string>();
+let concurrentSignupCount = 0;
+const coldStartAuth = new KnowledgeBallAuthClient({
+  url: 'https://example.supabase.co',
+  publishableKey: 'sb_publishable_test',
+  storage: {
+    getItem: key => authStorage.get(key) ?? null,
+    setItem: (key, value) => { authStorage.set(key, value); },
+    removeItem: key => { authStorage.delete(key); },
+  } as Storage,
+  fetch: (async (input: string | URL | Request) => {
+    assert.match(String(input), /\/auth\/v1\/signup$/);
+    concurrentSignupCount += 1;
+    return new Response(JSON.stringify({ access_token: 'one-cold-start-session', expires_in: 3600 }), { status: 200 });
+  }) as typeof fetch,
+});
+const [coldSessionA, coldSessionB] = await Promise.all([
+  coldStartAuth.publicSession(),
+  coldStartAuth.publicSession(),
+]);
+assert.equal(concurrentSignupCount, 1, 'parallel startup snapshot and event requests must share one anonymous signup');
+assert.equal(coldSessionA.access_token, coldSessionB.access_token, 'parallel startup requests must share one auth identity');
 
 for (const [input, output] of [['0.000000','0'], ['-0.000001','0'], ['-0.999999','0'], ['1.999999','1'], ['-1.000000','-1']] as const) {
   assert.equal(compactEnergy(input), output, `${input} must display as ${output}`);

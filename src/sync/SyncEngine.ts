@@ -11,6 +11,8 @@ import { PublicKnowledgeSyncCoordinator } from './PublicKnowledgeSyncCoordinator
 export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'unavailable' | 'conflict';
 export type EventValidator = (event: PublicKnowledgeEvent) => string | null;
 
+const MAX_REMOTE_HEAD_RETRIES = 3;
+
 /**
  * Hosted public knowledge is server-authoritative.
  *
@@ -95,69 +97,86 @@ export class SyncEngine<TState> {
   private async performCommit(event: PublicKnowledgeEvent): Promise<boolean> {
     this.setStatus('syncing');
 
-    // Refresh first so validation and the expected remote head use the same
-    // authoritative prefix.
-    try {
-      await this.pullAndApply();
-    } catch (error) {
-      this.setStatus('offline');
-      throw error;
-    }
-
-    const invalid = this.validate(event);
-    if (invalid) {
-      this.setStatus('idle');
-      throw new Error(invalid);
-    }
-
-    const expectedCursor = this.cursor;
-    try {
-      const result = await this.adapter!.push([event], expectedCursor);
-      if (!result.acknowledgedEventIds.includes(event.id)) {
-        throw new Error(`Server did not acknowledge public event ${event.id}`);
-      }
-    } catch (error) {
-      if (error instanceof RemoteHeadConflictError) {
-        try { await this.pullAndApply(); } catch { /* preserve original conflict */ }
-        this.setStatus('conflict');
+    for (let attempt = 0; attempt <= MAX_REMOTE_HEAD_RETRIES; attempt += 1) {
+      // Refresh first so validation and the expected remote head use the same
+      // authoritative prefix. After a head race, the next iteration revalidates
+      // this event against the newly accepted server state.
+      try {
+        await this.pullAndApply();
+      } catch (error) {
+        this.setStatus('offline');
         throw error;
       }
 
-      // A transport error can happen after Postgres committed but before the
-      // response reached the browser. Pull from the unchanged cursor: if the
-      // exact event is now authoritative, treat the command as successful and
-      // avoid asking the user to create a second event.
+      if (this.hasEvent(event.id)) {
+        this.setStatus('idle');
+        return true;
+      }
+
+      const invalid = this.validate(event);
+      if (invalid) {
+        this.setStatus('idle');
+        throw new Error(invalid);
+      }
+
+      try {
+        const result = await this.adapter!.push([event], this.cursor);
+        if (!result.acknowledgedEventIds.includes(event.id)) {
+          throw new Error('Server did not acknowledge public event ' + event.id);
+        }
+      } catch (error) {
+        if (error instanceof RemoteHeadConflictError) {
+          try {
+            await this.pullAndApply();
+          } catch (pullError) {
+            this.setStatus('offline');
+            throw pullError;
+          }
+
+          if (this.hasEvent(event.id)) {
+            this.setStatus('idle');
+            return true;
+          }
+          if (attempt < MAX_REMOTE_HEAD_RETRIES) {
+            await new Promise(resolve => globalThis.setTimeout(resolve, 20 * (attempt + 1)));
+            continue;
+          }
+          this.setStatus('conflict');
+          throw error;
+        }
+
+        // A transport error can happen after Postgres committed but before the
+        // response reached the browser. Pull to distinguish a lost response
+        // from a write that never reached the authoritative event stream.
+        try {
+          await this.pullAndApply();
+          if (this.hasEvent(event.id)) {
+            this.setStatus('idle');
+            return true;
+          }
+        } catch { /* preserve the original transport error */ }
+        this.setStatus('offline');
+        throw error;
+      }
+
+      // Pull server-authored events created by the same database transaction
+      // before advancing the local cursor to the latest accepted head.
       try {
         await this.pullAndApply();
-        if (this.hasEvent(event.id)) {
-          this.setStatus('idle');
-          return true;
-        }
-      } catch { /* the original error remains the useful failure */ }
-      this.setStatus('offline');
-      throw error;
-    }
+      } catch {
+        if (!this.hasEvent(event.id)) this.store.appendValidated(event);
+        this.setStatus('offline');
+        return true;
+      }
 
-    // Do not jump directly to the push response head. Pull from the previously
-    // applied cursor so any server-authored events created by the same database
-    // transaction are incorporated before the cursor advances.
-    try {
-      await this.pullAndApply();
-    } catch {
-      // The server explicitly acknowledged this event, so it is safe to show
-      // the acknowledged event in memory while leaving the cursor unchanged.
-      // The next sync will fetch it again (deduped by event ID) plus any related
-      // server-authored events.
       if (!this.hasEvent(event.id)) this.store.appendValidated(event);
-      this.setStatus('offline');
+      this.setStatus('idle');
       return true;
     }
 
-    if (!this.hasEvent(event.id)) this.store.appendValidated(event);
-    this.setStatus('idle');
-    return true;
+    this.setStatus('conflict');
+    throw new Error('Public event commit exhausted its remote-head retries');
   }
-
   private async pullAndApply(): Promise<void> {
     const batch = await this.adapter!.pull(this.cursor);
     for (const event of batch.events) {

@@ -85,6 +85,7 @@ function freshOperationKey(prefix: string, nodeId: string): string {
 export class KnowledgeBallAuthClient {
   private readonly request: typeof fetch;
   private readonly storage: Storage | null;
+  private sessionFlight: Promise<AuthSession> | null = null;
 
   constructor(private readonly config: AuthConfig) {
     this.request = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
@@ -98,10 +99,22 @@ export class KnowledgeBallAuthClient {
   async publicSession(): Promise<AuthSession> {
     const saved = this.readSession();
     if (saved?.access_token && (!saved.expires_at || saved.expires_at > Date.now() / 1000 + 60)) return saved;
-    if (saved?.refresh_token) {
-      try { return await this.refresh(saved.refresh_token); } catch { /* replace expired anonymous session */ }
+    // Snapshot hydration and event replay can start together on a cold device.
+    // Share one refresh/signup so both requests use the same auth identity.
+    if (this.sessionFlight) return this.sessionFlight;
+
+    const pending = (async () => {
+      if (saved?.refresh_token) {
+        try { return await this.refresh(saved.refresh_token); } catch { /* replace expired anonymous session */ }
+      }
+      return this.createSession();
+    })();
+    this.sessionFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.sessionFlight === pending) this.sessionFlight = null;
     }
-    return this.createSession();
   }
 
   async currentUserId(): Promise<string> {

@@ -2,10 +2,12 @@ import { isCanonicalPublicKnowledgeEvent, isPublicKnowledgeEvent, type DomainEve
 import { KnowledgeBallAuthClient } from '../auth/AuthClient';
 import { RemoteHeadConflictError, type PushResult, type SyncAdapter, type SyncBatch } from './SyncAdapter';
 import type { StorageLike } from '../persistence/KnowledgePersistence';
+import type { SpatialLayoutSnapshot } from './SpatialSnapshot';
 
 interface SupabaseConfig { url: string; publishableKey: string; pageSize?: number; storage?: StorageLike | null; fetch?: typeof fetch; }
 interface EventRow { sequence: number; envelope: DomainEvent; actor_id?: string | null; created_at?: string | null; }
 interface ContributorRow { actor_id?: string | null; contributor?: string | null; }
+interface SpatialSnapshotRow { knowledge_version: number | string; algorithm_version: string; graph_signature: string; snapshot: SpatialLayoutSnapshot['nodes']; }
 interface NodeCreationMetadata { actorId: string; createdAt: string; }
 export interface NodePresentationMetadata { contributor: string; createdAt: string; actorId: string; }
 
@@ -71,6 +73,37 @@ export class SupabaseSyncAdapter implements SyncAdapter {
     }
     await this.hydrateContributorNames(actorIds);
     return { events, cursor: String(head) };
+  }
+
+  async loadSpatialSnapshot(): Promise<SpatialLayoutSnapshot | null> {
+    const params = new URLSearchParams({
+      select: 'knowledge_version,algorithm_version,graph_signature,snapshot',
+      singleton: 'eq.true',
+      limit: '1',
+    });
+    const rows = await this.api<SpatialSnapshotRow[]>('/rest/v1/public_spatial_snapshots?' + params.toString());
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      schemaVersion: 1,
+      knowledgeVersion: String(row.knowledge_version),
+      algorithmVersion: row.algorithm_version as SpatialLayoutSnapshot['algorithmVersion'],
+      graphSignature: row.graph_signature,
+      nodes: row.snapshot,
+    };
+  }
+
+  async publishSpatialSnapshot(snapshot: SpatialLayoutSnapshot): Promise<boolean> {
+    const published = await this.api<boolean>('/rest/v1/rpc/publish_public_spatial_snapshot', {
+      method: 'POST',
+      body: JSON.stringify({
+        expected_knowledge_version: Number(snapshot.knowledgeVersion),
+        algorithm_version: snapshot.algorithmVersion,
+        graph_signature: snapshot.graphSignature,
+        snapshot_data: snapshot.nodes,
+      }),
+    });
+    return published === true;
   }
 
   async push(events: PublicKnowledgeEvent[], expectedCursor: string): Promise<PushResult> {

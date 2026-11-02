@@ -15,7 +15,10 @@ const webReferenceUrl = 'http://127.0.0.1:4174/Knowledge-Ball/';
 await mkdir(artifacts, { recursive: true });
 
 async function deterministic(page) {
-  await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.renderNodes?.length), null, { timeout: 30_000 });
+  await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.bootstrapReady), null, { timeout: 30_000 });
+  const bootstrapped = await page.evaluate(async () => await window.__debug.bootstrapReady);
+  assert.equal(bootstrapped, true, 'remote-first bootstrap must complete before runtime parity');
+  await page.waitForFunction(() => Boolean(window.__debug?.renderNodes?.length) && !window.__debug?.projectionRenderScheduler?.isScheduled(), null, { timeout: 30_000 });
   // Newcomer onboarding has its own browser acceptance. Runtime parity must
   // compare the same stable returning-user state on Electron and Web instead
   // of comparing an already-used desktop session with a fresh Web newcomer.
@@ -26,6 +29,14 @@ async function deterministic(page) {
   });
   const onboardingSkip = page.locator('.kb-core-onboarding-skip');
   if (await onboardingSkip.count()) await onboardingSkip.click();
+
+  // Writing localStorage after app startup does not change the live locale
+  // controller. Set the locale through the same Settings UI on both runtimes.
+  await page.locator('#btnSettings').click();
+  await page.locator('#settingsOverlay.show').waitFor();
+  await page.locator('#setLocale').selectOption('zh-CN');
+  assert.equal(await page.locator('#setLocale').inputValue(), 'zh-CN');
+  await page.locator('#settingsClose').click();
   await page.waitForTimeout(250);
 }
 
@@ -131,6 +142,11 @@ try {
   await page.locator('#panelClose').click();
   if (await page.locator('#panel.open').count()) await page.locator('#panelClose').click();
   await page.waitForFunction(() => !document.querySelector('#panel')?.classList.contains('open'));
+
+  // The detail view is a separate surface from the action panel. Close it too
+  // so the final desktop screenshot matches the untouched Web reference state.
+  await page.locator('#nodeDetailOverlay.open .node-detail-close').click();
+  await page.waitForFunction(() => !document.querySelector('#nodeDetailOverlay')?.classList.contains('open'));
 
   // Current split create flow and Toast layering. Use the same lowercase key
   // contract as the authoritative Web acceptance and InteractionController.
