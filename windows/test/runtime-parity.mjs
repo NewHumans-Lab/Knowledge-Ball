@@ -15,7 +15,10 @@ const webReferenceUrl = 'http://127.0.0.1:4174/Knowledge-Ball/';
 await mkdir(artifacts, { recursive: true });
 
 async function deterministic(page) {
-  await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.renderNodes?.length), null, { timeout: 30_000 });
+  await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.bootstrapReady), null, { timeout: 30_000 });
+  const bootstrapped = await page.evaluate(async () => await window.__debug.bootstrapReady);
+  assert.equal(bootstrapped, true, 'remote-first bootstrap must complete before runtime parity');
+  await page.waitForFunction(() => Boolean(window.__debug?.renderNodes?.length) && !window.__debug?.projectionRenderScheduler?.isScheduled(), null, { timeout: 30_000 });
   // Newcomer onboarding has its own browser acceptance. Runtime parity must
   // compare the same stable returning-user state on Electron and Web instead
   // of comparing an already-used desktop session with a fresh Web newcomer.

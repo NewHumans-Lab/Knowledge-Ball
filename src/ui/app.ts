@@ -818,7 +818,7 @@ async function hydrateRemoteWithSpatialSnapshot(): Promise<void> {
   }
 }
 
-void bootstrapRemoteFirst({
+const bootstrapReady = bootstrapRemoteFirst({
   hosted: productionSyncAdapter !== null,
   hydrateRemote: hydrateRemoteWithSpatialSnapshot,
   hasKnowledge: () => nodeList(projection.state).length > 0,
@@ -829,10 +829,12 @@ void bootstrapRemoteFirst({
     // rebuilding the same authoritative graph a second time.
     projectionRenderScheduler.flushNow();
     scene.start();
+    return true;
   })
   .catch(error => {
     console.error('[Knowledge-Ball] remote-first bootstrap failed:', error);
     scene.start();
+    throw error;
   });
 
 window.addEventListener('resize', () => {
@@ -862,4 +864,5 @@ void setupMobileShell();
   createStandaloneKnowledge,
   createReasoningKnowledge,
   get syncEngine() { return syncEngine; },
+  bootstrapReady,
 };
