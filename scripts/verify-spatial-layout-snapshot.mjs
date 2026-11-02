@@ -9,7 +9,7 @@ const [adapter, app, helper, migration, packageJson] = await Promise.all([
   readFile('package.json', 'utf8'),
 ]);
 
-assert.match(helper, /existing deterministic layout output/i);
+assert.match(helper, /applyUniformLayerLayout/);
 assert.match(helper, /node\.address/);
 assert.match(helper, /node\.pos/);
 assert.match(helper, /node\.homePos/);
