@@ -543,7 +543,9 @@ begin
       if jsonb_typeof(address_data) <> 'object'
         or jsonb_typeof(address_data -> 'shellID') <> 'string'
         or nullif(address_data ->> 'shellID', '') is null
-        or (address_data ->> 'shellID') !~ '^shell:[0-9]+[.][0-9]{6}
+        or (address_data ->> 'shellID') !~ '^shell:[0-9]+[.][0-9]{6}$'
+        or jsonb_typeof(address_data -> 'cellID') <> 'number' then
+        raise exception 'invalid spatial snapshot address' using errcode = '22023';
       end if;
       cell_id := (address_data ->> 'cellID')::numeric;
       if cell_id < 0 or cell_id > 9007199254740991 or cell_id <> trunc(cell_id) then
