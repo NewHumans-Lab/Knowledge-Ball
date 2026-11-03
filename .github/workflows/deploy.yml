@@ -2,9 +2,24 @@ name: Deploy to GitHub Pages
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Android Signed Release', 'Windows Release']
+    types: [completed]
   push:
     branches: [main]
-
+    paths:
+      - 'public/downloads/latest.json'
+      - '.github/workflows/deploy.yml'
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'capacitor.config.ts'
+      - 'tsconfig*.json'
+      - 'scripts/**'
+      - 'supabase/migrations/**'
 permissions:
   contents: read
   pages: write
@@ -16,6 +31,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
