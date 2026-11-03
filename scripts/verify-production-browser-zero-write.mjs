@@ -66,6 +66,13 @@ try {
       await route.fulfill(jsonResponse([]));
       return;
     }
+    if (url.pathname === '/rest/v1/public_spatial_snapshots' && request.method() === 'GET') {
+      assert.equal(url.searchParams.get('select'), 'knowledge_version,algorithm_version,graph_signature,snapshot');
+      assert.equal(url.searchParams.get('singleton'), 'eq.true');
+      assert.equal(url.searchParams.get('limit'), '1');
+      await route.fulfill(jsonResponse([]));
+      return;
+    }
     if (url.pathname === '/rest/v1/rpc/get_public_contributor_profiles' && request.method() === 'POST') {
       await route.fulfill(jsonResponse([]));
       return;
@@ -158,6 +165,7 @@ try {
 
   assert.ok(interceptedSupabaseRequests.some(item => item.startsWith('POST /auth/v1/signup')), 'deployed app did not exercise its configured Supabase auth bootstrap');
   assert.ok(interceptedSupabaseRequests.some(item => item.startsWith('GET /rest/v1/public_knowledge_events')), 'deployed app did not exercise its configured public-event pull');
+  assert.ok(interceptedSupabaseRequests.some(item => item.startsWith('GET /rest/v1/public_spatial_snapshots?')), 'deployed app did not exercise its versioned spatial snapshot read');
   assert.ok(interceptedSupabaseRequests.some(item => item === 'POST /functions/v1/livekit-voice'), 'deployed app did not exercise the read-only voice-room status endpoint');
   assert.deepEqual(unexpectedSupabaseRequests, [], `unexpected Supabase requests were blocked:\n${unexpectedSupabaseRequests.join('\n')}`);
   assert.deepEqual(pageErrors, [], `deployed zero-write flow produced page errors:\n${pageErrors.join('\n')}`);
