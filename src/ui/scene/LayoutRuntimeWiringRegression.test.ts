@@ -5,13 +5,16 @@ import './ReasoningRadialPlacement.test';
 import './OrdinaryLineagePlacement.test';
 
 const app=readFileSync('src/ui/app.ts','utf8');
+const spatialWorker=readFileSync('src/ui/scene/SpatialSnapshotLayoutWorker.ts','utf8');
 const entry=readFileSync('src/ui/scene/UniformLayerLayout.ts','utf8');
 const implementation=readFileSync('src/ui/scene/Deterministic5RLayout.ts','utf8');
 const reasoningBinding=readFileSync('src/domain/ReasoningConclusion.ts','utf8');
 const reasoningProjection=readFileSync('src/ui/scene/ReasoningRadialPlacement.ts','utf8');
 const ordinaryLineageProjection=readFileSync('src/ui/scene/OrdinaryLineagePlacement.ts','utf8');
 const ordinaryLineageFootprint=readFileSync('src/ui/scene/OrdinaryLineageFootprint.ts','utf8');
-assert(app.includes("import { applyUniformLayerLayout } from './scene/UniformLayerLayout';"));
+assert(spatialWorker.includes("import { applyUniformLayerLayout } from './UniformLayerLayout';"),'the background worker must call the canonical uniform layout entry point');
+assert(spatialWorker.includes('applyUniformLayerLayout(nodes)'), 'the unchanged canonical layout must execute on isolated worker-owned nodes');
+assert(!app.includes('applyUniformLayerLayout('), 'the web application must not execute spatial layout on the main thread');
 assert(entry.includes("from './Deterministic5RLayout'"),'one narrow global main-chain layout owner remains');
 assert(entry.includes("from '../../domain/ReasoningConclusion'"),'reasoning ownership must be resolved in the semantic layer before geometry');
 assert(entry.includes("from './ReasoningRadialPlacement'"),'runtime must retain the non-authoritative Reasoning projection after final ordinary Knowledge geometry');
