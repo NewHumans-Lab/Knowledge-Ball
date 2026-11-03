@@ -83,4 +83,46 @@ movedCell.nodes[movedIndex] = {
 };
 assert.equal(restoreSpatialLayoutSnapshot(restored, movedCell, '44'), false, 'a saved XYZ that does not match its shell/cell cannot be restored');
 
+// Orphan lineage metadata is valid input but has no spatial anchor. The
+// layout solver intentionally leaves those history/opposition records unplaced,
+// so strict snapshot restore must preserve that exact behavior rather than
+// inventing a shell address for an incomplete lineage family.
+const orphanLineageSource: LayoutNode[] = [
+  { id: 'orphan-main', type: 'fact', premises: [], effectiveLayer: 'inner' },
+  {
+    id: 'orphan-history',
+    type: 'fact',
+    premises: [],
+    lineage: { topicId: 'topic-without-current', proposal: 'optimization', role: 'history', rank: 1 },
+  },
+  {
+    id: 'orphan-opposition',
+    type: 'fact',
+    premises: [],
+    lineage: { topicId: 'topic-without-current', proposal: 'opposition', role: 'opposition', rank: 1 },
+  },
+];
+applyUniformLayerLayout(orphanLineageSource);
+assert.ok(orphanLineageSource.find(node => node.id === 'orphan-main')?.address);
+assert.equal(orphanLineageSource.find(node => node.id === 'orphan-history')?.address, undefined);
+assert.equal(orphanLineageSource.find(node => node.id === 'orphan-history')?.pos, undefined);
+assert.equal(orphanLineageSource.find(node => node.id === 'orphan-opposition')?.address, undefined);
+assert.equal(orphanLineageSource.find(node => node.id === 'orphan-opposition')?.pos, undefined);
+
+const orphanSnapshot = createSpatialLayoutSnapshot(orphanLineageSource, '46');
+const orphanRestored: LayoutNode[] = orphanLineageSource.map(node => ({
+  id: node.id,
+  type: node.type,
+  premises: [...(node.premises ?? [])],
+  lineage: node.lineage ? { ...node.lineage } : undefined,
+  effectiveLayer: node.effectiveLayer,
+}));
+assert.equal(
+  restoreSpatialLayoutSnapshot(orphanRestored, orphanSnapshot, '46'),
+  true,
+  'unanchored history/opposition metadata must remain a valid unplaced snapshot entry',
+);
+assert.equal(orphanRestored.find(node => node.id === 'orphan-history')?.pos, undefined);
+assert.equal(orphanRestored.find(node => node.id === 'orphan-opposition')?.pos, undefined);
+
 console.log('Persisted deterministic 5R spatial snapshot round-trip and invalidation tests passed');
