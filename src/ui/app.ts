@@ -192,6 +192,14 @@ function scheduleLocalSpatialLayout(knowledgeVersion: string): void {
       return;
     }
     if (!restoreSpatialLayoutSnapshot(layoutNodes as LayoutNode[], snapshot, knowledgeVersion)) {
+      console.warn('[Knowledge-Ball] local spatial worker snapshot rejected:', {
+        expectedVersion: knowledgeVersion,
+        actualVersion: snapshot.knowledgeVersion,
+        expectedGraph: spatialLayoutGraphSignature(layoutNodes as LayoutNode[]),
+        actualGraph: snapshot.graphSignature,
+        checksum: snapshot.checksum,
+        nodes: snapshot.nodes.filter(node => node.pos === null).map(node => node.id),
+      });
       localSpatialLayoutRequestKey = null;
       return;
     }
