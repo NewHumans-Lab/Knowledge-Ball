@@ -51,6 +51,7 @@ export class SpatialSnapshotWorkerCoordinator {
   private readonly realtime: SupabaseRealtimeBroadcast;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private registrationRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private active = false;
   private initialSnapshotLoaded = false;
   private pendingSnapshot: SpatialLayoutSnapshot | null = null;
@@ -81,7 +82,20 @@ export class SpatialSnapshotWorkerCoordinator {
   async start(): Promise<void> {
     if (this.active) return;
     this.active = true;
-    await this.options.backend.registerSpatialWorker(this.options.sessionId);
+    try {
+      await this.options.backend.registerSpatialWorker(this.options.sessionId);
+    } catch (error) {
+      this.active = false;
+      this.options.onError?.(error, 'worker-registration');
+      // Temporary auth/network failures must not strand this browser outside
+      // the priority queue. Retry registration without polling the snapshot row.
+      if (this.registrationRetryTimer !== null) globalThis.clearTimeout(this.registrationRetryTimer);
+      this.registrationRetryTimer = globalThis.setTimeout(() => {
+        this.registrationRetryTimer = null;
+        void this.start();
+      }, 5_000);
+      return;
+    }
     this.heartbeatTimer = globalThis.setInterval(() => {
       void this.options.backend.heartbeatSpatialWorker(this.options.sessionId, this.activeLeaseToken)
         .catch(error => this.options.onError?.(error, 'heartbeat'));
@@ -89,6 +103,7 @@ export class SpatialSnapshotWorkerCoordinator {
     // Subscribe without delaying the initial database read. A late first
     // connection re-reads once to close the read/subscribe race.
     void this.realtime.start(900);
+    if (this.initialSnapshotLoaded) void this.requestLatestRebuild(false);
   }
 
   stop(): void {
@@ -96,8 +111,10 @@ export class SpatialSnapshotWorkerCoordinator {
     this.realtime.stop();
     if (this.heartbeatTimer !== null) globalThis.clearInterval(this.heartbeatTimer);
     if (this.retryTimer !== null) globalThis.clearTimeout(this.retryTimer);
+    if (this.registrationRetryTimer !== null) globalThis.clearTimeout(this.registrationRetryTimer);
     this.heartbeatTimer = null;
     this.retryTimer = null;
+    this.registrationRetryTimer = null;
   }
 
   async markInitialSnapshotLoaded(): Promise<void> {
