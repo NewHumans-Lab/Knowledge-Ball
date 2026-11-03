@@ -100,6 +100,10 @@ try {
         reasoning: '以前一条已验证结论作为前提，推导后续结论。',
         conclusionIds: ['n6'],
       });
+      // Both created Reasoning nodes are pending by design. Current mode hides
+      // pending claims; All mode makes their physical balls available for the
+      // real screen-position and touch-navigation assertions below.
+      debug.scene.setVisibilityMode('all');
     });
 
     // Spatial placement now runs in a Worker. A non-empty render list is not
