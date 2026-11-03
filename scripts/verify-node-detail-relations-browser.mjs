@@ -74,6 +74,26 @@ try {
     await page.waitForFunction(() => Boolean(window.__debug?.bootstrapReady), null, { timeout: 20_000 });
     await page.evaluate(() => window.__debug.bootstrapReady);
 
+    // Build a complete, valid three-Knowledge / two-Reasoning chain through the
+    // real public command path. The old demo n11 -> n12 chain is not suitable:
+    // n11 is falsified/hidden, so its attached first Reasoning node correctly has
+    // no spatial position. n3, n5 and n6 are verified current Knowledge nodes.
+    await page.evaluate(async () => {
+      const debug = window.__debug;
+      await debug.createReasoningKnowledge({
+        title: '验收前置推理节点',
+        premiseIds: ['n3'],
+        reasoning: '由已验证的质数定义推导出验收中间结论。',
+        conclusionIds: ['n5'],
+      });
+      await debug.createReasoningKnowledge({
+        title: '验收后续推理节点',
+        premiseIds: ['n5'],
+        reasoning: '以前一条已验证结论作为前提，推导后续结论。',
+        conclusionIds: ['n6'],
+      });
+    });
+
     // Spatial placement now runs in a Worker. A non-empty render list is not
     // proof that the complete canonical graph has been laid out yet; wait for
     // the exact reasoning/conclusion/reasoning topology used by this test.
