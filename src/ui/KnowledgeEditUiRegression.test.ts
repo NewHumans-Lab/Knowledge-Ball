@@ -4,6 +4,7 @@ import { strict as assert } from 'node:assert';
 const html = readFileSync('index.html', 'utf8');
 const panel = readFileSync('src/ui/panels/PanelController.ts', 'utf8');
 const app = readFileSync('src/ui/app.ts', 'utf8');
+const spatialWorker = readFileSync('src/ui/scene/SpatialSnapshotLayoutWorker.ts', 'utf8');
 const detail = readFileSync('src/ui/panels/NodeDetailController.ts', 'utf8');
 const protocol = readFileSync('src/protocol/KnowledgeEditingProtocol.ts', 'utf8');
 const events = readFileSync('src/event/Event.ts', 'utf8');
@@ -93,7 +94,8 @@ assert(app.includes('onOptimizeNode: optimizeKnowledgeNode') && app.includes('on
 assert(!app.includes('cmdEditNode') && !app.includes('LineageIntentBridge'), 'application must not route head changes through legacy edit/string compatibility');
 assert(app.includes('effectiveLayerForNode(dn, projection.state.nodesById)'), 'application must calculate scene layer from the canonical domain policy');
 assert(app.includes('layoutNodes = domainNodes.map'), 'all projected nodes must receive layout slots before visibility filtering');
-assert(app.includes('applyUniformLayerLayout(layoutNodes)'), 'application must use the canonical uniform layer layout');
+assert(spatialWorker.includes('applyUniformLayerLayout(nodes)'), 'the background worker must use the unchanged canonical uniform layer layout');
+assert(!app.includes('applyUniformLayerLayout(layoutNodes)'), 'the browser render path must not run the spatial solver on the main thread');
 assert(app.includes('renderNodes = layoutNodes.filter'), 'render visibility must be separated from layout occupancy');
 assert(app.includes('nodeBelongsInLineageScene(node)'), 'formal lineage history/opposition must remain in scene data so Current/Personal/All can control visibility');
 assert(app.includes('scene.setVisibilityMode') || app.includes("interaction.setVisibilityMode('current')"), 'lineage visibility must be controlled by the explicit mode system rather than deleting history from scene data');
