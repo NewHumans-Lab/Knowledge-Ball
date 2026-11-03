@@ -24,7 +24,7 @@ try {
     page.setDefaultTimeout(10_000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('console', message => { if (message.type() === 'error' || message.type() === 'warning') errors.push(message.type() + ': ' + message.text()); });
 
     await page.goto(origin, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__debug?.projection?.state?.nodesById?.n3 && window.__debug?.nodeDetail && window.__debug?.knowledgeCreate));
@@ -153,11 +153,27 @@ try {
     await overlay.locator('[data-create-submit]').click();
     await page.locator('#knowledgeCreateOverlay.show').waitFor({ state: 'hidden' });
 
-    const reasoningNodeId = await page.waitForFunction(title => {
-      const nodes = Object.values(window.__debug.projection.state.nodesById);
-      const reasoning = nodes.find(node => node.title === title);
-      return reasoning && window.__debug.renderNodes.some(node => node.id === reasoning.id) ? reasoning.id : null;
-    }, reasoningTitle, { timeout: 20_000 });
+    let reasoningNodeId;
+    try {
+      reasoningNodeId = await page.waitForFunction(title => {
+        const nodes = Object.values(window.__debug.projection.state.nodesById);
+        const reasoning = nodes.find(node => node.title === title);
+        return reasoning && window.__debug.renderNodes.some(node => node.id === reasoning.id) ? reasoning.id : null;
+      }, reasoningTitle, { timeout: 20_000 });
+    } catch (error) {
+      const diagnostic = await page.evaluate(title => ({
+        currentCursor: window.__debug.syncEngine?.currentCursor?.() ?? null,
+        projectedMatches: Object.values(window.__debug.projection.state.nodesById)
+          .filter(node => node.title === title)
+          .map(node => ({ id: node.id, type: node.type, status: node.status, premises: node.premises, lineage: node.lineage })),
+        renderCount: window.__debug.renderNodes.length,
+        renderedTail: window.__debug.renderNodes.slice(-12).map(node => ({
+          id: node.id, type: node.type, title: node.title, hasPosition: Boolean(node.pos),
+        })),
+      }), reasoningTitle);
+      console.log('SPATIAL_WORKER_DIAGNOSTIC ' + JSON.stringify({ diagnostic, browserWarningsAndErrors: errors }));
+      throw error;
+    }
     const reasoningResult = await page.evaluate(({ reasoningTitle, conclusionId }) => {
       const nodes = Object.values(window.__debug.projection.state.nodesById);
       const reasoning = nodes.find(candidate => candidate.title === reasoningTitle);
