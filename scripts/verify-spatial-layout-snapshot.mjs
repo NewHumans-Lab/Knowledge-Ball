@@ -50,6 +50,8 @@ assert.doesNotMatch(adapter, /service[_-]?role/i,
 assert.match(realtime, /realtime\/v1\/websocket/);
 assert.match(realtime, /spatial_snapshot_chunk/);
 assert.match(realtime, /spatial_snapshot_rebuild_requested/);
+assert.match(realtime, /private: true/,
+  'browser clients must subscribe privately so they cannot spoof database-originated snapshot chunks');
 assert.match(coordinator, /spatialSnapshotChecksum/);
 assert.match(coordinator, /chunkCount/);
 assert.match(coordinator, /publishSpatialSnapshotWithLease/);

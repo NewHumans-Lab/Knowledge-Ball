@@ -103,7 +103,7 @@ export class SupabaseRealtimeBroadcast {
               broadcast: { ack: false, self: false },
               presence: { key: '', enabled: false },
               postgres_changes: [],
-              private: false,
+              private: true,
             },
             access_token: token,
           },

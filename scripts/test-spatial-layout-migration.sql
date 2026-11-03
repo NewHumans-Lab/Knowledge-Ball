@@ -4,6 +4,10 @@ create role anon nologin;
 create role authenticated nologin;
 create schema auth;
 create schema realtime;
+create table realtime.messages (id bigint, topic text, extension text);
+grant select, insert on realtime.messages to anon, authenticated;
+create or replace function realtime.topic() returns text
+language sql stable as $ select current_setting('realtime.topic', true) $;
 create table auth.users (id uuid primary key);
 create or replace function auth.uid() returns uuid
 language sql stable
@@ -59,6 +63,22 @@ begin
   end if;
   if (select snapshot_checksum from public.public_spatial_snapshots where singleton) <> 'cafebabe' then
     raise exception 'snapshot transfer checksum was not stored';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'realtime' and tablename = 'messages'
+      and policyname = 'kb_spatial_snapshot_broadcast_read' and cmd = 'SELECT'
+      and 'authenticated' = any(roles::text[])
+  ) then
+    raise exception 'authenticated snapshot broadcast read policy is missing';
+  end if;
+  if exists (
+    select 1 from pg_policies
+    where schemaname = 'realtime' and tablename = 'messages'
+      and cmd = 'INSERT'
+      and ('authenticated' = any(roles::text[]) or 'anon' = any(roles::text[]))
+  ) then
+    raise exception 'client-side Realtime broadcast insertion must remain denied';
   end if;
   if has_function_privilege('authenticated',
     'public.publish_public_spatial_snapshot(bigint,text,text,jsonb)', 'execute') then

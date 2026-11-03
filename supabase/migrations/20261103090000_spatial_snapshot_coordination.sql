@@ -71,7 +71,7 @@ begin
     jsonb_build_object('knowledgeVersion', new.sequence::text),
     'spatial_snapshot_rebuild_requested',
     'public-spatial-snapshot',
-    false
+    true
   );
   return new;
 end;
@@ -158,7 +158,7 @@ begin
       ),
       'spatial_snapshot_rebuild_requested',
       'public-spatial-snapshot',
-      false
+      true
     );
   end if;
   return true;
@@ -310,7 +310,7 @@ begin
       jsonb_build_object('knowledgeVersion', p_knowledge_version::text),
       'spatial_snapshot_rebuild_requested',
       'public-spatial-snapshot',
-      false
+      true
     );
   end if;
   return true;
@@ -454,7 +454,7 @@ begin
       jsonb_build_object('knowledgeVersion', target_version::text),
       'spatial_snapshot_rebuild_requested',
       'public-spatial-snapshot',
-      false
+      true
     );
   end if;
   return changed > 0;
@@ -613,6 +613,15 @@ begin
 end;
 $$;
 
+-- Snapshot broadcasts are private. Authenticated clients can receive this topic,
+-- but no client INSERT policy is created, so only database triggers can publish.
+alter table realtime.messages enable row level security;
+drop policy if exists kb_spatial_snapshot_broadcast_read on realtime.messages;
+create policy kb_spatial_snapshot_broadcast_read
+  on realtime.messages
+  for select
+  to authenticated
+  using (realtime.topic() = 'public-spatial-snapshot');
 -- Never allow clients to bypass job leases and publish directly.
 revoke all on function public.publish_public_spatial_snapshot(bigint, text, text, jsonb) from public, anon, authenticated;
 revoke all on function public.enqueue_public_spatial_snapshot_rebuild() from public, anon, authenticated;
@@ -651,7 +660,7 @@ begin
       ),
       'spatial_snapshot_chunk',
       'public-spatial-snapshot',
-      false
+      true
     );
   end loop;
   return new;
