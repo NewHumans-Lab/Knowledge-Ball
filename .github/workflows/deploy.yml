@@ -2,14 +2,8 @@ name: Deploy to GitHub Pages
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ['Android Signed Release', 'Windows Release']
-    types: [completed]
   push:
     branches: [main]
-    paths:
-      - 'public/downloads/latest.json'
-      - '.github/workflows/deploy.yml'
 
 permissions:
   contents: read
