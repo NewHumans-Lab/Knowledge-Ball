@@ -67,6 +67,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
 
       - uses: android-actions/setup-android@v3
+        with:
+          # The legacy tools package was removed from Google's SDK repository.
+          packages: platform-tools
 
       - name: Enable KVM acceleration
         shell: bash
