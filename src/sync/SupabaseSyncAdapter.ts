@@ -7,7 +7,7 @@ import type { SpatialLayoutSnapshot } from './SpatialSnapshot';
 interface SupabaseConfig { url: string; publishableKey: string; pageSize?: number; storage?: StorageLike | null; fetch?: typeof fetch; }
 interface EventRow { sequence: number; envelope: DomainEvent; actor_id?: string | null; created_at?: string | null; }
 interface ContributorRow { actor_id?: string | null; contributor?: string | null; }
-interface SpatialSnapshotRow { knowledge_version: number | string; algorithm_version: string; graph_signature: string; snapshot: SpatialLayoutSnapshot['nodes']; }
+interface SpatialSnapshotRow { knowledge_version: number | string; algorithm_version: string; graph_signature: string; snapshot_checksum: string; snapshot: SpatialLayoutSnapshot['nodes']; }
 interface NodeCreationMetadata { actorId: string; createdAt: string; }
 export interface NodePresentationMetadata { contributor: string; createdAt: string; actorId: string; }
 
@@ -77,7 +77,7 @@ export class SupabaseSyncAdapter implements SyncAdapter {
 
   async loadSpatialSnapshot(): Promise<SpatialLayoutSnapshot | null> {
     const params = new URLSearchParams({
-      select: 'knowledge_version,algorithm_version,graph_signature,snapshot',
+      select: 'knowledge_version,algorithm_version,graph_signature,snapshot_checksum,snapshot',
       singleton: 'eq.true',
       limit: '1',
     });
@@ -89,21 +89,94 @@ export class SupabaseSyncAdapter implements SyncAdapter {
       knowledgeVersion: String(row.knowledge_version),
       algorithmVersion: row.algorithm_version as SpatialLayoutSnapshot['algorithmVersion'],
       graphSignature: row.graph_signature,
+      checksum: row.snapshot_checksum,
       nodes: row.snapshot,
     };
   }
 
-  async publishSpatialSnapshot(snapshot: SpatialLayoutSnapshot): Promise<boolean> {
-    const published = await this.api<boolean>('/rest/v1/rpc/publish_public_spatial_snapshot', {
+  async registerSpatialWorker(sessionId: string): Promise<boolean> {
+    return this.api<boolean>('/rest/v1/rpc/register_public_spatial_snapshot_worker', {
+      method: 'POST',
+      body: JSON.stringify({ p_session_id: sessionId }),
+    });
+  }
+
+  async heartbeatSpatialWorker(sessionId: string, leaseToken: string | null): Promise<boolean> {
+    return this.api<boolean>('/rest/v1/rpc/heartbeat_public_spatial_snapshot_worker', {
+      method: 'POST',
+      body: JSON.stringify({ p_session_id: sessionId, p_lease_token: leaseToken }),
+    });
+  }
+
+  async requestSpatialSnapshotRebuild(
+    sessionId: string,
+    version: string,
+    graphSignature: string,
+    submitted: boolean,
+  ): Promise<boolean> {
+    return this.api<boolean>('/rest/v1/rpc/request_public_spatial_snapshot_rebuild', {
       method: 'POST',
       body: JSON.stringify({
-        expected_knowledge_version: Number(snapshot.knowledgeVersion),
-        algorithm_version: snapshot.algorithmVersion,
-        graph_signature: snapshot.graphSignature,
-        snapshot_data: snapshot.nodes,
+        p_session_id: sessionId,
+        p_knowledge_version: Number(version),
+        p_graph_signature: graphSignature,
+        p_submitted: submitted,
       }),
     });
-    return published === true;
+  }
+
+  async claimSpatialSnapshotJob(sessionId: string): Promise<{
+    knowledge_version: number | string;
+    graph_signature: string | null;
+    lease_token: string;
+    lease_expires_at: string;
+    priority: number;
+  } | null> {
+    const rows = await this.api<Array<{
+      knowledge_version: number | string;
+      graph_signature: string | null;
+      lease_token: string;
+      lease_expires_at: string;
+      priority: number;
+    }>>('/rest/v1/rpc/claim_public_spatial_snapshot_job', {
+      method: 'POST',
+      body: JSON.stringify({ p_session_id: sessionId }),
+    });
+    return rows[0] ?? null;
+  }
+
+  async releaseSpatialSnapshotJob(sessionId: string, leaseToken: string): Promise<boolean> {
+    return this.api<boolean>('/rest/v1/rpc/release_public_spatial_snapshot_job', {
+      method: 'POST',
+      body: JSON.stringify({ p_session_id: sessionId, p_lease_token: leaseToken }),
+    });
+  }
+
+  async publishSpatialSnapshotWithLease(
+    snapshot: SpatialLayoutSnapshot,
+    sessionId: string,
+    leaseToken: string,
+  ): Promise<boolean> {
+    return this.api<boolean>('/rest/v1/rpc/publish_public_spatial_snapshot_with_lease', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_knowledge_version: Number(snapshot.knowledgeVersion),
+        p_algorithm_version: snapshot.algorithmVersion,
+        p_graph_signature: snapshot.graphSignature,
+        p_snapshot_checksum: snapshot.checksum,
+        p_snapshot_data: snapshot.nodes,
+        p_session_id: sessionId,
+        p_lease_token: leaseToken,
+      }),
+    });
+  }
+
+  realtimeConfig(): { projectUrl: string; publishableKey: string } {
+    return { projectUrl: this.config.url, publishableKey: this.config.publishableKey };
+  }
+
+  async realtimeAccessToken(): Promise<string> {
+    return (await this.auth.publicSession()).access_token;
   }
 
   async push(events: PublicKnowledgeEvent[], expectedCursor: string): Promise<PushResult> {

@@ -12,6 +12,7 @@ import { SUN_ORBIT_RADIUS, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 import {
   SPATIAL_LAYOUT_ALGORITHM_VERSION,
   SPATIAL_LAYOUT_SNAPSHOT_SCHEMA_VERSION,
+  spatialSnapshotChecksum,
   type SpatialLayoutSnapshot,
   type SpatialSnapshotNode,
 } from '../../sync/SpatialSnapshot';
@@ -75,6 +76,7 @@ export function createSpatialLayoutSnapshot(nodes: readonly LayoutNode[], knowle
     knowledgeVersion,
     algorithmVersion: SPATIAL_LAYOUT_ALGORITHM_VERSION,
     graphSignature: spatialLayoutGraphSignature(nodes),
+    checksum: spatialSnapshotChecksum(snapshotNodes),
     nodes: snapshotNodes,
   };
 }
@@ -202,6 +204,7 @@ export function restoreSpatialLayoutSnapshot(
     || snapshot.knowledgeVersion !== expectedKnowledgeVersion
     || snapshot.graphSignature !== spatialLayoutGraphSignature(nodes)
     || !Array.isArray(snapshot.nodes)
+    || snapshot.checksum !== spatialSnapshotChecksum(snapshot.nodes)
     || snapshot.nodes.length !== nodes.length) return false;
 
   const currentIds = [...nodes].map(node => node.id).sort((a, b) => a.localeCompare(b));
@@ -233,6 +236,65 @@ export function restoreSpatialLayoutSnapshot(
   for (const node of nodes) {
     const saved = byId.get(node.id)!;
     if (saved.address) node.address = { shellID: saved.address.shellID, cellID: saved.address.cellID };
+    else delete node.address;
+    if (saved.pos) {
+      const position = new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z);
+      node.pos = position.clone();
+      node.homePos = position.clone();
+    } else {
+      delete node.pos;
+      delete node.homePos;
+    }
+    node.vel ??= new THREE.Vector3();
+    node.vel.set(0, 0, 0);
+  }
+  return true;
+}
+
+/**
+ * Preserve the previous visible geometry while a newer graph version is being
+ * solved. This is deliberately permissive and MUST NOT be used for publication:
+ * strict restoreSpatialLayoutSnapshot remains the only acceptance path.
+ */
+export function restoreSpatialLayoutSnapshotPositions(
+  nodes: LayoutNode[],
+  snapshot: SpatialLayoutSnapshot | null,
+): boolean {
+  if (!snapshot
+    || snapshot.schemaVersion !== SPATIAL_LAYOUT_SNAPSHOT_SCHEMA_VERSION
+    || snapshot.algorithmVersion !== SPATIAL_LAYOUT_ALGORITHM_VERSION
+    || !Array.isArray(snapshot.nodes)
+    || snapshot.checksum !== spatialSnapshotChecksum(snapshot.nodes)) return false;
+
+  const byId = new Map<string, SpatialSnapshotNode>();
+  const occupied = new Set<string>();
+  for (const saved of snapshot.nodes) {
+    if (!saved.id || byId.has(saved.id)) return false;
+    if (saved.pos !== null && !finiteVector(saved.pos)) return false;
+    if (saved.address !== null) {
+      if (!saved.address
+        || typeof saved.address.shellID !== 'string'
+        || !saved.address.shellID
+        || !Number.isSafeInteger(saved.address.cellID)
+        || saved.address.cellID < 0
+        || saved.pos === null) return false;
+      const key = saved.address.shellID + ':' + saved.address.cellID;
+      if (occupied.has(key)) return false;
+      occupied.add(key);
+    }
+    byId.set(saved.id, saved);
+  }
+
+  for (const node of nodes) {
+    const saved = byId.get(node.id);
+    if (!saved) {
+      delete node.address;
+      delete node.pos;
+      delete node.homePos;
+      node.vel?.set(0, 0, 0);
+      continue;
+    }
+    if (saved.address) node.address = { ...saved.address };
     else delete node.address;
     if (saved.pos) {
       const position = new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z);
