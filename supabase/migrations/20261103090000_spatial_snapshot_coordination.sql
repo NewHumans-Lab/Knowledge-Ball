@@ -543,7 +543,354 @@ begin
       if jsonb_typeof(address_data) <> 'object'
         or jsonb_typeof(address_data -> 'shellID') <> 'string'
         or nullif(address_data ->> 'shellID', '') is null
-        or (address_data ->> 'shellID') !~ '^shell:[0-9]+\\.[0-9]{6}
+        or (address_data ->> 'shellID') !~ '^shell:[0-9]+[.][0-9]{6}
+      end if;
+      cell_id := (address_data ->> 'cellID')::numeric;
+      if cell_id < 0 or cell_id > 9007199254740991 or cell_id <> trunc(cell_id) then
+        raise exception 'invalid spatial snapshot cell ID' using errcode = '22023';
+      end if;
+      shell_id := address_data ->> 'shellID';
+    end if;
+  end loop;
+
+  -- Acquire the event-stream lock before the singleton job row lock. This is
+  -- the same order used by append_public_knowledge_events and its trigger.
+  perform pg_advisory_xact_lock(1729364207);
+  select coalesce(max(sequence), 0) into current_head from public.public_knowledge_events;
+  if current_head <> p_knowledge_version then return false; end if;
+
+  select * into job from public.public_spatial_snapshot_jobs
+  where singleton is true for update;
+  if not found
+    or job.desired_knowledge_version <> p_knowledge_version
+    or job.status <> 'running'
+    or job.lease_session_id <> p_session_id
+    or job.lease_token <> p_lease_token
+    or job.lease_expires_at <= clock_timestamp()
+    or (job.desired_graph_signature is not null and job.desired_graph_signature <> p_graph_signature) then
+    return false;
+  end if;
+  if not exists (
+    select 1 from public.public_spatial_snapshot_workers
+    where session_id = p_session_id and actor_id = actor
+      and last_seen_at > clock_timestamp() - interval '3 minutes'
+  ) then
+    return false;
+  end if;
+
+  insert into public.public_spatial_snapshots (
+    singleton, knowledge_version, algorithm_version, graph_signature,
+    snapshot_checksum, snapshot, updated_by
+  ) values (
+    true, p_knowledge_version, p_algorithm_version, p_graph_signature,
+    p_snapshot_checksum, p_snapshot_data, actor
+  )
+  on conflict (singleton) do update
+    set knowledge_version = excluded.knowledge_version,
+        algorithm_version = excluded.algorithm_version,
+        graph_signature = excluded.graph_signature,
+        snapshot_checksum = excluded.snapshot_checksum,
+        snapshot = excluded.snapshot,
+        updated_at = clock_timestamp(),
+        updated_by = excluded.updated_by
+    where public.public_spatial_snapshots.knowledge_version < excluded.knowledge_version
+      or public.public_spatial_snapshots.algorithm_version <> excluded.algorithm_version
+      or public.public_spatial_snapshots.graph_signature <> excluded.graph_signature
+      or public.public_spatial_snapshots.snapshot_checksum <> excluded.snapshot_checksum;
+
+  update public.public_spatial_snapshot_jobs
+    set desired_graph_signature = p_graph_signature,
+        status = 'complete',
+        lease_session_id = null,
+        lease_token = null,
+        lease_expires_at = null,
+        updated_at = clock_timestamp()
+    where singleton is true and lease_token = p_lease_token;
+
+  return true;
+end;
+$$;
+
+-- Never allow clients to bypass job leases and publish directly.
+revoke all on function public.publish_public_spatial_snapshot(bigint, text, text, jsonb) from public, anon, authenticated;
+revoke all on function public.enqueue_public_spatial_snapshot_rebuild() from public, anon, authenticated;
+
+create or replace function public.broadcast_public_spatial_snapshot()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  chunk_size constant integer := 128;
+  total_nodes integer := jsonb_array_length(new.snapshot);
+  chunk_count integer;
+  chunk_index integer;
+  chunk_data jsonb;
+begin
+  chunk_count := greatest(1, ceil(total_nodes::numeric / chunk_size)::integer);
+  for chunk_index in 0..chunk_count - 1 loop
+    select coalesce(jsonb_agg(value order by ordinality), '[]'::jsonb)
+      into chunk_data
+      from jsonb_array_elements(new.snapshot) with ordinality as nodes(value, ordinality)
+      where ordinality > chunk_index * chunk_size
+        and ordinality <= (chunk_index + 1) * chunk_size;
+
+    perform realtime.send(
+      jsonb_build_object(
+        'knowledgeVersion', new.knowledge_version::text,
+        'algorithmVersion', new.algorithm_version,
+        'graphSignature', new.graph_signature,
+        'checksum', new.snapshot_checksum,
+        'chunkIndex', chunk_index,
+        'chunkCount', chunk_count,
+        'totalNodes', total_nodes,
+        'nodes', chunk_data
+      ),
+      'spatial_snapshot_chunk',
+      'public-spatial-snapshot',
+      false
+    );
+  end loop;
+  return new;
+end;
+$$;
+revoke all on function public.broadcast_public_spatial_snapshot() from public, anon, authenticated;
+
+drop trigger if exists public_spatial_snapshot_broadcast on public.public_spatial_snapshots;
+create trigger public_spatial_snapshot_broadcast
+after insert or update on public.public_spatial_snapshots
+for each row execute function public.broadcast_public_spatial_snapshot();
+
+-- Bootstrap the singleton queue from the current event head. The first active
+-- web client can publish the initial cache; no historical spatial snapshots exist.
+do $$
+declare
+  latest public.public_knowledge_events%rowtype;
+begin
+  select * into latest from public.public_knowledge_events order by sequence desc limit 1;
+  if found then
+    insert into public.public_spatial_snapshot_jobs (
+      singleton, desired_knowledge_version, requested_by, requested_at, status
+    ) values (
+      true, latest.sequence, latest.actor_id, clock_timestamp(), 'pending'
+    )
+    on conflict (singleton) do update
+      set desired_knowledge_version = excluded.desired_knowledge_version,
+          requested_by = excluded.requested_by,
+          requested_at = excluded.requested_at,
+          status = 'pending',
+          lease_session_id = null,
+          lease_token = null,
+          lease_expires_at = null,
+          updated_at = clock_timestamp()
+      where public.public_spatial_snapshot_jobs.desired_knowledge_version < excluded.desired_knowledge_version;
+  end if;
+end;
+$$;
+
+revoke all on function public.register_public_spatial_snapshot_worker(uuid) from public, anon;
+grant execute on function public.register_public_spatial_snapshot_worker(uuid) to authenticated;
+revoke all on function public.heartbeat_public_spatial_snapshot_worker(uuid, uuid) from public, anon;
+grant execute on function public.heartbeat_public_spatial_snapshot_worker(uuid, uuid) to authenticated;
+revoke all on function public.request_public_spatial_snapshot_rebuild(uuid, bigint, text, boolean) from public, anon;
+grant execute on function public.request_public_spatial_snapshot_rebuild(uuid, bigint, text, boolean) to authenticated;
+revoke all on function public.claim_public_spatial_snapshot_job(uuid) from public, anon;
+grant execute on function public.claim_public_spatial_snapshot_job(uuid) to authenticated;
+revoke all on function public.release_public_spatial_snapshot_job(uuid, uuid) from public, anon;
+grant execute on function public.release_public_spatial_snapshot_job(uuid, uuid) to authenticated;
+revoke all on function public.publish_public_spatial_snapshot_with_lease(bigint, text, text, text, jsonb, uuid, uuid) from public, anon;
+grant execute on function public.publish_public_spatial_snapshot_with_lease(bigint, text, text, text, jsonb, uuid, uuid) to authenticated;
+
+create or replace function public.knowledge_ball_schema_version() returns text
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$ select '20261103090000'::text $$;
+revoke all on function public.knowledge_ball_schema_version() from public, anon;
+grant execute on function public.knowledge_ball_schema_version() to authenticated;
+
+comment on table public.public_spatial_snapshot_jobs is
+  'Single mutable coordination row for the current spatial snapshot rebuild; it is not a history table.';
+comment on table public.public_spatial_snapshot_workers is
+  'Short-lived authenticated browser worker sessions used for submitter/online/new-page priority and lease heartbeats.';
+
+        or jsonb_typeof(address_data -> 'cellID') <> 'number' then
+        raise exception 'invalid spatial snapshot address' using errcode = '22023';
+      end if;
+      cell_id := (address_data ->> 'cellID')::numeric;
+      if cell_id < 0 or cell_id <> trunc(cell_id) then
+        raise exception 'invalid spatial snapshot cell ID' using errcode = '22023';
+      end if;
+      shell_id := address_data ->> 'shellID';
+    end if;
+  end loop;
+
+  -- Acquire the event-stream lock before the singleton job row lock. This is
+  -- the same order used by append_public_knowledge_events and its trigger.
+  perform pg_advisory_xact_lock(1729364207);
+  select coalesce(max(sequence), 0) into current_head from public.public_knowledge_events;
+  if current_head <> p_knowledge_version then return false; end if;
+
+  select * into job from public.public_spatial_snapshot_jobs
+  where singleton is true for update;
+  if not found
+    or job.desired_knowledge_version <> p_knowledge_version
+    or job.status <> 'running'
+    or job.lease_session_id <> p_session_id
+    or job.lease_token <> p_lease_token
+    or job.lease_expires_at <= clock_timestamp()
+    or (job.desired_graph_signature is not null and job.desired_graph_signature <> p_graph_signature) then
+    return false;
+  end if;
+  if not exists (
+    select 1 from public.public_spatial_snapshot_workers
+    where session_id = p_session_id and actor_id = actor
+      and last_seen_at > clock_timestamp() - interval '3 minutes'
+  ) then
+    return false;
+  end if;
+
+  insert into public.public_spatial_snapshots (
+    singleton, knowledge_version, algorithm_version, graph_signature,
+    snapshot_checksum, snapshot, updated_by
+  ) values (
+    true, p_knowledge_version, p_algorithm_version, p_graph_signature,
+    p_snapshot_checksum, p_snapshot_data, actor
+  )
+  on conflict (singleton) do update
+    set knowledge_version = excluded.knowledge_version,
+        algorithm_version = excluded.algorithm_version,
+        graph_signature = excluded.graph_signature,
+        snapshot_checksum = excluded.snapshot_checksum,
+        snapshot = excluded.snapshot,
+        updated_at = clock_timestamp(),
+        updated_by = excluded.updated_by
+    where public.public_spatial_snapshots.knowledge_version < excluded.knowledge_version
+      or public.public_spatial_snapshots.algorithm_version <> excluded.algorithm_version
+      or public.public_spatial_snapshots.graph_signature <> excluded.graph_signature
+      or public.public_spatial_snapshots.snapshot_checksum <> excluded.snapshot_checksum;
+
+  update public.public_spatial_snapshot_jobs
+    set desired_graph_signature = p_graph_signature,
+        status = 'complete',
+        lease_session_id = null,
+        lease_token = null,
+        lease_expires_at = null,
+        updated_at = clock_timestamp()
+    where singleton is true and lease_token = p_lease_token;
+
+  return true;
+end;
+$$;
+
+-- Never allow clients to bypass job leases and publish directly.
+revoke all on function public.publish_public_spatial_snapshot(bigint, text, text, jsonb) from public, anon, authenticated;
+revoke all on function public.enqueue_public_spatial_snapshot_rebuild() from public, anon, authenticated;
+
+create or replace function public.broadcast_public_spatial_snapshot()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  chunk_size constant integer := 128;
+  total_nodes integer := jsonb_array_length(new.snapshot);
+  chunk_count integer;
+  chunk_index integer;
+  chunk_data jsonb;
+begin
+  chunk_count := greatest(1, ceil(total_nodes::numeric / chunk_size)::integer);
+  for chunk_index in 0..chunk_count - 1 loop
+    select coalesce(jsonb_agg(value order by ordinality), '[]'::jsonb)
+      into chunk_data
+      from jsonb_array_elements(new.snapshot) with ordinality as nodes(value, ordinality)
+      where ordinality > chunk_index * chunk_size
+        and ordinality <= (chunk_index + 1) * chunk_size;
+
+    perform realtime.send(
+      jsonb_build_object(
+        'knowledgeVersion', new.knowledge_version::text,
+        'algorithmVersion', new.algorithm_version,
+        'graphSignature', new.graph_signature,
+        'checksum', new.snapshot_checksum,
+        'chunkIndex', chunk_index,
+        'chunkCount', chunk_count,
+        'totalNodes', total_nodes,
+        'nodes', chunk_data
+      ),
+      'spatial_snapshot_chunk',
+      'public-spatial-snapshot',
+      false
+    );
+  end loop;
+  return new;
+end;
+$$;
+revoke all on function public.broadcast_public_spatial_snapshot() from public, anon, authenticated;
+
+drop trigger if exists public_spatial_snapshot_broadcast on public.public_spatial_snapshots;
+create trigger public_spatial_snapshot_broadcast
+after insert or update on public.public_spatial_snapshots
+for each row execute function public.broadcast_public_spatial_snapshot();
+
+-- Bootstrap the singleton queue from the current event head. The first active
+-- web client can publish the initial cache; no historical spatial snapshots exist.
+do $$
+declare
+  latest public.public_knowledge_events%rowtype;
+begin
+  select * into latest from public.public_knowledge_events order by sequence desc limit 1;
+  if found then
+    insert into public.public_spatial_snapshot_jobs (
+      singleton, desired_knowledge_version, requested_by, requested_at, status
+    ) values (
+      true, latest.sequence, latest.actor_id, clock_timestamp(), 'pending'
+    )
+    on conflict (singleton) do update
+      set desired_knowledge_version = excluded.desired_knowledge_version,
+          requested_by = excluded.requested_by,
+          requested_at = excluded.requested_at,
+          status = 'pending',
+          lease_session_id = null,
+          lease_token = null,
+          lease_expires_at = null,
+          updated_at = clock_timestamp()
+      where public.public_spatial_snapshot_jobs.desired_knowledge_version < excluded.desired_knowledge_version;
+  end if;
+end;
+$$;
+
+revoke all on function public.register_public_spatial_snapshot_worker(uuid) from public, anon;
+grant execute on function public.register_public_spatial_snapshot_worker(uuid) to authenticated;
+revoke all on function public.heartbeat_public_spatial_snapshot_worker(uuid, uuid) from public, anon;
+grant execute on function public.heartbeat_public_spatial_snapshot_worker(uuid, uuid) to authenticated;
+revoke all on function public.request_public_spatial_snapshot_rebuild(uuid, bigint, text, boolean) from public, anon;
+grant execute on function public.request_public_spatial_snapshot_rebuild(uuid, bigint, text, boolean) to authenticated;
+revoke all on function public.claim_public_spatial_snapshot_job(uuid) from public, anon;
+grant execute on function public.claim_public_spatial_snapshot_job(uuid) to authenticated;
+revoke all on function public.release_public_spatial_snapshot_job(uuid, uuid) from public, anon;
+grant execute on function public.release_public_spatial_snapshot_job(uuid, uuid) to authenticated;
+revoke all on function public.publish_public_spatial_snapshot_with_lease(bigint, text, text, text, jsonb, uuid, uuid) from public, anon;
+grant execute on function public.publish_public_spatial_snapshot_with_lease(bigint, text, text, text, jsonb, uuid, uuid) to authenticated;
+
+create or replace function public.knowledge_ball_schema_version() returns text
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$ select '20261103090000'::text $$;
+revoke all on function public.knowledge_ball_schema_version() from public, anon;
+grant execute on function public.knowledge_ball_schema_version() to authenticated;
+
+comment on table public.public_spatial_snapshot_jobs is
+  'Single mutable coordination row for the current spatial snapshot rebuild; it is not a history table.';
+comment on table public.public_spatial_snapshot_workers is
+  'Short-lived authenticated browser worker sessions used for submitter/online/new-page priority and lease heartbeats.';
+
+        or jsonb_typeof(address_data -> 'cellID') <> 'number' then
         raise exception 'invalid spatial snapshot address' using errcode = '22023';
       end if;
       cell_id := (address_data ->> 'cellID')::numeric;
