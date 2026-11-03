@@ -224,8 +224,12 @@ try {
       'account-a',
       'device B local marker must switch to the logged-in account identity',
     );
-    await pageB.reload({ waitUntil: 'domcontentloaded' });
-    await pageB.waitForTimeout(750);
+    // The app's scene/bootstrap can outlive DOMContentLoaded while remote
+    // session hydration is in flight. Wait for the actual app bootstrap promise
+    // rather than treating the browser navigation event as readiness.
+    await pageB.reload({ waitUntil: 'commit', timeout: 30_000 });
+    await pageB.waitForFunction(() => Boolean(window.__debug?.bootstrapReady), null, { timeout: 30_000 });
+    await pageB.evaluate(() => window.__debug.bootstrapReady);
     assert.equal(await pageB.locator('.kb-core-onboarding').count(), 0, 'same account on device B must remain permanently suppressed after reload');
     assert.ok(onboardingWrites >= 1, 'the dedicated onboarding account RPC must be exercised');
     await deviceB.close();
