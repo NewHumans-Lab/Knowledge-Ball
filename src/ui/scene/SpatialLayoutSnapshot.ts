@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { bindReasoningConclusions } from '../../domain/ReasoningConclusion';
-import { lineageRoleFor } from '../../domain/KnowledgeLineage';
+import { lineageRoleFor, topicIdFor } from '../../domain/KnowledgeLineage';
 import { isSystemCoreNodeId } from '../../domain/KnowledgeLayerPolicy';
 import {
   generateIcosahedralGrid,
@@ -8,6 +8,7 @@ import {
   type LayoutNode,
 } from './Deterministic5RLayout';
 import { applyReasoningRadialPlacement } from './ReasoningRadialPlacement';
+import { isOrdinaryLineageSatellite } from './OrdinaryLineagePlacement';
 import { SUN_ORBIT_RADIUS, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 import {
   SPATIAL_LAYOUT_ALGORITHM_VERSION,
@@ -120,15 +121,30 @@ function snapshotMatchesExistingGeometry(
   const grids = new Map<string, ReturnType<typeof generateIcosahedralGrid>>();
   const ordinaryPositions: THREE.Vector3[] = [];
   const candidates: LayoutNode[] = [];
+  // The production lineage solver only assigns shell cells to history,
+  // opposition and candidate satellites when their topic has a positioned
+  // Current anchor. Orphan lineage records remain valid but intentionally
+  // unplaced; the cache validator must mirror that exact solver boundary.
+  const positionedCurrentTopics = new Set(nodes
+    .filter(node => lineageRoleFor(node) === 'current')
+    .filter(node => {
+      const saved = byId.get(node.id);
+      return Boolean(saved?.address && saved.pos);
+    })
+    .map(topicIdFor));
 
   for (const node of nodes) {
     const saved = byId.get(node.id);
     if (!saved) return reject('snapshot missing node ' + node.id);
     const isReasoning = node.type === 'reasoning';
     const isCore = isSystemCoreNodeId(node.id);
+    const role = lineageRoleFor(node);
+    const hasLineageAnchor = !isOrdinaryLineageSatellite(node)
+      || positionedCurrentTopics.has(topicIdFor(node));
     const shouldHaveOrdinaryPlacement = !isReasoning && !isCore
-      && lineageRoleFor(node) !== 'rejected'
-      && (!node.hidden || !!node.lineage);
+      && role !== 'rejected'
+      && (!node.hidden || !!node.lineage)
+      && hasLineageAnchor;
 
     if (saved.address) {
       if (isReasoning || isCore || !saved.pos) return reject('invalid addressed node ' + node.id);
