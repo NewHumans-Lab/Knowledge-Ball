@@ -65,7 +65,29 @@ try {
     page.on('pageerror', error => pageErrors.push(error.message));
 
     await page.goto(`${origin}?canonical-reasoning-chain-regression=1`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-    await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.renderNodes?.length), null, { timeout: 10_000 });
+    await page.waitForFunction(() => Boolean(window.__debug?.bootstrapReady), null, { timeout: 20_000 });
+    await page.evaluate(() => window.__debug.bootstrapReady);
+
+    // Spatial placement now runs in a Worker. A non-empty render list is not
+    // proof that the complete canonical graph has been laid out yet; wait for
+    // the exact reasoning/conclusion/reasoning topology used by this test.
+    await page.waitForFunction(() => {
+      const debug = window.__debug;
+      if (!debug?.scene || !debug.renderNodes?.length) return false;
+      const nodes = debug.renderNodes;
+      const byId = new Map(nodes.map(node => [node.id, node]));
+      const core = new Set(['n1', 'n2', 'n16']);
+      return nodes.some(node => {
+        if (core.has(node.id) || node.hidden || node.type === 'reasoning' || node.type === 'logic-symbol') return false;
+        const previousReasoning = node.premises
+          ?.map(id => byId.get(id))
+          .find(previous => previous?.type === 'reasoning');
+        const nextReasoning = nodes.find(next => next.type === 'reasoning' && next.premises?.includes(node.id));
+        const point = debug.scene.screenPositionForNode(node.id);
+        return Boolean(previousReasoning && nextReasoning && point
+          && point.x > 24 && point.x < 366 && point.y > 88 && point.y < 808);
+      });
+    }, null, { timeout: 30_000 });
 
     const candidate = await page.evaluate(() => {
       const debug = window.__debug;
