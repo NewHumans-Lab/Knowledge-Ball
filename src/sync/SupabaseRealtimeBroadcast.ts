@@ -21,6 +21,8 @@ export class SupabaseRealtimeBroadcast {
   private connected = false;
   private everConnected = false;
   private pendingJoin: { resolve: () => void; reject: (error: Error) => void } | null = null;
+  private joinRef: string | null = null;
+  private activeAccessToken: string | null = null;
 
   constructor(
     private readonly projectUrl: string,
@@ -59,6 +61,8 @@ export class SupabaseRealtimeBroadcast {
     const socket = this.socket;
     this.socket = null;
     this.connected = false;
+    this.joinRef = null;
+    this.activeAccessToken = null;
     socket?.close(1000, 'client stopped');
   }
 
@@ -76,6 +80,8 @@ export class SupabaseRealtimeBroadcast {
     const socket = new WebSocket(endpoint);
     this.socket = socket;
     const joinRef = this.nextRef();
+    this.joinRef = joinRef;
+    this.activeAccessToken = token;
 
     await new Promise<void>((resolve, reject) => {
       const joinTimeout = globalThis.setTimeout(() => {
@@ -118,6 +124,8 @@ export class SupabaseRealtimeBroadcast {
       };
       socket.onclose = () => {
         this.connected = false;
+        this.joinRef = null;
+        this.activeAccessToken = null;
         if (this.heartbeatTimer !== null) globalThis.clearInterval(this.heartbeatTimer);
         this.heartbeatTimer = null;
         this.pendingJoin?.reject(new Error('Realtime WebSocket closed before join completed'));
@@ -159,6 +167,14 @@ export class SupabaseRealtimeBroadcast {
       return;
     }
 
+    if (message.event === 'system') {
+      const systemPayload = message.payload as { status?: string; message?: string } | undefined;
+      if (systemPayload?.status === 'error') {
+        this.handlers.onError?.(new Error(systemPayload.message || 'Realtime channel system error'));
+        this.socket?.close(4003, 'Realtime channel system error');
+      }
+      return;
+    }
     if (message.event === 'phx_error' || message.event === 'phx_close') {
       this.socket?.close(4003, 'Realtime channel closed by server');
       return;
@@ -176,9 +192,38 @@ export class SupabaseRealtimeBroadcast {
   private startHeartbeat(): void {
     if (this.heartbeatTimer !== null) globalThis.clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = globalThis.setInterval(() => {
-      if (!this.connected || this.socket?.readyState !== WebSocket.OPEN) return;
-      this.send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: this.nextRef() });
+      const socket = this.socket;
+      if (!this.connected || socket?.readyState !== WebSocket.OPEN) return;
+      void this.sendHeartbeatAndRefreshToken(socket);
     }, 25_000);
+  }
+
+  private async sendHeartbeatAndRefreshToken(socket: WebSocket): Promise<void> {
+    try {
+      // publicSession refreshes a JWT when it is within 60 seconds of expiry.
+      // Supabase's private-channel protocol accepts access_token in-band, so a
+      // long-lived page need not wait for expiry and reconnect before it can
+      // continue receiving authenticated snapshot broadcasts.
+      const token = await this.accessToken();
+      if (!this.connected || this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
+      if (token && token !== this.activeAccessToken && this.joinRef) {
+        this.send({
+          topic: 'realtime:public-spatial-snapshot',
+          event: 'access_token',
+          payload: { access_token: token },
+          ref: this.nextRef(),
+          join_ref: this.joinRef,
+        });
+        this.activeAccessToken = token;
+      }
+    } catch (error) {
+      this.handlers.onError?.(error);
+      // Keep the socket heartbeat alive; a transient auth refresh failure should
+      // be surfaced but must not silently stop server-side connection liveness.
+    }
+    if (this.connected && this.socket === socket && socket.readyState === WebSocket.OPEN) {
+      this.send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: this.nextRef() });
+    }
   }
 
   private scheduleReconnect(): void {

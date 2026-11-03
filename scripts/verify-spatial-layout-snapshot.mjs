@@ -52,6 +52,10 @@ assert.match(realtime, /spatial_snapshot_chunk/);
 assert.match(realtime, /spatial_snapshot_rebuild_requested/);
 assert.match(realtime, /private: true/,
   'browser clients must subscribe privately so they cannot spoof database-originated snapshot chunks');
+assert.match(realtime, /event: 'access_token'/,
+  'private Realtime subscriptions must refresh authenticated JWTs without waiting for reconnect');
+assert.match(realtime, /join_ref: this\\.joinRef/,
+  'in-band Realtime token refresh must target the active channel join');
 assert.match(coordinator, /spatialSnapshotChecksum/);
 assert.match(coordinator, /chunkCount/);
 assert.match(coordinator, /publishSpatialSnapshotWithLease/);
