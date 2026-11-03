@@ -195,6 +195,10 @@ function scheduleLocalSpatialLayout(knowledgeVersion: string): void {
       localSpatialLayoutRequestKey = null;
       return;
     }
+    // Treat the last locally computed layout as the fallback snapshot so that
+    // subsequent graph edits keep existing nodes usable while the next Worker
+    // result is being prepared.
+    remoteSpatialSnapshot = snapshot;
     renderNodes = layoutNodes.filter(node => Boolean(node.pos) && nodeBelongsInLineageScene(node));
     scene?.markDirty();
     refreshCurrentKnowledgeSurface();
@@ -240,7 +244,7 @@ function syncNodesFromProjection(): void {
   // A standalone/offline preview has no shared DB to seed a singleton cache.
   // Preserve that mode using the same solver inside a Web Worker, never on the
   // main thread. Production users still wait for their claimed shared snapshot.
-  if (!productionSyncAdapter && !restored && !remoteSpatialSnapshot) {
+  if (!productionSyncAdapter && !restored) {
     scheduleLocalSpatialLayout(knowledgeVersion);
   }
 }
