@@ -74,6 +74,14 @@ try {
     await page.waitForFunction(() => Boolean(window.__debug?.bootstrapReady), null, { timeout: 20_000 });
     await page.evaluate(() => window.__debug.bootstrapReady);
 
+    // This is a local preview with no hosted Supabase endpoint. Replace only the
+    // transport commit with EventStore append; validation, projection, Worker
+    // layout, relation indexing and scene interaction remain the production path.
+    await page.evaluate(() => {
+      const debug = window.__debug;
+      debug.syncEngine.commit = async event => debug.store.appendValidated(event);
+    });
+
     // Build a complete, valid three-Knowledge / two-Reasoning chain through the
     // real public command path. The old demo n11 -> n12 chain is not suitable:
     // n11 is falsified/hidden, so its attached first Reasoning node correctly has
