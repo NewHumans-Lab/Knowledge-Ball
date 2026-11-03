@@ -7,7 +7,7 @@ create schema realtime;
 create table realtime.messages (id bigint, topic text, extension text);
 grant select, insert on realtime.messages to anon, authenticated;
 create or replace function realtime.topic() returns text
-language sql stable as $ select current_setting('realtime.topic', true) $;
+language sql stable as 'select ''public-spatial-snapshot''::text';
 create table auth.users (id uuid primary key);
 create or replace function auth.uid() returns uuid
 language sql stable
