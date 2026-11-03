@@ -437,7 +437,15 @@ try {
       return { currentId, historyId, historyOlderId, oppositionId, oppositionOlderId };
     }, candidate.id);
     assert.ok(lineageFixture, 'deterministic lineage fixture must attach to the tested current conclusion');
-    await page.waitForTimeout(300);
+    // The fixture changed Projection topology without a public event. The normal
+    // projection flush starts the local Worker, so wait for its complete geometry
+    // instead of assuming a fixed 300 ms synchronous reflow.
+    await page.waitForFunction(({ historyId, historyOlderId, oppositionId, oppositionOlderId }) => {
+      const debug = window.__debug;
+      const ids = [historyId, historyOlderId, oppositionId, oppositionOlderId];
+      return ids.every(id => Boolean(debug.layoutNodes.find(node => node.id === id)?.pos)
+        && Boolean(debug.renderNodes.find(node => node.id === id)?.pos));
+    }, lineageFixture, { timeout: 30_000 });
 
     const beforeLineageDetail = await page.evaluate(({ historyId, historyOlderId, oppositionId, oppositionOlderId }) => ({
       visibleEdges: window.__debug.scene.getVisibleEdgeCount(),
