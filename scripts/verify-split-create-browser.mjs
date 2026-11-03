@@ -28,6 +28,9 @@ try {
 
     await page.goto(origin, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__debug?.projection?.state?.nodesById?.n3 && window.__debug?.nodeDetail && window.__debug?.knowledgeCreate));
+    // Startup layout is intentionally asynchronous now; wait for the shared
+    // Web Worker to restore the source node before invoking position-dependent UI.
+    await page.waitForFunction(() => Boolean(window.__debug?.renderNodes?.some(node => node.id === 'n3')), null, { timeout: 20_000 });
 
     // Keep the browser path real while replacing only the unavailable hosted transport.
     // executeKnowledgeEdit still validates the event, commits through EventStore and drives
@@ -150,6 +153,11 @@ try {
     await overlay.locator('[data-create-submit]').click();
     await page.locator('#knowledgeCreateOverlay.show').waitFor({ state: 'hidden' });
 
+    const reasoningNodeId = await page.waitForFunction(title => {
+      const nodes = Object.values(window.__debug.projection.state.nodesById);
+      const reasoning = nodes.find(node => node.title === title);
+      return reasoning && window.__debug.renderNodes.some(node => node.id === reasoning.id) ? reasoning.id : null;
+    }, reasoningTitle, { timeout: 20_000 });
     const reasoningResult = await page.evaluate(({ reasoningTitle, conclusionId }) => {
       const nodes = Object.values(window.__debug.projection.state.nodesById);
       const reasoning = nodes.find(candidate => candidate.title === reasoningTitle);
