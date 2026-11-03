@@ -191,14 +191,23 @@ function scheduleLocalSpatialLayout(knowledgeVersion: string): void {
       if (localSpatialLayoutRequestKey === requestKey) localSpatialLayoutRequestKey = null;
       return;
     }
-    if (!restoreSpatialLayoutSnapshot(layoutNodes as LayoutNode[], snapshot, knowledgeVersion)) {
+    let rejectionReason = 'unknown';
+    if (!restoreSpatialLayoutSnapshot(
+      layoutNodes as LayoutNode[],
+      snapshot,
+      knowledgeVersion,
+      reason => { rejectionReason = reason; },
+    )) {
       console.warn('[Knowledge-Ball] local spatial worker snapshot rejected:', {
+        reason: rejectionReason,
         expectedVersion: knowledgeVersion,
         actualVersion: snapshot.knowledgeVersion,
         expectedGraph: spatialLayoutGraphSignature(layoutNodes as LayoutNode[]),
         actualGraph: snapshot.graphSignature,
         checksum: snapshot.checksum,
-        nodes: snapshot.nodes.filter(node => node.pos === null).map(node => node.id),
+        snapshotNodeCount: snapshot.nodes.length,
+        currentNodeCount: layoutNodes.length,
+        unpositionedNodes: snapshot.nodes.filter(node => node.pos === null).map(node => node.id),
       });
       localSpatialLayoutRequestKey = null;
       return;
