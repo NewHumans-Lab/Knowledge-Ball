@@ -111,6 +111,8 @@ let remoteSpatialSnapshot: SpatialLayoutSnapshot | null = null;
 let deferRemoteLayout = false;
 let spatialSnapshotWorker: SpatialSnapshotWorkerCoordinator | null = null;
 const spatialWorkerSessionId = productionSyncAdapter ? crypto.randomUUID() : null;
+let localSpatialLayoutRequestKey: string | null = null;
+let localSpatialLayoutGeneration = 0;
 const pendingLocalSpatialCommits = new Set<string>();
 let markingViewedNodeId: string | null = null;
 let currentViewerUserId: string | null = null;
@@ -173,6 +175,35 @@ function generateNodeId(): string {
   return `n-${crypto.randomUUID()}`;
 }
 
+function scheduleLocalSpatialLayout(knowledgeVersion: string): void {
+  if (productionSyncAdapter || layoutNodes.length === 0) return;
+  const graphSignature = spatialLayoutGraphSignature(layoutNodes as LayoutNode[]);
+  const requestKey = knowledgeVersion + ':' + graphSignature;
+  if (localSpatialLayoutRequestKey === requestKey) return;
+
+  localSpatialLayoutRequestKey = requestKey;
+  const generation = ++localSpatialLayoutGeneration;
+  const workerInput = layoutNodes as LayoutNode[];
+  void computeSpatialLayoutSnapshotInWorker(workerInput, knowledgeVersion).then(snapshot => {
+    if (generation !== localSpatialLayoutGeneration
+      || (syncEngine?.currentCursor() ?? '0') !== knowledgeVersion
+      || spatialLayoutGraphSignature(layoutNodes as LayoutNode[]) !== graphSignature) {
+      if (localSpatialLayoutRequestKey === requestKey) localSpatialLayoutRequestKey = null;
+      return;
+    }
+    if (!restoreSpatialLayoutSnapshot(layoutNodes as LayoutNode[], snapshot, knowledgeVersion)) {
+      localSpatialLayoutRequestKey = null;
+      return;
+    }
+    renderNodes = layoutNodes.filter(node => Boolean(node.pos) && nodeBelongsInLineageScene(node));
+    scene?.markDirty();
+    refreshCurrentKnowledgeSurface();
+  }).catch(error => {
+    if (localSpatialLayoutRequestKey === requestKey) localSpatialLayoutRequestKey = null;
+    console.warn('[Knowledge-Ball] local spatial worker layout deferred:', error);
+  });
+}
+
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
   const graphIndex = createKnowledgeGraphIndex(domainNodes);
@@ -206,6 +237,12 @@ function syncNodesFromProjection(): void {
   // KnowledgeScene consumes positions directly. Never expose unpositioned nodes
   // during the cache-miss window and never run the 5R solver in this render path.
   renderNodes = layoutNodes.filter(node => Boolean(node.pos) && nodeBelongsInLineageScene(node));
+  // A standalone/offline preview has no shared DB to seed a singleton cache.
+  // Preserve that mode using the same solver inside a Web Worker, never on the
+  // main thread. Production users still wait for their claimed shared snapshot.
+  if (!productionSyncAdapter && !restored && !remoteSpatialSnapshot) {
+    scheduleLocalSpatialLayout(knowledgeVersion);
+  }
 }
 
 function syncPersonalMasteryFromProjection(nodeId: string): void {
