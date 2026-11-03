@@ -23,8 +23,12 @@ try {
     const page = await context.newPage();
     page.setDefaultTimeout(10_000);
     const errors = [];
+    const warnings = [];
     page.on('pageerror', error => errors.push(error.message));
-    page.on('console', message => { if (message.type() === 'error' || message.type() === 'warning') errors.push(message.type() + ': ' + message.text()); });
+    page.on('console', message => {
+      if (message.type() === 'error') errors.push(message.text());
+      else if (message.type() === 'warning') warnings.push(message.text());
+    });
 
     await page.goto(origin, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Boolean(window.__debug?.projection?.state?.nodesById?.n3 && window.__debug?.nodeDetail && window.__debug?.knowledgeCreate));
@@ -171,7 +175,7 @@ try {
           id: node.id, type: node.type, title: node.title, hasPosition: Boolean(node.pos),
         })),
       }), reasoningTitle);
-      console.log('SPATIAL_WORKER_DIAGNOSTIC ' + JSON.stringify({ diagnostic, browserWarningsAndErrors: errors }));
+      console.log('SPATIAL_WORKER_DIAGNOSTIC ' + JSON.stringify({ diagnostic, browserWarnings: warnings, browserErrors: errors }));
       throw error;
     }
     const reasoningResult = await page.evaluate(({ reasoningTitle, conclusionId }) => {
