@@ -44,9 +44,15 @@ import {
   type KnowledgeSceneNode,
   type KnowledgeSceneRuntime,
 } from './scene/KnowledgeScene';
-import { applyUniformLayerLayout } from './scene/UniformLayerLayout';
-import { createSpatialLayoutSnapshot, restoreSpatialLayoutSnapshot } from './scene/SpatialLayoutSnapshot';
+import {
+  restoreSpatialLayoutSnapshot,
+  restoreSpatialLayoutSnapshotPositions,
+  spatialLayoutGraphSignature,
+} from './scene/SpatialLayoutSnapshot';
 import type { SpatialLayoutSnapshot } from '../sync/SpatialSnapshot';
+import type { LayoutNode } from './scene/Deterministic5RLayout';
+import { computeSpatialLayoutSnapshotInWorker } from '../sync/SpatialSnapshotLayoutWorker';
+import { SpatialSnapshotWorkerCoordinator } from '../sync/SpatialSnapshotWorkerCoordinator';
 
 import {
   InteractionController,
@@ -103,6 +109,11 @@ const knowledgeSurfaceState = new KnowledgeSurfaceState();
 let syncEngine: SyncEngine<typeof projection.state> | null = null;
 let remoteSpatialSnapshot: SpatialLayoutSnapshot | null = null;
 let deferRemoteLayout = false;
+let spatialSnapshotWorker: SpatialSnapshotWorkerCoordinator | null = null;
+const spatialWorkerSessionId = productionSyncAdapter ? crypto.randomUUID() : null;
+let localSpatialLayoutRequestKey: string | null = null;
+let localSpatialLayoutGeneration = 0;
+const pendingLocalSpatialCommits = new Set<string>();
 let markingViewedNodeId: string | null = null;
 let currentViewerUserId: string | null = null;
 const locallyCreatedByMeNodeIds = new Set<string>();
@@ -126,10 +137,18 @@ function updateCurrentViewerUserId(userId: string): void {
 
 async function commitPublicEvent(event: DomainEvent): Promise<boolean> {
   if (!syncEngine) throw new Error('公共知识远程通道尚未初始化');
-  const accepted = await syncEngine.commit(event);
+  pendingLocalSpatialCommits.add(event.id);
+  let accepted = false;
+  try {
+    accepted = await syncEngine.commit(event);
+  } finally {
+    pendingLocalSpatialCommits.delete(event.id);
+  }
   if (accepted) {
     for (const nodeId of createdNodeIdsFromEvent(event)) locallyCreatedByMeNodeIds.add(nodeId);
     syncCreatedByMeFlags();
+    // The submitter's acknowledged browser gets first claim priority.
+    void spatialSnapshotWorker?.requestLatestRebuild(true);
   }
   return accepted;
 }
@@ -156,6 +175,56 @@ function generateNodeId(): string {
   return `n-${crypto.randomUUID()}`;
 }
 
+function scheduleLocalSpatialLayout(knowledgeVersion: string): void {
+  if (productionSyncAdapter || layoutNodes.length === 0) return;
+  const graphSignature = spatialLayoutGraphSignature(layoutNodes as LayoutNode[]);
+  const requestKey = knowledgeVersion + ':' + graphSignature;
+  if (localSpatialLayoutRequestKey === requestKey) return;
+
+  localSpatialLayoutRequestKey = requestKey;
+  const generation = ++localSpatialLayoutGeneration;
+  const workerInput = layoutNodes as LayoutNode[];
+  void computeSpatialLayoutSnapshotInWorker(workerInput, knowledgeVersion).then(snapshot => {
+    if (generation !== localSpatialLayoutGeneration
+      || (syncEngine?.currentCursor() ?? '0') !== knowledgeVersion
+      || spatialLayoutGraphSignature(layoutNodes as LayoutNode[]) !== graphSignature) {
+      if (localSpatialLayoutRequestKey === requestKey) localSpatialLayoutRequestKey = null;
+      return;
+    }
+    let rejectionReason = 'unknown';
+    if (!restoreSpatialLayoutSnapshot(
+      layoutNodes as LayoutNode[],
+      snapshot,
+      knowledgeVersion,
+      reason => { rejectionReason = reason; },
+    )) {
+      console.warn('[Knowledge-Ball] local spatial worker snapshot rejected:', {
+        reason: rejectionReason,
+        expectedVersion: knowledgeVersion,
+        actualVersion: snapshot.knowledgeVersion,
+        expectedGraph: spatialLayoutGraphSignature(layoutNodes as LayoutNode[]),
+        actualGraph: snapshot.graphSignature,
+        checksum: snapshot.checksum,
+        snapshotNodeCount: snapshot.nodes.length,
+        currentNodeCount: layoutNodes.length,
+        unpositionedNodes: snapshot.nodes.filter(node => node.pos === null).map(node => node.id),
+      });
+      localSpatialLayoutRequestKey = null;
+      return;
+    }
+    // Treat the last locally computed layout as the fallback snapshot so that
+    // subsequent graph edits keep existing nodes usable while the next Worker
+    // result is being prepared.
+    remoteSpatialSnapshot = snapshot;
+    renderNodes = layoutNodes.filter(node => Boolean(node.pos) && nodeBelongsInLineageScene(node));
+    scene?.markDirty();
+    refreshCurrentKnowledgeSurface();
+  }).catch(error => {
+    if (localSpatialLayoutRequestKey === requestKey) localSpatialLayoutRequestKey = null;
+    console.warn('[Knowledge-Ball] local spatial worker layout deferred:', error);
+  });
+}
+
 function syncNodesFromProjection(): void {
   const domainNodes = nodeList(projection.state);
   const graphIndex = createKnowledgeGraphIndex(domainNodes);
@@ -171,29 +240,30 @@ function syncNodesFromProjection(): void {
     return rendered;
   });
   if (deferRemoteLayout) {
-    renderNodes = layoutNodes.filter(node => nodeBelongsInLineageScene(node));
+    renderNodes = [];
     return;
   }
 
   const knowledgeVersion = syncEngine?.currentCursor() ?? '0';
   const restored = Boolean(
-    productionSyncAdapter
-      && remoteSpatialSnapshot
-      && restoreSpatialLayoutSnapshot(layoutNodes, remoteSpatialSnapshot, knowledgeVersion),
+    remoteSpatialSnapshot
+      && restoreSpatialLayoutSnapshot(layoutNodes as LayoutNode[], remoteSpatialSnapshot, knowledgeVersion),
   );
-  if (!restored) {
-    applyUniformLayerLayout(layoutNodes);
-    if (productionSyncAdapter && syncEngine && layoutNodes.length > 0) {
-      // The existing 5R / icosahedral solver remains the only geometry owner.
-      // Cache publication is fire-and-forget; public event commits do not wait for it.
-      const snapshot = createSpatialLayoutSnapshot(layoutNodes, syncEngine.currentCursor());
-      remoteSpatialSnapshot = snapshot;
-      void productionSyncAdapter.publishSpatialSnapshot(snapshot).catch(error => {
-        console.warn('[Knowledge-Ball] spatial snapshot publication deferred:', error);
-      });
-    }
+  if (!restored && remoteSpatialSnapshot) {
+    // Keep already-known positions visible while a newer version is computed.
+    // Nodes absent from the old snapshot stay out of the scene until the next
+    // complete snapshot arrives; no provisional geometry is generated here.
+    restoreSpatialLayoutSnapshotPositions(layoutNodes as LayoutNode[], remoteSpatialSnapshot);
   }
-  renderNodes = layoutNodes.filter(node => nodeBelongsInLineageScene(node));
+  // KnowledgeScene consumes positions directly. Never expose unpositioned nodes
+  // during the cache-miss window and never run the 5R solver in this render path.
+  renderNodes = layoutNodes.filter(node => Boolean(node.pos) && nodeBelongsInLineageScene(node));
+  // A standalone/offline preview has no shared DB to seed a singleton cache.
+  // Preserve that mode using the same solver inside a Web Worker, never on the
+  // main thread. Production users still wait for their claimed shared snapshot.
+  if (!productionSyncAdapter && !restored) {
+    scheduleLocalSpatialLayout(knowledgeVersion);
+  }
 }
 
 function syncPersonalMasteryFromProjection(nodeId: string): void {
@@ -692,9 +762,12 @@ store.subscribe((event) => {
     scene.markDirty();
     if (knowledgeSurfaceState.nodeId === event.payload.nodeId) refreshCurrentKnowledgeSurface();
   } else {
-    // Public/domain truth still advances event-by-event. A synchronous replay
-    // burst gets one derived full-graph render/layout at the microtask boundary.
+    // Public/domain truth still advances event-by-event. Rendering restores the
+    // current cache only; the background worker owns all cache-miss computation.
     projectionRenderScheduler.request();
+    if (!pendingLocalSpatialCommits.has(event.id)) {
+      void spatialSnapshotWorker?.requestLatestRebuild(false);
+    }
   }
   performance.mark?.('knowledge-subscriber-end');
   performance.measure?.('knowledge-subscriber', 'knowledge-subscriber-start', 'knowledge-subscriber-end');
@@ -802,8 +875,47 @@ function initializeSyncEngine(): void {
 initializeSyncEngine();
 
 async function hydrateRemoteWithSpatialSnapshot(): Promise<void> {
-  if (!productionSyncAdapter || !syncEngine) return;
+  if (!productionSyncAdapter || !syncEngine || !spatialWorkerSessionId) return;
   deferRemoteLayout = true;
+
+  spatialSnapshotWorker = new SpatialSnapshotWorkerCoordinator({
+    backend: productionSyncAdapter,
+    sessionId: spatialWorkerSessionId,
+    syncLatest: async () => {
+      await syncEngine!.sync();
+      projectionRenderScheduler.flushNow();
+    },
+    getGraphIdentity: () => ({
+      knowledgeVersion: syncEngine?.currentCursor() ?? '0',
+      graphSignature: spatialLayoutGraphSignature(layoutNodes as LayoutNode[]),
+    }),
+    computeSnapshot: version => computeSpatialLayoutSnapshotInWorker(layoutNodes as LayoutNode[], version),
+    applySnapshot: async snapshot => {
+      const currentVersion = syncEngine?.currentCursor() ?? '0';
+      if (BigInt(snapshot.knowledgeVersion) > BigInt(currentVersion)) {
+        await syncEngine?.sync();
+        projectionRenderScheduler.flushNow();
+      }
+      const applied = Boolean(
+        syncEngine
+          && restoreSpatialLayoutSnapshot(layoutNodes as LayoutNode[], snapshot, syncEngine.currentCursor()),
+      );
+      if (!applied) return false;
+      remoteSpatialSnapshot = snapshot;
+      renderNodes = layoutNodes.filter(node => Boolean(node.pos) && nodeBelongsInLineageScene(node));
+      scene?.markDirty();
+      refreshCurrentKnowledgeSurface();
+      return true;
+    },
+    onError: (error, phase) => console.warn('[Knowledge-Ball] spatial snapshot worker ' + phase + ' deferred:', error),
+  }, productionSyncAdapter.realtimeConfig());
+
+  try {
+    await spatialSnapshotWorker.start();
+  } catch (error) {
+    console.warn('[Knowledge-Ball] spatial snapshot worker registration deferred:', error);
+  }
+
   const snapshotRequest = productionSyncAdapter.loadSpatialSnapshot().catch(error => {
     console.warn('[Knowledge-Ball] spatial snapshot read deferred:', error);
     return null;
@@ -813,9 +925,18 @@ async function hydrateRemoteWithSpatialSnapshot(): Promise<void> {
     remoteSpatialSnapshot = snapshot;
   } finally {
     deferRemoteLayout = false;
-    // Restore a matching snapshot or run the unchanged deterministic layout once.
+    // A cache hit restores exact saved geometry. A miss keeps the scene unplaced
+    // until a background Web Worker publishes the first complete snapshot.
     flushProjectionRender();
+    await spatialSnapshotWorker.markInitialSnapshotLoaded();
   }
+
+  const currentVersion = syncEngine.currentCursor();
+  const exactSnapshot = Boolean(
+    remoteSpatialSnapshot
+      && restoreSpatialLayoutSnapshot(layoutNodes as LayoutNode[], remoteSpatialSnapshot, currentVersion),
+  );
+  if (!exactSnapshot) void spatialSnapshotWorker.requestLatestRebuild(false);
 }
 
 const bootstrapReady = bootstrapRemoteFirst({
@@ -840,6 +961,7 @@ const bootstrapReady = bootstrapRemoteFirst({
 window.addEventListener('resize', () => {
   scene.resize();
 });
+window.addEventListener('pagehide', () => spatialSnapshotWorker?.stop());
 
 void setupMobileShell();
 

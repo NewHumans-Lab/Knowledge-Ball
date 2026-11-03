@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { bindReasoningConclusions } from '../../domain/ReasoningConclusion';
-import { lineageRoleFor } from '../../domain/KnowledgeLineage';
+import { lineageRoleFor, topicIdFor } from '../../domain/KnowledgeLineage';
 import { isSystemCoreNodeId } from '../../domain/KnowledgeLayerPolicy';
 import {
   generateIcosahedralGrid,
@@ -8,10 +8,12 @@ import {
   type LayoutNode,
 } from './Deterministic5RLayout';
 import { applyReasoningRadialPlacement } from './ReasoningRadialPlacement';
+import { isOrdinaryLineageSatellite } from './OrdinaryLineagePlacement';
 import { SUN_ORBIT_RADIUS, SUN_TRIAD_IDS } from '../config/KnowledgeUiConfig';
 import {
   SPATIAL_LAYOUT_ALGORITHM_VERSION,
   SPATIAL_LAYOUT_SNAPSHOT_SCHEMA_VERSION,
+  spatialSnapshotChecksum,
   type SpatialLayoutSnapshot,
   type SpatialSnapshotNode,
 } from '../../sync/SpatialSnapshot';
@@ -75,6 +77,7 @@ export function createSpatialLayoutSnapshot(nodes: readonly LayoutNode[], knowle
     knowledgeVersion,
     algorithmVersion: SPATIAL_LAYOUT_ALGORITHM_VERSION,
     graphSignature: spatialLayoutGraphSignature(nodes),
+    checksum: spatialSnapshotChecksum(snapshotNodes),
     nodes: snapshotNodes,
   };
 }
@@ -106,43 +109,66 @@ function hasFiveRSpacing(points: readonly THREE.Vector3[]): boolean {
  * Reasoning positions must reproduce the existing radial-placement routine.
  * No full 5R component search is run on a cache hit.
  */
-function snapshotMatchesExistingGeometry(nodes: readonly LayoutNode[], byId: ReadonlyMap<string, SpatialSnapshotNode>): boolean {
+function snapshotMatchesExistingGeometry(
+  nodes: readonly LayoutNode[],
+  byId: ReadonlyMap<string, SpatialSnapshotNode>,
+  onReject?: (reason: string) => void,
+): boolean {
+  const reject = (reason: string): false => {
+    onReject?.(reason);
+    return false;
+  };
   const grids = new Map<string, ReturnType<typeof generateIcosahedralGrid>>();
   const ordinaryPositions: THREE.Vector3[] = [];
   const candidates: LayoutNode[] = [];
+  // The production lineage solver only assigns shell cells to history,
+  // opposition and candidate satellites when their topic has a positioned
+  // Current anchor. Orphan lineage records remain valid but intentionally
+  // unplaced; the cache validator must mirror that exact solver boundary.
+  const positionedCurrentTopics = new Set(nodes
+    .filter(node => lineageRoleFor(node) === 'current')
+    .filter(node => {
+      const saved = byId.get(node.id);
+      return Boolean(saved?.address && saved.pos);
+    })
+    .map(topicIdFor));
 
   for (const node of nodes) {
     const saved = byId.get(node.id);
-    if (!saved) return false;
+    if (!saved) return reject('snapshot missing node ' + node.id);
     const isReasoning = node.type === 'reasoning';
     const isCore = isSystemCoreNodeId(node.id);
+    const role = lineageRoleFor(node);
+    const hasLineageAnchor = !isOrdinaryLineageSatellite(node)
+      || positionedCurrentTopics.has(topicIdFor(node));
     const shouldHaveOrdinaryPlacement = !isReasoning && !isCore
-      && lineageRoleFor(node) !== 'rejected'
-      && (!node.hidden || !!node.lineage);
+      && role !== 'rejected'
+      && (!node.hidden || !!node.lineage)
+      && hasLineageAnchor;
 
     if (saved.address) {
-      if (isReasoning || isCore || !saved.pos) return false;
+      if (isReasoning || isCore || !saved.pos) return reject('invalid addressed node ' + node.id);
       const match = /^shell:(\d+\.\d{6})$/.exec(saved.address.shellID);
-      if (!match) return false;
+      if (!match) return reject('invalid shell ID for ' + node.id + ': ' + saved.address.shellID);
       const radius = Number(match[1]);
-      if (!Number.isFinite(radius) || radius <= 0) return false;
+      if (!Number.isFinite(radius) || radius <= 0) return reject('invalid shell radius for ' + node.id);
       let grid = grids.get(saved.address.shellID);
       if (!grid) {
         try {
           grid = generateIcosahedralGrid(radius, undefined, saved.address.shellID);
         } catch {
-          return false;
+          return reject('icosahedral grid generation failed for ' + node.id);
         }
         grids.set(saved.address.shellID, grid);
       }
       const vertex = grid.vertices[saved.address.cellID];
       const position = new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z);
-      if (!vertex || vertex.distanceTo(position) > EPSILON) return false;
+      if (!vertex || vertex.distanceTo(position) > EPSILON) return reject('saved XYZ does not match shell cell for ' + node.id);
       ordinaryPositions.push(position);
     } else if (shouldHaveOrdinaryPlacement) {
-      return false;
+      return reject('ordinary node has no shell address: ' + node.id);
     } else if (isReasoning && saved.address !== null) {
-      return false;
+      return reject('reasoning node must not occupy an ISG cell: ' + node.id);
     }
 
     if (isCore) {
@@ -153,7 +179,7 @@ function snapshotMatchesExistingGeometry(nodes: readonly LayoutNode[], byId: Rea
         Math.sin(angle) * SUN_ORBIT_RADIUS,
         0,
       );
-      if (!saved.pos || new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z).distanceTo(expected) > EPSILON) return false;
+      if (!saved.pos || new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z).distanceTo(expected) > EPSILON) return reject('system core position mismatch: ' + node.id);
     }
 
     const clone: LayoutNode = {
@@ -168,13 +194,13 @@ function snapshotMatchesExistingGeometry(nodes: readonly LayoutNode[], byId: Rea
     candidates.push(clone);
   }
 
-  if (!hasFiveRSpacing(ordinaryPositions)) return false;
+  if (!hasFiveRSpacing(ordinaryPositions)) return reject('ordinary shell positions violate 5R spacing');
 
   try {
     bindReasoningConclusions(candidates);
     applyReasoningRadialPlacement(candidates);
-  } catch {
-    return false;
+  } catch (error) {
+    return reject('reasoning geometry recomputation failed: ' + (error instanceof Error ? error.message : String(error)));
   }
 
   const candidateById = new Map(candidates.map(node => [node.id, node]));
@@ -182,9 +208,10 @@ function snapshotMatchesExistingGeometry(nodes: readonly LayoutNode[], byId: Rea
     if (node.type !== 'reasoning') continue;
     const expected = candidateById.get(node.id)?.pos;
     const saved = byId.get(node.id)?.pos;
-    if (Boolean(expected) !== Boolean(saved)) return false;
+    if (Boolean(expected) !== Boolean(saved)) return reject('reasoning position presence mismatch for ' + node.id + ': expected=' + Boolean(expected) + ', saved=' + Boolean(saved));
     if (expected && saved) {
-      if (expected.distanceTo(new THREE.Vector3(saved.x, saved.y, saved.z)) > EPSILON) return false;
+      const distance = expected.distanceTo(new THREE.Vector3(saved.x, saved.y, saved.z));
+      if (distance > EPSILON) return reject('reasoning position mismatch for ' + node.id + ': distance=' + distance);
     }
   }
   return true;
@@ -195,21 +222,82 @@ export function restoreSpatialLayoutSnapshot(
   nodes: LayoutNode[],
   snapshot: SpatialLayoutSnapshot | null,
   expectedKnowledgeVersion: string,
+  onReject?: (reason: string) => void,
+): boolean {
+  const reject = (reason: string): false => {
+    onReject?.(reason);
+    return false;
+  };
+  if (!snapshot) return reject('missing snapshot');
+  if (snapshot.schemaVersion !== SPATIAL_LAYOUT_SNAPSHOT_SCHEMA_VERSION) return reject('snapshot schema version mismatch');
+  if (snapshot.algorithmVersion !== SPATIAL_LAYOUT_ALGORITHM_VERSION) return reject('snapshot algorithm version mismatch');
+  if (snapshot.knowledgeVersion !== expectedKnowledgeVersion) return reject('snapshot knowledge version mismatch');
+  if (snapshot.graphSignature !== spatialLayoutGraphSignature(nodes)) return reject('snapshot graph signature mismatch');
+  if (!Array.isArray(snapshot.nodes)) return reject('snapshot nodes payload is not an array');
+  if (snapshot.checksum !== spatialSnapshotChecksum(snapshot.nodes)) return reject('snapshot checksum mismatch');
+  if (snapshot.nodes.length !== nodes.length) return reject('snapshot node count mismatch: saved=' + snapshot.nodes.length + ', current=' + nodes.length);
+
+  const currentIds = [...nodes].map(node => node.id).sort((a, b) => a.localeCompare(b));
+  const savedIds = snapshot.nodes.map(node => node.id).sort((a, b) => a.localeCompare(b));
+  if (currentIds.some((id, index) => id !== savedIds[index])) return reject('snapshot node ID set mismatch');
+
+  const byId = new Map<string, SpatialSnapshotNode>();
+  const occupiedAddresses = new Set<string>();
+  for (const saved of snapshot.nodes) {
+    if (!saved.id || byId.has(saved.id)) return reject('snapshot has empty or duplicate node ID');
+    if (saved.pos !== null && !finiteVector(saved.pos)) return reject('snapshot has non-finite position for ' + saved.id);
+    if (saved.address !== null) {
+      if (!saved.address
+        || typeof saved.address.shellID !== 'string'
+        || !saved.address.shellID
+        || !Number.isSafeInteger(saved.address.cellID)
+        || saved.address.cellID < 0
+        || saved.pos === null) return reject('snapshot has invalid shell address for ' + saved.id);
+      const key = saved.address.shellID + ':' + saved.address.cellID;
+      if (occupiedAddresses.has(key)) return reject('snapshot has duplicate shell occupancy ' + key);
+      occupiedAddresses.add(key);
+    }
+    byId.set(saved.id, saved);
+  }
+
+  if (!snapshotMatchesExistingGeometry(nodes, byId, reject)) return false;
+
+  // All validation is complete; only now mutate the scene nodes.
+  for (const node of nodes) {
+    const saved = byId.get(node.id)!;
+    if (saved.address) node.address = { shellID: saved.address.shellID, cellID: saved.address.cellID };
+    else delete node.address;
+    if (saved.pos) {
+      const position = new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z);
+      node.pos = position.clone();
+      node.homePos = position.clone();
+    } else {
+      delete node.pos;
+      delete node.homePos;
+    }
+    node.vel ??= new THREE.Vector3();
+    node.vel.set(0, 0, 0);
+  }
+  return true;
+}
+
+/**
+ * Preserve the previous visible geometry while a newer graph version is being
+ * solved. This is deliberately permissive and MUST NOT be used for publication:
+ * strict restoreSpatialLayoutSnapshot remains the only acceptance path.
+ */
+export function restoreSpatialLayoutSnapshotPositions(
+  nodes: LayoutNode[],
+  snapshot: SpatialLayoutSnapshot | null,
 ): boolean {
   if (!snapshot
     || snapshot.schemaVersion !== SPATIAL_LAYOUT_SNAPSHOT_SCHEMA_VERSION
     || snapshot.algorithmVersion !== SPATIAL_LAYOUT_ALGORITHM_VERSION
-    || snapshot.knowledgeVersion !== expectedKnowledgeVersion
-    || snapshot.graphSignature !== spatialLayoutGraphSignature(nodes)
     || !Array.isArray(snapshot.nodes)
-    || snapshot.nodes.length !== nodes.length) return false;
-
-  const currentIds = [...nodes].map(node => node.id).sort((a, b) => a.localeCompare(b));
-  const savedIds = snapshot.nodes.map(node => node.id).sort((a, b) => a.localeCompare(b));
-  if (currentIds.some((id, index) => id !== savedIds[index])) return false;
+    || snapshot.checksum !== spatialSnapshotChecksum(snapshot.nodes)) return false;
 
   const byId = new Map<string, SpatialSnapshotNode>();
-  const occupiedAddresses = new Set<string>();
+  const occupied = new Set<string>();
   for (const saved of snapshot.nodes) {
     if (!saved.id || byId.has(saved.id)) return false;
     if (saved.pos !== null && !finiteVector(saved.pos)) return false;
@@ -221,18 +309,22 @@ export function restoreSpatialLayoutSnapshot(
         || saved.address.cellID < 0
         || saved.pos === null) return false;
       const key = saved.address.shellID + ':' + saved.address.cellID;
-      if (occupiedAddresses.has(key)) return false;
-      occupiedAddresses.add(key);
+      if (occupied.has(key)) return false;
+      occupied.add(key);
     }
     byId.set(saved.id, saved);
   }
 
-  if (!snapshotMatchesExistingGeometry(nodes, byId)) return false;
-
-  // All validation is complete; only now mutate the scene nodes.
   for (const node of nodes) {
-    const saved = byId.get(node.id)!;
-    if (saved.address) node.address = { shellID: saved.address.shellID, cellID: saved.address.cellID };
+    const saved = byId.get(node.id);
+    if (!saved) {
+      delete node.address;
+      delete node.pos;
+      delete node.homePos;
+      node.vel?.set(0, 0, 0);
+      continue;
+    }
+    if (saved.address) node.address = { ...saved.address };
     else delete node.address;
     if (saved.pos) {
       const position = new THREE.Vector3(saved.pos.x, saved.pos.y, saved.pos.z);

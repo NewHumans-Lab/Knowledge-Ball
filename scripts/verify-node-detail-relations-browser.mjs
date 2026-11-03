@@ -62,10 +62,102 @@ try {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const page = await context.newPage();
     const pageErrors = [];
+    const browserWarnings = [];
     page.on('pageerror', error => pageErrors.push(error.message));
+    page.on('console', message => {
+      if (message.type() === 'error' || message.type() === 'warning') {
+        browserWarnings.push(message.type() + ': ' + message.text());
+      }
+    });
 
     await page.goto(`${origin}?canonical-reasoning-chain-regression=1`, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-    await page.waitForFunction(() => Boolean(window.__debug?.scene && window.__debug?.renderNodes?.length), null, { timeout: 10_000 });
+    await page.waitForFunction(() => Boolean(window.__debug?.bootstrapReady), null, { timeout: 20_000 });
+    await page.evaluate(() => window.__debug.bootstrapReady);
+
+    // This is a local preview with no hosted Supabase endpoint. Replace only the
+    // transport commit with EventStore append; validation, projection, Worker
+    // layout, relation indexing and scene interaction remain the production path.
+    await page.evaluate(() => {
+      const debug = window.__debug;
+      debug.syncEngine.commit = async event => debug.store.appendValidated(event);
+    });
+
+    // Build a complete, valid three-Knowledge / two-Reasoning chain through the
+    // real public command path. The old demo n11 -> n12 chain is not suitable:
+    // n11 is falsified/hidden, so its attached first Reasoning node correctly has
+    // no spatial position. n3, n5 and n6 are verified current Knowledge nodes.
+    await page.evaluate(async () => {
+      const debug = window.__debug;
+      await debug.createReasoningKnowledge({
+        title: '验收前置推理节点',
+        premiseIds: ['n3'],
+        reasoning: '由已验证的质数定义推导出验收中间结论。',
+        conclusionIds: ['n5'],
+      });
+      await debug.createReasoningKnowledge({
+        title: '验收后续推理节点',
+        premiseIds: ['n5'],
+        reasoning: '以前一条已验证结论作为前提，推导后续结论。',
+        conclusionIds: ['n6'],
+      });
+      // Both created Reasoning nodes are pending by design. Current mode hides
+      // pending claims; All mode makes their physical balls available for the
+      // real screen-position and touch-navigation assertions below.
+      debug.scene.setVisibilityMode('all');
+    });
+
+    // Spatial placement now runs in a Worker. A non-empty render list is not
+    // proof that the complete canonical graph has been laid out yet; wait for
+    // the exact reasoning/conclusion/reasoning topology used by this test.
+    try {
+      await page.waitForFunction(() => {
+        const debug = window.__debug;
+        if (!debug?.scene || !debug.renderNodes?.length) return false;
+        const nodes = debug.renderNodes;
+        const byId = new Map(nodes.map(node => [node.id, node]));
+        const core = new Set(['n1', 'n2', 'n16']);
+        return nodes.some(node => {
+          if (core.has(node.id) || node.hidden || node.type === 'reasoning' || node.type === 'logic-symbol') return false;
+          const previousReasoning = node.premises
+            ?.map(id => byId.get(id))
+            .find(previous => previous?.type === 'reasoning');
+          const nextReasoning = nodes.find(next => next.type === 'reasoning' && next.premises?.includes(node.id));
+          const point = debug.scene.screenPositionForNode(node.id);
+          return Boolean(previousReasoning && nextReasoning && point
+            && point.x > 24 && point.x < 366 && point.y > 88 && point.y < 808);
+        });
+      }, null, { timeout: 30_000 });
+    } catch (error) {
+      const diagnostic = await page.evaluate(() => {
+        const debug = window.__debug;
+        const ids = ['n11', 'r-n12', 'n12', 'r-n13', 'n13'];
+        const summarize = node => node ? {
+          id: node.id,
+          type: node.type,
+          status: node.status,
+          premises: node.premises,
+          hidden: node.hidden,
+          hasPosition: Boolean(node.pos),
+          position: node.pos ? { x: node.pos.x, y: node.pos.y, z: node.pos.z } : null,
+          screen: debug.scene?.screenPositionForNode(node.id) ?? null,
+          lineage: node.lineage,
+        } : null;
+        return {
+          bootstrap: typeof debug.bootstrapReady,
+          layoutCount: debug.layoutNodes?.length ?? 0,
+          renderCount: debug.renderNodes?.length ?? 0,
+          projected: ids.map(id => summarize(debug.projection?.state?.nodesById?.[id])),
+          layout: ids.map(id => summarize(debug.layoutNodes?.find(node => node.id === id))),
+          rendered: ids.map(id => summarize(debug.renderNodes?.find(node => node.id === id))),
+        };
+      });
+      console.log('SECOND_TAP_RELATION_DIAGNOSTIC ' + JSON.stringify({
+        diagnostic,
+        pageErrors,
+        browserWarnings,
+      }));
+      throw error;
+    }
 
     const candidate = await page.evaluate(() => {
       const debug = window.__debug;
@@ -345,7 +437,15 @@ try {
       return { currentId, historyId, historyOlderId, oppositionId, oppositionOlderId };
     }, candidate.id);
     assert.ok(lineageFixture, 'deterministic lineage fixture must attach to the tested current conclusion');
-    await page.waitForTimeout(300);
+    // The fixture changed Projection topology without a public event. The normal
+    // projection flush starts the local Worker, so wait for its complete geometry
+    // instead of assuming a fixed 300 ms synchronous reflow.
+    await page.waitForFunction(({ historyId, historyOlderId, oppositionId, oppositionOlderId }) => {
+      const debug = window.__debug;
+      const ids = [historyId, historyOlderId, oppositionId, oppositionOlderId];
+      return ids.every(id => Boolean(debug.layoutNodes.find(node => node.id === id)?.pos)
+        && Boolean(debug.renderNodes.find(node => node.id === id)?.pos));
+    }, lineageFixture, { timeout: 30_000 });
 
     const beforeLineageDetail = await page.evaluate(({ historyId, historyOlderId, oppositionId, oppositionOlderId }) => ({
       visibleEdges: window.__debug.scene.getVisibleEdgeCount(),
