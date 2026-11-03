@@ -10,7 +10,16 @@ on:
     paths:
       - 'public/downloads/latest.json'
       - '.github/workflows/deploy.yml'
-
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'capacitor.config.ts'
+      - 'tsconfig*.json'
+      - 'scripts/**'
+      - 'supabase/migrations/**'
 permissions:
   contents: read
   pages: write
