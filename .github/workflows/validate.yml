@@ -63,6 +63,8 @@ jobs:
       - name: Verify cloud-only public state with two already-open real pages
         run: npm run test:browser-cloud
       - run: npm run test:browser-mobile
+      - name: Verify Android Chrome foreground recovery after WebGL context loss
+        run: npm run test:scene-recovery-browser
       - name: Verify label zoom-in/zoom-out reversibility on a real mobile page
         run: node scripts/verify-label-zoom-reversibility-browser.mjs
       - name: Upload mobile scene visual evidence
