@@ -101,7 +101,36 @@ function assertBufferSha256(bytes, checksum, label) {
   assert.equal(actual, expectedSha256(checksum), `${label} must match the authoritative Android SHA-256`);
 }
 
+async function verifyDeploymentWorkflowConcurrency() {
+  const workflow = await readFile('.github/workflows/deploy.yml', 'utf8');
+  const jobsIndex = workflow.indexOf('\njobs:\n');
+  assert.ok(jobsIndex > 0, 'Pages deployment workflow must define jobs');
+
+  const workflowHeader = workflow.slice(0, jobsIndex);
+  assert.doesNotMatch(
+    workflowHeader,
+    /^concurrency:/m,
+    'workflow-level concurrency lets skipped workflow_run events cancel real deployments',
+  );
+
+  const deployStart = workflow.indexOf('\n  deploy:\n');
+  assert.ok(deployStart >= 0, 'Pages deployment workflow must define a deploy job');
+  const deploySection = workflow.slice(deployStart);
+  assert.match(
+    deploySection,
+    /^    concurrency:\n      group: pages\n      cancel-in-progress: true$/m,
+    'only actual Pages deployments should compete for the Pages concurrency slot',
+  );
+  assert.match(workflow, /^  workflow_run:\n/m, 'native release completion must continue to trigger Pages evaluation');
+  assert.match(
+    workflow,
+    /github\.event\.workflow_run\.conclusion == 'success'/,
+    'native release-triggered Pages work must remain gated on successful release completion',
+  );
+}
+
 async function verifyLocalBuild() {
+  await verifyDeploymentWorkflowConcurrency();
   const html = await readFile('dist/index.html', 'utf8');
   const assets = validateHtml(html);
   for (const asset of assets) {
