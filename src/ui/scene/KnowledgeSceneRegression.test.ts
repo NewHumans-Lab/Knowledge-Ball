@@ -215,6 +215,15 @@ assert(!sceneSource.includes('forceContextRestore'), 'scene must never force Web
 assert(!sceneSource.includes('domElement.remove'), 'renderer canvas must remain attached');
 assert(/const\s+pauseFrameLoop\s*=/.test(sceneSource));
 assert(/const\s+resumeFrameLoop\s*=/.test(sceneSource));
+assert(sceneSource.includes("document.addEventListener('visibilitychange', onVisibilityChange)"), 'main WebGL scene must resume when the document becomes visible');
+assert(sceneSource.includes("window.addEventListener('pageshow', onPageShow)"), 'main WebGL scene must recover after page restoration from the back-forward cache');
+assert(sceneSource.includes("window.addEventListener('pagehide', onPageHide)"), 'main WebGL scene must stop scheduling frames while the page is hidden/unloaded');
+assert(sceneSource.includes("renderer.domElement.addEventListener('webglcontextlost', onWebglContextLost)"), 'main WebGL scene must suspend scheduling on WebGL context loss');
+assert(sceneSource.includes("renderer.domElement.addEventListener('webglcontextrestored', onWebglContextRestored)"), 'main WebGL scene must redraw after WebGL context restoration');
+assert(sceneSource.includes('rafId !== 0 || frameTimer !== null'), 'frame scheduler must prevent duplicate pending callbacks');
+assert(sceneSource.includes('const runFrame = (time = performance.now()) =>'), 'all scheduled frames must pass through guarded frame execution');
+assert(sceneSource.includes('WebGL scene frame failed; waiting for lifecycle recovery'), 'frame failures must be reported and leave the scene recoverable');
+assert(sceneSource.includes("document.visibilityState === 'hidden'"), 'scene must not restart rendering while the document remains hidden');
 assert(/const\s+down\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible\)\s*return;/.test(sceneSource));
 assert(/const\s+move\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible/.test(sceneSource));
 assert(/const\s+up\s*=\s*\(e:\s*PointerEvent\)\s*=>\s*\{\s*if\s*\(overlayVisible\)\s*return;/.test(sceneSource));

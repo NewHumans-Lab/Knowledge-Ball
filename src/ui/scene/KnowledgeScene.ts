@@ -1173,17 +1173,18 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const scheduleFrame = () => {
-    if (!running || overlayVisible) return;
+    if (!running || overlayVisible || document.visibilityState === 'hidden' || rafId !== 0 || frameTimer !== null) return;
     const largeMobileGraph = mobilePerformance && getNodes().length > MOBILE_ACTIVE_NODE_TARGET;
     const isolationAnimating = Boolean(chainIsolationState && chainIsolationState.phase !== 'isolated');
     const delay = largeMobileGraph && !isolationAnimating && pendingNodeIds.size === 0 && draggedNodeId === null && returningNodeId === null ? 100 : 0;
     if (delay) {
       frameTimer = window.setTimeout(() => {
         frameTimer = null;
-        rafId = requestAnimationFrame(frame);
+        if (!running || overlayVisible || document.visibilityState === 'hidden') return;
+        rafId = requestAnimationFrame(runFrame);
       }, delay);
     } else {
-      rafId = requestAnimationFrame(frame);
+      rafId = requestAnimationFrame(runFrame);
     }
   };
 
@@ -1235,20 +1236,70 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   };
 
   const pauseFrameLoop = () => {
-    cancelAnimationFrame(rafId);
+    if (rafId !== 0) cancelAnimationFrame(rafId);
     rafId = 0;
     if (frameTimer !== null) clearTimeout(frameTimer);
     frameTimer = null;
   };
 
+  const runFrame = (time = performance.now()) => {
+    rafId = 0;
+    if (!running || overlayVisible || document.visibilityState === 'hidden') return;
+    try {
+      frame(time);
+    } catch (error) {
+      // Keep the scene instance and its interaction handlers alive. A later
+      // foreground/context-restored event can safely restart the render loop.
+      console.error('[Knowledge-Ball] WebGL scene frame failed; waiting for lifecycle recovery:', error);
+      pauseFrameLoop();
+    }
+  };
+
   const resumeFrameLoop = () => {
-    if (!running || overlayVisible) return;
+    if (!running || overlayVisible || document.visibilityState === 'hidden') return;
     clock.start();
     lastFrameAt = 0;
     largeGraphDirty = true;
     graphDirty = true;
-    frame();
+    styleDirty = true;
+    positionDirty = true;
+    resize();
+    runFrame();
   };
+
+  const recoverForegroundScene = () => {
+    if (!running || overlayVisible || document.visibilityState === 'hidden') return;
+    // Cancel any stale RAF/timer before forcing one fresh frame. This keeps
+    // focus/pageshow/context-restored events from creating parallel loops.
+    pauseFrameLoop();
+    resumeFrameLoop();
+  };
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      pauseFrameLoop();
+      return;
+    }
+    recoverForegroundScene();
+  };
+  const onPageHide = () => pauseFrameLoop();
+  const onPageShow = () => recoverForegroundScene();
+  const onWindowFocus = () => recoverForegroundScene();
+  const onWebglContextLost = () => {
+    console.warn('[Knowledge-Ball] WebGL context lost; scene rendering suspended until context restoration.');
+    pauseFrameLoop();
+  };
+  const onWebglContextRestored = () => {
+    console.info('[Knowledge-Ball] WebGL context restored; rebuilding the next scene frame.');
+    recoverForegroundScene();
+  };
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pagehide', onPageHide);
+  window.addEventListener('pageshow', onPageShow);
+  window.addEventListener('focus', onWindowFocus);
+  renderer.domElement.addEventListener('webglcontextlost', onWebglContextLost);
+  renderer.domElement.addEventListener('webglcontextrestored', onWebglContextRestored);
 
   renderer.domElement.addEventListener('pointerdown', down);
   renderer.domElement.addEventListener('pointermove', move);
@@ -1260,10 +1311,8 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   return {
     markDirty: () => { largeGraphDirty = true; graphDirty = true; },
     start: () => {
-      if (!running) {
-        running = true;
-        resumeFrameLoop();
-      }
+      running = true;
+      recoverForegroundScene();
     },
     stop: () => {
       running = false;
