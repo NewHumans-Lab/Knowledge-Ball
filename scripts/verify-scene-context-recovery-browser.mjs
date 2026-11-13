@@ -50,7 +50,7 @@ try {
     window.dispatchEvent(new Event('blur'));
     window.dispatchEvent(new Event('focus'));
   });
-  await page.waitForFunction(old => document.querySelector('#canvasHost canvas') !== old, foregroundCanvas, { timeout: 5_000 });
+  await page.waitForFunction(old => document.querySelector('#canvasHost canvas') !== old, oldCanvas, { timeout: 5_000 });
   await page.waitForFunction(
     previousFrames => window.__debug.scene.getRenderedFrameCount() > previousFrames,
     before.frames,
@@ -84,7 +84,7 @@ try {
   assert.equal(loss.eventReceived, true, 'forced context loss must dispatch webglcontextlost');
   assert.equal(loss.contextIsLost, true, 'the original WebGL context must actually be lost');
 
-  await page.waitForFunction(old => document.querySelector('#canvasHost canvas') !== old, oldCanvas, { timeout: 5_000 });
+  await page.waitForFunction(old => document.querySelector('#canvasHost canvas') !== old, foregroundCanvas, { timeout: 5_000 });
   await page.waitForFunction(
     previousFrames => window.__debug.scene.getRenderedFrameCount() > previousFrames,
     before.frames,
