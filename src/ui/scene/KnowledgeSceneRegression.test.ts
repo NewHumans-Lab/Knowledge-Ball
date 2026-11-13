@@ -210,7 +210,7 @@ assert(syncEdgesSource.includes('selectedId === from.id || selectedId === to.id'
 assert(syncEdgesSource.includes('material.color.setHex(relationActive ? KNOWLEDGE_SCENE_THEME.edge.active : KNOWLEDGE_SCENE_THEME.edge.normal)'), 'line color must switch only between canonical ordinary/active colors');
 assert(/\.geometry\.setFromPoints\(\[a!\.clone\(\),\s*b!\.clone\(\)\]\)/.test(sceneSource), 'relation geometry must contain exactly two 3D endpoints');
 assert(!sceneSource.includes('QuadraticBezierCurve3'), 'knowledge relations stay straight');
-assert(!sceneSource.includes('forceContextLoss'), 'scene must never force WebGL context loss');
+assert(sceneSource.includes('previous.forceContextLoss()'), 'only the retired renderer may release its WebGL context before a replacement is allocated');
 assert(!sceneSource.includes('forceContextRestore'), 'scene must never force WebGL context restoration');
 assert(!sceneSource.includes('domElement.remove'), 'renderer canvas must remain attached');
 assert(/const\s+pauseFrameLoop\s*=/.test(sceneSource));
