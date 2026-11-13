@@ -121,6 +121,7 @@ export interface KnowledgeSceneRuntime {
   getVisibleEdgeCount: () => number;
   getActiveNodeCount: () => number;
   getWorkMetrics: () => Readonly<{ synchronizationPasses: number; idleFrames: number }>;
+  getRenderedFrameCount: () => number;
   screenPositionForNode: (id: string) => { x: number; y: number } | null;
 }
 
@@ -317,6 +318,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let positionDirty = true;
   let synchronizationPasses = 0;
   let idleFrames = 0;
+  let renderedFrameCount = 0;
   let rafId = 0;
   let frameTimer: number | null = null;
   let labelBrightness = 1;
@@ -357,13 +359,17 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const initialHeight = Math.max(initialRect.height, 1);
   const camera = new THREE.PerspectiveCamera(50, initialWidth / initialHeight, .5, 8000);
   camera.position.set(0, 0, DEFAULT_CAM_Z);
-  const renderer = new THREE.WebGLRenderer({ antialias: KNOWLEDGE_SCENE_THEME.renderer.antialias, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobilePerformance ? KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio : KNOWLEDGE_SCENE_THEME.renderer.desktopPixelRatio));
-  renderer.setSize(initialWidth, initialHeight, false);
-  renderer.setClearColor(0x000000, 0);
-  renderer.shadowMap.enabled = !mobilePerformance;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.domElement.style.touchAction = 'none';
+  const createRenderer = () => {
+    const next = new THREE.WebGLRenderer({ antialias: KNOWLEDGE_SCENE_THEME.renderer.antialias, alpha: true });
+    next.setPixelRatio(Math.min(window.devicePixelRatio, mobilePerformance ? KNOWLEDGE_SCENE_THEME.renderer.mobilePixelRatio : KNOWLEDGE_SCENE_THEME.renderer.desktopPixelRatio));
+    next.setSize(initialWidth, initialHeight, false);
+    next.setClearColor(0x000000, 0);
+    next.shadowMap.enabled = !mobilePerformance;
+    next.shadowMap.type = THREE.PCFSoftShadowMap;
+    next.domElement.style.touchAction = 'none';
+    return next;
+  };
+  let renderer = createRenderer();
   host.appendChild(renderer.domElement);
   const canvasViewport = () => {
     const rect = renderer.domElement.getBoundingClientRect();
@@ -1203,6 +1209,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
       const isolationAnimating = applyChainIsolationPresentation(time);
       labels();
       renderer.render(scene, camera);
+      renderedFrameCount += 1;
       largeGraphDirty = isolationAnimating;
       scheduleFrame();
       return;
@@ -1231,6 +1238,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const isolationAnimating = applyChainIsolationPresentation(time);
     labels();
     renderer.render(scene, camera);
+    renderedFrameCount += 1;
     largeGraphDirty = returnStillActive || isolationAnimating;
     scheduleFrame();
   };
@@ -1267,14 +1275,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     runFrame();
   };
 
-  const recoverForegroundScene = () => {
-    if (!running || overlayVisible || document.visibilityState === 'hidden') return;
-    // Cancel any stale RAF/timer before forcing one fresh frame. This keeps
-    // focus/pageshow/context-restored events from creating parallel loops.
-    pauseFrameLoop();
-    resumeFrameLoop();
-  };
-
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
       pauseFrameLoop();
@@ -1285,27 +1285,80 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   const onPageHide = () => pauseFrameLoop();
   const onPageShow = () => recoverForegroundScene();
   const onWindowFocus = () => recoverForegroundScene();
-  const onWebglContextLost = () => {
-    console.warn('[Knowledge-Ball] WebGL context lost; scene rendering suspended until context restoration.');
+  const onWebglContextLost = (event: Event) => {
+    // Three.js also handles this event; preventDefault keeps browser restoration available.
+    event.preventDefault();
+    console.warn('[Knowledge-Ball] WebGL context lost; scene rendering suspended until recovery.');
     pauseFrameLoop();
   };
   const onWebglContextRestored = () => {
-    console.info('[Knowledge-Ball] WebGL context restored; rebuilding the next scene frame.');
+    console.info('[Knowledge-Ball] WebGL context restored; resuming scene rendering.');
     recoverForegroundScene();
+  };
+
+  const attachRendererListeners = (canvas: HTMLCanvasElement) => {
+    canvas.addEventListener('webglcontextlost', onWebglContextLost);
+    canvas.addEventListener('webglcontextrestored', onWebglContextRestored);
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('wheel', wheel, { passive: false });
+  };
+
+  const detachRendererListeners = (canvas: HTMLCanvasElement) => {
+    canvas.removeEventListener('webglcontextlost', onWebglContextLost);
+    canvas.removeEventListener('webglcontextrestored', onWebglContextRestored);
+    canvas.removeEventListener('pointerdown', down);
+    canvas.removeEventListener('pointermove', move);
+    canvas.removeEventListener('pointerup', up);
+    canvas.removeEventListener('pointercancel', up);
+    canvas.removeEventListener('wheel', wheel);
+  };
+
+  const replaceLostRenderer = () => {
+    const previous = renderer;
+    const previousCanvas = previous.domElement;
+    detachRendererListeners(previousCanvas);
+    previous.dispose();
+    try {
+      previous.forceContextLoss();
+    } catch (error) {
+      console.warn('[Knowledge-Ball] Could not explicitly release the lost WebGL context:', error);
+    }
+    const next = createRenderer();
+    renderer = next;
+    host.replaceChild(next.domElement, previousCanvas);
+    attachRendererListeners(next.domElement);
+    resize();
+  };
+
+  const recoverForegroundScene = () => {
+    if (!running || overlayVisible || document.visibilityState === 'hidden') return;
+    // A lost WebGL context cannot be revived by restarting requestAnimationFrame.
+    // Replace the canvas/context while retaining the same Three.js scene, camera,
+    // materials, geometry, graph state and user-selected orientation.
+    try {
+      if (renderer.getContext().isContextLost()) {
+        console.warn('[Knowledge-Ball] Foreground recovery found a lost context; recreating the WebGL renderer.');
+        pauseFrameLoop();
+        replaceLostRenderer();
+      }
+    } catch (error) {
+      console.error('[Knowledge-Ball] WebGL context inspection failed; recreating the renderer.', error);
+      pauseFrameLoop();
+      replaceLostRenderer();
+    }
+    // Cancel stale RAF/timers before forcing one fresh frame.
+    pauseFrameLoop();
+    resumeFrameLoop();
   };
 
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('pagehide', onPageHide);
   window.addEventListener('pageshow', onPageShow);
   window.addEventListener('focus', onWindowFocus);
-  renderer.domElement.addEventListener('webglcontextlost', onWebglContextLost);
-  renderer.domElement.addEventListener('webglcontextrestored', onWebglContextRestored);
-
-  renderer.domElement.addEventListener('pointerdown', down);
-  renderer.domElement.addEventListener('pointermove', move);
-  renderer.domElement.addEventListener('pointerup', up);
-  renderer.domElement.addEventListener('pointercancel', up);
-  renderer.domElement.addEventListener('wheel', wheel, { passive: false });
+  attachRendererListeners(renderer.domElement);
   resize();
 
   return {
@@ -1368,6 +1421,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     getVisibleEdgeCount: () => Object.values(edgeMap).filter(edge => edge.visible).length,
     getActiveNodeCount: () => Object.keys(nodeMap).length,
     getWorkMetrics: () => Object.freeze({ synchronizationPasses, idleFrames }),
+    getRenderedFrameCount: () => renderedFrameCount,
     screenPositionForNode: id => {
       const record = nodeMap[id];
       if (!record) return null;
