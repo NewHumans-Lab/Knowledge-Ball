@@ -218,6 +218,7 @@ assert(/const\s+resumeFrameLoop\s*=/.test(sceneSource));
 assert(sceneSource.includes("document.addEventListener('visibilitychange', onVisibilityChange)"), 'main WebGL scene must resume when the document becomes visible');
 assert(sceneSource.includes("window.addEventListener('pageshow', onPageShow)"), 'main WebGL scene must recover after page restoration from the back-forward cache');
 assert(sceneSource.includes("window.addEventListener('pagehide', onPageHide)"), 'main WebGL scene must stop scheduling frames while the page is hidden/unloaded');
+assert(sceneSource.includes("window.addEventListener('blur', onWindowBlur)"), 'main WebGL scene must suspend and mark the renderer for rebuilding when the browser loses focus');
 assert(sceneSource.includes("canvas.addEventListener('webglcontextlost', onWebglContextLost)"), 'current renderer canvas must suspend scheduling on WebGL context loss');
 assert(sceneSource.includes("canvas.addEventListener('webglcontextrestored', onWebglContextRestored)"), 'current renderer canvas must redraw after WebGL context restoration');
 assert(sceneSource.includes('renderer.getContext().isContextLost()'), 'foreground recovery must detect a context that did not restore');
