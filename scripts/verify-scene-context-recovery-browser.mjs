@@ -90,6 +90,31 @@ try {
     Math.hypot(after.position.x - beforePosition.x, after.position.y - beforePosition.y) < 1,
     'renderer replacement must preserve the user-visible graph orientation and node position',
   );
+
+  const recoveredCanvasShot = await page.locator('#canvasHost canvas').screenshot();
+  const visibleScenePixels = await page.evaluate(async base64 => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${base64}`;
+    await image.decode();
+    const sample = document.createElement('canvas');
+    sample.width = image.naturalWidth;
+    sample.height = image.naturalHeight;
+    const context = sample.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('2D screenshot verification context unavailable');
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+    let chromatic = 0;
+    for (let index = 0; index < pixels.length; index += 16) {
+      const red = pixels[index];
+      const green = pixels[index + 1];
+      const blue = pixels[index + 2];
+      const maximum = Math.max(red, green, blue);
+      const minimum = Math.min(red, green, blue);
+      if (maximum > 45 && maximum - minimum > 18) chromatic += 1;
+    }
+    return chromatic;
+  }, recoveredCanvasShot.toString('base64'));
+  assert.ok(visibleScenePixels > 50, `recovered WebGL canvas must contain visible graph colour, not a black frame (pixels=${visibleScenePixels})`);
   assert.deepEqual(pageErrors, [], 'renderer recovery must not introduce uncaught page errors');
 
   console.log('Android-Chrome-style WebGL context-loss recovery passed', {
