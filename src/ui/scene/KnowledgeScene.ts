@@ -1321,11 +1321,6 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     const previousCanvas = previous.domElement;
     detachRendererListeners(previousCanvas);
     previous.dispose();
-    try {
-      previous.forceContextLoss();
-    } catch (error) {
-      console.warn('[Knowledge-Ball] Could not explicitly release the lost WebGL context:', error);
-    }
     const next = createRenderer();
     renderer = next;
     host.replaceChild(next.domElement, previousCanvas);
