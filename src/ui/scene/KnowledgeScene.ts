@@ -1278,20 +1278,23 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
-      // Backgrounding pauses scheduled frames only; keep the renderer, canvas,
-      // WebGL context and all scene resources alive for foreground reuse.
+      // Defer GPU renderer recovery until foreground return. Do not dispose the
+      // renderer, WebGL context, canvas, or Three.js scene while in background.
+      rendererNeedsRebuild = true;
       pauseFrameLoop();
       return;
     }
     recoverForegroundScene();
   };
   const onPageHide = () => {
-    // Do not dispose or invalidate GPU resources when the page enters the background.
+    // Record deferred recovery only; keep all scene/GPU objects untouched here.
+    rendererNeedsRebuild = true;
     pauseFrameLoop();
   };
   const onPageShow = () => recoverForegroundScene();
   const onWindowBlur = () => {
-    // Losing focus is not evidence that the WebGL context has been lost.
+    // Do not dispose anything on blur; recover the renderer only after focus returns.
+    rendererNeedsRebuild = true;
     pauseFrameLoop();
   };
   const onWindowFocus = () => recoverForegroundScene();
