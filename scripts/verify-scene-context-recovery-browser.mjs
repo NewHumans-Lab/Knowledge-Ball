@@ -42,7 +42,22 @@ try {
   assert.ok(before.nodeId, 'scene must expose a positioned node before context loss');
   const beforePosition = await page.evaluate(id => window.__debug.scene.screenPositionForNode(id), before.nodeId);
   const oldCanvas = await page.locator('#canvasHost canvas').elementHandle();
-  assert.ok(oldCanvas, 'scene must own a WebGL canvas before context loss');
+  assert.ok(oldCanvas, 'scene must own a WebGL canvas before background suspension');
+
+  // First test the Android app-switch path when Chrome does not report context loss:
+  // blur/focus must still replace the suspended renderer rather than trust its old GPU state.
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  await page.waitForFunction(old => document.querySelector('#canvasHost canvas') !== old, foregroundCanvas, { timeout: 5_000 });
+  await page.waitForFunction(
+    previousFrames => window.__debug.scene.getRenderedFrameCount() > previousFrames,
+    before.frames,
+    { timeout: 10_000 },
+  );
+  const foregroundCanvas = await page.locator('#canvasHost canvas').elementHandle();
+  assert.ok(foregroundCanvas, 'foreground recovery must mount a replacement canvas');
 
   const loss = await page.evaluate(async () => {
     const canvas = document.querySelector('#canvasHost canvas');
