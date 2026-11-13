@@ -1269,7 +1269,9 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const recoverForegroundScene = () => {
     if (!running || overlayVisible || document.visibilityState === 'hidden') return;
-    resize();
+    // Cancel any stale RAF/timer before forcing one fresh frame. This keeps
+    // focus/pageshow/context-restored events from creating parallel loops.
+    pauseFrameLoop();
     resumeFrameLoop();
   };
 
