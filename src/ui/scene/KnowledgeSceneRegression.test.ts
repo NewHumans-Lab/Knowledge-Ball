@@ -221,7 +221,9 @@ assert(sceneSource.includes("window.addEventListener('pagehide', onPageHide)"), 
 assert(sceneSource.includes("canvas.addEventListener('webglcontextlost', onWebglContextLost)"), 'current renderer canvas must suspend scheduling on WebGL context loss');
 assert(sceneSource.includes("canvas.addEventListener('webglcontextrestored', onWebglContextRestored)"), 'current renderer canvas must redraw after WebGL context restoration');
 assert(sceneSource.includes('renderer.getContext().isContextLost()'), 'foreground recovery must detect a context that did not restore');
-assert(sceneSource.includes('const replaceLostRenderer ='), 'foreground recovery must be able to replace a permanently lost renderer');
+assert(sceneSource.includes('const replaceRendererContext ='), 'foreground recovery must be able to replace a suspended or permanently lost renderer');
+assert(sceneSource.includes('rendererNeedsRebuild = true'), 'background suspension must mark the renderer for foreground reconstruction');
+assert(sceneSource.includes('previous.forceContextLoss()'), 'retired WebGL context must be released before allocating its replacement');
 assert(sceneSource.includes('host.replaceChild(next.domElement, previousCanvas)'), 'renderer recovery must replace the lost canvas rather than reusing its context');
 assert(sceneSource.includes('getRenderedFrameCount: () => renderedFrameCount'), 'browser recovery tests must verify actual post-recovery rendering');
 assert(sceneSource.includes('rafId !== 0 || frameTimer !== null'), 'frame scheduler must prevent duplicate pending callbacks');
