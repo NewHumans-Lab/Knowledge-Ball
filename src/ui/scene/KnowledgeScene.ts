@@ -319,6 +319,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   let synchronizationPasses = 0;
   let idleFrames = 0;
   let renderedFrameCount = 0;
+  let rendererNeedsRebuild = false;
   let rafId = 0;
   let frameTimer: number | null = null;
   let labelBrightness = 1;
@@ -1277,18 +1278,27 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
+      rendererNeedsRebuild = true;
       pauseFrameLoop();
       return;
     }
     recoverForegroundScene();
   };
-  const onPageHide = () => pauseFrameLoop();
+  const onPageHide = () => {
+    rendererNeedsRebuild = true;
+    pauseFrameLoop();
+  };
   const onPageShow = () => recoverForegroundScene();
+  const onWindowBlur = () => {
+    rendererNeedsRebuild = true;
+    pauseFrameLoop();
+  };
   const onWindowFocus = () => recoverForegroundScene();
   const onWebglContextLost = (event: Event) => {
     // Three.js also handles this event; preventDefault keeps browser restoration available.
     event.preventDefault();
     console.warn('[Knowledge-Ball] WebGL context lost; scene rendering suspended until recovery.');
+    rendererNeedsRebuild = true;
     pauseFrameLoop();
   };
   const onWebglContextRestored = () => {
@@ -1316,11 +1326,18 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     canvas.removeEventListener('wheel', wheel);
   };
 
-  const replaceLostRenderer = () => {
+  const replaceRendererContext = () => {
     const previous = renderer;
     const previousCanvas = previous.domElement;
     detachRendererListeners(previousCanvas);
     previous.dispose();
+    try {
+      // Release the retired context before allocating its replacement. This is
+      // only called on foreground recovery, never during normal rendering.
+      previous.forceContextLoss();
+    } catch (error) {
+      console.warn('[Knowledge-Ball] Retired WebGL context release was unavailable:', error);
+    }
     const next = createRenderer();
     renderer = next;
     host.replaceChild(next.domElement, previousCanvas);
@@ -1334,15 +1351,18 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
     // Replace the canvas/context while retaining the same Three.js scene, camera,
     // materials, geometry, graph state and user-selected orientation.
     try {
-      if (renderer.getContext().isContextLost()) {
-        console.warn('[Knowledge-Ball] Foreground recovery found a lost context; recreating the WebGL renderer.');
+      const contextLost = renderer.getContext().isContextLost();
+      if (rendererNeedsRebuild || contextLost) {
+        console.info('[Knowledge-Ball] Rebuilding WebGL renderer after foreground suspension.');
         pauseFrameLoop();
-        replaceLostRenderer();
+        rendererNeedsRebuild = false;
+        replaceRendererContext();
       }
     } catch (error) {
-      console.error('[Knowledge-Ball] WebGL context inspection failed; recreating the renderer.', error);
+      console.error('[Knowledge-Ball] WebGL foreground recovery failed; retaining retry state.', error);
+      rendererNeedsRebuild = true;
       pauseFrameLoop();
-      replaceLostRenderer();
+      return;
     }
     // Cancel stale RAF/timers before forcing one fresh frame.
     pauseFrameLoop();
@@ -1352,6 +1372,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('pagehide', onPageHide);
   window.addEventListener('pageshow', onPageShow);
+  window.addEventListener('blur', onWindowBlur);
   window.addEventListener('focus', onWindowFocus);
   attachRendererListeners(renderer.domElement);
   resize();
