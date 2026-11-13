@@ -44,20 +44,21 @@ try {
   const oldCanvas = await page.locator('#canvasHost canvas').elementHandle();
   assert.ok(oldCanvas, 'scene must own a WebGL canvas before background suspension');
 
-  // First test the Android app-switch path when Chrome does not report context loss:
-  // blur/focus must still replace the suspended renderer rather than trust its old GPU state.
+  // Background/foreground must preserve the exact same canvas and renderer when
+  // WebGL context loss has not occurred; only the frame loop should pause/resume.
   await page.evaluate(() => {
     window.dispatchEvent(new Event('blur'));
     window.dispatchEvent(new Event('focus'));
   });
-  await page.waitForFunction(old => document.querySelector('#canvasHost canvas') !== old, oldCanvas, { timeout: 5_000 });
   await page.waitForFunction(
     previousFrames => window.__debug.scene.getRenderedFrameCount() > previousFrames,
     before.frames,
     { timeout: 10_000 },
   );
   const foregroundCanvas = await page.locator('#canvasHost canvas').elementHandle();
-  assert.ok(foregroundCanvas, 'foreground recovery must mount a replacement canvas');
+  assert.ok(foregroundCanvas, 'the original scene canvas must remain mounted after foreground return');
+  assert.equal(await foregroundCanvas.evaluate((canvas, old) => canvas === old, oldCanvas), true,
+    'ordinary app switching must preserve the exact same canvas rather than recreate the renderer');
 
   const loss = await page.evaluate(async () => {
     const canvas = document.querySelector('#canvasHost canvas');
