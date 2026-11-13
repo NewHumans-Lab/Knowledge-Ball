@@ -1278,19 +1278,20 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') {
-      rendererNeedsRebuild = true;
+      // Backgrounding pauses scheduled frames only; keep the renderer, canvas,
+      // WebGL context and all scene resources alive for foreground reuse.
       pauseFrameLoop();
       return;
     }
     recoverForegroundScene();
   };
   const onPageHide = () => {
-    rendererNeedsRebuild = true;
+    // Do not dispose or invalidate GPU resources when the page enters the background.
     pauseFrameLoop();
   };
   const onPageShow = () => recoverForegroundScene();
   const onWindowBlur = () => {
-    rendererNeedsRebuild = true;
+    // Losing focus is not evidence that the WebGL context has been lost.
     pauseFrameLoop();
   };
   const onWindowFocus = () => recoverForegroundScene();
