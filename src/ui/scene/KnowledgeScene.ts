@@ -1347,7 +1347,7 @@ export function createKnowledgeScene({ host, labelsLayer, getNodes, callbacks }:
 
   const recoverForegroundScene = () => {
     if (!running || overlayVisible || document.visibilityState === 'hidden') return;
-    // A lost WebGL context cannot be revived by restarting requestAnimationFrame.
+    // A suspended or lost WebGL context may remain black after RAF resumes.
     // Replace the canvas/context while retaining the same Three.js scene, camera,
     // materials, geometry, graph state and user-selected orientation.
     try {
