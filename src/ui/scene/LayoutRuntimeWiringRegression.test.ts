@@ -39,7 +39,7 @@ assert(ordinaryLineageProjection.includes('cascadeRelocate'),'ordinary non-linea
 assert(ordinaryLineageProjection.includes('relocationHomes'),'cascading reflow retains the original ordinary-node radial direction when searching legal capacity');
 assert(ordinaryLineageProjection.includes("node.type === 'reasoning'"),'ordinary lineage logic must explicitly exclude Reasoning nodes');
 assert(ordinaryLineageProjection.includes("role === 'history'")&&ordinaryLineageProjection.includes("role === 'opposition'"),'ordinary lineage owns history/opposition local geometry');
-assert(reasoningBinding.includes('must serve exactly one concrete conclusion ball'),'semantic binding must reject one Reasoning node serving independent concrete conclusions');
+assert(reasoningBinding.includes('must serve exactly one conclusion topic'),'semantic binding must reject one Reasoning node serving independent concrete conclusions');
 assert(reasoningBinding.includes('targetId'),'Reasoning side/history variants must inherit the exact concrete conclusion through their Reasoning lineage target');
 assert(reasoningBinding.includes("node.type !== 'reasoning'"),'served conclusion may be any ordinary Knowledge ball but never another Reasoning node');
 assert(reasoningProjection.includes('reasoningConclusionBindingFor(reasoning)'),'Reasoning geometry must consume the semantic served-conclusion binding instead of rediscovering outputs');
