@@ -109,9 +109,9 @@ function resolveReasoningConclusionInternal<T extends ReasoningConclusionSemanti
     return direct;
   }
 
-  // Reasoning optimization/opposition/history nodes inherit the exact immutable
-  // conclusion from the Reasoning ball they target. They never re-resolve by
-  // conclusion topic and therefore cannot drift to a newer conclusion version.
+  // Reasoning optimization/opposition/history nodes inherit their target's
+  // effective conclusion topic. Resolution still follows that topic's Current
+  // ball, so a conclusion optimization retargets the whole reasoning family.
   const targetId = reasoning.lineage?.targetId;
   const target = targetId ? byId.get(targetId) : undefined;
   if (target?.type === 'reasoning' && active(target)) {
