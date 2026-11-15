@@ -104,7 +104,7 @@ const ambiguous: ReasoningConclusionSemanticNode[] = [
 ];
 bindReasoningConclusions(ambiguous);
 assert.equal(reasoningConclusionBindingFor(ambiguous[1]!), undefined, 'invalid multi-conclusion legacy data must not crash layout or invent an owner');
-assert.ok(validateReasoningConclusionBindings(ambiguous).some(error => error.includes('exactly one concrete conclusion ball')));
+assert.ok(validateReasoningConclusionBindings(ambiguous).some(error => error.includes('exactly one conclusion topic')));
 
 const unbound: ReasoningConclusionSemanticNode[] = [node('p', 'fact'), node('r', 'reasoning', ['p'])];
 assert.ok(validateReasoningConclusionBindings(unbound).some(error => error.includes('must serve one concrete ordinary conclusion')));
