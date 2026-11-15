@@ -54,10 +54,9 @@ function sameCanonicalSet(left: readonly string[], right: readonly string[]): bo
 }
 
 /**
- * A reasoning node is identified by its premise topics plus the exact immutable
- * conclusion ball it serves. Premise version changes therefore cannot create a
- * duplicate, while a different concrete conclusion version is intentionally a
- * different Reasoning relationship.
+ * A reasoning node is identified by its premise topics plus its conclusion
+ * topic. Immutable conclusion versions therefore resolve to the same effective
+ * relationship, and an optimization cannot create a duplicate Reasoning node.
  */
 export function findExistingReasoningForLink(
   state: GraphState,
