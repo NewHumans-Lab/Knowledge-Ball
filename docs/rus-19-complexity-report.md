@@ -9,7 +9,7 @@ reductions. The authoritative baseline is `main` at
 | Hotspot | Previous work | New work | Equivalence evidence |
 | --- | --- | --- | --- |
 | Projection premise canonicalization | For every node, rebuild `byId`; for every premise, scan all nodes to find Current. Worst case O(N² + EN). | Build `byId`, `byTopic`, and `currentByTopic` once and reuse the same generation index for premise and relation derivation. O(N + E), excluding the existing small per-topic lineage selection. | `KnowledgeGraphIndex.test.ts` fixes substitution, order, de-duplication, missing IDs, and node identity. |
-| Reasoning conclusion binding | Every Reasoning resolution scanned every ordinary node; inherited Reasoning recursively repeated those scans. Worst case O(RN + R²). | Build direct ordinary conclusions by Reasoning ID once and memoize root-independent direct/inherited resolutions. O(N + E + R) for valid graphs. Root-relative cycle errors deliberately remain uncached. | Immutable-conclusion, multi-topic rejection, inheritance, and exact per-root cycle-error tests preserve output. |
+| Reasoning conclusion binding | Every Reasoning resolution scanned every ordinary node; inherited Reasoning recursively repeated those scans. Worst case O(RN + R²). | Build direct ordinary conclusions by Reasoning ID and Current conclusions by topic once; memoize root-independent direct/inherited resolutions. O(N + E + R) for valid graphs. Root-relative cycle errors deliberately remain uncached. | Current-conclusion retargeting, multi-topic rejection, inheritance, and exact per-root cycle-error tests cover the new semantics. |
 | DAG validation | Rebuild O(N + E) downstream adjacency for each premise/conclusion pair. | Build adjacency once, then reuse it for each reachability traversal. | Existing protocol and adversarial validation messages remain unchanged. |
 | Nearest ISG candidates | Sort every V-cell shell for one nearest cell or a seven-cell candidate window: O(V log V), O(V) temporary records. | One-pass nearest selection O(V)/O(1), and bounded ordered top-K O(VK)/O(K). | `RadialKnowledgeLayout.test.ts` compares the complete old sort order for multiple grids, rays, and K values, including cell-ID tie breaks. |
 | Reasoning translation | Allocate every bounded ring and vector before testing the origin. | Yield rings lazily in the same sorted order and stop allocating at the first accepted candidate. | Existing cross-family collision and deterministic Reasoning geometry tests pass unchanged. |
@@ -50,10 +50,10 @@ inside the benchmark before results are printed.
   repeated algorithm and would change lifecycle ownership.
 * **Database Reasoning identity:** no Supabase/Postgres connection, `psql`, or
   Docker runtime is available in this environment, so representative
-  `EXPLAIN (ANALYZE, BUFFERS)` cannot be truthfully produced. The current trigger
-  enforces server-authoritative concrete immutable conclusion identity and
-  concurrency semantics. Without hosted/local measurements, no schema/index
-  migration is justified; the migration remains immutable and unchanged.
+  `EXPLAIN (ANALYZE, BUFFERS)` cannot be truthfully produced. The original trigger enforced exact immutable conclusion identity. A later
+  migration supersedes that rule with topic-normalized conclusion identity, so
+  optimizing a conclusion cannot create a duplicate reasoning relationship. The
+  migration is additive; the historical migration remains unchanged.
 
 ## Mobile A/B classification
 
