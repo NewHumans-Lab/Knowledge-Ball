@@ -66,7 +66,8 @@ export interface AddTheoryEdit {
 /**
  * Create one real reasoning-process ball between existing Knowledge balls.
  * `conclusionIds` remains an array for event/replay compatibility, but every new
- * reasoning-link must contain exactly one concrete immutable conclusion ID.
+ * reasoning-link must contain exactly one ordinary conclusion ID. Its topic's
+ * Current version is the effective endpoint after later optimization.
  */
 export interface AddReasoningLinkEdit {
   kind: 'add';

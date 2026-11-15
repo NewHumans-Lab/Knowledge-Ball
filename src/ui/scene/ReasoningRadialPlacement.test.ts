@@ -61,6 +61,43 @@ const lineage=(
   targetId?:string,
 )=>({topicId,proposal,role,rank,reasoningSide,reasoningSideRank,reasoningDominant,targetId});
 
+
+ // An optimized conclusion replaces the historical conclusion as the radial
+ // anchor even when the stored premise still points at the old immutable ball.
+ const optimizedPremise=node('optimized-premise');
+ optimizedPremise.pos=new THREE.Vector3(0,100,0);
+ optimizedPremise.homePos=optimizedPremise.pos.clone();
+ const optimizedReasoning=node('optimized-reasoning',['optimized-premise'],'reasoning');
+ const oldConclusion=node('old-conclusion',['optimized-reasoning'],'theorem','middle');
+ oldConclusion.lineage=lineage('optimized-topic','new','history',1);
+ oldConclusion.hidden=true;
+ oldConclusion.pos=new THREE.Vector3(0,0,200);
+ oldConclusion.homePos=oldConclusion.pos.clone();
+ const currentConclusion=node('current-conclusion',['optimized-reasoning'],'theorem','middle');
+ currentConclusion.lineage=lineage('optimized-topic','optimization','current',0,undefined,undefined,false,'old-conclusion');
+ currentConclusion.pos=new THREE.Vector3(200,0,0);
+ currentConclusion.homePos=currentConclusion.pos.clone();
+ const optimizedGraph=[optimizedPremise,optimizedReasoning,oldConclusion,currentConclusion];
+ bindReasoningConclusions(optimizedGraph);
+ assert.equal(
+   reasoningConclusionBindingFor(optimizedReasoning)?.conclusionId,
+   'current-conclusion',
+   'reasoning semantic owner must be replaced by the optimized Current conclusion',
+ );
+ applyReasoningRadialPlacement(optimizedGraph);
+ assert(
+   optimizedReasoning.pos!.clone().cross(currentConclusion.pos!).length()<1e-7,
+   'reasoning P0 must move onto the replacement conclusion radial axis',
+ );
+ assert(
+   optimizedReasoning.pos!.dot(currentConclusion.pos!)>0,
+   'reasoning P0 must point toward the replacement conclusion, not the historical ball',
+ );
+ assert(
+   Math.abs(optimizedReasoning.pos!.dot(oldConclusion.pos!.clone().normalize()))<1e-7,
+   'reasoning P0 must no longer retain the historical conclusion radial anchor',
+ );
+
 // Dual-camp family: winner owns P0, losing head is exactly 5R away, winner
 // history extends through the opposite side, losing history continues outward,
 // and a pending candidate sits 5R from its target on the perpendicular tangent.

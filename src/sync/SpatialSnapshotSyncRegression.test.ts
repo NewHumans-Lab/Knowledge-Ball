@@ -15,7 +15,7 @@ storage.setItem('knowledge-ball.supabase-session.v1', JSON.stringify({
 const snapshot: SpatialLayoutSnapshot = {
   schemaVersion: 1,
   knowledgeVersion: '44',
-  algorithmVersion: 'deterministic-5r-isg-v1',
+  algorithmVersion: 'deterministic-5r-isg-v2',
   graphSignature: 'deadbeef',
   nodes: [
     { id: 'node-a', address: { shellID: 'shell:180.000000', cellID: 2 }, pos: { x: 1, y: 2, z: 3 } },

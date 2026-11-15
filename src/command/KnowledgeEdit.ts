@@ -54,10 +54,9 @@ function sameCanonicalSet(left: readonly string[], right: readonly string[]): bo
 }
 
 /**
- * A reasoning node is identified by its premise topics plus the exact immutable
- * conclusion ball it serves. Premise version changes therefore cannot create a
- * duplicate, while a different concrete conclusion version is intentionally a
- * different Reasoning relationship.
+ * A reasoning node is identified by its premise topics plus its conclusion
+ * topic. Immutable conclusion versions therefore resolve to the same effective
+ * relationship, and an optimization cannot create a duplicate Reasoning node.
  */
 export function findExistingReasoningForLink(
   state: GraphState,
@@ -66,7 +65,9 @@ export function findExistingReasoningForLink(
 ): GraphNode | null {
   if (conclusionIds.length !== 1) return null;
   const expectedPremises = canonicalTopicSet(state, premiseIds);
-  const expectedConclusionId = conclusionIds[0]!;
+  const selectedConclusion = state.nodesById[conclusionIds[0]!];
+  if (!selectedConclusion || selectedConclusion.type === 'reasoning') return null;
+  const expectedConclusionTopicId = topicIdFor(selectedConclusion);
   const nodes = Object.values(state.nodesById);
 
   for (const reasoning of nodes) {
@@ -75,7 +76,7 @@ export function findExistingReasoningForLink(
     if (!sameCanonicalSet(actualPremises, expectedPremises)) continue;
 
     const concreteConclusion = resolveReasoningConclusion(reasoning, nodes);
-    if (concreteConclusion?.id === expectedConclusionId) return reasoning;
+    if (concreteConclusion && topicIdFor(concreteConclusion) === expectedConclusionTopicId) return reasoning;
   }
   return null;
 }
@@ -107,7 +108,7 @@ export async function executeKnowledgeEdit(
       edit.conclusionIds,
     );
     if (existing) {
-      errors.push(`推理节点已存在：${existing.title}（同样的前提与具体结论只能有一个推理节点）`);
+      errors.push(`推理节点已存在：${existing.title}（同样的前提与结论主题只能有一个推理节点）`);
     }
   }
   performance.mark?.('knowledge-edit-validate-end');

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 const migration = await readFile(new URL('../supabase/migrations/202608230001_reasoning_link_add.sql', import.meta.url), 'utf8');
 const identityMigration = await readFile(new URL('../supabase/migrations/202608290001_reasoning_concrete_conclusion_identity.sql', import.meta.url), 'utf8');
+const currentIdentityMigration = await readFile(new URL('../supabase/migrations/202611150002_reasoning_topic_identity.sql', import.meta.url), 'utf8');
 const protocol = await readFile(new URL('../src/protocol/KnowledgeEditingProtocol.ts', import.meta.url), 'utf8');
 const command = await readFile(new URL('../src/command/KnowledgeEdit.ts', import.meta.url), 'utf8');
 const app = await readFile(new URL('../src/ui/app.ts', import.meta.url), 'utf8');
@@ -21,6 +22,9 @@ assert.match(identityMigration, /jsonb_array_length\(edit->'conclusionIds'\)<>1/
 assert.match(identityMigration, /concrete_conclusion_id:=edit#>>'\{conclusionIds,0\}'/);
 assert.match(identityMigration, /e\.conclusion_node_id=concrete_conclusion_id/);
 assert.match(identityMigration, /select '202608290001'::text/);
+assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(edit#>>'\{conclusionIds,0\}'\)/);
+assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(e\.conclusion_node_id\)/);
+assert.doesNotMatch(currentIdentityMigration, /e\.conclusion_node_id=concrete_conclusion_id/);
 
 assert.match(protocol, /mode: 'reasoning-link'/);
 assert.match(protocol, /conclusionIds: string\[\]/);
@@ -29,7 +33,7 @@ assert.match(protocol, /新增推理必须且只能选择一个已有结论/);
 assert.match(protocol, /validReasoningLinkPremise/);
 assert.match(protocol, /reachesDownstream/);
 assert.match(command, /resolveReasoningConclusion\(reasoning, nodes\)/);
-assert.match(command, /concreteConclusion\?\.id === expectedConclusionId/);
+assert.match(command, /topicIdFor\(concreteConclusion\) === expectedConclusionTopicId/);
 
 assert.match(app, /knowledgeCreate\.openStandalone\(\)/);
 assert.match(app, /knowledgeCreate\.openReasoning\(id\)/);

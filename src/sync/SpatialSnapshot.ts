@@ -1,5 +1,5 @@
 export const SPATIAL_LAYOUT_SNAPSHOT_SCHEMA_VERSION = 1 as const;
-export const SPATIAL_LAYOUT_ALGORITHM_VERSION = 'deterministic-5r-isg-v1' as const;
+export const SPATIAL_LAYOUT_ALGORITHM_VERSION = 'deterministic-5r-isg-v2' as const;
 
 export interface SpatialSnapshotVector { x: number; y: number; z: number; }
 export interface SpatialSnapshotAddress { shellID: string; cellID: number; }

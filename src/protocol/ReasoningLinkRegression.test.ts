@@ -99,9 +99,8 @@ const cyclic = [
 ];
 assert(validateKnowledgeEdit(cyclic, edit({ requiredPremiseIds: ['b'], conclusionIds: ['a'] })).some(error => error.includes('依赖环')));
 
-// Premise identity remains topic-normalized, but conclusion identity is the exact
-// immutable ball. Optimizing a conclusion therefore does not silently retarget an
-// existing Reasoning to the newer ball.
+// Both premise and conclusion identity are topic-normalized. Optimizing a
+// conclusion retargets the existing Reasoning to the new Current ball.
 const identityNodes: ProtocolNode[] = [
   node('identity-premise', 'fact', [], { lineage: { ...current('identity-premise'), topicId: 'premise-topic' } }),
   node('identity-conclusion-old', 'theorem', ['identity-reasoning'], {
@@ -123,12 +122,12 @@ const identityState: GraphState = {
 assert.equal(
   findExistingReasoningForLink(identityState, ['identity-premise'], ['identity-conclusion-old'])?.id,
   'identity-reasoning',
-  'same premise topics and same concrete conclusion must resolve to the existing Reasoning',
+  'a historical conclusion selection resolves to the existing Reasoning on its topic Current',
 );
 assert.equal(
-  findExistingReasoningForLink(identityState, ['identity-premise'], ['identity-conclusion-current']),
-  null,
-  'a newer immutable conclusion ball is a different Reasoning endpoint even when its topic is the same',
+  findExistingReasoningForLink(identityState, ['identity-premise'], ['identity-conclusion-current'])?.id,
+  'identity-reasoning',
+  'the Current conclusion version resolves to the same existing Reasoning identity',
 );
 assert.equal(
   findExistingReasoningForLink(identityState, ['identity-premise'], ['conclusion']),

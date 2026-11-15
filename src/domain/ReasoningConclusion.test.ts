@@ -53,8 +53,8 @@ for (const id of ['rw','rr','rw-old']) {
   );
 }
 
-// If the conclusion itself later gets a new immutable version, the old Reasoning
-// stays pinned to the old concrete ball instead of jumping to the topic Current.
+// If the conclusion gets a new immutable version, the reasoning link follows
+// the topic's Current conclusion; the old immutable ball remains historical only.
 const conclusionVersions: ReasoningConclusionSemanticNode[] = [
   node('p-old', 'fact'),
   node('r-old', 'reasoning', ['p-old'], { topicId:'r-old-topic', proposal:'new', role:'current', rank:0 }),
@@ -69,9 +69,9 @@ const conclusionVersions: ReasoningConclusionSemanticNode[] = [
 ];
 bindReasoningConclusions(conclusionVersions);
 const oldBinding = reasoningConclusionBindingFor(conclusionVersions.find(item => item.id === 'r-old')!);
-assert.equal(oldBinding?.conclusionId, 'c-old', 'old Reasoning must stay with the concrete conclusion ball it originally served');
-assert.equal(oldBinding?.lineage?.role, 'history');
-assert.equal(oldBinding?.hidden, true, 'visibility receives the concrete conclusion hidden state');
+assert.equal(oldBinding?.conclusionId, 'c-new', 'existing Reasoning must follow the optimized Current conclusion');
+assert.equal(oldBinding?.lineage?.role, 'current');
+assert.equal(oldBinding?.hidden, false, 'visibility receives the replacement conclusion state');
 assert.equal(reasoningConclusionBindingFor(conclusionVersions.find(item => item.id === 'r-new')!)?.conclusionId, 'c-new', 'a newly linked Reasoning may serve the newer concrete conclusion ball');
 
 const sameTopicVersions: ReasoningConclusionSemanticNode[] = [
@@ -80,7 +80,21 @@ const sameTopicVersions: ReasoningConclusionSemanticNode[] = [
   node('c-old', 'theorem', ['r'], { topicId:'c-topic', proposal:'new', role:'history', rank:1 }),
   node('c-current', 'theorem', ['r'], { topicId:'c-topic', proposal:'optimization', targetId:'c-old', role:'current', rank:0 }),
 ];
-assert.equal(resolveReasoningConclusion('r', sameTopicVersions)?.id, 'c-old', 'immutable conclusion versioning must keep Reasoning on the lineage root it originally served');
+assert.equal(resolveReasoningConclusion('r', sameTopicVersions)?.id, 'c-current', 'a historical stored edge must resolve to the topic Current conclusion');
+
+// Even when the stored reasoning edge exists only on the historical conclusion,
+// the effective relation projection replaces that endpoint with the topic Current.
+const historicalOnlyLink: ReasoningConclusionSemanticNode[] = [
+  node('r', 'reasoning', ['p']),
+  node('p', 'fact'),
+  node('c-old', 'theorem', ['r'], { topicId:'single-current-topic', proposal:'new', role:'history', rank:1 }),
+  node('c-current', 'theorem', [], { topicId:'single-current-topic', proposal:'optimization', targetId:'c-old', role:'current', rank:0 }),
+];
+assert.equal(
+  resolveReasoningConclusion('r', historicalOnlyLink)?.id,
+  'c-current',
+  'a reasoning link to a superseded version must be canonicalized to the sole Current conclusion',
+);
 
 const ambiguous: ReasoningConclusionSemanticNode[] = [
   node('p', 'fact'),
@@ -90,7 +104,7 @@ const ambiguous: ReasoningConclusionSemanticNode[] = [
 ];
 bindReasoningConclusions(ambiguous);
 assert.equal(reasoningConclusionBindingFor(ambiguous[1]!), undefined, 'invalid multi-conclusion legacy data must not crash layout or invent an owner');
-assert.ok(validateReasoningConclusionBindings(ambiguous).some(error => error.includes('exactly one concrete conclusion ball')));
+assert.ok(validateReasoningConclusionBindings(ambiguous).some(error => error.includes('exactly one conclusion topic')));
 
 const unbound: ReasoningConclusionSemanticNode[] = [node('p', 'fact'), node('r', 'reasoning', ['p'])];
 assert.ok(validateReasoningConclusionBindings(unbound).some(error => error.includes('must serve one concrete ordinary conclusion')));
