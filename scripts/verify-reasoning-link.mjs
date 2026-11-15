@@ -22,7 +22,7 @@ assert.match(identityMigration, /jsonb_array_length\(edit->'conclusionIds'\)<>1/
 assert.match(identityMigration, /concrete_conclusion_id:=edit#>>'\{conclusionIds,0\}'/);
 assert.match(identityMigration, /e\.conclusion_node_id=concrete_conclusion_id/);
 assert.match(identityMigration, /select '202608290001'::text/);
-assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(concrete_conclusion_id\)/);
+assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(edit#>>'\\{conclusionIds,0\\}'\)/);
 assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(e\.conclusion_node_id\)/);
 assert.doesNotMatch(currentIdentityMigration, /e\.conclusion_node_id=concrete_conclusion_id/);
 
@@ -33,7 +33,7 @@ assert.match(protocol, /新增推理必须且只能选择一个已有结论/);
 assert.match(protocol, /validReasoningLinkPremise/);
 assert.match(protocol, /reachesDownstream/);
 assert.match(command, /resolveReasoningConclusion\(reasoning, nodes\)/);
-assert.match(command, /concreteConclusion\?\.id === expectedConclusionId/);
+assert.match(command, /topicIdFor\(concreteConclusion\) === expectedConclusionTopicId/);
 
 assert.match(app, /knowledgeCreate\.openStandalone\(\)/);
 assert.match(app, /knowledgeCreate\.openReasoning\(id\)/);
