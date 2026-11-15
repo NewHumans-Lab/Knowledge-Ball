@@ -82,7 +82,7 @@ function currentConclusionsIndex<T extends ReasoningConclusionSemanticNode>(
   return result;
 }
 
-function directConcreteConclusion<T extends ReasoningConclusionSemanticNode>(
+function effectiveCurrentConclusion<T extends ReasoningConclusionSemanticNode>(
   reasoningId: string,
   currentConclusionsByTopic: ReadonlyMap<string, T>,
   conclusionsByReasoningId: ReadonlyMap<string, readonly T[]>,
@@ -123,7 +123,7 @@ function resolveReasoningConclusionInternal<T extends ReasoningConclusionSemanti
   }
   visiting.add(reasoning.id);
 
-  const direct = directConcreteConclusion(reasoning.id, currentConclusionsByTopic, conclusionsByReasoningId);
+  const direct = effectiveCurrentConclusion(reasoning.id, currentConclusionsByTopic, conclusionsByReasoningId);
   if (direct.error || direct.conclusion) {
     visiting.delete(reasoning.id);
     cache.set(reasoning.id, direct);
@@ -160,7 +160,15 @@ export function resolveReasoningConclusion<T extends ReasoningConclusionSemantic
   const conclusionsByReasoningId = directConclusionsIndex(nodes);
   const source = typeof reasoning === 'string' ? byId.get(reasoning) : reasoning;
   if (!source) return undefined;
-  return resolveReasoningConclusionInternal(source, byId, currentConclusionsIndex(nodes), conclusionsByReasoningId, new Map(), new Set()).conclusion;
+  const currentConclusionsByTopic = currentConclusionsIndex(nodes);
+  return resolveReasoningConclusionInternal(
+    source,
+    byId,
+    currentConclusionsByTopic,
+    conclusionsByReasoningId,
+    new Map(),
+    new Set(),
+  ).conclusion;
 }
 
 /**
@@ -213,6 +221,7 @@ export function validateReasoningConclusionBindings<T extends ReasoningConclusio
   const errors: string[] = [];
   const byId = new Map(nodes.map(node => [node.id, node] as const));
   const conclusionsByReasoningId = directConclusionsIndex(nodes);
+  const currentConclusionsByTopic = currentConclusionsIndex(nodes);
   const cache = new Map<string, Resolution<T>>();
 
   for (const node of nodes) {
