@@ -22,7 +22,7 @@ assert.match(identityMigration, /jsonb_array_length\(edit->'conclusionIds'\)<>1/
 assert.match(identityMigration, /concrete_conclusion_id:=edit#>>'\{conclusionIds,0\}'/);
 assert.match(identityMigration, /e\.conclusion_node_id=concrete_conclusion_id/);
 assert.match(identityMigration, /select '202608290001'::text/);
-assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(edit#>>'\\{conclusionIds,0\\}'\)/);
+assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(edit#>>'\{conclusionIds,0\}'\)/);
 assert.match(currentIdentityMigration, /reasoning_endpoint_topic\(e\.conclusion_node_id\)/);
 assert.doesNotMatch(currentIdentityMigration, /e\.conclusion_node_id=concrete_conclusion_id/);
 
