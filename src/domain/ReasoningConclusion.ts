@@ -1,5 +1,6 @@
 import type { NodeStatus } from '../event/Event';
 import {
+  currentNodeForTopic,
   lineageRoleFor,
   topicIdFor,
   type KnowledgeLineageMeta,
@@ -55,14 +56,15 @@ function directConclusionsIndex<T extends ReasoningConclusionSemanticNode>(nodes
 }
 
 /**
- * Immutable conclusion optimization/opposition can leave multiple versions with
- * the same Reasoning ID in their stored premise lists. The Reasoning remains
- * owned by the concrete conclusion ball it was originally attached to, so among
- * those directly linked versions we walk to the lineage root instead of jumping
- * to the topic's newest Current ball.
+ * Stored immutable premise lists may still mention an older conclusion version.
+ * Resolve that historical endpoint through its topic to the single Current ball,
+ * matching the canonical logical-edge projection used by the graph renderer.
+ * The old version remains available in All mode, but it is never the effective
+ * conclusion owner while a newer Current version exists.
  */
 function directConcreteConclusion<T extends ReasoningConclusionSemanticNode>(
   reasoningId: string,
+  byId: ReadonlyMap<string, T>,
   conclusionsByReasoningId: ReadonlyMap<string, readonly T[]>,
 ): Resolution<T> {
   const direct = [...(conclusionsByReasoningId.get(reasoningId) ?? [])];
@@ -71,21 +73,17 @@ function directConcreteConclusion<T extends ReasoningConclusionSemanticNode>(
   const topicIds = [...new Set(direct.map(topicIdFor))].sort();
   if (topicIds.length !== 1) {
     return {
-      error: `Reasoning node ${reasoningId} must serve exactly one concrete conclusion ball; found conclusion topics ${topicIds.join(', ')}`,
+      error: `Reasoning node ${reasoningId} must serve exactly one conclusion topic; found ${topicIds.join(', ')}`,
     };
   }
 
-  if (direct.length === 1) return { conclusion: direct[0] };
-
-  const directIds = new Set(direct.map(node => node.id));
-  const roots = direct.filter(node => {
-    const targetId = node.lineage?.targetId;
-    return !targetId || !directIds.has(targetId);
-  });
-  if (roots.length === 1) return { conclusion: roots[0] };
+  const current = currentNodeForTopic([...byId.values()], topicIds[0]!);
+  if (current && current.type !== 'reasoning' && active(current)) {
+    return { conclusion: current };
+  }
 
   return {
-    error: `Reasoning node ${reasoningId} must resolve to one concrete conclusion ball; found ${direct.map(node => node.id).sort().join(', ')}`,
+    error: `Reasoning node ${reasoningId} has no active Current conclusion in topic ${topicIds[0]}`,
   };
 }
 
@@ -104,7 +102,7 @@ function resolveReasoningConclusionInternal<T extends ReasoningConclusionSemanti
   }
   visiting.add(reasoning.id);
 
-  const direct = directConcreteConclusion(reasoning.id, conclusionsByReasoningId);
+  const direct = directConcreteConclusion(reasoning.id, byId, conclusionsByReasoningId);
   if (direct.error || direct.conclusion) {
     visiting.delete(reasoning.id);
     cache.set(reasoning.id, direct);
@@ -145,9 +143,9 @@ export function resolveReasoningConclusion<T extends ReasoningConclusionSemantic
 }
 
 /**
- * Bind once per graph/layout generation. Each Reasoning ball gets one concrete
- * conclusion owner. Side/history variants inherit that exact owner through their
- * Reasoning target chain; conclusion-topic Current changes never retarget them.
+ * Bind once per graph/layout generation. Each Reasoning ball resolves to the
+ * Current conclusion of its single conclusion topic. Side/history variants
+ * inherit that effective owner through their Reasoning target chain.
  */
 export function bindReasoningConclusions<T extends ReasoningConclusionSemanticNode>(nodes: T[]): void {
   const byId = new Map(nodes.map(node => [node.id, node] as const));
