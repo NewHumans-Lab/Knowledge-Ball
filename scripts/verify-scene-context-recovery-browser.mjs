@@ -44,21 +44,27 @@ try {
   const oldCanvas = await page.locator('#canvasHost canvas').elementHandle();
   assert.ok(oldCanvas, 'scene must own a WebGL canvas before background suspension');
 
-  // Background/foreground must preserve the exact same canvas and renderer when
-  // WebGL context loss has not occurred; only the frame loop should pause/resume.
+  // Simulate app switching. Background handling must not destroy resources;
+  // foreground recovery must replace the potentially stranded GPU renderer.
   await page.evaluate(() => {
     window.dispatchEvent(new Event('blur'));
     window.dispatchEvent(new Event('focus'));
   });
+  await page.waitForFunction(old => document.querySelector('#canvasHost canvas') !== old, oldCanvas, { timeout: 5_000 });
   await page.waitForFunction(
     previousFrames => window.__debug.scene.getRenderedFrameCount() > previousFrames,
     before.frames,
     { timeout: 10_000 },
   );
   const foregroundCanvas = await page.locator('#canvasHost canvas').elementHandle();
-  assert.ok(foregroundCanvas, 'the original scene canvas must remain mounted after foreground return');
-  assert.equal(await foregroundCanvas.evaluate((canvas, old) => canvas === old, oldCanvas), true,
-    'ordinary app switching must preserve the exact same canvas rather than recreate the renderer');
+  assert.ok(foregroundCanvas, 'foreground recovery must mount a renderer canvas');
+  assert.equal(await foregroundCanvas.evaluate((canvas, old) => canvas === old, oldCanvas), false,
+    'foreground return must replace a potentially stranded renderer after background suspension');
+  const foregroundContextHealthy = await foregroundCanvas.evaluate(canvas => {
+    const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+    return Boolean(gl && !gl.isContextLost());
+  });
+  assert.equal(foregroundContextHealthy, true, 'foreground recovery must create a live WebGL context');
 
   const loss = await page.evaluate(async () => {
     const canvas = document.querySelector('#canvasHost canvas');

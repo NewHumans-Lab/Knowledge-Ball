@@ -223,9 +223,10 @@ const backgroundLifecycleStart = sceneSource.indexOf('const onVisibilityChange =
 const contextLossHandlerStart = sceneSource.indexOf('const onWebglContextLost =', backgroundLifecycleStart);
 assert(backgroundLifecycleStart >= 0 && contextLossHandlerStart > backgroundLifecycleStart, 'background lifecycle handlers must remain discoverable');
 const backgroundLifecycleSource = sceneSource.slice(backgroundLifecycleStart, contextLossHandlerStart);
-assert(!backgroundLifecycleSource.includes('rendererNeedsRebuild'), 'backgrounding or losing focus must never mark the WebGL renderer for destruction/rebuild');
-assert(!backgroundLifecycleSource.includes('forceContextLoss'), 'background lifecycle handlers must never force WebGL context loss');
-assert(!backgroundLifecycleSource.includes('replaceRendererContext'), 'background lifecycle handlers must never replace the renderer or canvas');
+assert(backgroundLifecycleSource.includes('rendererNeedsRebuild = true'), 'background lifecycle events must defer renderer recovery until foreground return');
+assert(!backgroundLifecycleSource.includes('dispose()'), 'background lifecycle handlers must not dispose the renderer or scene resources');
+assert(!backgroundLifecycleSource.includes('forceContextLoss'), 'background lifecycle handlers must never release the WebGL context');
+assert(!backgroundLifecycleSource.includes('replaceRendererContext'), 'background lifecycle handlers must not replace the renderer or canvas while hidden');
 assert(sceneSource.includes("canvas.addEventListener('webglcontextlost', onWebglContextLost)"), 'current renderer canvas must suspend scheduling on WebGL context loss');
 assert(sceneSource.includes("canvas.addEventListener('webglcontextrestored', onWebglContextRestored)"), 'current renderer canvas must redraw after WebGL context restoration');
 assert(sceneSource.includes('renderer.getContext().isContextLost()'), 'foreground recovery must detect a context that did not restore');
