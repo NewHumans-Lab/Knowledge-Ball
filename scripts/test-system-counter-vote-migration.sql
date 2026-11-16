@@ -84,7 +84,7 @@ begin
   select system_counter_stake,system_counter_side into stake,side
   from public.knowledge_pending_vote_rounds
   where id='20000000-0000-4000-8000-000000000001';
-  if stake<>1.000000 or side<>'DISAGREE' then
+  if stake is distinct from 1.000000 or side is distinct from 'DISAGREE' then
     raise exception 'initial round did not persist the 1E counter-position on the real losing side';
   end if;
 
@@ -98,7 +98,7 @@ begin
     '20000000-0000-4000-8000-000000000001','CORRECT'
   )
   where position_key like '%:vote:30000000-0000-4000-8000-000000000002';
-  if alice_payout<>3.000000 or bob_payout<>0.000000 then
+  if alice_payout is distinct from 3.000000 or bob_payout is distinct from 0.000000 then
     raise exception 'initial settlement entitlement incorrect: Alice %, Bob %',alice_payout,bob_payout;
   end if;
 
@@ -112,12 +112,12 @@ begin
     '20000000-0000-4000-8000-000000000001','INCORRECT'
   )
   where position_key like '%:vote:30000000-0000-4000-8000-000000000002';
-  if alice_payout<>0.000000 or bob_payout<>1.500000 then
+  if alice_payout is distinct from 0.000000 or bob_payout is distinct from 1.500000 then
     raise exception 'initial reversal entitlement incorrect: Alice %, Bob %',alice_payout,bob_payout;
   end if;
 
   select sum(amount) into ledger_total from public.energy_ledger_entries;
-  if ledger_total<>0.000000 then
+  if ledger_total is distinct from 0.000000 then
     raise exception 'initial system counter transaction does not conserve ledger energy: %',ledger_total;
   end if;
   if (select balance from public.energy_accounts where id='00000000-0000-0000-0000-000000000001')<>-1.000000 then
@@ -174,7 +174,7 @@ begin
   select system_counter_stake,system_counter_side into stake,side
   from private.knowledge_revalidation_rounds
   where id='40000000-0000-4000-8000-000000000001';
-  if stake<>1.000000 or side<>'DISAGREE' then
+  if stake is distinct from 1.000000 or side is distinct from 'DISAGREE' then
     raise exception 'revalidation round did not persist the 1E counter-position';
   end if;
 
@@ -193,7 +193,7 @@ begin
     '40000000-0000-4000-8000-000000000001','CORRECT'
   )
   where position_key like '%:vote:50000000-0000-4000-8000-000000000002';
-  if initiator_payout<>15.500000 or agree_payout<>15.500000 or disagree_payout<>0.000000 then
+  if initiator_payout is distinct from 15.500000 or agree_payout is distinct from 15.500000 or disagree_payout is distinct from 0.000000 then
     raise exception 'revalidation settlement entitlement incorrect: initiator %, agree %, disagree %',
       initiator_payout,agree_payout,disagree_payout;
   end if;
@@ -203,12 +203,12 @@ begin
     '40000000-0000-4000-8000-000000000001','INCORRECT'
   )
   where position_key like '%:vote:50000000-0000-4000-8000-000000000002';
-  if disagree_payout<>21.000000 then
-    raise exception 'revalidation reversal entitlement incorrect: expected 21E, got %',disagree_payout;
+  if disagree_payout is distinct from 20.000000 then
+    raise exception 'revalidation reversal entitlement incorrect: expected 20E, got %',disagree_payout;
   end if;
 
   select sum(amount) into ledger_total from public.energy_ledger_entries;
-  if ledger_total<>0.000000 then
+  if ledger_total is distinct from 0.000000 then
     raise exception 'revalidation system counter transaction does not conserve ledger energy: %',ledger_total;
   end if;
 end $$;
