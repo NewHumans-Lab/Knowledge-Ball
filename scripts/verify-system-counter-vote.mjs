@@ -126,7 +126,8 @@ for (let winnerCount = 1; winnerCount <= 40; winnerCount += 1) {
     assert.equal(addedAtoms, E);
   }
 }
-\n// Repeated flips return to the original allocation, with no compounding.
+
+// Repeated flips return to the original allocation, with no compounding.
 const flippedBack = settle(originalPositions, 'AGREE');
 assert.deepEqual([...flippedBack.entries()], [...firstResult.entries()]);
 
