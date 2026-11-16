@@ -28,7 +28,7 @@ begin
       add constraint knowledge_pending_vote_rounds_system_counter_check
       check (
         (system_counter_stake=0.000000 and system_counter_side is null)
-        or (system_counter_stake=1.000000 and system_counter_side in ('AGREE','DISAGREE'))
+        or (system_counter_stake=1.000000 and system_counter_side is not null and system_counter_side in ('AGREE','DISAGREE'))
       );
   end if;
 
@@ -41,7 +41,7 @@ begin
       add constraint knowledge_revalidation_rounds_system_counter_check
       check (
         (system_counter_stake=0.000000 and system_counter_side is null)
-        or (system_counter_stake=1.000000 and system_counter_side in ('AGREE','DISAGREE'))
+        or (system_counter_stake=1.000000 and system_counter_side is not null and system_counter_side in ('AGREE','DISAGREE'))
       );
   end if;
 end $$;
