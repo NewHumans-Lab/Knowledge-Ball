@@ -103,7 +103,30 @@ const noHumanWinner = settle([
 ], 'DISAGREE');
 assert.equal(noHumanWinner.size, 0);
 
-// Repeated flips return to the original allocation, with no compounding.
+
+// Property check for the trigger's combined-pool largest-remainder delta.
+// Across varying winner counts and old losing-pool sizes, the added positions
+// must distribute exactly 1E and must never debit an individual winner.
+for (let winnerCount = 1; winnerCount <= 40; winnerCount += 1) {
+  for (let oldLosingAtoms = 0n; oldLosingAtoms <= 100n; oldLosingAtoms += 1n) {
+    const n = BigInt(winnerCount);
+    const oldShare = oldLosingAtoms / n;
+    const oldRemainder = oldLosingAtoms % n;
+    const newLosingAtoms = oldLosingAtoms + E;
+    const newShare = newLosingAtoms / n;
+    const newRemainder = newLosingAtoms % n;
+    let addedAtoms = 0n;
+    for (let index = 0n; index < n; index += 1n) {
+      const oldPayoutShare = oldShare + (index < oldRemainder ? 1n : 0n);
+      const newPayoutShare = newShare + (index < newRemainder ? 1n : 0n);
+      const delta = newPayoutShare - oldPayoutShare;
+      assert.ok(delta >= 0n);
+      addedAtoms += delta;
+    }
+    assert.equal(addedAtoms, E);
+  }
+}
+\n// Repeated flips return to the original allocation, with no compounding.
 const flippedBack = settle(originalPositions, 'AGREE');
 assert.deepEqual([...flippedBack.entries()], [...firstResult.entries()]);
 
