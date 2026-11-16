@@ -169,3 +169,8 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: psql "postgresql://postgres@localhost:5432/knowledge_ball_test" -v ON_ERROR_STOP=1 -f scripts/test-spatial-layout-migration.sql
+
+      - name: Apply and exercise the system counter-vote migration on PostgreSQL 17
+        env:
+          PGPASSWORD: postgres
+        run: psql "postgresql://postgres@localhost:5432/knowledge_ball_test" -v ON_ERROR_STOP=1 -f scripts/test-system-counter-vote-migration.sql
