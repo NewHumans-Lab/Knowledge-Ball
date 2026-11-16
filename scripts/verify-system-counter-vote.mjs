@@ -26,8 +26,8 @@ assert.match(migration, /set system_counter_stake=1\.000000,system_counter_side=
 // The synthetic position is assigned after the verdict and never enters ballot
 // counts, threshold calculation, or the visible vote totals.
 assert.match(migration, /v_counter_side:=case when v_winning_side='AGREE' then 'DISAGREE' else 'AGREE' end/g);
-assert.match(priorCascade, /count\(\) filter\(where side='AGREE'\)/);
-assert.match(priorCascade, /count\(\) filter\(where side='DISAGREE'\)/);
+assert.match(priorCascade, /count\(\*\)\s*filter\(\s*where\s+side\s*=\s*'AGREE'\s*\)/i);
+assert.match(priorCascade, /count\(\*\)\s*filter\(\s*where\s+side\s*=\s*'DISAGREE'\s*\)/i);
 assert.doesNotMatch(migration, /insert into public\.knowledge_pending_votes/i);
 assert.doesNotMatch(migration, /insert into private\.knowledge_revalidation_votes/i);
 
